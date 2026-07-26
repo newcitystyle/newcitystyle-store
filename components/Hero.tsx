@@ -26,13 +26,12 @@ const slides: HeroSlide[] = [
     description:
       "Discover premium fashion for men, women and kids—carefully selected for comfort, quality and confidence.",
     primaryLabel: "Shop New Arrivals",
-    primaryPath: "/products",
+    primaryPath: "/search?newArrival=true",
     secondaryLabel: "Explore Collections",
     secondaryPath: "/collections",
-    
-      image:
-  "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=2200&q=90",
-position: "center 42%",
+    image:
+      "https://images.unsplash.com/photo-1609220136736-443140cffec6?auto=format&fit=crop&w=2200&q=90",
+    position: "center 38%",
   },
   {
     id: 2,
@@ -42,7 +41,7 @@ position: "center 42%",
     description:
       "Sharp shirts, premium denim and versatile everyday styles designed for modern men.",
     primaryLabel: "Shop Men",
-    primaryPath: "/products?category=Men",
+    primaryPath: "/search?q=Men",
     secondaryLabel: "View Trending Styles",
     secondaryPath: "/collections",
     image:
@@ -57,9 +56,9 @@ position: "center 42%",
     description:
       "Elegant sarees, festive wear and charming kids' fashion for every celebration and special memory.",
     primaryLabel: "Shop Women",
-    primaryPath: "/products?category=Women",
+    primaryPath: "/search?q=Women",
     secondaryLabel: "Shop Kids",
-    secondaryPath: "/products?category=Kids",
+    secondaryPath: "/search?q=Kids",
     image:
       "https://images.unsplash.com/photo-1583391733956-6c78276477e2?auto=format&fit=crop&w=2200&q=88",
     position: "center 28%",

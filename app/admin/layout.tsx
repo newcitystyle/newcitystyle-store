@@ -26,7 +26,8 @@ const menuItems = [
   { label: "Customers", href: "/admin/customers", icon: "👥" },
   { label: "Reviews", href: "/admin/reviews", icon: "⭐" },
   { label: "Coupons", href: "/admin/coupons", icon: "🎟️" },
-  
+  { label: "Marketing", href: "/admin/marketing", icon: "📣" },
+
   { label: "Home Preview", href: "/admin/home-preview", icon: "🖥️" },
   { label: "Branding", href: "/admin/branding", icon: "🎨" },
   { label: "Payments", href: "/admin/payments", icon: "💳" },

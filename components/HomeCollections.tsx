@@ -22,6 +22,18 @@ type CollectionRow = {
   created_at?: string | null;
 };
 
+const CATEGORY_FALLBACK_IMAGES = {
+  men: "https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&w=1200&q=88",
+  women:
+    "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=1200&q=88",
+  kids:
+    "https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=1200&q=88",
+  sarees:
+    "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=88",
+  default:
+    "https://images.unsplash.com/photo-1445205170230-053b83016050?auto=format&fit=crop&w=1200&q=88",
+};
+
 function getCollectionName(collection: CollectionRow) {
   return (
     collection.name ||
@@ -32,8 +44,7 @@ function getCollectionName(collection: CollectionRow) {
 }
 
 function getCollectionSlug(collection: CollectionRow) {
-  const savedSlug =
-    collection.slug || collection.url_slug || "";
+  const savedSlug = collection.slug || collection.url_slug || "";
 
   if (savedSlug.trim()) {
     return savedSlug.trim();
@@ -46,14 +57,56 @@ function getCollectionSlug(collection: CollectionRow) {
     .replace(/^-+|-+$/g, "");
 }
 
+function getFallbackImage(name: string) {
+  const normalizedName = name.toLowerCase();
+
+  if (
+    normalizedName.includes("men") ||
+    normalizedName.includes("shirt") ||
+    normalizedName.includes("jean") ||
+    normalizedName.includes("t-shirt")
+  ) {
+    return CATEGORY_FALLBACK_IMAGES.men;
+  }
+
+  if (
+    normalizedName.includes("women") ||
+    normalizedName.includes("ladies") ||
+    normalizedName.includes("top") ||
+    normalizedName.includes("dress")
+  ) {
+    return CATEGORY_FALLBACK_IMAGES.women;
+  }
+
+  if (
+    normalizedName.includes("kid") ||
+    normalizedName.includes("child") ||
+    normalizedName.includes("boy") ||
+    normalizedName.includes("girl")
+  ) {
+    return CATEGORY_FALLBACK_IMAGES.kids;
+  }
+
+  if (
+    normalizedName.includes("saree") ||
+    normalizedName.includes("sari") ||
+    normalizedName.includes("ethnic")
+  ) {
+    return CATEGORY_FALLBACK_IMAGES.sarees;
+  }
+
+  return CATEGORY_FALLBACK_IMAGES.default;
+}
+
 function getCollectionImage(collection: CollectionRow) {
-  return (
+  const savedImage =
     collection.image_url ||
     collection.image ||
     collection.cover_image ||
     collection.banner_image ||
-    ""
-  );
+    "";
+
+  return savedImage.trim() || getFallbackImage(getCollectionName(collection));
 }
 
 function isCollectionActive(collection: CollectionRow) {
@@ -110,9 +163,7 @@ export default function HomeCollections() {
   }
 
   const activeCollections = useMemo(() => {
-    return collections
-      .filter(isCollectionActive)
-      .slice(0, 8);
+    return collections.filter(isCollectionActive).slice(0, 8);
   }, [collections]);
 
   if (!loading && activeCollections.length === 0) {
@@ -139,7 +190,7 @@ export default function HomeCollections() {
 
         {loading ? (
           <div className="loadingGrid">
-            {Array.from({ length: 3 }).map((_, index) => (
+            {Array.from({ length: 4 }).map((_, index) => (
               <div className="loadingCard" key={index} />
             ))}
           </div>
@@ -149,7 +200,7 @@ export default function HomeCollections() {
           </div>
         ) : (
           <div className="collectionsGrid">
-            {activeCollections.map((collection) => {
+            {activeCollections.map((collection, index) => {
               const name = getCollectionName(collection);
               const slug = getCollectionSlug(collection);
               const image = getCollectionImage(collection);
@@ -157,12 +208,19 @@ export default function HomeCollections() {
               return (
                 <article className="collectionCard" key={String(collection.id)}>
                   <div className="imageArea">
-                    {image ? (
-                      <img src={image} alt={name} />
-                    ) : (
-                      <div className="imageFallback">NCS</div>
-                    )}
+                    <img
+                      src={image}
+                      alt={name}
+                      loading={index < 4 ? "eager" : "lazy"}
+                      onError={(event) => {
+                        event.currentTarget.src = getFallbackImage(name);
+                      }}
+                    />
 
+                    <div className="imageOverlay" />
+                    <span className="collectionNumber">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
                     <span className="activeBadge">Active</span>
                   </div>
 
@@ -179,7 +237,7 @@ export default function HomeCollections() {
                       className="shopButton"
                       aria-label={`Shop ${name}`}
                     >
-                      Explore Collection →
+                      Explore Collection <span aria-hidden="true">→</span>
                     </Link>
 
                     <span className="slugText">/{slug}</span>
@@ -297,15 +355,26 @@ export default function HomeCollections() {
           transform: scale(1.04);
         }
 
-        .imageFallback {
-          width: 100%;
-          height: 100%;
-          display: grid;
-          place-items: center;
-          color: #d4af37;
-          font-size: 46px;
-          font-weight: 950;
-          letter-spacing: 3px;
+        .imageOverlay {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            180deg,
+            rgba(10, 46, 115, 0.04) 20%,
+            rgba(10, 46, 115, 0.42) 100%
+          );
+          pointer-events: none;
+        }
+
+        .collectionNumber {
+          position: absolute;
+          right: 15px;
+          bottom: 10px;
+          color: rgba(255, 255, 255, 0.82);
+          font-size: 42px;
+          font-weight: 900;
+          line-height: 1;
+          text-shadow: 0 2px 12px rgba(10, 46, 115, 0.32);
         }
 
         .activeBadge {
@@ -315,7 +384,7 @@ export default function HomeCollections() {
           padding: 7px 11px;
           border: 1px solid rgba(255, 255, 255, 0.7);
           border-radius: 999px;
-          background: rgba(255, 255, 255, 0.9);
+          background: rgba(255, 255, 255, 0.92);
           color: #067647;
           font-size: 10px;
           font-weight: 850;
@@ -346,6 +415,7 @@ export default function HomeCollections() {
           display: flex;
           align-items: center;
           justify-content: center;
+          gap: 8px;
           margin-top: 20px;
           border-radius: 12px;
           background: linear-gradient(135deg, #d4af37, #f1d26a);
@@ -407,12 +477,13 @@ export default function HomeCollections() {
 
         @media (max-width: 700px) {
           .collectionsSection {
-            padding: 56px 14px;
+            padding: 56px 12px;
           }
 
           .collectionsHeading {
             align-items: flex-start;
             flex-direction: column;
+            margin-bottom: 22px;
           }
 
           :global(.viewAllButton) {
@@ -421,11 +492,84 @@ export default function HomeCollections() {
 
           .collectionsGrid,
           .loadingGrid {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+          }
+
+          .collectionCard {
+            border-radius: 18px;
           }
 
           .imageArea {
-            height: 230px;
+            height: 180px;
+          }
+
+          .activeBadge {
+            top: 9px;
+            right: 9px;
+            padding: 5px 8px;
+            font-size: 8px;
+          }
+
+          .collectionNumber {
+            right: 10px;
+            bottom: 8px;
+            font-size: 28px;
+          }
+
+          .contentArea {
+            padding: 15px 12px 14px;
+          }
+
+          h3 {
+            font-size: 20px;
+          }
+
+          .contentArea p {
+            min-height: 63px;
+            margin-top: 8px;
+            font-size: 11px;
+            line-height: 1.55;
+          }
+
+          :global(.shopButton) {
+            min-height: 42px;
+            margin-top: 14px;
+            padding: 0 8px;
+            font-size: 11px;
+            text-align: center;
+          }
+
+          .slugText {
+            display: none;
+          }
+
+          .loadingCard {
+            min-height: 350px;
+          }
+        }
+
+        @media (max-width: 390px) {
+          .collectionsGrid,
+          .loadingGrid {
+            gap: 9px;
+          }
+
+          .imageArea {
+            height: 160px;
+          }
+
+          h3 {
+            font-size: 18px;
+          }
+
+          .contentArea p {
+            min-height: 70px;
+            font-size: 10px;
+          }
+
+          :global(.shopButton) {
+            font-size: 10px;
           }
         }
       `}</style>

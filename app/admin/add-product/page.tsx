@@ -108,12 +108,12 @@ const initialForm: ProductForm = {
   mrp: "",
   price: "",
   discountPercent: "0",
-  taxPercent: "0",
+  taxPercent: "",
 
   sku: "",
   barcode: "",
   stock: "",
-  lowStockLimit: "5",
+  lowStockLimit: "",
 
   mainImage: "",
   galleryImages: [],
@@ -672,6 +672,24 @@ export default function AddProductPage() {
     );
   }
 
+  function getOptionalNumber(value: string, fallback: number) {
+    const normalizedValue = value.trim();
+
+    if (!normalizedValue) return fallback;
+
+    const parsedValue = Number(normalizedValue);
+    return Number.isFinite(parsedValue) ? parsedValue : fallback;
+  }
+
+  function getCleanFaqs() {
+    return form.faqs
+      .map((faq) => ({
+        question: faq.question.trim(),
+        answer: faq.answer.trim(),
+      }))
+      .filter((faq) => faq.question && faq.answer);
+  }
+
   function validateForm() {
     if (!form.name.trim()) {
       alert("Please enter the product name.");
@@ -748,12 +766,12 @@ export default function AddProductPage() {
       mrp: Number(form.mrp || form.price),
       price: Number(form.price),
       discount_percent: Number(form.discountPercent || 0),
-      tax_percent: Number(form.taxPercent || 0),
+      tax_percent: getOptionalNumber(form.taxPercent, 0),
 
       sku: form.sku.trim() || null,
       barcode: form.barcode.trim() || null,
       stock: Number(form.stock),
-      low_stock_limit: Number(form.lowStockLimit || 5),
+      low_stock_limit: getOptionalNumber(form.lowStockLimit, 5),
 
       image: form.mainImage,
       gallery_images: form.galleryImages,
@@ -787,12 +805,9 @@ export default function AddProductPage() {
         .map((item) => item.trim())
         .filter(Boolean),
 
-      faqs: form.faqs
-        .map((faq) => ({
-          question: faq.question.trim(),
-          answer: faq.answer.trim(),
-        }))
-        .filter((faq) => faq.question && faq.answer),
+      // Supabase JSON/JSONB value: [{ question, answer }, ...]
+      // Only complete FAQ pairs are saved so storefront rendering stays safe.
+      faqs: getCleanFaqs(),
 
       weight: Number(form.weight || 0),
       package_length: Number(form.packageLength || 0),
@@ -877,6 +892,25 @@ export default function AddProductPage() {
         </section>
 
         <form onSubmit={saveProduct}>
+          <div className="mobile-sticky-save">
+            <button
+              type="submit"
+              aria-label="Save Product"
+              title="Save Product"
+              disabled={saving || uploading}
+              className="mobile-sticky-save-button"
+            >
+              <span aria-hidden="true">💾</span>
+              <span className="mobile-sticky-save-text">
+                {saving
+                  ? "Saving..."
+                  : uploading
+                    ? "Uploading..."
+                    : "Save Product"}
+              </span>
+            </button>
+          </div>
+
           <div className="product-admin-layout">
             <div
               style={{
@@ -1109,7 +1143,7 @@ export default function AddProductPage() {
                     />
                   </Field>
 
-                  <Field label="GST Percentage">
+                  <Field label="GST Percentage (Optional)">
                     <input
                       type="number"
                       min="0"
@@ -1120,7 +1154,7 @@ export default function AddProductPage() {
                           event.target.value
                         )
                       }
-                      placeholder="5"
+                      placeholder="Blank saves as 0"
                       style={inputStyle}
                     />
                   </Field>
@@ -1186,7 +1220,7 @@ export default function AddProductPage() {
                     />
                   </Field>
 
-                  <Field label="Low Stock Alert">
+                  <Field label="Low Stock Alert (Optional)">
                     <input
                       type="number"
                       min="0"
@@ -1197,7 +1231,7 @@ export default function AddProductPage() {
                           event.target.value
                         )
                       }
-                      placeholder="5"
+                      placeholder="Blank saves as 5"
                       style={inputStyle}
                     />
                   </Field>
@@ -2011,6 +2045,39 @@ export default function AddProductPage() {
           gap: 12px;
         }
 
+        .mobile-sticky-save {
+          position: sticky;
+          top: 10px;
+          z-index: 60;
+          display: flex;
+          justify-content: flex-end;
+          pointer-events: none;
+          margin: 0 0 14px;
+        }
+
+        .mobile-sticky-save-button {
+          pointer-events: auto;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          min-height: 44px;
+          border: 1px solid #d4af37;
+          border-radius: 999px;
+          background: linear-gradient(135deg, #0a2e73, #164ca8);
+          color: #ffffff;
+          padding: 10px 16px;
+          font-size: 14px;
+          font-weight: 900;
+          box-shadow: 0 10px 28px rgba(10, 46, 115, 0.3);
+          cursor: pointer;
+        }
+
+        .mobile-sticky-save-button:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+
         @media (max-width: 1100px) {
           .product-admin-layout {
             grid-template-columns: 1fr;
@@ -2025,6 +2092,17 @@ export default function AddProductPage() {
           .form-grid,
           .status-toggle-grid {
             grid-template-columns: 1fr;
+          }
+
+          .mobile-sticky-save {
+            top: 8px;
+            margin-bottom: 12px;
+          }
+
+          .mobile-sticky-save-button {
+            min-width: 48px;
+            min-height: 48px;
+            padding: 10px 14px;
           }
         }
       `}</style>

@@ -42,6 +42,15 @@ type Product = {
     | Array<{ name?: string; values?: string[] | string }>
     | null;
   shipping_returns?: string | null;
+  faqs?: unknown;
+  faq?: unknown;
+  faq_items?: unknown;
+  faq_questions?: unknown;
+  faq_answers?: unknown;
+  lifestyle_images?: unknown;
+  lifestyle_gallery?: unknown;
+  lifestyle_title?: string | null;
+  lifestyle_subtitle?: string | null;
   [key: string]: unknown;
 };
 
@@ -150,6 +159,184 @@ function parseVariationValues(
   return fallback;
 }
 
+
+type FaqItem = {
+  question: string;
+  answer: string;
+};
+
+type LifestyleItem = {
+  image: string;
+  title?: string;
+  subtitle?: string;
+};
+
+function parseJsonValue(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
+function firstText(source: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number") return String(value);
+  }
+  return "";
+}
+
+function normalizeFaqItem(value: unknown): FaqItem | null {
+  const parsed = parseJsonValue(value);
+
+  if (Array.isArray(parsed)) {
+    if (parsed.length >= 2) {
+      const question = String(parsed[0] ?? "").trim();
+      const answer = String(parsed[1] ?? "").trim();
+      return question && answer ? { question, answer } : null;
+    }
+    return null;
+  }
+
+  if (!parsed || typeof parsed !== "object") return null;
+
+  const item = parsed as Record<string, unknown>;
+  const question = firstText(item, [
+    "question",
+    "faq_question",
+    "q",
+    "title",
+    "name",
+  ]);
+  const answer = firstText(item, [
+    "answer",
+    "faq_answer",
+    "a",
+    "description",
+    "value",
+    "content",
+  ]);
+
+  return question && answer ? { question, answer } : null;
+}
+
+function parseFaqs(product: Product): FaqItem[] {
+  const collected: FaqItem[] = [];
+  const seen = new Set<string>();
+
+  const add = (item: FaqItem | null) => {
+    if (!item) return;
+    const key = `${item.question.toLowerCase()}::${item.answer.toLowerCase()}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      collected.push(item);
+    }
+  };
+
+  const addCollection = (value: unknown) => {
+    const parsed = parseJsonValue(value);
+
+    if (Array.isArray(parsed)) {
+      parsed.forEach((item) => add(normalizeFaqItem(item)));
+      return;
+    }
+
+    if (parsed && typeof parsed === "object") {
+      const objectValue = parsed as Record<string, unknown>;
+      const nested =
+        objectValue.items ?? objectValue.faqs ?? objectValue.questions ?? null;
+
+      if (nested) {
+        addCollection(nested);
+      } else {
+        add(normalizeFaqItem(objectValue));
+      }
+    }
+  };
+
+  addCollection(product.faqs);
+  addCollection(product.faq);
+  addCollection(product.faq_items);
+
+  const questionList = parseListField(product.faq_questions);
+  const answerList = parseListField(product.faq_answers);
+  questionList.forEach((question, index) => {
+    const answer = answerList[index] || "";
+    add(question && answer ? { question, answer } : null);
+  });
+
+  const record = product as Record<string, unknown>;
+  for (let index = 1; index <= 20; index += 1) {
+    const question = firstText(record, [
+      `faq_${index}_question`,
+      `faq_question_${index}`,
+      `faq${index}_question`,
+      `question_${index}`,
+      `question${index}`,
+    ]);
+    const answer = firstText(record, [
+      `faq_${index}_answer`,
+      `faq_answer_${index}`,
+      `faq${index}_answer`,
+      `answer_${index}`,
+      `answer${index}`,
+    ]);
+    add(question && answer ? { question, answer } : null);
+  }
+
+  Object.entries(record).forEach(([key, value]) => {
+    const match = key.match(/^faq[_-]?(\d+)$/i);
+    if (match) add(normalizeFaqItem(value));
+  });
+
+  return collected;
+}
+
+function parseLifestyleItems(product: Product): LifestyleItem[] {
+  const source = parseJsonValue(
+    product.lifestyle_gallery ?? product.lifestyle_images
+  );
+  const items: LifestyleItem[] = [];
+
+  const add = (value: unknown) => {
+    const parsed = parseJsonValue(value);
+
+    if (typeof parsed === "string" && parsed.trim()) {
+      items.push({ image: parsed.trim() });
+      return;
+    }
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+
+    const item = parsed as Record<string, unknown>;
+    const image = firstText(item, ["image", "image_url", "url", "src"]);
+    if (!image) return;
+
+    items.push({
+      image,
+      title: firstText(item, ["title", "heading", "name"]),
+      subtitle: firstText(item, ["subtitle", "description", "caption"]),
+    });
+  };
+
+  if (Array.isArray(source)) source.forEach(add);
+  else if (source && typeof source === "object") {
+    const objectSource = source as Record<string, unknown>;
+    const nested = objectSource.items ?? objectSource.images ?? objectSource.gallery;
+    if (Array.isArray(nested)) nested.forEach(add);
+    else add(source);
+  } else add(source);
+
+  return items;
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -176,6 +363,9 @@ export default function ProductPage() {
 
   const [addingToCart, setAddingToCart] = useState(false);
   const [addingToWishlist, setAddingToWishlist] = useState(false);
+  const [activeDetailsTab, setActiveDetailsTab] = useState<
+    "details" | "specifications" | "faq" | "lifestyle" | "shipping" | "reviews"
+  >("details");
 
   const imageAreaRef = useRef<HTMLDivElement | null>(null);
 
@@ -516,6 +706,12 @@ export default function ProductPage() {
     ),
   ];
 
+  const faqs = parseFaqs(product);
+  const lifestyleItems = parseLifestyleItems(product);
+  const shippingReturns =
+    product.shipping_returns ||
+    "Free delivery on eligible orders. Products can be returned within 7 days in original, unused condition with tags and packaging intact.";
+
   return (
     <main className="productPage">
       <div className="pageShell">
@@ -709,21 +905,35 @@ export default function ProductPage() {
                   onClick={() =>
                     setQuantity((current) => Math.max(1, current - 1))
                   }
+                  aria-label="Decrease quantity"
                 >
-                  −
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    focusable="false"
+                  >
+                    <path d="M5 12h14" />
+                  </svg>
                 </button>
 
                 <strong>{quantity}</strong>
 
                 <button
                   type="button"
+                  aria-label="Increase quantity"
                   onClick={() =>
                     setQuantity((current) =>
                       Math.min(Math.max(stock, 1), current + 1)
                     )
                   }
                 >
-                  +
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    focusable="false"
+                  >
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
                 </button>
               </div>
             </div>
@@ -822,33 +1032,155 @@ export default function ProductPage() {
         </section>
 
         <section className="detailsCard">
-          <h2>Product Details</h2>
-          <p className="detailsDescription">
-            {product.description ||
-              "Premium product selected by NEW CITY STYLE."}
-          </p>
-
-          <div className="detailsGrid">
+          <div className="detailsHeadingRow">
             <div>
-              <h3>Highlights</h3>
-              <ul>
-                {highlights.map((item, index) => (
-                  <li key={`${item}-${index}`}>{item}</li>
-                ))}
-              </ul>
+              <span className="sectionEyebrow">NEW CITY STYLE</span>
+              <h2>Product Information</h2>
             </div>
 
-            <div>
-              <h3>Specifications</h3>
-              <div className="specificationList">
-                {specifications.map((item, index) => (
-                  <div key={`${item.label}-${index}`}>
-                    <span>{item.label || "Specification"}</span>
-                    <strong>{item.value || "—"}</strong>
-                  </div>
-                ))}
+            <div className="detailsTabs" role="tablist" aria-label="Product information tabs">
+              {[
+                ["details", "Details"],
+                ["specifications", "Specifications"],
+                ["faq", `FAQ${faqs.length > 0 ? ` (${faqs.length})` : ""}`],
+                ["lifestyle", "Lifestyle"],
+                ["shipping", "Shipping & Returns"],
+                ["reviews", "Reviews"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeDetailsTab === value}
+                  className={activeDetailsTab === value ? "detailsTabActive" : ""}
+                  onClick={() =>
+                    setActiveDetailsTab(
+                      value as
+                        | "details"
+                        | "specifications"
+                        | "faq"
+                        | "lifestyle"
+                        | "shipping"
+                        | "reviews"
+                    )
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="tabPanel" role="tabpanel">
+            {activeDetailsTab === "details" && (
+              <div className="detailsGrid">
+                <div>
+                  <h3>Product Description</h3>
+                  <p className="detailsDescription">
+                    {product.description ||
+                      "Premium product selected by NEW CITY STYLE."}
+                  </p>
+                </div>
+
+                <div>
+                  <h3>Highlights</h3>
+                  <ul>
+                    {highlights.map((item, index) => (
+                      <li key={`${item}-${index}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-            </div>
+            )}
+
+            {activeDetailsTab === "specifications" && (
+              <div>
+                <h3>Technical Specifications</h3>
+                <div className="specificationList">
+                  {specifications.map((item, index) => (
+                    <div key={`${item.label}-${index}`}>
+                      <span>{item.label || "Specification"}</span>
+                      <strong>{item.value || "—"}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeDetailsTab === "faq" && (
+              <div className="faqList">
+                <h3>Frequently Asked Questions</h3>
+                {faqs.length > 0 ? (
+                  faqs.map((item, index) => (
+                    <details key={`${item.question}-${index}`} open={index === 0}>
+                      <summary>
+                        <span>{item.question}</span>
+                        <b>+</b>
+                      </summary>
+                      <p>{item.answer}</p>
+                    </details>
+                  ))
+                ) : (
+                  <div className="emptyTabState">
+                    <strong>No FAQs added for this product yet.</strong>
+                    <span>Product questions and answers will appear here after they are saved in Admin.</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeDetailsTab === "lifestyle" && (
+              <div>
+                <div className="lifestyleHeader">
+                  <h3>{product.lifestyle_title || "Style Inspiration"}</h3>
+                  <p>
+                    {product.lifestyle_subtitle ||
+                      "Discover the premium look, feel and styling of this product."}
+                  </p>
+                </div>
+
+                {lifestyleItems.length > 0 ? (
+                  <div className="lifestyleGrid">
+                    {lifestyleItems.map((item, index) => (
+                      <article key={`${item.image}-${index}`}>
+                        <img src={item.image} alt={item.title || `${productName} lifestyle ${index + 1}`} />
+                        {(item.title || item.subtitle) && (
+                          <div>
+                            {item.title && <strong>{item.title}</strong>}
+                            {item.subtitle && <span>{item.subtitle}</span>}
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="emptyTabState">
+                    <strong>Lifestyle gallery coming soon.</strong>
+                    <span>Saved lifestyle images will appear here automatically.</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeDetailsTab === "shipping" && (
+              <div className="shippingTabContent">
+                <h3>Shipping & Returns</h3>
+                <p>{shippingReturns}</p>
+                <div className="shippingPoints">
+                  <span>🚚 Fast delivery across India</span>
+                  <span>↺ Easy 7-day returns</span>
+                  <span>🔒 Secure checkout</span>
+                  <span>✓ Quality checked before dispatch</span>
+                </div>
+              </div>
+            )}
+
+            {activeDetailsTab === "reviews" && (
+              <ProductReviews
+                productId={product.id}
+                productName={getProductName(product)}
+              />
+            )}
           </div>
         </section>
 
@@ -1347,21 +1679,53 @@ export default function ProductPage() {
         }
 
         .quantityControl button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 46px;
+          min-width: 46px;
           height: 46px;
+          padding: 0;
           border: 0;
-          background: white;
+          border-radius: 0;
+          background: #ffffff;
           color: #0a2e73;
-          font-size: 23px;
-          font-weight: 800;
           cursor: pointer;
+          opacity: 1;
+          -webkit-tap-highlight-color: transparent;
+          touch-action: manipulation;
         }
 
-        .quantityControl button:hover {
+        .quantityControl button svg {
+          display: block;
+          width: 23px;
+          height: 23px;
+          overflow: visible;
+          fill: none;
+          stroke: currentColor;
+          stroke-width: 2.8;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+          pointer-events: none;
+        }
+
+        .quantityControl button:hover,
+        .quantityControl button:focus-visible {
           background: #eef3ff;
+          color: #0a2e73;
+          outline: none;
+        }
+
+        .quantityControl button:active {
+          background: #f8f4ec;
         }
 
         .quantityControl strong {
+          color: #0a2e73;
           text-align: center;
+          font-size: 16px;
+          font-weight: 800;
+          line-height: 1;
         }
 
         .stockCard {
@@ -1578,6 +1942,188 @@ export default function ProductPage() {
           color: #344054;
         }
 
+        .detailsHeadingRow {
+          display: flex;
+          align-items: flex-end;
+          justify-content: space-between;
+          gap: 24px;
+          margin-bottom: 24px;
+        }
+
+        .sectionEyebrow {
+          display: block;
+          margin-bottom: 5px;
+          color: #d4af37;
+          font-size: 12px;
+          font-weight: 900;
+          letter-spacing: 1.4px;
+        }
+
+        .detailsTabs {
+          display: flex;
+          gap: 8px;
+          max-width: 100%;
+          padding-bottom: 3px;
+          overflow-x: auto;
+          scrollbar-width: thin;
+        }
+
+        .detailsTabs button {
+          flex: 0 0 auto;
+          min-height: 42px;
+          padding: 0 16px;
+          border: 1px solid rgba(10, 46, 115, 0.14);
+          border-radius: 999px;
+          background: #ffffff;
+          color: #0a2e73;
+          font-weight: 800;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .detailsTabs button:hover,
+        .detailsTabs .detailsTabActive {
+          border-color: #0a2e73;
+          background: #0a2e73;
+          color: #ffffff;
+          box-shadow: 0 7px 18px rgba(10, 46, 115, 0.18);
+        }
+
+        .tabPanel {
+          min-height: 220px;
+          padding-top: 4px;
+        }
+
+        .faqList {
+          max-width: 980px;
+        }
+
+        .faqList > h3,
+        .shippingTabContent > h3,
+        .lifestyleHeader h3 {
+          margin: 0 0 16px;
+          color: #0a2e73;
+        }
+
+        .faqList details {
+          margin-bottom: 12px;
+          overflow: hidden;
+          border: 1px solid rgba(10, 46, 115, 0.12);
+          border-radius: 14px;
+          background: #ffffff;
+        }
+
+        .faqList summary {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          padding: 17px 18px;
+          color: #0a2e73;
+          font-weight: 850;
+          cursor: pointer;
+          list-style: none;
+        }
+
+        .faqList summary::-webkit-details-marker {
+          display: none;
+        }
+
+        .faqList summary b {
+          color: #d4af37;
+          font-size: 22px;
+          transition: transform 0.2s ease;
+        }
+
+        .faqList details[open] summary b {
+          transform: rotate(45deg);
+        }
+
+        .faqList details p {
+          margin: 0;
+          padding: 0 18px 18px;
+          color: #586277;
+          line-height: 1.75;
+          white-space: pre-line;
+        }
+
+        .emptyTabState {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          padding: 26px;
+          border: 1px dashed rgba(10, 46, 115, 0.24);
+          border-radius: 16px;
+          background: #f8f4ec;
+          color: #586277;
+        }
+
+        .emptyTabState strong {
+          color: #0a2e73;
+        }
+
+        .lifestyleHeader p,
+        .shippingTabContent p {
+          max-width: 900px;
+          color: #586277;
+          line-height: 1.75;
+          white-space: pre-line;
+        }
+
+        .lifestyleGrid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 16px;
+          margin-top: 22px;
+        }
+
+        .lifestyleGrid article {
+          overflow: hidden;
+          border: 1px solid rgba(10, 46, 115, 0.1);
+          border-radius: 18px;
+          background: #ffffff;
+        }
+
+        .lifestyleGrid img {
+          display: block;
+          width: 100%;
+          height: 290px;
+          object-fit: cover;
+        }
+
+        .lifestyleGrid article > div {
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+          padding: 14px;
+        }
+
+        .lifestyleGrid strong {
+          color: #0a2e73;
+        }
+
+        .lifestyleGrid span {
+          color: #697386;
+          font-size: 14px;
+        }
+
+        .shippingPoints {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+          max-width: 900px;
+          margin-top: 22px;
+        }
+
+        .shippingPoints span {
+          padding: 15px;
+          border: 1px solid rgba(10, 46, 115, 0.1);
+          border-radius: 13px;
+          background: #f8f4ec;
+          color: #0a2e73;
+          font-weight: 750;
+        }
+
         .trustGrid {
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1738,10 +2284,6 @@ export default function ProductPage() {
           }
         }
       `}</style>
-      <ProductReviews
-  productId={product.id}
-  productName={getProductName(product)}
-/>
     </main>
   );
 }

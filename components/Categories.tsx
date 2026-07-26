@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -9,37 +9,75 @@ type ProductRow = {
   subcategory?: string | null;
 };
 
+type CategoryRow = Record<string, unknown> & {
+  id?: string | number | null;
+  name?: string | null;
+  title?: string | null;
+  category_name?: string | null;
+  slug?: string | null;
+  description?: string | null;
+  subtitle?: string | null;
+  image_url?: string | null;
+  image?: string | null;
+  category_image?: string | null;
+  cover_image?: string | null;
+  banner_image?: string | null;
+  thumbnail_url?: string | null;
+  active?: boolean | null;
+  is_active?: boolean | null;
+  status?: string | null;
+  sort_order?: number | null;
+  display_order?: number | null;
+  position?: number | null;
+};
+
 type CategoryCard = {
   title: string;
   subtitle: string;
-  icon: string;
+  imageUrl: string;
   route: string;
+  sortOrder: number;
+};
+
+const fallbackImages: Record<string, string> = {
+  men: "https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&w=900&q=85",
+  women:
+    "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&w=900&q=85",
+  kids: "https://images.unsplash.com/photo-1503919545889-aef636e10ad4?auto=format&fit=crop&w=900&q=85",
+  sarees:
+    "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=900&q=85",
+  default:
+    "https://images.unsplash.com/photo-1445205170230-053b83016050?auto=format&fit=crop&w=900&q=85",
 };
 
 const defaultCategories: CategoryCard[] = [
   {
     title: "Men",
     subtitle: "Premium shirts, jeans and everyday fashion",
-    icon: "👔",
+    imageUrl: fallbackImages.men,
     route: "/search?q=Men",
+    sortOrder: 1,
   },
   {
     title: "Women",
     subtitle: "Elegant sarees, tops and modern fashion",
-    icon: "👗",
+    imageUrl: fallbackImages.women,
     route: "/search?q=Women",
+    sortOrder: 2,
   },
   {
     title: "Kids",
     subtitle: "Comfortable and stylish kids wear",
-    icon: "🧒",
+    imageUrl: fallbackImages.kids,
     route: "/search?q=Kids",
+    sortOrder: 3,
   },
   {
     title: "Sarees",
     subtitle: "Beautiful sarees for every occasion",
-    icon: "🥻",
+    imageUrl: fallbackImages.sarees,
     route: "/search?q=Sarees",
+    sortOrder: 4,
   },
 ];
 
@@ -56,30 +94,98 @@ function formatCategoryName(value: string) {
     .split(/\s+/)
     .map(
       (word) =>
-        word.charAt(0).toUpperCase() +
-        word.slice(1).toLowerCase()
+        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
     )
     .join(" ");
 }
 
-function getCategoryIcon(category: string) {
+function getStringValue(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return "";
+}
+
+function getNumberValue(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function isCategoryActive(category: CategoryRow) {
+  if (category.active === false || category.is_active === false) {
+    return false;
+  }
+
+  const status = getStringValue(category.status).toLowerCase();
+
+  if (
+    status === "inactive" ||
+    status === "disabled" ||
+    status === "draft"
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function getCategoryName(category: CategoryRow) {
+  return formatCategoryName(
+    getStringValue(
+      category.name,
+      category.title,
+      category.category_name
+    )
+  );
+}
+
+function getSavedCategoryImage(category: CategoryRow) {
+  return getStringValue(
+    category.image_url,
+    category.image,
+    category.category_image,
+    category.cover_image,
+    category.banner_image,
+    category.thumbnail_url
+  );
+}
+
+function getFallbackImage(category: string) {
   const value = normalizeCategory(category);
 
   if (
-    value.includes("men") ||
+    value === "men" ||
+    value.includes("mens") ||
     value.includes("shirt") ||
     value.includes("jean")
   ) {
-    return "👔";
+    return fallbackImages.men;
   }
 
   if (
-    value.includes("women") ||
+    value === "women" ||
+    value.includes("womens") ||
     value.includes("ladies") ||
     value.includes("top") ||
     value.includes("dress")
   ) {
-    return "👗";
+    return fallbackImages.women;
   }
 
   if (
@@ -88,50 +194,33 @@ function getCategoryIcon(category: string) {
     value.includes("girl") ||
     value.includes("child")
   ) {
-    return "🧒";
+    return fallbackImages.kids;
   }
 
-  if (
-    value.includes("saree") ||
-    value.includes("sari")
-  ) {
-    return "🥻";
+  if (value.includes("saree") || value.includes("sari")) {
+    return fallbackImages.sarees;
   }
 
-  if (
-    value.includes("ethnic") ||
-    value.includes("festive")
-  ) {
-    return "✨";
-  }
-
-  if (
-    value.includes("sports") ||
-    value.includes("active")
-  ) {
-    return "🏃";
-  }
-
-  return "🛍️";
+  return fallbackImages.default;
 }
 
 function getCategorySubtitle(category: string) {
   const value = normalizeCategory(category);
 
-  if (value.includes("men")) {
-    return "Premium styles selected for modern men";
+  if (value === "men" || value.includes("mens")) {
+    return "Premium shirts, jeans and everyday fashion";
   }
 
-  if (value.includes("women")) {
-    return "Elegant fashion for every occasion";
+  if (value === "women" || value.includes("womens")) {
+    return "Elegant sarees, tops and modern fashion";
   }
 
   if (value.includes("kid")) {
-    return "Comfortable and stylish kids collection";
+    return "Comfortable and stylish kids wear";
   }
 
-  if (value.includes("saree")) {
-    return "Beautiful sarees for celebrations and daily wear";
+  if (value.includes("saree") || value.includes("sari")) {
+    return "Beautiful sarees for every occasion";
   }
 
   return `Explore our premium ${formatCategoryName(
@@ -139,12 +228,37 @@ function getCategorySubtitle(category: string) {
   )} collection`;
 }
 
+function getCategoryRoute(categoryName: string) {
+  return `/search?q=${encodeURIComponent(categoryName)}`;
+}
+
+function toCategoryCard(category: CategoryRow): CategoryCard | null {
+  const title = getCategoryName(category);
+
+  if (!title || !isCategoryActive(category)) {
+    return null;
+  }
+
+  return {
+    title,
+    subtitle:
+      getStringValue(category.description, category.subtitle) ||
+      getCategorySubtitle(title),
+    imageUrl: getSavedCategoryImage(category) || getFallbackImage(title),
+    route: getCategoryRoute(title),
+    sortOrder: getNumberValue(
+      category.sort_order,
+      category.display_order,
+      category.position
+    ),
+  };
+}
+
 export default function Categories() {
   const router = useRouter();
 
-  const [databaseCategories, setDatabaseCategories] = useState<
-    string[]
-  >([]);
+  const [savedCategories, setSavedCategories] = useState<CategoryCard[]>([]);
+  const [productCategories, setProductCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -155,41 +269,67 @@ export default function Categories() {
     setLoading(true);
 
     try {
-      const { data, error } = await supabase
-        .from("products")
-        .select("category,subcategory");
+      const [categoriesResult, productsResult] = await Promise.all([
+        supabase.from("categories").select("*"),
+        supabase.from("products").select("category,subcategory"),
+      ]);
 
-      if (error) {
-        throw error;
+      if (categoriesResult.error) {
+        console.error(
+          "Categories table load error:",
+          categoriesResult.error
+        );
       }
 
-      const uniqueMap = new Map<string, string>();
-
-      ((data as ProductRow[]) || []).forEach((item) => {
-        [item.category, item.subcategory].forEach((value) => {
-          const cleanValue = value?.trim();
-
-          if (!cleanValue) return;
-
-          const normalized = normalizeCategory(cleanValue);
-
-          if (!uniqueMap.has(normalized)) {
-            uniqueMap.set(
-              normalized,
-              formatCategoryName(cleanValue)
-            );
+      const categoryCards = ((categoriesResult.data as CategoryRow[]) || [])
+        .map(toCategoryCard)
+        .filter((item): item is CategoryCard => Boolean(item))
+        .sort((a, b) => {
+          if (a.sortOrder !== b.sortOrder) {
+            return a.sortOrder - b.sortOrder;
           }
-        });
-      });
 
-      setDatabaseCategories(
-        Array.from(uniqueMap.values()).sort((a, b) =>
-          a.localeCompare(b)
-        )
-      );
+          return a.title.localeCompare(b.title);
+        });
+
+      setSavedCategories(categoryCards);
+
+      if (productsResult.error) {
+        console.error(
+          "Product categories load error:",
+          productsResult.error
+        );
+        setProductCategories([]);
+      } else {
+        const uniqueMap = new Map<string, string>();
+
+        ((productsResult.data as ProductRow[]) || []).forEach((item) => {
+          [item.category, item.subcategory].forEach((value) => {
+            const cleanValue = value?.trim();
+
+            if (!cleanValue) return;
+
+            const normalized = normalizeCategory(cleanValue);
+
+            if (!uniqueMap.has(normalized)) {
+              uniqueMap.set(
+                normalized,
+                formatCategoryName(cleanValue)
+              );
+            }
+          });
+        });
+
+        setProductCategories(
+          Array.from(uniqueMap.values()).sort((a, b) =>
+            a.localeCompare(b)
+          )
+        );
+      }
     } catch (error) {
       console.error("Categories load error:", error);
-      setDatabaseCategories([]);
+      setSavedCategories([]);
+      setProductCategories([]);
     } finally {
       setLoading(false);
     }
@@ -202,24 +342,72 @@ export default function Categories() {
       combinedMap.set(normalizeCategory(item.title), item);
     });
 
-    databaseCategories.forEach((category) => {
+    savedCategories.forEach((item) => {
+      const key = normalizeCategory(item.title);
+      const existingItem = combinedMap.get(key);
+
+      combinedMap.set(key, {
+        ...existingItem,
+        ...item,
+        subtitle: item.subtitle || existingItem?.subtitle || "",
+        imageUrl:
+          item.imageUrl ||
+          existingItem?.imageUrl ||
+          getFallbackImage(item.title),
+        route: existingItem?.route || item.route,
+      });
+    });
+
+    productCategories.forEach((category) => {
       const key = normalizeCategory(category);
 
       if (!combinedMap.has(key)) {
         combinedMap.set(key, {
           title: formatCategoryName(category),
           subtitle: getCategorySubtitle(category),
-          icon: getCategoryIcon(category),
-          route: `/search?q=${encodeURIComponent(category)}`,
+          imageUrl: getFallbackImage(category),
+          route: getCategoryRoute(category),
+          sortOrder: Number.MAX_SAFE_INTEGER,
         });
       }
     });
 
-    return Array.from(combinedMap.values()).slice(0, 8);
-  }, [databaseCategories]);
+    const priority = ["men", "women", "kids", "sarees"];
+
+    return Array.from(combinedMap.values())
+      .sort((a, b) => {
+        const aPriority = priority.indexOf(normalizeCategory(a.title));
+        const bPriority = priority.indexOf(normalizeCategory(b.title));
+
+        if (aPriority !== -1 || bPriority !== -1) {
+          if (aPriority === -1) return 1;
+          if (bPriority === -1) return -1;
+          return aPriority - bPriority;
+        }
+
+        if (a.sortOrder !== b.sortOrder) {
+          return a.sortOrder - b.sortOrder;
+        }
+
+        return a.title.localeCompare(b.title);
+      })
+      .slice(0, 8);
+  }, [productCategories, savedCategories]);
 
   function openCategory(category: CategoryCard) {
     router.push(category.route);
+  }
+
+  function handleImageError(
+    event: SyntheticEvent<HTMLImageElement>,
+    categoryTitle: string
+  ) {
+    const image = event.currentTarget;
+    const fallback = getFallbackImage(categoryTitle);
+
+    if (image.src !== fallback) {
+      image.src = fallback;
+    }
   }
 
   return (
@@ -234,8 +422,8 @@ export default function Categories() {
           <h2>Shop By Category</h2>
 
           <p className="subtitle">
-            Explore premium collections created for every member
-            of the family.
+            Explore premium collections created for every member of the
+            family.
           </p>
         </div>
 
@@ -243,10 +431,12 @@ export default function Categories() {
           <div className="categoryGrid">
             {[1, 2, 3, 4].map((item) => (
               <div className="skeletonCard" key={item}>
-                <div className="skeletonIcon" />
-                <div className="skeletonTitle" />
-                <div className="skeletonLine" />
-                <div className="skeletonButton" />
+                <div className="skeletonImage" />
+                <div className="skeletonContent">
+                  <div className="skeletonTitle" />
+                  <div className="skeletonLine" />
+                  <div className="skeletonButton" />
+                </div>
               </div>
             ))}
           </div>
@@ -260,28 +450,38 @@ export default function Categories() {
               >
                 <div className="cardGlow" />
 
-                <div className="iconWrap">
-                  <span>{item.icon}</span>
+                <div className="imageWrap">
+                  <img
+                    src={item.imageUrl}
+                    alt={`${item.title} category`}
+                    loading="lazy"
+                    onError={(event) =>
+                      handleImageError(event, item.title)
+                    }
+                  />
+                  <div className="imageOverlay" />
+
+                  <span className="categoryNumber">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
                 </div>
 
-                <span className="categoryNumber">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
+                <div className="cardContent">
+                  <h3>{item.title}</h3>
 
-                <h3>{item.title}</h3>
+                  <p>{item.subtitle}</p>
 
-                <p>{item.subtitle}</p>
-
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openCategory(item);
-                  }}
-                >
-                  Explore
-                  <span>→</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openCategory(item);
+                    }}
+                  >
+                    Explore
+                    <span>→</span>
+                  </button>
+                </div>
 
                 <div className="bottomAccent" />
               </article>
@@ -290,9 +490,8 @@ export default function Categories() {
         )}
 
         <div className="footerNote">
-          <span>✨</span>
-          Categories update automatically from products added in
-          Admin.
+          <span className="footerDot" />
+          Category images update automatically from Admin Categories.
         </div>
       </div>
 
@@ -367,8 +566,7 @@ export default function Categories() {
         .skeletonCard {
           position: relative;
           overflow: hidden;
-          min-height: 300px;
-          padding: 25px 22px 22px;
+          min-height: 340px;
           border: 1px solid rgba(10, 46, 115, 0.1);
           border-radius: 22px;
           background: rgba(255, 255, 255, 0.97);
@@ -393,6 +591,7 @@ export default function Categories() {
           position: absolute;
           top: -85px;
           right: -85px;
+          z-index: 1;
           width: 190px;
           height: 190px;
           border-radius: 50%;
@@ -401,35 +600,63 @@ export default function Categories() {
             rgba(212, 175, 55, 0.2),
             transparent 70%
           );
+          pointer-events: none;
         }
 
-        .iconWrap {
+        .imageWrap {
           position: relative;
-          z-index: 2;
-          width: 78px;
-          height: 78px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin-bottom: 24px;
-          border: 1px solid rgba(212, 175, 55, 0.45);
-          border-radius: 22px;
-          background: linear-gradient(145deg, #fff9e8, #ffffff);
-          box-shadow: 0 14px 30px rgba(212, 175, 55, 0.16);
+          width: 100%;
+          height: 180px;
+          overflow: hidden;
+          background: #f8f4ec;
         }
 
-        .iconWrap span {
-          font-size: 42px;
+        .imageWrap img {
+          width: 100%;
+          height: 100%;
+          display: block;
+          object-fit: cover;
+          object-position: center;
+          transition: transform 0.55s ease;
+        }
+
+        .categoryCard:hover .imageWrap img {
+          transform: scale(1.07);
+        }
+
+        .imageOverlay {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            180deg,
+            rgba(10, 46, 115, 0.02) 20%,
+            rgba(10, 46, 115, 0.45) 100%
+          );
+          pointer-events: none;
         }
 
         .categoryNumber {
           position: absolute;
-          top: 20px;
-          right: 20px;
-          color: rgba(10, 46, 115, 0.12);
-          font-size: 40px;
+          top: 14px;
+          right: 15px;
+          z-index: 2;
+          min-width: 48px;
+          padding: 8px 10px;
+          border: 1px solid rgba(212, 175, 55, 0.8);
+          border-radius: 12px;
+          background: rgba(10, 46, 115, 0.86);
+          color: #ffffff;
+          font-size: 17px;
           font-weight: 950;
           line-height: 1;
+          text-align: center;
+          backdrop-filter: blur(7px);
+        }
+
+        .cardContent {
+          position: relative;
+          z-index: 2;
+          padding: 20px 22px 22px;
         }
 
         h3 {
@@ -442,11 +669,11 @@ export default function Categories() {
           line-height: 1.2;
         }
 
-        .categoryCard > p {
+        .categoryCard p {
           position: relative;
           z-index: 2;
-          min-height: 48px;
-          margin: 11px 0 0;
+          min-height: 43px;
+          margin: 9px 0 0;
           color: #667085;
           font-size: 13px;
           line-height: 1.6;
@@ -461,7 +688,7 @@ export default function Categories() {
           align-items: center;
           justify-content: center;
           gap: 10px;
-          margin-top: 22px;
+          margin-top: 18px;
           border: 1px solid #d4af37;
           border-radius: 11px;
           background: linear-gradient(135deg, #d4af37, #f1d26a);
@@ -469,6 +696,14 @@ export default function Categories() {
           font-size: 13px;
           font-weight: 900;
           cursor: pointer;
+          transition:
+            transform 0.2s ease,
+            box-shadow 0.2s ease;
+        }
+
+        .categoryCard button:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 18px rgba(212, 175, 55, 0.28);
         }
 
         .bottomAccent {
@@ -476,6 +711,7 @@ export default function Categories() {
           right: 0;
           bottom: 0;
           left: 0;
+          z-index: 3;
           height: 5px;
           background: linear-gradient(
             90deg,
@@ -502,6 +738,15 @@ export default function Categories() {
           text-align: center;
         }
 
+        .footerDot {
+          width: 8px;
+          height: 8px;
+          flex: 0 0 auto;
+          border-radius: 50%;
+          background: #d4af37;
+          box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.16);
+        }
+
         .decor {
           position: absolute;
           border: 1px solid rgba(212, 175, 55, 0.22);
@@ -524,7 +769,7 @@ export default function Categories() {
           border-radius: 50%;
         }
 
-        .skeletonIcon,
+        .skeletonImage,
         .skeletonTitle,
         .skeletonLine,
         .skeletonButton {
@@ -538,16 +783,18 @@ export default function Categories() {
           animation: skeleton 1.3s infinite linear;
         }
 
-        .skeletonIcon {
-          width: 78px;
-          height: 78px;
-          border-radius: 22px;
+        .skeletonImage {
+          width: 100%;
+          height: 180px;
+        }
+
+        .skeletonContent {
+          padding: 20px 22px 22px;
         }
 
         .skeletonTitle {
           width: 62%;
           height: 22px;
-          margin-top: 24px;
           border-radius: 999px;
         }
 
@@ -594,42 +841,42 @@ export default function Categories() {
 
           .categoryCard,
           .skeletonCard {
-            min-height: 245px;
-            padding: 16px 13px;
+            min-height: 282px;
             border-radius: 17px;
           }
 
-          .iconWrap,
-          .skeletonIcon {
-            width: 58px;
-            height: 58px;
-            margin-bottom: 18px;
-            border-radius: 16px;
-          }
-
-          .iconWrap span {
-            font-size: 31px;
+          .imageWrap,
+          .skeletonImage {
+            height: 128px;
           }
 
           .categoryNumber {
-            top: 14px;
-            right: 13px;
-            font-size: 29px;
+            top: 10px;
+            right: 10px;
+            min-width: 39px;
+            padding: 7px 8px;
+            border-radius: 10px;
+            font-size: 13px;
+          }
+
+          .cardContent,
+          .skeletonContent {
+            padding: 14px 13px 15px;
           }
 
           h3 {
             font-size: 18px;
           }
 
-          .categoryCard > p {
-            min-height: 52px;
+          .categoryCard p {
+            min-height: 47px;
             font-size: 10px;
             line-height: 1.5;
           }
 
           .categoryCard button {
             min-height: 37px;
-            margin-top: 14px;
+            margin-top: 12px;
             font-size: 10px;
           }
 

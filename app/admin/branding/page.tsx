@@ -15,11 +15,25 @@ type BrandingSettings = {
   brand_name: string | null;
   tagline: string | null;
   logo_url: string | null;
+  mobile_logo_url: string | null;
   favicon_url: string | null;
   primary_color: string | null;
   secondary_color: string | null;
   font_heading: string | null;
   font_body: string | null;
+  store_phone: string | null;
+  whatsapp_number: string | null;
+  whatsapp_default_message: string | null;
+  store_email: string | null;
+  instagram_url: string | null;
+  facebook_url: string | null;
+  youtube_url: string | null;
+  twitter_url: string | null;
+  show_whatsapp_button: boolean | null;
+  show_instagram_icon: boolean | null;
+  show_facebook_icon: boolean | null;
+  show_youtube_icon: boolean | null;
+  show_twitter_icon: boolean | null;
   updated_at: string | null;
 };
 
@@ -27,22 +41,50 @@ type BrandingForm = {
   brandName: string;
   tagline: string;
   logoUrl: string;
+  mobileLogoUrl: string;
   faviconUrl: string;
   primaryColor: string;
   secondaryColor: string;
   fontHeading: string;
   fontBody: string;
+  storePhone: string;
+  whatsappNumber: string;
+  whatsappDefaultMessage: string;
+  storeEmail: string;
+  instagramUrl: string;
+  facebookUrl: string;
+  youtubeUrl: string;
+  twitterUrl: string;
+  showWhatsappButton: boolean;
+  showInstagramIcon: boolean;
+  showFacebookIcon: boolean;
+  showYoutubeIcon: boolean;
+  showTwitterIcon: boolean;
 };
 
 const defaultForm: BrandingForm = {
   brandName: "NEW CITY STYLE",
   tagline: "Style for Every Family",
   logoUrl: "",
+  mobileLogoUrl: "",
   faviconUrl: "",
   primaryColor: "#0A2E73",
   secondaryColor: "#D4AF37",
   fontHeading: "Playfair Display",
   fontBody: "Poppins",
+  storePhone: "",
+  whatsappNumber: "",
+  whatsappDefaultMessage: "Hello NEW CITY STYLE, I need help with my order.",
+  storeEmail: "",
+  instagramUrl: "",
+  facebookUrl: "",
+  youtubeUrl: "",
+  twitterUrl: "",
+  showWhatsappButton: true,
+  showInstagramIcon: true,
+  showFacebookIcon: true,
+  showYoutubeIcon: true,
+  showTwitterIcon: true,
 };
 
 const headingFonts = [
@@ -74,12 +116,18 @@ export default function BrandingPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<{
+    type: "success" | "error" | "info";
+    message: string;
+  } | null>(null);
 
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingMobileLogo, setUploadingMobileLogo] = useState(false);
   const [uploadingFavicon, setUploadingFavicon] =
     useState(false);
 
   const [logoMessage, setLogoMessage] = useState("");
+  const [mobileLogoMessage, setMobileLogoMessage] = useState("");
   const [faviconMessage, setFaviconMessage] = useState("");
 
   const [lastUpdated, setLastUpdated] = useState<
@@ -119,11 +167,25 @@ export default function BrandingPage() {
             brand_name: defaultForm.brandName,
             tagline: defaultForm.tagline,
             logo_url: null,
+            mobile_logo_url: null,
             favicon_url: null,
             primary_color: defaultForm.primaryColor,
             secondary_color: defaultForm.secondaryColor,
             font_heading: defaultForm.fontHeading,
             font_body: defaultForm.fontBody,
+            store_phone: null,
+            whatsapp_number: null,
+            whatsapp_default_message: defaultForm.whatsappDefaultMessage,
+            store_email: null,
+            instagram_url: null,
+            facebook_url: null,
+            youtube_url: null,
+            twitter_url: null,
+            show_whatsapp_button: true,
+            show_instagram_icon: true,
+            show_facebook_icon: true,
+            show_youtube_icon: true,
+            show_twitter_icon: true,
             updated_at: new Date().toISOString(),
           })
           .select()
@@ -161,6 +223,8 @@ export default function BrandingPage() {
 
       logoUrl: settings.logo_url || "",
 
+      mobileLogoUrl: settings.mobile_logo_url || "",
+
       faviconUrl: settings.favicon_url || "",
 
       primaryColor:
@@ -175,6 +239,21 @@ export default function BrandingPage() {
 
       fontBody:
         settings.font_body || defaultForm.fontBody,
+
+      storePhone: settings.store_phone || "",
+      whatsappNumber: settings.whatsapp_number || "",
+      whatsappDefaultMessage:
+        settings.whatsapp_default_message || defaultForm.whatsappDefaultMessage,
+      storeEmail: settings.store_email || "",
+      instagramUrl: settings.instagram_url || "",
+      facebookUrl: settings.facebook_url || "",
+      youtubeUrl: settings.youtube_url || "",
+      twitterUrl: settings.twitter_url || "",
+      showWhatsappButton: settings.show_whatsapp_button ?? true,
+      showInstagramIcon: settings.show_instagram_icon ?? true,
+      showFacebookIcon: settings.show_facebook_icon ?? true,
+      showYoutubeIcon: settings.show_youtube_icon ?? true,
+      showTwitterIcon: settings.show_twitter_icon ?? true,
     });
 
     setLastUpdated(settings.updated_at || null);
@@ -192,6 +271,31 @@ export default function BrandingPage() {
 
   function validateHexColor(value: string) {
     return /^#[0-9A-Fa-f]{6}$/.test(value.trim());
+  }
+
+  function validatePhone(value: string, required = false) {
+    const phone = value.trim();
+    if (!phone) return !required;
+    return /^\+?[1-9]\d{7,14}$/.test(phone.replace(/[\s()-]/g, ""));
+  }
+
+  function validateEmail(value: string) {
+    const email = value.trim();
+    if (!email) return true;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  function validateUrl(value: string, allowedHosts: string[]) {
+    const input = value.trim();
+    if (!input) return true;
+    try {
+      const parsed = new URL(input);
+      if (!["http:", "https:"].includes(parsed.protocol)) return false;
+      const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+      return allowedHosts.some((allowed) => host === allowed || host.endsWith(`.${allowed}`));
+    } catch {
+      return false;
+    }
   }
 
   function validateForm() {
@@ -226,6 +330,38 @@ export default function BrandingPage() {
 
     if (!form.fontBody.trim()) {
       alert("Please select a body font.");
+      return false;
+    }
+
+    if (!validatePhone(form.storePhone)) {
+      alert("Please enter a valid store phone number.");
+      return false;
+    }
+
+    if (!validatePhone(form.whatsappNumber, form.showWhatsappButton)) {
+      alert("Please enter a valid WhatsApp number with country code, for example +919876543210.");
+      return false;
+    }
+
+    if (!validateEmail(form.storeEmail)) {
+      alert("Please enter a valid store email address.");
+      return false;
+    }
+
+    if (!validateUrl(form.instagramUrl, ["instagram.com"])) {
+      alert("Please enter a valid Instagram URL.");
+      return false;
+    }
+    if (!validateUrl(form.facebookUrl, ["facebook.com", "fb.com"])) {
+      alert("Please enter a valid Facebook URL.");
+      return false;
+    }
+    if (!validateUrl(form.youtubeUrl, ["youtube.com", "youtu.be"])) {
+      alert("Please enter a valid YouTube URL.");
+      return false;
+    }
+    if (!validateUrl(form.twitterUrl, ["x.com", "twitter.com"])) {
+      alert("Please enter a valid X / Twitter URL.");
       return false;
     }
 
@@ -350,6 +486,33 @@ export default function BrandingPage() {
     }
   }
 
+  async function uploadMobileLogo(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!validateImage(file, "logo")) {
+      event.target.value = "";
+      return;
+    }
+    setUploadingMobileLogo(true);
+    setMobileLogoMessage("");
+    try {
+      const publicUrl = await uploadBrandAsset(file, "mobile-logos");
+      setField("mobileLogoUrl", publicUrl);
+      setMobileLogoMessage(
+        "Mobile logo uploaded successfully. Click Save Branding Settings."
+      );
+    } catch (error) {
+      console.error(error);
+      const message = error instanceof Error ? error.message : "Unable to upload mobile logo.";
+      alert(`Mobile logo upload failed: ${message}`);
+    } finally {
+      setUploadingMobileLogo(false);
+      event.target.value = "";
+    }
+  }
+
   async function uploadFavicon(
     event: ChangeEvent<HTMLInputElement>
   ) {
@@ -405,6 +568,17 @@ export default function BrandingPage() {
     );
   }
 
+  function removeMobileLogo() {
+    const confirmed = window.confirm(
+      "Remove the current mobile logo from Branding Settings?"
+    );
+    if (!confirmed) return;
+    setField("mobileLogoUrl", "");
+    setMobileLogoMessage(
+      "Mobile logo removed from the form. Click Save Branding Settings."
+    );
+  }
+
   function removeFavicon() {
     const confirmed = window.confirm(
       "Remove the current favicon from Branding Settings?"
@@ -427,16 +601,36 @@ export default function BrandingPage() {
     if (!validateForm()) return;
 
     setSaving(true);
+    setSaveStatus({
+      type: "info",
+      message: settingsId === null
+        ? "Saving your branding settings..."
+        : "Updating your branding settings...",
+    });
 
     const brandingData = {
       brand_name: form.brandName.trim(),
       tagline: form.tagline.trim(),
       logo_url: form.logoUrl.trim() || null,
+      mobile_logo_url: form.mobileLogoUrl.trim() || null,
       favicon_url: form.faviconUrl.trim() || null,
       primary_color: form.primaryColor.trim(),
       secondary_color: form.secondaryColor.trim(),
       font_heading: form.fontHeading.trim(),
       font_body: form.fontBody.trim(),
+      store_phone: form.storePhone.trim() || null,
+      whatsapp_number: form.whatsappNumber.replace(/[\s()-]/g, "").trim() || null,
+      whatsapp_default_message: form.whatsappDefaultMessage.trim() || null,
+      store_email: form.storeEmail.trim().toLowerCase() || null,
+      instagram_url: form.instagramUrl.trim() || null,
+      facebook_url: form.facebookUrl.trim() || null,
+      youtube_url: form.youtubeUrl.trim() || null,
+      twitter_url: form.twitterUrl.trim() || null,
+      show_whatsapp_button: form.showWhatsappButton,
+      show_instagram_icon: form.showInstagramIcon,
+      show_facebook_icon: form.showFacebookIcon,
+      show_youtube_icon: form.showYoutubeIcon,
+      show_twitter_icon: form.showTwitterIcon,
       updated_at: new Date().toISOString(),
     };
 
@@ -450,9 +644,9 @@ export default function BrandingPage() {
       if (error) {
         console.error(error);
 
-        alert(
-          `Unable to save branding settings: ${error.message}`
-        );
+        const errorMessage = `Unable to save branding settings: ${error.message}`;
+        setSaveStatus({ type: "error", message: errorMessage });
+        alert(errorMessage);
 
         setSaving(false);
         return;
@@ -470,9 +664,9 @@ export default function BrandingPage() {
       if (error) {
         console.error(error);
 
-        alert(
-          `Unable to update branding settings: ${error.message}`
-        );
+        const errorMessage = `Unable to update branding settings: ${error.message}`;
+        setSaveStatus({ type: "error", message: errorMessage });
+        alert(errorMessage);
 
         setSaving(false);
         return;
@@ -482,9 +676,15 @@ export default function BrandingPage() {
     }
 
     setLogoMessage("");
+    setMobileLogoMessage("");
     setFaviconMessage("");
 
-    alert("Branding settings saved successfully.");
+    setSaveStatus({
+      type: "success",
+      message: settingsId === null
+        ? "Branding settings saved successfully."
+        : "Branding settings updated successfully.",
+    });
 
     setSaving(false);
   }
@@ -498,7 +698,12 @@ export default function BrandingPage() {
 
     setForm(defaultForm);
     setLogoMessage("");
+    setMobileLogoMessage("");
     setFaviconMessage("");
+    setSaveStatus({
+      type: "info",
+      message: "Recommended NEW CITY STYLE branding values restored in the form. Click Save Branding to apply them.",
+    });
   }
 
   if (loading) {
@@ -538,7 +743,7 @@ export default function BrandingPage() {
     );
   }
 
-  const uploading = uploadingLogo || uploadingFavicon;
+  const uploading = uploadingLogo || uploadingMobileLogo || uploadingFavicon;
 
   return (
     <main style={mainStyle}>
@@ -594,6 +799,13 @@ export default function BrandingPage() {
           />
 
           <SummaryCard
+            icon="📱"
+            title="Mobile Logo"
+            value={form.mobileLogoUrl ? "Uploaded" : "Not Uploaded"}
+            positive={Boolean(form.mobileLogoUrl)}
+          />
+
+          <SummaryCard
             icon="🌐"
             title="Favicon"
             value={
@@ -617,12 +829,55 @@ export default function BrandingPage() {
 
         <div className="branding-layout">
           <form
+            id="branding-settings-form"
             onSubmit={saveBrandingSettings}
             style={{
               display: "grid",
               gap: "22px",
             }}
           >
+            <section className="branding-top-save-bar">
+              <div className="branding-top-save-copy">
+                <strong>Branding Settings</strong>
+                <span>Save your logo, colours, contact details and social links.</span>
+              </div>
+
+              <button
+                type="submit"
+                disabled={saving || uploading}
+                className="branding-sticky-save-button"
+                style={{
+                  background: form.primaryColor,
+                  opacity: saving || uploading ? 0.7 : 1,
+                  cursor: saving || uploading ? "not-allowed" : "pointer",
+                }}
+              >
+                <span aria-hidden="true">{saving ? "↻" : "✓"}</span>
+                {saving
+                  ? "Saving..."
+                  : uploading
+                    ? "Uploading..."
+                    : settingsId === null
+                      ? "Save Branding"
+                      : "Update Branding"}
+              </button>
+            </section>
+
+            {saveStatus && (
+              <div
+                role={saveStatus.type === "error" ? "alert" : "status"}
+                className={`branding-save-message branding-save-message-${saveStatus.type}`}
+              >
+                <span aria-hidden="true">
+                  {saveStatus.type === "success"
+                    ? "✓"
+                    : saveStatus.type === "error"
+                      ? "!"
+                      : "i"}
+                </span>
+                <span>{saveStatus.message}</span>
+              </div>
+            )}
             <Panel
               title="Brand Identity"
               subtitle="Configure the public brand name and tagline."
@@ -709,6 +964,48 @@ export default function BrandingPage() {
                       event.target.value
                     )
                   }
+                  style={inputStyle}
+                />
+              </Field>
+            </Panel>
+
+            <Panel
+              title="Mobile Logo"
+              subtitle="Upload a compact logo for mobile navigation and small screens."
+            >
+              <label style={uploadAreaStyle}>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp"
+                  onChange={uploadMobileLogo}
+                  disabled={uploadingMobileLogo}
+                  style={{ display: "none" }}
+                />
+                <div style={{ fontSize: "38px" }}>📱</div>
+                <strong style={uploadTitleStyle}>
+                  {uploadingMobileLogo ? "Uploading Mobile Logo..." : "Click to Select Mobile Logo"}
+                </strong>
+                <span style={uploadSubtitleStyle}>JPG, PNG or WEBP — Maximum 5 MB</span>
+              </label>
+
+              {mobileLogoMessage && (
+                <div style={successMessageStyle}>✅ {mobileLogoMessage}</div>
+              )}
+
+              {form.mobileLogoUrl && (
+                <UploadedAsset
+                  title="Mobile logo uploaded"
+                  imageUrl={form.mobileLogoUrl}
+                  onRemove={removeMobileLogo}
+                  size="large"
+                />
+              )}
+
+              <Field label="Mobile Logo URL">
+                <input
+                  value={form.mobileLogoUrl}
+                  placeholder="Uploaded mobile logo URL appears automatically"
+                  onChange={(event) => setField("mobileLogoUrl", event.target.value)}
                   style={inputStyle}
                 />
               </Field>
@@ -913,6 +1210,51 @@ export default function BrandingPage() {
               </div>
             </Panel>
 
+            <Panel
+              title="Contact Details"
+              subtitle="Manage the store contact details used across the website."
+            >
+              <div className="two-column-fields">
+                <Field label="Store Phone Number">
+                  <input value={form.storePhone} placeholder="+919876543210" onChange={(e) => setField("storePhone", e.target.value)} style={inputStyle} />
+                </Field>
+                <Field label="Store Email Address">
+                  <input type="email" value={form.storeEmail} placeholder="support@yourstore.com" onChange={(e) => setField("storeEmail", e.target.value)} style={inputStyle} />
+                </Field>
+                <Field label="WhatsApp Number with Country Code">
+                  <input value={form.whatsappNumber} placeholder="+919876543210" onChange={(e) => setField("whatsappNumber", e.target.value)} style={inputStyle} />
+                </Field>
+                <Field label="WhatsApp Default Message">
+                  <textarea value={form.whatsappDefaultMessage} maxLength={500} rows={4} onChange={(e) => setField("whatsappDefaultMessage", e.target.value)} style={{...inputStyle, resize: "vertical"}} />
+                </Field>
+              </div>
+            </Panel>
+
+            <Panel
+              title="Social Media"
+              subtitle="Add the official NEW CITY STYLE social profile URLs."
+            >
+              <div className="two-column-fields">
+                <Field label="Instagram URL"><input value={form.instagramUrl} placeholder="https://instagram.com/yourprofile" onChange={(e) => setField("instagramUrl", e.target.value)} style={inputStyle} /></Field>
+                <Field label="Facebook URL"><input value={form.facebookUrl} placeholder="https://facebook.com/yourpage" onChange={(e) => setField("facebookUrl", e.target.value)} style={inputStyle} /></Field>
+                <Field label="YouTube URL"><input value={form.youtubeUrl} placeholder="https://youtube.com/@yourchannel" onChange={(e) => setField("youtubeUrl", e.target.value)} style={inputStyle} /></Field>
+                <Field label="X / Twitter URL"><input value={form.twitterUrl} placeholder="https://x.com/yourprofile" onChange={(e) => setField("twitterUrl", e.target.value)} style={inputStyle} /></Field>
+              </div>
+            </Panel>
+
+            <Panel
+              title="Visibility Controls"
+              subtitle="Show or hide WhatsApp and social icons on the public website."
+            >
+              <div style={{ display: "grid", gap: "12px" }}>
+                <ToggleRow label="Show WhatsApp floating button" checked={form.showWhatsappButton} onChange={(v) => setField("showWhatsappButton", v)} />
+                <ToggleRow label="Show Instagram icon" checked={form.showInstagramIcon} onChange={(v) => setField("showInstagramIcon", v)} />
+                <ToggleRow label="Show Facebook icon" checked={form.showFacebookIcon} onChange={(v) => setField("showFacebookIcon", v)} />
+                <ToggleRow label="Show YouTube icon" checked={form.showYoutubeIcon} onChange={(v) => setField("showYoutubeIcon", v)} />
+                <ToggleRow label="Show X / Twitter icon" checked={form.showTwitterIcon} onChange={(v) => setField("showTwitterIcon", v)} />
+              </div>
+            </Panel>
+
             <section style={savePanelStyle}>
               <button
                 type="button"
@@ -937,10 +1279,12 @@ export default function BrandingPage() {
                 }}
               >
                 {saving
-                  ? "Saving Branding..."
+                  ? "Saving..."
                   : uploading
                     ? "Uploading Images..."
-                    : "Save Branding Settings"}
+                    : settingsId === null
+                      ? "Save Branding"
+                      : "Update Branding"}
               </button>
             </section>
           </form>
@@ -1189,7 +1533,145 @@ export default function BrandingPage() {
         </div>
       </div>
 
+      <div className="branding-mobile-save-bar">
+        <div className="branding-mobile-save-copy">
+          <strong>{saving ? "Saving changes..." : "Branding changes"}</strong>
+          <span>{saveStatus?.type === "success" ? "Saved successfully" : "Tap to save all settings"}</span>
+        </div>
+
+        <button
+          type="submit"
+          form="branding-settings-form"
+          disabled={saving || uploading}
+          className="branding-mobile-save-button"
+          style={{
+            background: form.primaryColor,
+            opacity: saving || uploading ? 0.7 : 1,
+            cursor: saving || uploading ? "not-allowed" : "pointer",
+          }}
+        >
+          {saving
+            ? "Saving..."
+            : uploading
+              ? "Uploading..."
+              : settingsId === null
+                ? "Save"
+                : "Update"}
+        </button>
+      </div>
+
       <style jsx global>{`
+        .branding-top-save-bar {
+          position: sticky;
+          top: 12px;
+          z-index: 40;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 18px;
+          padding: 14px 16px;
+          border: 1px solid rgba(212, 175, 55, 0.55);
+          border-radius: 16px;
+          background: rgba(255, 255, 255, 0.96);
+          box-shadow: 0 12px 32px rgba(10, 46, 115, 0.18);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+        }
+
+        .branding-top-save-copy {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+
+        .branding-top-save-copy strong {
+          color: #0a2e73;
+          font-size: 16px;
+        }
+
+        .branding-top-save-copy span {
+          color: #6b7280;
+          font-size: 12px;
+          line-height: 1.4;
+        }
+
+        .branding-sticky-save-button {
+          flex: 0 0 auto;
+          min-height: 44px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          border: none;
+          border-radius: 11px;
+          padding: 11px 18px;
+          color: #ffffff;
+          font-size: 14px;
+          font-weight: 900;
+          box-shadow: 0 8px 20px rgba(10, 46, 115, 0.24);
+        }
+
+        .branding-save-message {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          border-radius: 12px;
+          padding: 13px 15px;
+          font-size: 14px;
+          font-weight: 800;
+          line-height: 1.5;
+        }
+
+        .branding-save-message > span:first-child {
+          width: 24px;
+          height: 24px;
+          flex: 0 0 24px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          font-size: 13px;
+          font-weight: 900;
+        }
+
+        .branding-save-message-success {
+          color: #166534;
+          background: #f0fdf4;
+          border: 1px solid #86efac;
+        }
+
+        .branding-save-message-success > span:first-child {
+          color: #ffffff;
+          background: #16a34a;
+        }
+
+        .branding-save-message-error {
+          color: #991b1b;
+          background: #fef2f2;
+          border: 1px solid #fca5a5;
+        }
+
+        .branding-save-message-error > span:first-child {
+          color: #ffffff;
+          background: #dc2626;
+        }
+
+        .branding-save-message-info {
+          color: #0a2e73;
+          background: #eff6ff;
+          border: 1px solid #93c5fd;
+        }
+
+        .branding-save-message-info > span:first-child {
+          color: #ffffff;
+          background: #0a2e73;
+        }
+
+        .branding-mobile-save-bar {
+          display: none;
+        }
+
         .branding-summary-grid {
           display: grid;
           grid-template-columns: repeat(
@@ -1235,9 +1717,94 @@ export default function BrandingPage() {
             grid-template-columns: 1fr;
             gap: 0;
           }
+
+          .branding-top-save-bar {
+            top: 8px;
+            padding: 11px 12px;
+            border-radius: 14px;
+          }
+
+          .branding-top-save-copy span {
+            display: none;
+          }
+
+          .branding-sticky-save-button {
+            min-height: 42px;
+            padding: 10px 13px;
+            font-size: 13px;
+          }
+
+          .branding-mobile-save-bar {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px max(14px, env(safe-area-inset-left)) calc(10px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-right));
+            background: rgba(255, 255, 255, 0.98);
+            border-top: 1px solid rgba(212, 175, 55, 0.55);
+            box-shadow: 0 -10px 28px rgba(10, 46, 115, 0.18);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+          }
+
+          .branding-mobile-save-copy {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+          }
+
+          .branding-mobile-save-copy strong {
+            color: #0a2e73;
+            font-size: 13px;
+          }
+
+          .branding-mobile-save-copy span {
+            color: #6b7280;
+            font-size: 11px;
+          }
+
+          .branding-mobile-save-button {
+            min-width: 105px;
+            min-height: 44px;
+            border: none;
+            border-radius: 11px;
+            padding: 10px 16px;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 900;
+            box-shadow: 0 7px 18px rgba(10, 46, 115, 0.24);
+          }
         }
       `}</style>
     </main>
+  );
+}
+
+function ToggleRow({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label style={toggleRowStyle}>
+      <span style={{ color: "#0A2E73", fontWeight: 800 }}>{label}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        style={{ width: 22, height: 22, accentColor: "#0A2E73", cursor: "pointer" }}
+      />
+    </label>
   );
 }
 
@@ -1469,6 +2036,17 @@ function PaletteRow({
   );
 }
 
+const toggleRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "16px",
+  padding: "14px 16px",
+  border: "1px solid #E5E7EB",
+  borderRadius: "12px",
+  background: "#F8F4EC",
+};
+
 const loadingPageStyle: CSSProperties = {
   minHeight: "100vh",
   background: "#F8F4EC",
@@ -1481,7 +2059,7 @@ const loadingPageStyle: CSSProperties = {
 const mainStyle: CSSProperties = {
   minHeight: "100vh",
   background: "#F8F4EC",
-  padding: "30px 20px 80px",
+  padding: "30px 20px 125px",
 };
 
 const containerStyle: CSSProperties = {

@@ -485,12 +485,43 @@ export default function CategoriesPage() {
 
         <div className="categories-page-layout">
           <form
+            id="category-form"
             onSubmit={saveCategory}
             style={{
               display: "grid",
               gap: "22px",
+              minWidth: 0,
             }}
           >
+            {editingId !== null && (
+              <section className="categories-edit-banner">
+                <div style={{ minWidth: 0 }}>
+                  <p style={editBannerLabelStyle}>EDIT MODE</p>
+                  <h2 style={editBannerTitleStyle}>
+                    Updating {form.name || "Category"}
+                  </h2>
+                  <p style={editBannerTextStyle}>
+                    Make your changes below, then select Update Category.
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={saving || uploadingImage}
+                  className="categories-top-update-button"
+                  style={{
+                    ...topUpdateButtonStyle,
+                    opacity: saving || uploadingImage ? 0.7 : 1,
+                    cursor:
+                      saving || uploadingImage
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  {saving ? "Saving..." : "Update Category"}
+                </button>
+              </section>
+            )}
             <Panel
               title={
                 editingId === null
@@ -628,10 +659,14 @@ export default function CategoriesPage() {
               />
             </Panel>
 
-            <section style={savePanelStyle}>
+            <section
+              className="categories-save-panel"
+              style={savePanelStyle}
+            >
               <button
                 type="button"
                 onClick={resetForm}
+                className="categories-form-action-button"
                 style={secondaryButtonStyle}
               >
                 {editingId === null
@@ -642,6 +677,7 @@ export default function CategoriesPage() {
               <button
                 type="submit"
                 disabled={saving || uploadingImage}
+                className="categories-form-action-button categories-primary-action-button"
                 style={{
                   ...primaryButtonStyle,
                   opacity:
@@ -858,6 +894,34 @@ export default function CategoriesPage() {
           gap: 18px;
         }
 
+        .categories-edit-banner {
+          position: sticky;
+          top: 12px;
+          z-index: 20;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          padding: 18px 20px;
+          border: 1px solid rgba(212, 175, 55, 0.55);
+          border-radius: 16px;
+          background: linear-gradient(135deg, #0a2e73 0%, #123f8f 100%);
+          box-shadow: 0 12px 30px rgba(10, 46, 115, 0.24);
+        }
+
+        .categories-form-action-button {
+          min-width: 150px;
+          min-height: 48px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          white-space: nowrap;
+        }
+
+        .categories-primary-action-button {
+          flex: 1 1 190px;
+        }
+
         @media (max-width: 1100px) {
           .categories-page-layout {
             grid-template-columns: 1fr;
@@ -865,6 +929,26 @@ export default function CategoriesPage() {
         }
 
         @media (max-width: 600px) {
+          .categories-edit-banner {
+            position: sticky;
+            top: 8px;
+            flex-direction: column;
+            align-items: stretch;
+            padding: 16px;
+          }
+
+          .categories-top-update-button,
+          .categories-form-action-button {
+            width: 100% !important;
+            min-width: 0;
+          }
+
+          .categories-save-panel {
+            display: grid !important;
+            grid-template-columns: 1fr;
+            width: 100%;
+          }
+
           .categories-toolbar {
             width: 100%;
           }
@@ -1222,6 +1306,41 @@ const summaryTitleStyle: CSSProperties = {
 const summaryValueStyle: CSSProperties = {
   margin: 0,
   fontSize: "28px",
+};
+
+const editBannerLabelStyle: CSSProperties = {
+  margin: "0 0 4px",
+  color: "#D4AF37",
+  fontSize: "12px",
+  fontWeight: 900,
+  letterSpacing: "1.2px",
+};
+
+const editBannerTitleStyle: CSSProperties = {
+  margin: 0,
+  color: "#FFFFFF",
+  fontSize: "20px",
+  overflowWrap: "anywhere",
+};
+
+const editBannerTextStyle: CSSProperties = {
+  margin: "5px 0 0",
+  color: "rgba(255,255,255,0.82)",
+  fontSize: "13px",
+  lineHeight: 1.5,
+};
+
+const topUpdateButtonStyle: CSSProperties = {
+  flexShrink: 0,
+  minHeight: "46px",
+  padding: "12px 20px",
+  border: "1px solid #E4C65B",
+  borderRadius: "10px",
+  background: "#D4AF37",
+  color: "#0A2E73",
+  fontSize: "15px",
+  fontWeight: 900,
+  boxShadow: "0 6px 16px rgba(0,0,0,0.18)",
 };
 
 const savePanelStyle: CSSProperties = {
