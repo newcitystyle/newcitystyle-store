@@ -27,6 +27,36 @@ type Faq = {
   answer: string;
 };
 
+type AiProductDetails = {
+  productName: string;
+  slug: string;
+  tagline: string;
+  category: string;
+  subcategory: string;
+  description: string;
+  keyFeatures: string[];
+  lifestyleTitle: string;
+  lifestyleSubtitle: string;
+  colour: string;
+  pattern: string;
+  sleeveType: string;
+  fit: string;
+  gender: string;
+  occasion: string;
+  technicalSpecifications: Specification[];
+  whatsInTheBox: string[];
+  faqs: Faq[];
+  seoTitle: string;
+  metaDescription: string;
+  seoKeywords: string[];
+  productTags: string[];
+};
+
+type AiStatus = {
+  type: "idle" | "success" | "error";
+  message: string;
+};
+
 type ProductForm = {
   name: string;
   slug: string;
@@ -64,6 +94,9 @@ type ProductForm = {
   pattern: string;
   sleeveType: string;
   fitType: string;
+  occasion: string;
+  lifestyleTitle: string;
+  lifestyleSubtitle: string;
 
   keyFeatures: string[];
   specifications: Specification[];
@@ -128,6 +161,9 @@ const initialForm: ProductForm = {
   pattern: "",
   sleeveType: "",
   fitType: "",
+  occasion: "",
+  lifestyleTitle: "",
+  lifestyleSubtitle: "",
 
   keyFeatures: ["", "", "", ""],
   specifications: [
@@ -223,6 +259,11 @@ export default function AddProductPage() {
   const [uploadingMain, setUploadingMain] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [uploadingLifestyle, setUploadingLifestyle] = useState(false);
+  const [generatingAi, setGeneratingAi] = useState(false);
+  const [aiStatus, setAiStatus] = useState<AiStatus>({
+    type: "idle",
+    message: "",
+  });
 
   const [customTag, setCustomTag] = useState("");
   const [customSize, setCustomSize] = useState("");
@@ -483,6 +524,157 @@ export default function AddProductPage() {
     } finally {
       setUploadingLifestyle(false);
       event.target.value = "";
+    }
+  }
+
+  async function generateProductDetailsWithAi() {
+    if (!form.mainImage) {
+      setAiStatus({
+        type: "error",
+        message: "Please upload the main product image first.",
+      });
+      return;
+    }
+
+    setGeneratingAi(true);
+    setAiStatus({
+      type: "idle",
+      message: "Gemini is analysing the product image...",
+    });
+
+    try {
+      const response = await fetch("/api/generate-product-details", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          imageUrl: form.mainImage,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        details?: AiProductDetails;
+        error?: string;
+      };
+
+      if (!response.ok || !result.details) {
+        throw new Error(
+          result.error || "AI could not generate product details."
+        );
+      }
+
+      const details = result.details;
+      const cleanFeatures = details.keyFeatures
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 4);
+      const cleanSpecifications = details.technicalSpecifications
+        .map((item) => ({
+          label: item.label.trim(),
+          value: item.value.trim(),
+        }))
+        .filter((item) => item.label && item.value)
+        .slice(0, 3);
+      const cleanFaqs = details.faqs
+        .map((item) => ({
+          question: item.question.trim(),
+          answer: item.answer.trim(),
+        }))
+        .filter((item) => item.question && item.answer)
+        .slice(0, 2);
+      const cleanBoxItems = details.whatsInTheBox
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const generatedTags = [
+        ...details.productTags,
+        details.occasion,
+      ]
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      setForm((current) => ({
+        ...current,
+        name: details.productName.trim() || current.name,
+        slug:
+          createSlug(details.slug || details.productName) ||
+          current.slug,
+        tagline: details.tagline.trim() || current.tagline,
+        category: details.category.trim() || current.category,
+        subcategory:
+          details.subcategory.trim() || current.subcategory,
+        shortDescription:
+          details.metaDescription.trim() ||
+          current.shortDescription,
+        description:
+          details.description.trim() || current.description,
+        gender: details.gender.trim() || current.gender,
+        colors: details.colour.trim()
+          ? Array.from(
+              new Set([...current.colors, details.colour.trim()])
+            )
+          : current.colors,
+        pattern: details.pattern.trim() || current.pattern,
+        sleeveType:
+          details.sleeveType.trim() || current.sleeveType,
+        fitType: details.fit.trim() || current.fitType,
+        occasion: details.occasion.trim() || current.occasion,
+        lifestyleTitle:
+          details.lifestyleTitle.trim() || current.lifestyleTitle,
+        lifestyleSubtitle:
+          details.lifestyleSubtitle.trim() ||
+          current.lifestyleSubtitle,
+        keyFeatures: cleanFeatures.length
+          ? [
+              ...cleanFeatures,
+              ...Array(Math.max(4 - cleanFeatures.length, 0)).fill(""),
+            ]
+          : current.keyFeatures,
+        specifications: cleanSpecifications.length
+          ? [
+              ...cleanSpecifications,
+              ...Array(
+                Math.max(3 - cleanSpecifications.length, 0)
+              ).fill(null).map(() => ({ label: "", value: "" })),
+            ]
+          : current.specifications,
+        whatsInBox: cleanBoxItems.length
+          ? cleanBoxItems
+          : current.whatsInBox,
+        faqs: cleanFaqs.length
+          ? [
+              ...cleanFaqs,
+              ...Array(Math.max(2 - cleanFaqs.length, 0))
+                .fill(null)
+                .map(() => ({ question: "", answer: "" })),
+            ]
+          : current.faqs,
+        seoTitle: details.seoTitle.trim() || current.seoTitle,
+        metaDescription:
+          details.metaDescription.trim() ||
+          current.metaDescription,
+        seoKeywords: details.seoKeywords.length
+          ? details.seoKeywords.join(", ")
+          : current.seoKeywords,
+        tags: Array.from(new Set([...current.tags, ...generatedTags])),
+      }));
+
+      setAiStatus({
+        type: "success",
+        message:
+          "AI draft generated successfully. Review and edit every field before saving.",
+      });
+    } catch (error) {
+      console.error(error);
+      setAiStatus({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "AI generation failed. You can continue entering details manually.",
+      });
+    } finally {
+      setGeneratingAi(false);
     }
   }
 
@@ -777,7 +969,14 @@ export default function AddProductPage() {
       gallery_images: form.galleryImages,
       lifestyle_images: form.lifestyleImages,
 
-      tags: form.tags,
+      tags: Array.from(
+        new Set(
+          [
+            ...form.tags,
+            form.occasion.trim(),
+          ].filter(Boolean)
+        )
+      ),
       sizes: form.sizes,
       colors: form.colors,
 
@@ -1262,6 +1461,74 @@ export default function AddProductPage() {
               </Panel>
 
               <Panel
+                title="AI Product Detail Generator"
+                subtitle="Gemini analyses the main image and fills an editable draft. Price, MRP, stock, SKU, sizes, tax and low-stock values are never changed."
+              >
+                <div style={aiGeneratorCardStyle}>
+                  <div>
+                    <strong style={aiGeneratorTitleStyle}>
+                      Generate Product Details with AI
+                    </strong>
+                    <p style={aiGeneratorTextStyle}>
+                      Upload the main product image first, then generate.
+                      Always verify colour, category, pattern and all written
+                      details before saving.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={generateProductDetailsWithAi}
+                    disabled={generatingAi || uploadingMain || !form.mainImage}
+                    style={{
+                      ...aiGenerateButtonStyle,
+                      opacity:
+                        generatingAi || uploadingMain || !form.mainImage
+                          ? 0.65
+                          : 1,
+                      cursor:
+                        generatingAi || uploadingMain || !form.mainImage
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {generatingAi
+                      ? "Generating with Gemini..."
+                      : "✨ Generate Product Details with AI"}
+                  </button>
+                </div>
+
+                {aiStatus.message && (
+                  <div
+                    role={aiStatus.type === "error" ? "alert" : "status"}
+                    style={{
+                      ...aiStatusStyle,
+                      borderColor:
+                        aiStatus.type === "error"
+                          ? "#DC2626"
+                          : aiStatus.type === "success"
+                            ? "#15803D"
+                            : "#D4AF37",
+                      background:
+                        aiStatus.type === "error"
+                          ? "#FEF2F2"
+                          : aiStatus.type === "success"
+                            ? "#F0FDF4"
+                            : "#FFFBEA",
+                      color:
+                        aiStatus.type === "error"
+                          ? "#991B1B"
+                          : aiStatus.type === "success"
+                            ? "#166534"
+                            : "#7C5B00",
+                    }}
+                  >
+                    {aiStatus.message}
+                  </div>
+                )}
+              </Panel>
+
+              <Panel
                 title="Product Gallery"
                 subtitle="Upload up to 10 additional product images."
               >
@@ -1285,6 +1552,30 @@ export default function AddProductPage() {
                 title="Lifestyle Gallery"
                 subtitle="Upload model, showroom and lifestyle photographs."
               >
+                <FormGrid>
+                  <Field label="Lifestyle Gallery Title">
+                    <input
+                      value={form.lifestyleTitle}
+                      onChange={(event) =>
+                        setField("lifestyleTitle", event.target.value)
+                      }
+                      placeholder="Styled for Every Moment"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Lifestyle Gallery Subtitle">
+                    <input
+                      value={form.lifestyleSubtitle}
+                      onChange={(event) =>
+                        setField("lifestyleSubtitle", event.target.value)
+                      }
+                      placeholder="Premium fashion for everyday confidence"
+                      style={inputStyle}
+                    />
+                  </Field>
+                </FormGrid>
+
                 <UploadBox
                   uploading={uploadingLifestyle}
                   label="Upload Lifestyle Images"
@@ -1447,6 +1738,17 @@ export default function AddProductPage() {
                         setField("fitType", event.target.value)
                       }
                       placeholder="Example: Regular Fit"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Occasion">
+                    <input
+                      value={form.occasion}
+                      onChange={(event) =>
+                        setField("occasion", event.target.value)
+                      }
+                      placeholder="Example: Casual, Festive, Party Wear"
                       style={inputStyle}
                     />
                   </Field>
@@ -2985,6 +3287,56 @@ const completionBadgeStyle: CSSProperties = {
   borderRadius: "999px",
   fontSize: "11px",
   fontWeight: 800,
+};
+
+const aiGeneratorCardStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "18px",
+  flexWrap: "wrap",
+  padding: "18px",
+  border: "1px solid rgba(212, 175, 55, 0.55)",
+  borderRadius: "18px",
+  background:
+    "linear-gradient(135deg, rgba(10, 46, 115, 0.06), rgba(248, 244, 236, 0.95))",
+};
+
+const aiGeneratorTitleStyle: CSSProperties = {
+  display: "block",
+  color: "#0A2E73",
+  fontSize: "17px",
+  lineHeight: 1.3,
+};
+
+const aiGeneratorTextStyle: CSSProperties = {
+  margin: "7px 0 0",
+  maxWidth: "680px",
+  color: "#4B5563",
+  fontSize: "14px",
+  lineHeight: 1.6,
+};
+
+const aiGenerateButtonStyle: CSSProperties = {
+  minHeight: "48px",
+  padding: "12px 18px",
+  border: "1px solid #D4AF37",
+  borderRadius: "14px",
+  background: "#0A2E73",
+  color: "#FFFFFF",
+  fontWeight: 800,
+  fontSize: "14px",
+  boxShadow: "0 10px 24px rgba(10, 46, 115, 0.18)",
+};
+
+const aiStatusStyle: CSSProperties = {
+  marginTop: "14px",
+  padding: "12px 14px",
+  border: "1px solid",
+  borderRadius: "12px",
+  fontSize: "14px",
+  lineHeight: 1.5,
+  fontWeight: 650,
 };
 
 const saveProductButtonStyle: CSSProperties = {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  type CSSProperties,
   KeyboardEvent,
   useEffect,
   useMemo,
@@ -10,6 +11,30 @@ import {
   useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
+
+
+
+type BrandingSettings = Record<string, unknown> & {
+  id?: number | string;
+};
+
+type NavbarBranding = {
+  brandName: string;
+  tagline: string;
+  logoUrl: string;
+  mobileLogoUrl: string;
+  primaryColor: string;
+  secondaryColor: string;
+};
+
+const DEFAULT_BRANDING: NavbarBranding = {
+  brandName: "NEW CITY STYLE",
+  tagline: "Style for Every Family",
+  logoUrl: "",
+  mobileLogoUrl: "",
+  primaryColor: "#0A2E73",
+  secondaryColor: "#D4AF37",
+};
 
 type Product = {
   id: string | number;
@@ -82,10 +107,12 @@ export default function Navbar() {
 
   const [cartCount, setCartCount] = useState(0);
   const [wishlistCount, setWishlistCount] = useState(0);
+  const [branding, setBranding] = useState<NavbarBranding>(DEFAULT_BRANDING);
 
   useEffect(() => {
     loadProducts();
     loadCounts();
+    loadBranding();
 
     const {
       data: { subscription },
@@ -125,9 +152,23 @@ export default function Navbar() {
       )
       .subscribe();
 
+    const brandingChannel = supabase
+      .channel("navbar-branding-settings")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "branding_settings",
+        },
+        () => loadBranding()
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(cartChannel);
       supabase.removeChannel(wishlistChannel);
+      supabase.removeChannel(brandingChannel);
     };
   }, []);
 
@@ -154,6 +195,59 @@ export default function Navbar() {
   useEffect(() => {
     setActiveIndex(-1);
   }, [search]);
+
+  async function loadBranding() {
+    try {
+      // Only request columns that already exist in branding_settings.
+      // The current table does not contain mobile_logo_url, so the official
+      // logo is also used on mobile until a mobile-logo column is added.
+      const { data, error } = await supabase
+        .from("branding_settings")
+        .select(
+          "brand_name, tagline, logo_url, primary_color, secondary_color"
+        )
+        .order("id", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const settings = data as BrandingSettings | null;
+
+      if (!settings) {
+        setBranding(DEFAULT_BRANDING);
+        return;
+      }
+
+      const readText = (...keys: string[]) => {
+        for (const key of keys) {
+          const value = settings[key];
+
+          if (typeof value === "string" && value.trim()) {
+            return value.trim();
+          }
+        }
+
+        return "";
+      };
+
+      const officialLogo = readText("logo_url");
+
+      setBranding({
+        brandName: readText("brand_name") || DEFAULT_BRANDING.brandName,
+        tagline: readText("tagline") || DEFAULT_BRANDING.tagline,
+        logoUrl: officialLogo,
+        mobileLogoUrl: officialLogo,
+        primaryColor:
+          readText("primary_color") || DEFAULT_BRANDING.primaryColor,
+        secondaryColor:
+          readText("secondary_color") || DEFAULT_BRANDING.secondaryColor,
+      });
+    } catch (error) {
+      console.error("Navbar branding load error:", error);
+      setBranding(DEFAULT_BRANDING);
+    }
+  }
 
   async function loadProducts() {
     setLoadingProducts(true);
@@ -313,18 +407,42 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="navbar">
+    <nav
+      className="navbar"
+      style={
+        {
+          "--navbar-primary": branding.primaryColor,
+          "--navbar-secondary": branding.secondaryColor,
+        } as CSSProperties
+      }
+    >
       <div className="navbarInner">
         <Link
           href="/"
           className="brand"
           onClick={() => setMobileMenuOpen(false)}
         >
-          <span className="brandMark">NCS</span>
+          {branding.logoUrl ? (
+            <span className="brandLogoFrame">
+              <img
+                className="brandLogo brandLogoDesktop"
+                src={branding.logoUrl}
+                alt={`${branding.brandName} official logo`}
+              />
+
+              <img
+                className="brandLogo brandLogoMobile"
+                src={branding.mobileLogoUrl || branding.logoUrl}
+                alt={`${branding.brandName} mobile logo`}
+              />
+            </span>
+          ) : (
+            <span className="brandMark">NCS</span>
+          )}
 
           <span className="brandText">
-            <strong>NEW CITY STYLE</strong>
-            <small>Style for Every Family</small>
+            <strong>{branding.brandName}</strong>
+            <small>{branding.tagline}</small>
           </span>
         </Link>
 
@@ -569,8 +687,8 @@ export default function Navbar() {
           width: 100%;
           background: linear-gradient(
             90deg,
-            rgba(10, 46, 115, 0.98),
-            rgba(19, 62, 150, 0.98)
+            var(--navbar-primary),
+            color-mix(in srgb, var(--navbar-primary) 84%, white 16%)
           );
           color: white;
           box-shadow: 0 10px 28px rgba(2, 17, 48, 0.24);
@@ -595,6 +713,33 @@ export default function Navbar() {
           text-decoration: none;
         }
 
+        .brandLogoFrame {
+          width: 58px;
+          height: 50px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          overflow: hidden;
+          border: 1px solid color-mix(in srgb, var(--navbar-secondary) 78%, transparent);
+          border-radius: 13px;
+          background: rgba(255, 255, 255, 0.96);
+          box-shadow: 0 8px 20px rgba(2, 17, 48, 0.18);
+        }
+
+        .brandLogo {
+          width: 100%;
+          height: 100%;
+          display: block;
+          padding: 4px;
+          object-fit: contain;
+          object-position: center;
+        }
+
+        .brandLogoMobile {
+          display: none;
+        }
+
         .brandMark {
           width: 44px;
           height: 44px;
@@ -604,7 +749,7 @@ export default function Navbar() {
           border: 1px solid rgba(212, 175, 55, 0.85);
           border-radius: 13px;
           background: rgba(212, 175, 55, 0.12);
-          color: #d4af37;
+          color: var(--navbar-secondary);
           font-size: 12px;
           font-weight: 950;
           letter-spacing: 1px;
@@ -622,7 +767,7 @@ export default function Navbar() {
         }
 
         .brandText strong {
-          color: #d4af37;
+          color: var(--navbar-secondary);
           font-size: 21px;
           line-height: 1.1;
           letter-spacing: 0.5px;
@@ -658,7 +803,7 @@ export default function Navbar() {
         }
 
         .searchBar:focus-within {
-          border-color: #d4af37;
+          border-color: var(--navbar-secondary);
           box-shadow:
             0 0 0 4px rgba(212, 175, 55, 0.16),
             0 10px 25px rgba(2, 17, 48, 0.22);
@@ -706,10 +851,10 @@ export default function Navbar() {
           border: 0;
           background: linear-gradient(
             135deg,
-            #d4af37,
+            var(--navbar-secondary),
             #f1d26a
           );
-          color: #0a2e73;
+          color: var(--navbar-primary);
           font-size: 12px;
           font-weight: 900;
           cursor: pointer;
@@ -759,7 +904,7 @@ export default function Navbar() {
           padding: 0;
           border: 0;
           background: transparent;
-          color: #0a2e73;
+          color: var(--navbar-primary);
           font-size: 11px;
           font-weight: 800;
           cursor: pointer;
@@ -802,8 +947,8 @@ export default function Navbar() {
           align-items: center;
           justify-content: center;
           border-radius: 9px;
-          background: #0a2e73;
-          color: #d4af37;
+          background: var(--navbar-primary);
+          color: var(--navbar-secondary);
           font-size: 10px;
           font-weight: 900;
         }
@@ -838,7 +983,7 @@ export default function Navbar() {
         }
 
         .suggestionPrice {
-          color: #0a2e73;
+          color: var(--navbar-primary);
           font-size: 13px;
           font-weight: 900;
           white-space: nowrap;
@@ -860,7 +1005,7 @@ export default function Navbar() {
           width: 21px;
           height: 21px;
           border: 3px solid #e4e7ec;
-          border-top-color: #0a2e73;
+          border-top-color: var(--navbar-primary);
           border-radius: 50%;
           animation: spin 0.7s linear infinite;
         }
@@ -870,7 +1015,7 @@ export default function Navbar() {
           min-height: 44px;
           border: 0;
           border-top: 1px solid #e4e7ec;
-          background: #0a2e73;
+          background: var(--navbar-primary);
           color: white;
           font-size: 12px;
           font-weight: 850;
@@ -921,10 +1066,10 @@ export default function Navbar() {
           align-items: center;
           justify-content: center;
           padding: 0 5px;
-          border: 2px solid #0a2e73;
+          border: 2px solid var(--navbar-primary);
           border-radius: 999px;
-          background: #d4af37;
-          color: #0a2e73;
+          background: var(--navbar-secondary);
+          color: var(--navbar-primary);
           font-size: 9px;
           font-weight: 950;
           line-height: 1;
@@ -1058,6 +1203,19 @@ export default function Navbar() {
         @media (max-width: 520px) {
           .navbarInner {
             width: calc(100% - 24px);
+          }
+
+          .brandLogoFrame {
+            width: 44px;
+            height: 44px;
+          }
+
+          .brandLogoDesktop {
+            display: none;
+          }
+
+          .brandLogoMobile {
+            display: block;
           }
 
           .brandMark {

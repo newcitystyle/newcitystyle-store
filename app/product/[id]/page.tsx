@@ -353,8 +353,8 @@ export default function ProductPage() {
   const [loading, setLoading] = useState(true);
 
   const [selectedImage, setSelectedImage] = useState("");
-  const [selectedSize, setSelectedSize] = useState("M");
-  const [selectedColor, setSelectedColor] = useState("Blue");
+  const [selectedSize, setSelectedSize] = useState("");
+  const [selectedColor, setSelectedColor] = useState("");
   const [quantity, setQuantity] = useState(1);
 
   const [zoomVisible, setZoomVisible] = useState(false);
@@ -398,6 +398,9 @@ export default function ProductPage() {
 
       setProduct(loadedProduct);
       setSelectedImage(images[0] || "");
+      setSelectedSize("");
+      setSelectedColor("");
+      setQuantity(1);
     } catch (error) {
       console.error("Load product error:", error);
       setProduct(null);
@@ -412,23 +415,26 @@ export default function ProductPage() {
   );
 
   const sizes = useMemo(() => {
-    if (!product) return ["S", "M", "L", "XL", "XXL"];
+    if (!product) return [];
 
     const directSizes = parseListField(product.sizes);
 
     return directSizes.length > 0
       ? directSizes
-      : parseVariationValues(product, "Size", ["S", "M", "L", "XL", "XXL"]);
+      : parseVariationValues(product, "Size", []);
   }, [product]);
 
   const colors = useMemo(() => {
-    if (!product) return ["Blue", "Black", "White"];
+    if (!product) return [];
 
     const directColors = parseListField(product.colors);
 
-    return directColors.length > 0
-      ? directColors
-      : parseVariationValues(product, "Color", ["Blue", "Black", "White"]);
+    if (directColors.length > 0) return directColors;
+
+    const colorValues = parseVariationValues(product, "Color", []);
+    return colorValues.length > 0
+      ? colorValues
+      : parseVariationValues(product, "Colour", []);
   }, [product]);
 
   const tags = useMemo(
@@ -437,14 +443,14 @@ export default function ProductPage() {
   );
 
   useEffect(() => {
-    if (sizes.length > 0 && !sizes.includes(selectedSize)) {
-      setSelectedSize(sizes[0]);
+    if (selectedSize && !sizes.includes(selectedSize)) {
+      setSelectedSize("");
     }
   }, [sizes, selectedSize]);
 
   useEffect(() => {
-    if (colors.length > 0 && !colors.includes(selectedColor)) {
-      setSelectedColor(colors[0]);
+    if (selectedColor && !colors.includes(selectedColor)) {
+      setSelectedColor("");
     }
   }, [colors, selectedColor]);
 
@@ -462,8 +468,18 @@ export default function ProductPage() {
   const isFeatured = isEnabled(product?.is_featured);
   const isOnSale = isEnabled(product?.is_on_sale) || discount > 0;
 
-  async function addToCart(goToCart = true) {
-    if (!product || addingToCart) return;
+  async function addToCart(goToCart = true): Promise<boolean> {
+    if (!product || addingToCart) return false;
+
+    if (sizes.length > 0 && !selectedSize) {
+      alert("Please select a size");
+      return false;
+    }
+
+    if (colors.length > 0 && !selectedColor) {
+      alert("Please select a colour");
+      return false;
+    }
 
     setAddingToCart(true);
 
@@ -473,7 +489,7 @@ export default function ProductPage() {
       if (!user) {
         alert("Please Login First");
         router.push("/login");
-        return;
+        return false;
       }
 
       const { data: existingItem } = await supabase
@@ -513,20 +529,26 @@ export default function ProductPage() {
         alert("Product Added To Cart");
         router.push("/cart");
       }
+
+      return true;
     } catch (error) {
       alert(
         error instanceof Error
           ? error.message
           : "Unable to add product to cart."
       );
+      return false;
     } finally {
       setAddingToCart(false);
     }
   }
 
   async function buyNow() {
-    await addToCart(false);
-    router.push("/checkout");
+    const added = await addToCart(false);
+
+    if (added) {
+      router.push("/checkout");
+    }
   }
 
   async function addToWishlist() {
@@ -857,44 +879,50 @@ export default function ProductPage() {
               </div>
             )}
 
-            <div className="choiceSection">
-              <div className="choiceHeader">
-                <h3>Select Size</h3>
-                <button type="button">Size Guide</button>
-              </div>
+            {sizes.length > 0 && (
+              <div className="choiceSection">
+                <div className="choiceHeader">
+                  <h3>Select Size</h3>
+                  <button type="button">Size Guide</button>
+                </div>
 
-              <div className="choiceGrid">
-                {sizes.map((size) => (
-                  <button
-                    type="button"
-                    key={size}
-                    className={selectedSize === size ? "choiceActive" : ""}
-                    onClick={() => setSelectedSize(size)}
-                  >
-                    {size}
-                  </button>
-                ))}
+                <div className="choiceGrid">
+                  {sizes.map((size) => (
+                    <button
+                      type="button"
+                      key={size}
+                      className={selectedSize === size ? "choiceActive" : ""}
+                      onClick={() => setSelectedSize(size)}
+                      aria-pressed={selectedSize === size}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="choiceSection">
-              <h3>Select Color</h3>
+            {colors.length > 0 && (
+              <div className="choiceSection">
+                <h3>Select Color</h3>
 
-              <div className="choiceGrid">
-                {colors.map((color) => (
-                  <button
-                    type="button"
-                    key={color}
-                    className={
-                      selectedColor === color ? "choiceActive" : ""
-                    }
-                    onClick={() => setSelectedColor(color)}
-                  >
-                    {color}
-                  </button>
-                ))}
+                <div className="choiceGrid">
+                  {colors.map((color) => (
+                    <button
+                      type="button"
+                      key={color}
+                      className={
+                        selectedColor === color ? "choiceActive" : ""
+                      }
+                      onClick={() => setSelectedColor(color)}
+                      aria-pressed={selectedColor === color}
+                    >
+                      {color}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="quantitySection">
               <h3>Quantity</h3>
