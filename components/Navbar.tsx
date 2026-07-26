@@ -96,7 +96,8 @@ function formatCurrency(value: number | string | null | undefined) {
 
 export default function Navbar() {
   const router = useRouter();
-  const searchWrapperRef = useRef<HTMLDivElement | null>(null);
+  const desktopSearchWrapperRef = useRef<HTMLDivElement | null>(null);
+  const mobileSearchWrapperRef = useRef<HTMLDivElement | null>(null);
 
   const [search, setSearch] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
@@ -177,8 +178,8 @@ export default function Navbar() {
       const target = event.target as Node;
 
       if (
-        searchWrapperRef.current &&
-        !searchWrapperRef.current.contains(target)
+        !desktopSearchWrapperRef.current?.contains(target) &&
+        !mobileSearchWrapperRef.current?.contains(target)
       ) {
         setShowSuggestions(false);
         setActiveIndex(-1);
@@ -446,7 +447,7 @@ export default function Navbar() {
           </span>
         </Link>
 
-        <div className="searchWrapper" ref={searchWrapperRef}>
+        <div className="searchWrapper" ref={desktopSearchWrapperRef}>
           <div className="searchBar">
             <span className="searchIcon">⌕</span>
 
@@ -641,7 +642,10 @@ export default function Navbar() {
       </div>
 
       <div className="mobileSearch">
-        <div className="searchWrapper">
+        <div
+          className="searchWrapper"
+          ref={mobileSearchWrapperRef}
+        >
           <div className="searchBar">
             <span className="searchIcon">⌕</span>
 
@@ -656,6 +660,7 @@ export default function Navbar() {
               onFocus={() => setShowSuggestions(true)}
               onKeyDown={handleSearchKeyDown}
               aria-label="Search products on mobile"
+              autoComplete="off"
             />
 
             {search && (
@@ -663,6 +668,7 @@ export default function Navbar() {
                 type="button"
                 className="clearSearch"
                 onClick={clearSearch}
+                aria-label="Clear search"
               >
                 ×
               </button>
@@ -672,10 +678,89 @@ export default function Navbar() {
               type="button"
               className="searchButton"
               onClick={handleSearch}
+              aria-label="Search"
             >
               Search
             </button>
           </div>
+
+          {showSuggestions && search.trim() && (
+            <div className="suggestions mobileSuggestions">
+              <div className="suggestionHeader">
+                <span>Search Suggestions</span>
+
+                <button type="button" onClick={handleSearch}>
+                  View all results
+                </button>
+              </div>
+
+              {loadingProducts ? (
+                <div className="suggestionState">
+                  <div className="miniLoader" />
+                  Loading products...
+                </div>
+              ) : suggestions.length > 0 ? (
+                <div className="suggestionList">
+                  {suggestions.map((product, index) => {
+                    const productName = getProductName(product);
+                    const image = getProductImage(product);
+
+                    return (
+                      <button
+                        type="button"
+                        key={String(product.id)}
+                        className={`suggestionItem ${
+                          activeIndex === index
+                            ? "suggestionActive"
+                            : ""
+                        }`}
+                        onMouseEnter={() => setActiveIndex(index)}
+                        onClick={() => openProduct(product)}
+                      >
+                        <div className="suggestionImage">
+                          {image ? (
+                            <img src={image} alt={productName} />
+                          ) : (
+                            <span>NCS</span>
+                          )}
+                        </div>
+
+                        <div className="suggestionInfo">
+                          <strong>{productName}</strong>
+
+                          <span>
+                            {product.category ||
+                              product.subcategory ||
+                              "Fashion"}
+
+                            {product.brand
+                              ? ` • ${product.brand}`
+                              : ""}
+                          </span>
+                        </div>
+
+                        <div className="suggestionPrice">
+                          {formatCurrency(product.price)}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="suggestionState">
+                  No matching products found for “{search.trim()}”
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="searchAllButton"
+                onClick={handleSearch}
+              >
+                Search for “{search.trim()}” →
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -829,6 +914,13 @@ export default function Navbar() {
           background: transparent;
           color: #172033;
           font-size: 14px;
+        }
+
+        .searchBar input::-webkit-search-cancel-button,
+        .searchBar input::-webkit-search-decoration {
+          display: none;
+          -webkit-appearance: none;
+          appearance: none;
         }
 
         .clearSearch {
@@ -1186,17 +1278,33 @@ export default function Navbar() {
           }
 
           .mobileSearch {
+            position: relative;
+            z-index: 1300;
             display: block;
+            overflow: visible;
             padding: 0 14px 12px;
           }
 
           .mobileSearch .searchWrapper {
+            position: static;
             max-width: none;
+            overflow: visible;
           }
 
-          .mobileSearch .suggestions {
+          .mobileSearch .mobileSuggestions {
+            position: fixed;
+            z-index: 2147483000;
+            top: 126px;
             right: 14px;
             left: 14px;
+            max-height: calc(100dvh - 138px);
+            overflow: hidden;
+          }
+
+          .mobileSearch .suggestionList {
+            max-height: calc(100dvh - 276px);
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
           }
         }
 
