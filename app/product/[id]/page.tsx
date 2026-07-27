@@ -354,7 +354,6 @@ export default function ProductPage() {
 
   const [selectedImage, setSelectedImage] = useState("");
   const [selectedSize, setSelectedSize] = useState("");
-  const [selectedColor, setSelectedColor] = useState("");
   const [quantity, setQuantity] = useState(1);
 
   const [zoomVisible, setZoomVisible] = useState(false);
@@ -399,7 +398,6 @@ export default function ProductPage() {
       setProduct(loadedProduct);
       setSelectedImage(images[0] || "");
       setSelectedSize("");
-      setSelectedColor("");
       setQuantity(1);
     } catch (error) {
       console.error("Load product error:", error);
@@ -424,19 +422,6 @@ export default function ProductPage() {
       : parseVariationValues(product, "Size", []);
   }, [product]);
 
-  const colors = useMemo(() => {
-    if (!product) return [];
-
-    const directColors = parseListField(product.colors);
-
-    if (directColors.length > 0) return directColors;
-
-    const colorValues = parseVariationValues(product, "Color", []);
-    return colorValues.length > 0
-      ? colorValues
-      : parseVariationValues(product, "Colour", []);
-  }, [product]);
-
   const tags = useMemo(
     () => (product ? parseListField(product.tags) : []),
     [product]
@@ -447,12 +432,6 @@ export default function ProductPage() {
       setSelectedSize("");
     }
   }, [sizes, selectedSize]);
-
-  useEffect(() => {
-    if (selectedColor && !colors.includes(selectedColor)) {
-      setSelectedColor("");
-    }
-  }, [colors, selectedColor]);
 
   const price = Number(product?.price ?? 0);
   const mrp = Number(product?.mrp ?? price + 200);
@@ -476,11 +455,6 @@ export default function ProductPage() {
       return false;
     }
 
-    if (colors.length > 0 && !selectedColor) {
-      alert("Please select a colour");
-      return false;
-    }
-
     setAddingToCart(true);
 
     try {
@@ -498,7 +472,7 @@ export default function ProductPage() {
         .eq("user_id", user.id)
         .eq("product_id", product.id)
         .eq("size", selectedSize)
-        .eq("color", selectedColor)
+        .limit(1)
         .maybeSingle();
 
       if (existingItem) {
@@ -519,7 +493,7 @@ export default function ProductPage() {
           price,
           quantity,
           size: selectedSize,
-          color: selectedColor,
+          color: null,
         });
 
         if (error) throw error;
@@ -711,7 +685,6 @@ export default function ProductPage() {
     { label: "Category", value: product.category || "Fashion" },
     { label: "Subcategory", value: product.subcategory || "—" },
     { label: "Selected Size", value: selectedSize || "—" },
-    { label: "Selected Color", value: selectedColor || "—" },
     { label: "Stock", value: String(stock) },
   ];
 
@@ -896,28 +869,6 @@ export default function ProductPage() {
                       aria-pressed={selectedSize === size}
                     >
                       {size}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {colors.length > 0 && (
-              <div className="choiceSection">
-                <h3>Select Color</h3>
-
-                <div className="choiceGrid">
-                  {colors.map((color) => (
-                    <button
-                      type="button"
-                      key={color}
-                      className={
-                        selectedColor === color ? "choiceActive" : ""
-                      }
-                      onClick={() => setSelectedColor(color)}
-                      aria-pressed={selectedColor === color}
-                    >
-                      {color}
                     </button>
                   ))}
                 </div>

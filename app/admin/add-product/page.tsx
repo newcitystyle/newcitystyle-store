@@ -37,7 +37,6 @@ type AiProductDetails = {
   keyFeatures: string[];
   lifestyleTitle: string;
   lifestyleSubtitle: string;
-  colour: string;
   pattern: string;
   sleeveType: string;
   fit: string;
@@ -87,7 +86,6 @@ type ProductForm = {
 
   tags: string[];
   sizes: string[];
-  colors: string[];
 
   material: string;
   fabric: string;
@@ -154,7 +152,6 @@ const initialForm: ProductForm = {
 
   tags: [],
   sizes: [],
-  colors: [],
 
   material: "",
   fabric: "",
@@ -230,24 +227,6 @@ const commonSizes = [
   "Free Size",
 ];
 
-const commonColors = [
-  "Black",
-  "White",
-  "Blue",
-  "Navy Blue",
-  "Royal Blue",
-  "Red",
-  "Green",
-  "Yellow",
-  "Pink",
-  "Purple",
-  "Orange",
-  "Brown",
-  "Grey",
-  "Beige",
-  "Gold",
-  "Multicolor",
-];
 
 export default function AddProductPage() {
   const router = useRouter();
@@ -267,7 +246,6 @@ export default function AddProductPage() {
 
   const [customTag, setCustomTag] = useState("");
   const [customSize, setCustomSize] = useState("");
-  const [customColor, setCustomColor] = useState("");
 
   useEffect(() => {
     loadCollections();
@@ -609,11 +587,6 @@ export default function AddProductPage() {
         description:
           details.description.trim() || current.description,
         gender: details.gender.trim() || current.gender,
-        colors: details.colour.trim()
-          ? Array.from(
-              new Set([...current.colors, details.colour.trim()])
-            )
-          : current.colors,
         pattern: details.pattern.trim() || current.pattern,
         sleeveType:
           details.sleeveType.trim() || current.sleeveType,
@@ -719,14 +692,6 @@ export default function AddProductPage() {
     }));
   }
 
-  function toggleColor(color: string) {
-    setForm((current) => ({
-      ...current,
-      colors: current.colors.includes(color)
-        ? current.colors.filter((item) => item !== color)
-        : [...current.colors, color],
-    }));
-  }
 
   function addCustomSize() {
     const value = customSize.trim();
@@ -740,17 +705,6 @@ export default function AddProductPage() {
     setCustomSize("");
   }
 
-  function addCustomColor() {
-    const value = customColor.trim();
-
-    if (!value) return;
-
-    if (!form.colors.includes(value)) {
-      setField("colors", [...form.colors, value]);
-    }
-
-    setCustomColor("");
-  }
 
   function updateFeature(index: number, value: string) {
     setForm((current) => ({
@@ -978,7 +932,7 @@ export default function AddProductPage() {
         )
       ),
       sizes: form.sizes,
-      colors: form.colors,
+      colors: [],
 
       material: form.material.trim() || null,
       fabric: form.fabric.trim() || null,
@@ -1086,7 +1040,7 @@ export default function AddProductPage() {
 
           <p style={heroDescriptionStyle}>
             Add complete product information, images, sizes,
-            colours, SEO, specifications and FAQs.
+            SEO, specifications and FAQs.
           </p>
         </section>
 
@@ -1471,7 +1425,7 @@ export default function AddProductPage() {
                     </strong>
                     <p style={aiGeneratorTextStyle}>
                       Upload the main product image first, then generate.
-                      Always verify colour, category, pattern and all written
+                      Always verify category, pattern and all written
                       details before saving.
                     </p>
                   </div>
@@ -1647,35 +1601,6 @@ export default function AddProductPage() {
                 <SelectedValues
                   values={form.sizes}
                   onRemove={toggleSize}
-                />
-              </Panel>
-
-              <Panel
-                title="Colours"
-                subtitle="Select every available product colour."
-              >
-                <div style={chipGridStyle}>
-                  {commonColors.map((color) => (
-                    <ChipButton
-                      key={color}
-                      label={color}
-                      selected={form.colors.includes(color)}
-                      onClick={() => toggleColor(color)}
-                    />
-                  ))}
-                </div>
-
-                <InlineAdd
-                  value={customColor}
-                  placeholder="Custom colour"
-                  buttonLabel="Add Colour"
-                  onChange={setCustomColor}
-                  onAdd={addCustomColor}
-                />
-
-                <SelectedValues
-                  values={form.colors}
-                  onRemove={toggleColor}
                 />
               </Panel>
 
@@ -2232,13 +2157,6 @@ export default function AddProductPage() {
                 />
 
                 <PreviewInfo
-                  label="Colours"
-                  value={
-                    form.colors.join(", ") || "Not selected"
-                  }
-                />
-
-                <PreviewInfo
                   label="Brand"
                   value={form.brand || "Not added"}
                 />
@@ -2275,9 +2193,7 @@ export default function AddProductPage() {
 
                 <CompletionRow
                   label="Variants"
-                  complete={Boolean(
-                    form.sizes.length || form.colors.length
-                  )}
+                  complete={Boolean(form.sizes.length)}
                 />
 
                 <CompletionRow

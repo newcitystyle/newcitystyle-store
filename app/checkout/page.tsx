@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  type ChangeEvent,
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -12,7 +18,6 @@ type CartItem = {
   price: number;
   quantity: number;
   size?: string | null;
-  color?: string | null;
 };
 
 type CheckoutDetails = {
@@ -25,568 +30,493 @@ type CheckoutDetails = {
   pincode: string;
 };
 
+type ShippingSettings = {
+  free_shipping: boolean | null;
+  free_shipping_min: number | string | null;
+  flat_rate: number | string | null;
+  estimated_days: string | null;
+};
+
+const initialDetails: CheckoutDetails = {
+  fullName: "",
+  mobile: "",
+  email: "",
+  address: "",
+  city: "",
+  state: "",
+  pincode: "",
+};
+
+const defaultShippingSettings: ShippingSettings = {
+  free_shipping: true,
+  free_shipping_min: 999,
+  flat_rate: 79,
+  estimated_days: "3-7 business days",
+};
+
 export default function CheckoutPage() {
   const router = useRouter();
 
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [details, setDetails] =
+    useState<CheckoutDetails>(initialDetails);
+  const [shippingSettings, setShippingSettings] =
+    useState<ShippingSettings>(defaultShippingSettings);
+
   const [loading, setLoading] = useState(true);
   const [continuing, setContinuing] = useState(false);
 
-  const [fullName, setFullName] = useState("");
-  const [mobile, setMobile] = useState("");
-  const [email, setEmail] = useState("");
-  const [address, setAddress] = useState("");
-  const [pincode, setPincode] = useState("");
-  const [city, setCity] = useState("");
-  const [state, setState] = useState("Andhra Pradesh");
-
   useEffect(() => {
-    loadCart();
-    loadSavedAddress();
+    loadCheckoutData();
   }, []);
 
-  async function loadCart() {
+  async function loadCheckoutData() {
     setLoading(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    let query = supabase
-      .from("cart")
-      .select("*")
-      .order("id", { ascending: false });
-
-    if (user) {
-      query = query.eq("user_id", user.id);
-      setEmail(user.email || "");
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error(error);
-      alert(`Cart load కాలేదు: ${error.message}`);
-      setLoading(false);
-      return;
-    }
-
-    setCartItems((data as CartItem[]) || []);
-    setLoading(false);
-  }
-
-  function loadSavedAddress() {
     try {
-      const savedData = localStorage.getItem(
+      const savedCheckout = localStorage.getItem(
         "new-city-style-checkout"
       );
 
-      if (!savedData) return;
+      if (savedCheckout) {
+        try {
+          const parsed = JSON.parse(
+            savedCheckout
+          ) as Partial<CheckoutDetails>;
 
-      const details = JSON.parse(
-        savedData
-      ) as Partial<CheckoutDetails>;
+          setDetails((current) => ({
+            ...current,
+            ...parsed,
+          }));
+        } catch (error) {
+          console.error(
+            "Saved checkout details could not be read:",
+            error
+          );
+        }
+      }
 
-      setFullName(details.fullName || "");
-      setMobile(details.mobile || "");
-      setEmail(details.email || "");
-      setAddress(details.address || "");
-      setCity(details.city || "");
-      setState(details.state || "Andhra Pradesh");
-      setPincode(details.pincode || "");
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      let cartQuery = supabase
+        .from("cart")
+        .select(
+          "id,product_id,name,image,price,quantity,size"
+        )
+        .order("id", { ascending: false });
+
+      if (user) {
+        cartQuery = cartQuery.eq("user_id", user.id);
+      }
+
+      const [
+        { data: cartData, error: cartError },
+        { data: shippingData, error: shippingError },
+      ] = await Promise.all([
+        cartQuery,
+        supabase
+          .from("shipping_settings")
+          .select(
+            "free_shipping,free_shipping_min,flat_rate,estimated_days"
+          )
+          .order("id", { ascending: true })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+      if (cartError) throw cartError;
+
+      setCartItems((cartData as CartItem[]) || []);
+
+      if (shippingError) {
+        console.error(
+          "Shipping settings load error:",
+          shippingError
+        );
+      } else if (shippingData) {
+        setShippingSettings({
+          free_shipping:
+            shippingData.free_shipping ??
+            defaultShippingSettings.free_shipping,
+          free_shipping_min:
+            shippingData.free_shipping_min ??
+            defaultShippingSettings.free_shipping_min,
+          flat_rate:
+            shippingData.flat_rate ??
+            defaultShippingSettings.flat_rate,
+          estimated_days:
+            shippingData.estimated_days ||
+            defaultShippingSettings.estimated_days,
+        });
+      }
+
+      if (user) {
+        setDetails((current) => ({
+          ...current,
+          email: current.email || user.email || "",
+        }));
+      }
     } catch (error) {
-      console.error("Saved checkout data error:", error);
+      console.error("Checkout load error:", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to load checkout information."
+      );
+    } finally {
+      setLoading(false);
     }
   }
 
-  const subtotal = useMemo(() => {
-    return cartItems.reduce(
-      (sum, item) =>
-        sum + Number(item.price) * Number(item.quantity),
-      0
-    );
-  }, [cartItems]);
+  const subtotal = useMemo(
+    () =>
+      cartItems.reduce(
+        (sum, item) =>
+          sum +
+          Number(item.price || 0) *
+            Number(item.quantity || 0),
+        0
+      ),
+    [cartItems]
+  );
 
-  const shipping = subtotal >= 999 ? 0 : 99;
+  const flatRate = Math.max(
+    0,
+    Number(
+      shippingSettings.flat_rate ??
+        defaultShippingSettings.flat_rate
+    ) || 0
+  );
+
+  const freeShippingMinimum = Math.max(
+    0,
+    Number(
+      shippingSettings.free_shipping_min ??
+        defaultShippingSettings.free_shipping_min
+    ) || 0
+  );
+
+  const shipping =
+    shippingSettings.free_shipping &&
+    subtotal >= freeShippingMinimum
+      ? 0
+      : flatRate;
+
   const tax = Math.round(subtotal * 0.05);
   const total = subtotal + shipping + tax;
 
+  function updateField(
+    field: keyof CheckoutDetails,
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) {
+    const value = event.target.value;
+
+    setDetails((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
   function validateCheckout() {
-    if (!fullName.trim()) {
-      alert("Full Name enter చేయండి");
+    if (!details.fullName.trim()) {
+      alert("Please enter your full name.");
       return false;
     }
 
-    const cleanedMobile = mobile.replace(/\D/g, "");
-
-    if (cleanedMobile.length !== 10) {
-      alert("Correct 10-digit mobile number enter చేయండి");
+    if (!/^[6-9]\d{9}$/.test(details.mobile.trim())) {
+      alert("Please enter a valid 10-digit mobile number.");
       return false;
     }
 
-    if (!address.trim()) {
-      alert("Full Address enter చేయండి");
+    if (
+      details.email.trim() &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+        details.email.trim()
+      )
+    ) {
+      alert("Please enter a valid email address.");
       return false;
     }
 
-    if (!city.trim()) {
-      alert("City enter చేయండి");
+    if (!details.address.trim()) {
+      alert("Please enter your complete delivery address.");
       return false;
     }
 
-    if (!state.trim()) {
-      alert("State enter చేయండి");
+    if (!details.city.trim()) {
+      alert("Please enter your city or village.");
       return false;
     }
 
-    if (!/^\d{6}$/.test(pincode.trim())) {
-      alert("Correct 6-digit pincode enter చేయండి");
+    if (!details.state.trim()) {
+      alert("Please enter your state.");
+      return false;
+    }
+
+    if (!/^\d{6}$/.test(details.pincode.trim())) {
+      alert("Please enter a valid 6-digit pincode.");
       return false;
     }
 
     if (cartItems.length === 0) {
-      alert("Cart is empty");
+      alert("Your cart is empty.");
       return false;
     }
 
     return true;
   }
 
-  function continueToPayment() {
-    if (!validateCheckout()) return;
+  function continueToPayment(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    if (!validateCheckout() || continuing) return;
 
     setContinuing(true);
 
-    const checkoutDetails: CheckoutDetails = {
-      fullName: fullName.trim(),
-      mobile: mobile.replace(/\D/g, ""),
-      email: email.trim(),
-      address: address.trim(),
-      city: city.trim(),
-      state: state.trim(),
-      pincode: pincode.trim(),
+    const cleanDetails: CheckoutDetails = {
+      fullName: details.fullName.trim(),
+      mobile: details.mobile.trim(),
+      email: details.email.trim(),
+      address: details.address.trim(),
+      city: details.city.trim(),
+      state: details.state.trim(),
+      pincode: details.pincode.trim(),
     };
 
-    const orderSummary = {
-      subtotal,
-      shipping,
-      tax,
-      total,
-      items: cartItems,
-    };
+    const cleanItems = cartItems.map((item) => ({
+      ...item,
+      size: item.size || null,
+    }));
 
     localStorage.setItem(
       "new-city-style-checkout",
-      JSON.stringify(checkoutDetails)
+      JSON.stringify(cleanDetails)
     );
 
     localStorage.setItem(
       "new-city-style-order-summary",
-      JSON.stringify(orderSummary)
+      JSON.stringify({
+        subtotal,
+        shipping,
+        tax,
+        total,
+        items: cleanItems,
+      })
     );
 
     router.push("/payment");
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "14px",
-    border: "1px solid #D1D5DB",
-    borderRadius: "10px",
-    fontSize: "16px",
-    outline: "none",
-    boxSizing: "border-box",
-    background: "#FFFFFF",
-  };
-
-  const labelStyle: React.CSSProperties = {
-    display: "block",
-    color: "#0A2E73",
-    fontWeight: 700,
-    marginBottom: "7px",
-  };
-
   if (loading) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          background: "#F8F4EC",
-          color: "#0A2E73",
-          fontSize: "22px",
-          fontWeight: 700,
-        }}
-      >
-        Loading Checkout...
-      </div>
-    );
-  }
+      <main className="loadingPage">
+        <div className="loader" />
+        <h2>Loading Checkout...</h2>
 
-  if (cartItems.length === 0) {
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#F8F4EC",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          padding: "20px",
-        }}
-      >
-        <div
-          style={{
-            background: "#FFFFFF",
-            padding: "45px",
-            borderRadius: "18px",
-            textAlign: "center",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-          }}
-        >
-          <div style={{ fontSize: "55px" }}>🛒</div>
+        <style jsx>{`
+          .loadingPage {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #f8f4ec;
+            color: #0a2e73;
+          }
 
-          <h1 style={{ color: "#0A2E73" }}>
-            Your Cart is Empty
-          </h1>
+          .loader {
+            width: 52px;
+            height: 52px;
+            margin-bottom: 16px;
+            border: 5px solid #e5e7eb;
+            border-top-color: #0a2e73;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+          }
 
-          <button
-            onClick={() => router.push("/")}
-            style={{
-              background: "#D4AF37",
-              color: "#FFFFFF",
-              border: "none",
-              padding: "14px 24px",
-              borderRadius: "10px",
-              cursor: "pointer",
-              fontSize: "16px",
-              fontWeight: 700,
-            }}
-          >
-            Continue Shopping
-          </button>
-        </div>
-      </div>
+          @keyframes spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+        `}</style>
+      </main>
     );
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#F8F4EC",
-        padding: "35px 20px 70px",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: "1300px",
-          margin: "0 auto",
-        }}
-      >
-        <section
-          style={{
-            background:
-              "linear-gradient(135deg, #0A2E73 0%, #164CA8 100%)",
-            color: "#FFFFFF",
-            borderRadius: "20px",
-            padding: "28px",
-            marginBottom: "28px",
-            boxShadow: "0 12px 35px rgba(10,46,115,0.25)",
-          }}
-        >
-          <p
-            style={{
-              margin: "0 0 7px",
-              color: "#D4AF37",
-              fontWeight: 700,
-              letterSpacing: "1px",
-            }}
-          >
-            NEW CITY STYLE
-          </p>
-
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "34px",
-            }}
-          >
-            Secure Checkout
-          </h1>
-
-          <p
-            style={{
-              margin: "9px 0 0",
-              opacity: 0.9,
-            }}
-          >
-            మీ delivery details enter చేసి paymentకి continue
-            చేయండి.
-          </p>
+    <main className="page">
+      <div className="container">
+        <section className="hero">
+          <p>NEW CITY STYLE</p>
+          <h1>Secure Checkout</h1>
+          <span>
+            Enter your delivery details and continue to payment.
+          </span>
         </section>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(320px, 1fr))",
-            gap: "28px",
-            alignItems: "start",
-          }}
-        >
-          <section
-            style={{
-              background: "#FFFFFF",
-              padding: "28px",
-              borderRadius: "18px",
-              boxShadow: "0 8px 25px rgba(0,0,0,0.08)",
-            }}
+        <div className="layout">
+          <form
+            className="addressCard"
+            onSubmit={continueToPayment}
           >
-            <h2
-              style={{
-                color: "#0A2E73",
-                marginTop: 0,
-                marginBottom: "24px",
-              }}
-            >
-              Shipping Address
-            </h2>
+            <h2>Shipping Address</h2>
 
-            <div style={{ marginBottom: "17px" }}>
-              <label style={labelStyle}>Full Name *</label>
+            <Field label="Full Name" required>
               <input
+                value={details.fullName}
+                onChange={(event) =>
+                  updateField("fullName", event)
+                }
                 placeholder="Enter your full name"
-                value={fullName}
-                onChange={(event) =>
-                  setFullName(event.target.value)
-                }
-                style={inputStyle}
               />
-            </div>
+            </Field>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(220px, 1fr))",
-                gap: "15px",
-                marginBottom: "17px",
-              }}
-            >
-              <div>
-                <label style={labelStyle}>
-                  Mobile Number *
-                </label>
-                <input
-                  type="tel"
-                  maxLength={10}
-                  placeholder="10-digit mobile number"
-                  value={mobile}
-                  onChange={(event) =>
-                    setMobile(
-                      event.target.value.replace(/\D/g, "")
-                    )
-                  }
-                  style={inputStyle}
-                />
-              </div>
-
-              <div>
-                <label style={labelStyle}>
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  placeholder="Email address"
-                  value={email}
-                  onChange={(event) =>
-                    setEmail(event.target.value)
-                  }
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: "17px" }}>
-              <label style={labelStyle}>
-                Full Address *
-              </label>
-              <textarea
-                placeholder="House number, street, area, landmark"
-                value={address}
-                onChange={(event) =>
-                  setAddress(event.target.value)
-                }
-                style={{
-                  ...inputStyle,
-                  minHeight: "120px",
-                  resize: "vertical",
-                }}
-              />
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(180px, 1fr))",
-                gap: "15px",
-              }}
-            >
-              <div>
-                <label style={labelStyle}>City *</label>
-                <input
-                  placeholder="City"
-                  value={city}
-                  onChange={(event) =>
-                    setCity(event.target.value)
-                  }
-                  style={inputStyle}
-                />
-              </div>
-
-              <div>
-                <label style={labelStyle}>State *</label>
-                <input
-                  placeholder="State"
-                  value={state}
-                  onChange={(event) =>
-                    setState(event.target.value)
-                  }
-                  style={inputStyle}
-                />
-              </div>
-
-              <div>
-                <label style={labelStyle}>Pincode *</label>
+            <div className="formGrid">
+              <Field label="Mobile Number" required>
                 <input
                   inputMode="numeric"
-                  maxLength={6}
-                  placeholder="6-digit pincode"
-                  value={pincode}
+                  maxLength={10}
+                  value={details.mobile}
                   onChange={(event) =>
-                    setPincode(
-                      event.target.value.replace(/\D/g, "")
-                    )
+                    updateField("mobile", event)
                   }
-                  style={inputStyle}
+                  placeholder="10-digit mobile number"
                 />
-              </div>
+              </Field>
+
+              <Field label="Email Address">
+                <input
+                  type="email"
+                  value={details.email}
+                  onChange={(event) =>
+                    updateField("email", event)
+                  }
+                  placeholder="Enter your email"
+                />
+              </Field>
             </div>
-          </section>
 
-          <section
-            style={{
-              background: "#FFFFFF",
-              padding: "26px",
-              borderRadius: "18px",
-              boxShadow: "0 8px 25px rgba(0,0,0,0.08)",
-            }}
-          >
-            <h2
-              style={{
-                color: "#0A2E73",
-                marginTop: 0,
-                marginBottom: "22px",
-              }}
-            >
-              Order Summary
-            </h2>
+            <Field label="Complete Delivery Address" required>
+              <textarea
+                value={details.address}
+                onChange={(event) =>
+                  updateField("address", event)
+                }
+                placeholder="House number, street, area and landmark"
+              />
+            </Field>
 
-            {cartItems.map((item) => (
-              <div
-                key={item.id}
-                style={{
-                  display: "flex",
-                  gap: "13px",
-                  marginBottom: "17px",
-                  paddingBottom: "17px",
-                  borderBottom: "1px solid #E5E7EB",
-                }}
-              >
-                <img
-                  src={item.image}
-                  alt={item.name}
-                  style={{
-                    width: "75px",
-                    height: "90px",
-                    objectFit: "cover",
-                    borderRadius: "9px",
-                    background: "#F3F4F6",
-                  }}
+            <div className="formGrid">
+              <Field label="City / Village" required>
+                <input
+                  value={details.city}
+                  onChange={(event) =>
+                    updateField("city", event)
+                  }
+                  placeholder="Enter city or village"
                 />
+              </Field>
 
-                <div style={{ flex: 1 }}>
-                  <h3
-                    style={{
-                      color: "#0A2E73",
-                      margin: "0 0 7px",
-                      fontSize: "17px",
-                    }}
-                  >
-                    {item.name}
-                  </h3>
+              <Field label="State" required>
+                <input
+                  value={details.state}
+                  onChange={(event) =>
+                    updateField("state", event)
+                  }
+                  placeholder="Enter state"
+                />
+              </Field>
+            </div>
 
-                  <p
-                    style={{
-                      color: "#666",
-                      margin: "0 0 5px",
-                    }}
-                  >
-                    Quantity: {item.quantity}
-                  </p>
+            <Field label="Pincode" required>
+              <input
+                inputMode="numeric"
+                maxLength={6}
+                value={details.pincode}
+                onChange={(event) =>
+                  updateField("pincode", event)
+                }
+                placeholder="6-digit pincode"
+              />
+            </Field>
 
-                  {(item.size || item.color) && (
-                    <p
-                      style={{
-                        color: "#666",
-                        margin: "0 0 5px",
-                        fontSize: "14px",
-                      }}
-                    >
-                      {item.size ? `Size: ${item.size}` : ""}
-                      {item.size && item.color ? " | " : ""}
-                      {item.color
-                        ? `Color: ${item.color}`
-                        : ""}
-                    </p>
-                  )}
-
-                  <strong
-                    style={{
-                      color: "#D4AF37",
-                      fontSize: "18px",
-                    }}
-                  >
-                    ₹
-                    {(
-                      Number(item.price) *
-                      Number(item.quantity)
-                    ).toLocaleString("en-IN")}
-                  </strong>
-                </div>
-              </div>
-            ))}
-
-            <div
-              style={{
-                display: "grid",
-                gap: "11px",
-                marginTop: "20px",
-              }}
+            <button
+              type="submit"
+              className="continueButton"
+              disabled={
+                continuing || cartItems.length === 0
+              }
             >
+              {continuing
+                ? "Opening Payment..."
+                : "Continue to Payment"}
+            </button>
+          </form>
+
+          <section className="summaryCard">
+            <h2>Order Summary</h2>
+
+            {cartItems.length === 0 ? (
+              <div className="emptyCart">
+                <span>🛍️</span>
+                <strong>Your cart is empty.</strong>
+                <button
+                  type="button"
+                  onClick={() => router.push("/")}
+                >
+                  Continue Shopping
+                </button>
+              </div>
+            ) : (
+              cartItems.map((item) => (
+                <article
+                  className="orderItem"
+                  key={item.id}
+                >
+                  <img
+                    src={item.image}
+                    alt={item.name}
+                  />
+
+                  <div>
+                    <h3>{item.name}</h3>
+                    <p>Quantity: {item.quantity}</p>
+                    {item.size && (
+                      <p>Size: {item.size}</p>
+                    )}
+                    <strong>
+                      ₹
+                      {(
+                        Number(item.price) *
+                        Number(item.quantity)
+                      ).toLocaleString("en-IN")}
+                    </strong>
+                  </div>
+                </article>
+              ))
+            )}
+
+            <div className="summaryRows">
               <SummaryRow
                 title="Subtotal"
-                value={`₹${subtotal.toLocaleString("en-IN")}`}
+                value={`₹${subtotal.toLocaleString(
+                  "en-IN"
+                )}`}
               />
 
               <SummaryRow
                 title="Shipping"
                 value={
-                  shipping === 0 ? "FREE" : `₹${shipping}`
+                  shipping === 0
+                    ? "FREE"
+                    : `₹${shipping.toLocaleString(
+                        "en-IN"
+                      )}`
                 }
               />
 
@@ -596,76 +526,384 @@ export default function CheckoutPage() {
               />
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                borderTop: "2px solid #E5E7EB",
-                marginTop: "20px",
-                paddingTop: "20px",
-              }}
-            >
-              <span
-                style={{
-                  color: "#0A2E73",
-                  fontSize: "21px",
-                  fontWeight: 700,
-                }}
-              >
-                Total
-              </span>
+            {shippingSettings.free_shipping &&
+              subtotal < freeShippingMinimum && (
+                <div className="freeShippingNotice">
+                  Add ₹
+                  {Math.max(
+                    freeShippingMinimum - subtotal,
+                    0
+                  ).toLocaleString("en-IN")}{" "}
+                  more to get free shipping.
+                </div>
+              )}
 
-              <span
-                style={{
-                  color: "#D4AF37",
-                  fontSize: "27px",
-                  fontWeight: 800,
-                }}
-              >
+            {shippingSettings.estimated_days && (
+              <div className="deliveryEstimate">
+                🚚 Estimated delivery:{" "}
+                <strong>
+                  {shippingSettings.estimated_days}
+                </strong>
+              </div>
+            )}
+
+            <div className="totalRow">
+              <span>Total</span>
+              <strong>
                 ₹{total.toLocaleString("en-IN")}
-              </span>
+              </strong>
             </div>
 
-            <button
-              onClick={continueToPayment}
-              disabled={continuing}
-              style={{
-                width: "100%",
-                marginTop: "25px",
-                background: "#D4AF37",
-                color: "#FFFFFF",
-                border: "none",
-                padding: "16px",
-                borderRadius: "11px",
-                cursor: continuing
-                  ? "not-allowed"
-                  : "pointer",
-                fontSize: "17px",
-                fontWeight: 700,
-                opacity: continuing ? 0.7 : 1,
-              }}
-            >
-              {continuing
-                ? "Please Wait..."
-                : "Continue to Payment"}
-            </button>
-
-            <p
-              style={{
-                color: "#666",
-                textAlign: "center",
-                fontSize: "13px",
-                lineHeight: 1.6,
-                marginBottom: 0,
-              }}
-            >
+            <p className="protectedText">
               🔒 Your checkout information is protected.
             </p>
           </section>
         </div>
       </div>
+
+      <style jsx>{`
+        :global(*) {
+          box-sizing: border-box;
+        }
+
+        :global(body) {
+          margin: 0;
+          background: #f8f4ec;
+          color: #172033;
+          font-family: Inter, Poppins, Arial, sans-serif;
+        }
+
+        button,
+        input,
+        textarea {
+          font: inherit;
+        }
+
+        .page {
+          min-height: 100vh;
+          padding: 35px 20px 70px;
+          background:
+            radial-gradient(
+              circle at top right,
+              rgba(212, 175, 55, 0.11),
+              transparent 28%
+            ),
+            #f8f4ec;
+        }
+
+        .container {
+          width: 100%;
+          max-width: 1300px;
+          margin: 0 auto;
+        }
+
+        .hero {
+          margin-bottom: 28px;
+          padding: 30px;
+          border-radius: 22px;
+          background: linear-gradient(
+            135deg,
+            #071a43,
+            #0a2e73 55%,
+            #164ca8
+          );
+          color: white;
+          box-shadow: 0 14px 38px
+            rgba(10, 46, 115, 0.25);
+        }
+
+        .hero p {
+          margin: 0 0 8px;
+          color: #d4af37;
+          font-weight: 900;
+          letter-spacing: 1.3px;
+        }
+
+        .hero h1 {
+          margin: 0;
+          font-size: 42px;
+        }
+
+        .hero span {
+          display: block;
+          margin-top: 10px;
+          opacity: 0.9;
+        }
+
+        .layout {
+          display: grid;
+          grid-template-columns:
+            minmax(0, 1.15fr)
+            minmax(360px, 0.85fr);
+          gap: 28px;
+          align-items: start;
+        }
+
+        .addressCard,
+        .summaryCard {
+          padding: 28px;
+          border: 1px solid
+            rgba(10, 46, 115, 0.08);
+          border-radius: 20px;
+          background: white;
+          box-shadow: 0 10px 30px
+            rgba(0, 0, 0, 0.07);
+        }
+
+        .addressCard h2,
+        .summaryCard h2 {
+          margin: 0 0 24px;
+          color: #0a2e73;
+          font-size: 28px;
+        }
+
+        .formGrid {
+          display: grid;
+          grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+          gap: 16px;
+        }
+
+        :global(.checkoutField) {
+          margin-bottom: 18px;
+        }
+
+        :global(.checkoutField label) {
+          display: block;
+          margin-bottom: 8px;
+          color: #0a2e73;
+          font-weight: 800;
+        }
+
+        :global(.checkoutField input),
+        :global(.checkoutField textarea) {
+          width: 100%;
+          padding: 13px 14px;
+          border: 1px solid #d1d5db;
+          border-radius: 11px;
+          background: white;
+          color: #111827;
+          outline: none;
+        }
+
+        :global(.checkoutField textarea) {
+          min-height: 125px;
+          resize: vertical;
+          line-height: 1.6;
+        }
+
+        :global(.checkoutField input:focus),
+        :global(.checkoutField textarea:focus) {
+          border-color: #0a2e73;
+          box-shadow: 0 0 0 3px
+            rgba(10, 46, 115, 0.1);
+        }
+
+        .continueButton {
+          width: 100%;
+          min-height: 54px;
+          margin-top: 8px;
+          border: 1px solid #d4af37;
+          border-radius: 12px;
+          background: linear-gradient(
+            135deg,
+            #d4af37,
+            #f0cf63
+          );
+          color: #0a2e73;
+          font-weight: 900;
+          cursor: pointer;
+          box-shadow: 0 12px 25px
+            rgba(212, 175, 55, 0.24);
+        }
+
+        .continueButton:disabled {
+          opacity: 0.65;
+          cursor: not-allowed;
+        }
+
+        .summaryCard {
+          position: sticky;
+          top: 95px;
+        }
+
+        .orderItem {
+          display: flex;
+          gap: 14px;
+          margin-bottom: 17px;
+          padding-bottom: 17px;
+          border-bottom: 1px solid #e5e7eb;
+        }
+
+        .orderItem img {
+          width: 88px;
+          height: 105px;
+          flex-shrink: 0;
+          border-radius: 11px;
+          background: #f3f4f6;
+          object-fit: cover;
+        }
+
+        .orderItem h3 {
+          margin: 0 0 7px;
+          color: #0a2e73;
+          font-size: 17px;
+        }
+
+        .orderItem p {
+          margin: 0 0 5px;
+          color: #667085;
+          font-size: 13px;
+        }
+
+        .orderItem strong {
+          color: #d4af37;
+          font-size: 18px;
+        }
+
+        .summaryRows {
+          display: grid;
+          gap: 12px;
+          margin-top: 18px;
+        }
+
+        .freeShippingNotice,
+        .deliveryEstimate {
+          margin-top: 16px;
+          padding: 12px 14px;
+          border-radius: 11px;
+          font-size: 13px;
+          line-height: 1.55;
+        }
+
+        .freeShippingNotice {
+          border: 1px solid #fde68a;
+          background: #fffbeb;
+          color: #92400e;
+        }
+
+        .deliveryEstimate {
+          border: 1px solid #bfdbfe;
+          background: #eff6ff;
+          color: #0a2e73;
+        }
+
+        .totalRow {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-top: 22px;
+          padding-top: 20px;
+          border-top: 2px solid #e5e7eb;
+        }
+
+        .totalRow span {
+          color: #0a2e73;
+          font-size: 22px;
+          font-weight: 850;
+        }
+
+        .totalRow strong {
+          color: #d4af37;
+          font-size: 30px;
+        }
+
+        .protectedText {
+          margin: 16px 0 0;
+          color: #667085;
+          font-size: 12px;
+          text-align: center;
+        }
+
+        .emptyCart {
+          display: grid;
+          justify-items: center;
+          gap: 12px;
+          padding: 32px;
+          border: 1px dashed #cbd5e1;
+          border-radius: 14px;
+          background: #f8fafc;
+          text-align: center;
+        }
+
+        .emptyCart span {
+          font-size: 42px;
+        }
+
+        .emptyCart strong {
+          color: #0a2e73;
+        }
+
+        .emptyCart button {
+          padding: 11px 17px;
+          border: 0;
+          border-radius: 9px;
+          background: #0a2e73;
+          color: white;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        @media (max-width: 900px) {
+          .layout {
+            grid-template-columns: 1fr;
+          }
+
+          .summaryCard {
+            position: static;
+          }
+        }
+
+        @media (max-width: 650px) {
+          .page {
+            padding: 18px 10px 45px;
+          }
+
+          .hero,
+          .addressCard,
+          .summaryCard {
+            padding: 18px;
+            border-radius: 16px;
+          }
+
+          .hero h1 {
+            font-size: 32px;
+          }
+
+          .formGrid {
+            grid-template-columns: 1fr;
+            gap: 0;
+          }
+
+          .orderItem img {
+            width: 72px;
+            height: 88px;
+          }
+        }
+      `}</style>
     </main>
+  );
+}
+
+function Field({
+  label,
+  required = false,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="checkoutField">
+      <label>
+        {label}
+        {required && (
+          <span style={{ color: "#DC2626" }}> *</span>
+        )}
+      </label>
+      {children}
+    </div>
   );
 }
 
@@ -677,18 +915,25 @@ function SummaryRow({
   value: string;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: "15px",
-      }}
-    >
-      <span style={{ color: "#555" }}>{title}</span>
+    <div className="summaryRow">
+      <span>{title}</span>
+      <strong>{value}</strong>
 
-      <strong style={{ color: "#0A2E73" }}>
-        {value}
-      </strong>
+      <style jsx>{`
+        .summaryRow {
+          display: flex;
+          justify-content: space-between;
+          gap: 15px;
+        }
+
+        span {
+          color: #555;
+        }
+
+        strong {
+          color: #0a2e73;
+        }
+      `}</style>
     </div>
   );
 }
