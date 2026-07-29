@@ -629,9 +629,10 @@ export default function CustomersPage() {
                 disabled={saving}
                 style={{
                   width: "100%",
-                  background: "#0A2E73",
+                  background:
+                    "linear-gradient(135deg, #03153F, #0A2E73)",
                   color: "#FFFFFF",
-                  border: "none",
+                  border: "1px solid rgba(212,175,55,0.85)",
                   padding: "14px",
                   borderRadius: "10px",
                   cursor: saving
@@ -753,9 +754,11 @@ export default function CustomersPage() {
                   type="button"
                   onClick={loadCustomers}
                   style={{
-                    background: "#D4AF37",
-                    color: "#FFFFFF",
-                    border: "none",
+                    background:
+                      "linear-gradient(135deg, #D4AF37, #F0D267)",
+                    color: "#03153F",
+                    border:
+                      "1px solid rgba(10,46,115,0.18)",
                     padding: "11px 17px",
                     borderRadius: "9px",
                     cursor: "pointer",
@@ -787,17 +790,18 @@ export default function CustomersPage() {
                 {filteredCustomers.map((customer) => (
                   <article
                     key={customer.id}
+                    className="customer-card"
                     style={{
                       border: customer.is_blocked
-                        ? "1px solid #FCA5A5"
-                        : "1px solid #E5E7EB",
-                      borderRadius: "16px",
+                        ? "1px solid rgba(239,68,68,0.38)"
+                        : "1px solid rgba(212,175,55,0.22)",
+                      borderRadius: "18px",
                       padding: "20px",
                       background: customer.is_blocked
-                        ? "#FFF7F7"
-                        : "#FFFFFF",
+                        ? "linear-gradient(180deg,#FFF7F7,#FFFFFF)"
+                        : "linear-gradient(180deg,#FFFFFF,#F8FAFD)",
                       boxShadow:
-                        "0 5px 18px rgba(0,0,0,0.06)",
+                        "0 8px 24px rgba(3,21,63,0.07)",
                     }}
                   >
                     <div
@@ -1006,9 +1010,11 @@ export default function CustomersPage() {
                           startEditing(customer)
                         }
                         style={{
-                          background: "#0A2E73",
+                          background:
+                            "linear-gradient(135deg, #03153F, #0A2E73)",
                           color: "#FFFFFF",
-                          border: "none",
+                          border:
+                            "1px solid rgba(212,175,55,0.75)",
                           padding: "10px",
                           borderRadius: "8px",
                           cursor: "pointer",
@@ -1069,6 +1075,175 @@ export default function CustomersPage() {
       </div>
 
       <style jsx global>{`
+        .customer-summary-card {
+          position: relative;
+          isolation: isolate;
+          min-height: 140px;
+          overflow: hidden;
+          padding: 20px;
+          border: 1px solid rgba(212, 175, 55, 0.22);
+          border-radius: 18px;
+          background: linear-gradient(
+            135deg,
+            rgba(10, 46, 115, 0.99),
+            rgba(3, 21, 63, 0.98)
+          );
+          box-shadow:
+            0 12px 28px rgba(3, 21, 63, 0.16),
+            inset 0 1px 0 rgba(255, 255, 255, 0.06);
+          transition:
+            transform 0.22s ease,
+            box-shadow 0.22s ease,
+            border-color 0.22s ease;
+          animation: customerStatRise 0.45s ease both;
+        }
+
+        .customer-summary-card:nth-child(2),
+        .customer-summary-card:nth-child(5) {
+          background: linear-gradient(
+            135deg,
+            rgba(10, 46, 115, 0.99),
+            rgba(22, 46, 102, 0.98),
+            rgba(103, 79, 16, 0.9)
+          );
+        }
+
+        .customer-summary-card:nth-child(3),
+        .customer-summary-card:nth-child(6) {
+          background: linear-gradient(
+            135deg,
+            rgba(5, 25, 74, 0.99),
+            rgba(8, 37, 96, 0.98)
+          );
+        }
+
+        .customer-summary-card::before {
+          content: "";
+          position: absolute;
+          z-index: -1;
+          top: -40%;
+          right: -15%;
+          width: 125px;
+          height: 125px;
+          border-radius: 50%;
+          background: radial-gradient(
+            circle,
+            rgba(212, 175, 55, 0.34),
+            rgba(212, 175, 55, 0)
+          );
+        }
+
+        .customer-summary-card::after {
+          content: "";
+          position: absolute;
+          top: -145%;
+          left: -36%;
+          width: 42%;
+          height: 370%;
+          transform: rotate(22deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.14),
+            transparent
+          );
+          animation: customerStatShine 5.2s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .customer-summary-card:hover {
+          transform: translateY(-2px) scale(1.004);
+          border-color: rgba(212, 175, 55, 0.42);
+          box-shadow:
+            0 16px 32px rgba(3, 21, 63, 0.22),
+            0 0 0 1px rgba(212, 175, 55, 0.1);
+        }
+
+        .customer-summary-icon {
+          position: relative;
+          z-index: 2;
+          color: #D4AF37;
+          font-size: 30px;
+          filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.18));
+        }
+
+        .customer-summary-card p {
+          position: relative;
+          z-index: 2;
+          margin: 10px 0 5px;
+          color: rgba(212, 175, 55, 0.94);
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 0.45px;
+          text-transform: uppercase;
+        }
+
+        .customer-summary-card h2 {
+          position: relative;
+          z-index: 2;
+          margin: 0;
+          color: #FFFFFF;
+          font-size: 29px;
+          font-weight: 950;
+          letter-spacing: -0.5px;
+          text-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+        }
+
+        .customer-summary-card:nth-child(5) h2 {
+          color: #F6D676;
+        }
+
+        .customer-card {
+          transition:
+            transform 0.2s ease,
+            box-shadow 0.2s ease,
+            border-color 0.2s ease;
+        }
+
+        .customer-card:hover {
+          transform: translateY(-2px);
+          border-color: rgba(212, 175, 55, 0.42) !important;
+          box-shadow: 0 14px 32px rgba(3, 21, 63, 0.11) !important;
+        }
+
+        button {
+          transition:
+            transform 0.18s ease,
+            box-shadow 0.18s ease,
+            filter 0.18s ease;
+        }
+
+        button:hover:not(:disabled) {
+          transform: translateY(-1px);
+          filter: brightness(1.04);
+        }
+
+        @keyframes customerStatRise {
+          from {
+            opacity: 0;
+            transform: translateY(14px) scale(0.985);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes customerStatShine {
+          0%,
+          62% {
+            left: -42%;
+            opacity: 0;
+          }
+          68% {
+            opacity: 0.7;
+          }
+          100% {
+            left: 126%;
+            opacity: 0;
+          }
+        }
+
         @media (max-width: 1000px) {
           .customers-layout {
             grid-template-columns: 1fr !important;
@@ -1157,37 +1332,12 @@ function SummaryCard({
   value: string | number;
 }) {
   return (
-    <div
-      style={{
-        background: "#FFFFFF",
-        borderRadius: "16px",
-        padding: "20px",
-        boxShadow:
-          "0 7px 22px rgba(0,0,0,0.07)",
-        border:
-          "1px solid rgba(212,175,55,0.22)",
-      }}
-    >
-      <div style={{ fontSize: "29px" }}>{icon}</div>
+    <div className="customer-summary-card">
+      <div className="customer-summary-icon">{icon}</div>
 
-      <p
-        style={{
-          color: "#666",
-          margin: "9px 0 5px",
-        }}
-      >
-        {title}
-      </p>
+      <p>{title}</p>
 
-      <h2
-        style={{
-          color: "#0A2E73",
-          margin: 0,
-          fontSize: "29px",
-        }}
-      >
-        {value}
-      </h2>
+      <h2>{value}</h2>
     </div>
   );
 }

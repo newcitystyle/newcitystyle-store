@@ -22,19 +22,50 @@ const menuItems = [
   { label: "Categories", href: "/admin/categories", icon: "🏷️" },
   { label: "Collections", href: "/admin/collections", icon: "✨" },
   { label: "Orders", href: "/admin/orders", icon: "📦" },
+  { label: "Billing / POS", href: "/admin/pos", icon: "🧾" },
+  { label: "Purchase Stock", href: "/admin/purchases", icon: "📥" },
+  {
+    label: "Purchase History",
+    href: "/admin/purchase-history",
+    icon: "📚",
+  },
+  {
+    label: "Barcodes & Stock",
+    href: "/admin/barcodes",
+    icon: "▥",
+  },
+  {
+    label: "POS Return History",
+    href: "/admin/pos-returns",
+    icon: "↩",
+  },
   { label: "Returns", href: "/admin/returns", icon: "↩️" },
   { label: "Customers", href: "/admin/customers", icon: "👥" },
+  {
+    label: "Customer Dues",
+    href: "/admin/customer-dues",
+    icon: "💰",
+  },
   { label: "Reviews", href: "/admin/reviews", icon: "⭐" },
   { label: "Coupons", href: "/admin/coupons", icon: "🎟️" },
   { label: "Marketing", href: "/admin/marketing", icon: "📣" },
-
   { label: "Home Preview", href: "/admin/home-preview", icon: "🖥️" },
   { label: "Branding", href: "/admin/branding", icon: "🎨" },
   { label: "Payments", href: "/admin/payments", icon: "💳" },
   { label: "Shipping", href: "/admin/shipping", icon: "🚚" },
   { label: "SEO", href: "/admin/seo", icon: "🔍" },
-{ label: "Analytics", href: "/admin/analytics", icon: "📊" },
-  { label: "Store Details", href: "/admin/store-settings", icon: "⚙️" },
+  { label: "Analytics", href: "/admin/analytics", icon: "📊" },
+  { label: "Sales History", href: "/admin/sales-history", icon: "📊" },
+  {
+    label: "Billing Reports",
+    href: "/admin/billing-reports",
+    icon: "📈",
+  },
+  {
+    label: "Store Details",
+    href: "/admin/store-settings",
+    icon: "⚙️",
+  },
 ];
 
 export default function AdminLayout({
@@ -46,6 +77,7 @@ export default function AdminLayout({
   const [checkingAccess, setCheckingAccess] = useState(true);
   const [hasAdminAccess, setHasAdminAccess] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [adminEmail, setAdminEmail] = useState("");
 
   const isLoginPage = pathname === "/admin/login";
@@ -264,7 +296,13 @@ export default function AdminLayout({
   }
 
   return (
-    <div className="ncsAdminShell">
+    <div
+      className={
+        sidebarCollapsed
+          ? "ncsAdminShell ncsAdminShellCollapsed"
+          : "ncsAdminShell"
+      }
+    >
       <button
         type="button"
         className="ncsMobileMenuButton"
@@ -286,8 +324,27 @@ export default function AdminLayout({
       <aside
         className={`ncsSidebar ${
           sidebarOpen ? "ncsSidebarOpen" : ""
-        }`}
+        } ${sidebarCollapsed ? "ncsSidebarCollapsed" : ""}`}
       >
+        <button
+          type="button"
+          className="ncsSidebarCollapseButton"
+          onClick={() =>
+            setSidebarCollapsed((current) => !current)
+          }
+          aria-label={
+            sidebarCollapsed
+              ? "Expand admin sidebar"
+              : "Collapse admin sidebar"
+          }
+          title={
+            sidebarCollapsed
+              ? "Expand sidebar"
+              : "Collapse sidebar"
+          }
+        >
+          {sidebarCollapsed ? "›" : "‹"}
+        </button>
         <div className="ncsBrandArea">
           <div className="ncsBrandLogo">NCS</div>
 
@@ -598,6 +655,104 @@ export default function AdminLayout({
           margin-left: 292px;
         }
 
+        .ncsSidebarCollapseButton {
+          position: absolute;
+          z-index: 5;
+          top: 92px;
+          right: -15px;
+          width: 31px;
+          height: 42px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid #d4af37;
+          border-radius: 0 11px 11px 0;
+          background: linear-gradient(180deg, #d4af37, #f1d26a);
+          color: #0a2e73;
+          font-size: 25px;
+          font-weight: 950;
+          cursor: pointer;
+          box-shadow: 5px 6px 16px rgba(3, 21, 63, 0.22);
+          transition:
+            transform 0.2s ease,
+            filter 0.2s ease;
+        }
+
+        .ncsSidebarCollapseButton:hover {
+          transform: translateX(2px);
+          filter: brightness(1.04);
+        }
+
+        .ncsSidebar,
+        .ncsAdminContent {
+          transition:
+            width 0.25s ease,
+            margin-left 0.25s ease,
+            padding 0.25s ease;
+        }
+
+        .ncsSidebarCollapsed {
+          width: 86px;
+          padding-left: 12px;
+          padding-right: 12px;
+          overflow: visible;
+        }
+
+        .ncsSidebarCollapsed .ncsBrandArea {
+          justify-content: center;
+          padding-left: 0;
+          padding-right: 0;
+        }
+
+        .ncsSidebarCollapsed .ncsBrandLogo {
+          width: 54px;
+          height: 54px;
+        }
+
+        .ncsSidebarCollapsed .ncsBrandText,
+        .ncsSidebarCollapsed .ncsMenuLabel,
+        .ncsSidebarCollapsed .ncsAdminText,
+        .ncsSidebarCollapsed .ncsViewStoreButton:not(:hover) {
+          display: none;
+        }
+
+        .ncsSidebarCollapsed .ncsMenuItem {
+          min-height: 48px;
+          justify-content: center;
+          gap: 0;
+          padding: 0;
+        }
+
+        .ncsSidebarCollapsed .ncsMenuIcon {
+          width: 100%;
+          font-size: 20px;
+        }
+
+        .ncsSidebarCollapsed .ncsSidebarBottom {
+          gap: 8px;
+        }
+
+        .ncsSidebarCollapsed .ncsAdminIdentity {
+          justify-content: center;
+          padding: 8px;
+        }
+
+        .ncsSidebarCollapsed .ncsViewStoreButton,
+        .ncsSidebarCollapsed .ncsLogoutButton {
+          min-height: 44px;
+          padding: 0;
+          font-size: 0;
+        }
+
+        .ncsSidebarCollapsed .ncsViewStoreButton span,
+        .ncsSidebarCollapsed .ncsLogoutButton span {
+          font-size: 18px;
+        }
+
+        .ncsAdminShellCollapsed .ncsAdminContent {
+          margin-left: 86px;
+        }
+
         .ncsMobileMenuButton,
         .ncsMobileOverlay {
           display: none;
@@ -618,7 +773,12 @@ export default function AdminLayout({
         }
 
         @media (max-width: 900px) {
-          .ncsSidebar {
+          .ncsSidebarCollapseButton {
+            display: none;
+          }
+
+          .ncsSidebar,
+          .ncsSidebarCollapsed {
             width: min(86vw, 310px);
             transform: translateX(-105%);
             transition: transform 0.25s ease;
@@ -628,7 +788,8 @@ export default function AdminLayout({
             transform: translateX(0);
           }
 
-          .ncsAdminContent {
+          .ncsAdminContent,
+          .ncsAdminShellCollapsed .ncsAdminContent {
             margin-left: 0;
             padding-top: 64px;
           }

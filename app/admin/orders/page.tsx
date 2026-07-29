@@ -425,9 +425,11 @@ export default function AdminOrdersPage() {
             <button
               onClick={loadOrders}
               style={{
-                background: "#D4AF37",
-                color: "#FFFFFF",
-                border: "none",
+                background:
+                  "linear-gradient(135deg,#D4AF37,#F0D267)",
+                color: "#03153F",
+                border:
+                  "1px solid rgba(10,46,115,0.18)",
                 padding: "12px 20px",
                 borderRadius: "9px",
                 cursor: "pointer",
@@ -440,7 +442,8 @@ export default function AdminOrdersPage() {
             <Link
               href="/admin"
               style={{
-                background: "#0A2E73",
+                background:
+                  "linear-gradient(135deg,#03153F,#0A2E73)",
                 color: "#FFFFFF",
                 textDecoration: "none",
                 padding: "12px 20px",
@@ -504,14 +507,16 @@ export default function AdminOrdersPage() {
               return (
                 <article
                   key={order.id}
+                  className="ncsOrderCard"
                   style={{
-                    background: "#FFFFFF",
-                    borderRadius: "18px",
+                    background:
+                      "linear-gradient(180deg,#FFFFFF,#F8FAFD)",
+                    borderRadius: "19px",
                     padding: "24px",
                     boxShadow:
-                      "0 8px 25px rgba(0,0,0,0.08)",
+                      "0 10px 28px rgba(3,21,63,0.08)",
                     border:
-                      "1px solid rgba(212,175,55,0.25)",
+                      "1px solid rgba(212,175,55,0.24)",
                   }}
                 >
                   <div
@@ -714,6 +719,176 @@ export default function AdminOrdersPage() {
           </section>
         )}
       </div>
+
+      <style jsx global>{`
+        .ncsOrderSummaryCard {
+          position: relative;
+          isolation: isolate;
+          min-height: 145px;
+          overflow: hidden;
+          padding: 22px;
+          border: 1px solid rgba(212, 175, 55, 0.22);
+          border-radius: 18px;
+          background: linear-gradient(
+            135deg,
+            rgba(10, 46, 115, 0.99),
+            rgba(3, 21, 63, 0.98)
+          );
+          box-shadow:
+            0 12px 28px rgba(3, 21, 63, 0.16),
+            inset 0 1px 0 rgba(255, 255, 255, 0.06);
+          transition:
+            transform 0.22s ease,
+            box-shadow 0.22s ease,
+            border-color 0.22s ease;
+          animation: ncsOrderStatRise 0.45s ease both;
+        }
+
+        .ncsOrderSummaryCard:nth-child(2),
+        .ncsOrderSummaryCard:nth-child(4) {
+          background: linear-gradient(
+            135deg,
+            rgba(10, 46, 115, 0.99),
+            rgba(22, 46, 102, 0.98),
+            rgba(103, 79, 16, 0.9)
+          );
+        }
+
+        .ncsOrderSummaryCard::before {
+          content: "";
+          position: absolute;
+          z-index: -1;
+          top: -40%;
+          right: -15%;
+          width: 128px;
+          height: 128px;
+          border-radius: 50%;
+          background: radial-gradient(
+            circle,
+            rgba(212, 175, 55, 0.34),
+            rgba(212, 175, 55, 0)
+          );
+        }
+
+        .ncsOrderSummaryCard::after {
+          content: "";
+          position: absolute;
+          top: -145%;
+          left: -36%;
+          width: 42%;
+          height: 370%;
+          transform: rotate(22deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.14),
+            transparent
+          );
+          animation: ncsOrderStatShine 5.2s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .ncsOrderSummaryCard:hover {
+          transform: translateY(-2px) scale(1.004);
+          border-color: rgba(212, 175, 55, 0.42);
+          box-shadow:
+            0 16px 32px rgba(3, 21, 63, 0.22),
+            0 0 0 1px rgba(212, 175, 55, 0.1);
+        }
+
+        .ncsOrderSummaryIcon {
+          position: relative;
+          z-index: 2;
+          color: #D4AF37;
+          font-size: 30px;
+          filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.18));
+        }
+
+        .ncsOrderSummaryCard p {
+          position: relative;
+          z-index: 2;
+          margin: 10px 0 5px;
+          color: rgba(212, 175, 55, 0.94);
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 0.45px;
+          text-transform: uppercase;
+        }
+
+        .ncsOrderSummaryCard h2 {
+          position: relative;
+          z-index: 2;
+          margin: 0;
+          color: #FFFFFF;
+          font-size: 30px;
+          font-weight: 950;
+          letter-spacing: -0.5px;
+          text-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+        }
+
+        .ncsOrderSummaryCard:nth-child(4) h2 {
+          color: #F6D676;
+        }
+
+        .ncsOrderCard {
+          transition:
+            transform 0.2s ease,
+            box-shadow 0.2s ease,
+            border-color 0.2s ease;
+        }
+
+        .ncsOrderCard:hover {
+          transform: translateY(-2px);
+          border-color: rgba(212, 175, 55, 0.44) !important;
+          box-shadow: 0 16px 34px rgba(3, 21, 63, 0.12) !important;
+        }
+
+        button,
+        a {
+          transition:
+            transform 0.18s ease,
+            box-shadow 0.18s ease,
+            filter 0.18s ease;
+        }
+
+        button:hover:not(:disabled),
+        a:hover {
+          transform: translateY(-1px);
+          filter: brightness(1.04);
+        }
+
+        @keyframes ncsOrderStatRise {
+          from {
+            opacity: 0;
+            transform: translateY(14px) scale(0.985);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes ncsOrderStatShine {
+          0%,
+          62% {
+            left: -42%;
+            opacity: 0;
+          }
+          68% {
+            opacity: 0.7;
+          }
+          100% {
+            left: 126%;
+            opacity: 0;
+          }
+        }
+
+        @media (max-width: 720px) {
+          .ncsOrderSummaryCard {
+            min-height: 132px;
+          }
+        }
+      `}</style>
     </main>
   );
 }
@@ -728,35 +903,10 @@ function DashboardCard({
   value: number | string;
 }) {
   return (
-    <div
-      style={{
-        background: "#FFFFFF",
-        borderRadius: "18px",
-        padding: "23px",
-        boxShadow: "0 8px 25px rgba(0,0,0,0.08)",
-        border: "1px solid rgba(212,175,55,0.25)",
-      }}
-    >
-      <div style={{ fontSize: "30px" }}>{icon}</div>
-
-      <p
-        style={{
-          color: "#666",
-          margin: "10px 0 7px",
-        }}
-      >
-        {title}
-      </p>
-
-      <h2
-        style={{
-          color: "#0A2E73",
-          margin: 0,
-          fontSize: "30px",
-        }}
-      >
-        {value}
-      </h2>
+    <div className="ncsOrderSummaryCard">
+      <div className="ncsOrderSummaryIcon">{icon}</div>
+      <p>{title}</p>
+      <h2>{value}</h2>
     </div>
   );
 }

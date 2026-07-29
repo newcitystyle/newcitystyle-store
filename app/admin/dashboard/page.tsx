@@ -1301,6 +1301,32 @@ export default function AdminDashboardPage() {
           text-decoration: none;
         }
 
+        @keyframes dashboardStatRise {
+          from {
+            opacity: 0;
+            transform: translateY(14px) scale(0.985);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes dashboardStatShine {
+          0%,
+          62% {
+            left: -42%;
+            opacity: 0;
+          }
+          68% {
+            opacity: 0.7;
+          }
+          100% {
+            left: 126%;
+            opacity: 0;
+          }
+        }
+
         @media (max-width: 1250px) {
           .visitorGrid {
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1431,12 +1457,68 @@ function StatCard({
 
       <style jsx>{`
         .statCard {
+          position: relative;
+          isolation: isolate;
           min-height: 168px;
+          overflow: hidden;
           padding: 20px;
-          border: 1px solid #e4e7ec;
+          border: 1px solid rgba(212, 175, 55, 0.22);
           border-radius: 18px;
-          background: #ffffff;
-          box-shadow: 0 10px 30px rgba(16, 24, 40, 0.07);
+          background: linear-gradient(
+            135deg,
+            rgba(10, 46, 115, 0.99),
+            rgba(3, 21, 63, 0.98)
+          );
+          box-shadow:
+            0 12px 28px rgba(3, 21, 63, 0.16),
+            inset 0 1px 0 rgba(255, 255, 255, 0.06);
+          transition:
+            transform 0.22s ease,
+            box-shadow 0.22s ease,
+            border-color 0.22s ease;
+          animation: dashboardStatRise 0.45s ease both;
+        }
+
+        .statCard::before {
+          content: "";
+          position: absolute;
+          z-index: -1;
+          top: -40%;
+          right: -15%;
+          width: 130px;
+          height: 130px;
+          border-radius: 50%;
+          background: radial-gradient(
+            circle,
+            rgba(212, 175, 55, 0.34),
+            rgba(212, 175, 55, 0)
+          );
+        }
+
+        .statCard::after {
+          content: "";
+          position: absolute;
+          top: -145%;
+          left: -36%;
+          width: 42%;
+          height: 370%;
+          transform: rotate(22deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.14),
+            transparent
+          );
+          animation: dashboardStatShine 5.2s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .statCard:hover {
+          transform: translateY(-2px) scale(1.004);
+          border-color: rgba(212, 175, 55, 0.42);
+          box-shadow:
+            0 16px 32px rgba(3, 21, 63, 0.22),
+            0 0 0 1px rgba(212, 175, 55, 0.1);
         }
 
         .statTop {
@@ -1453,12 +1535,14 @@ function StatCard({
           align-items: center;
           justify-content: center;
           border-radius: 13px;
-          background: #eef4ff;
+          border: 1px solid rgba(212, 175, 55, 0.3);
+          background: rgba(255, 255, 255, 0.1);
+          color: #d4af37;
           font-size: 20px;
         }
 
         .statTop span {
-          color: #98a2b3;
+          color: rgba(212, 175, 55, 0.9);
           font-size: 9px;
           font-weight: 850;
           letter-spacing: 0.8px;
@@ -1467,15 +1551,17 @@ function StatCard({
 
         p {
           margin: 17px 0 5px;
-          color: #667085;
-          font-size: 12px;
-          font-weight: 750;
+          color: rgba(212, 175, 55, 0.94);
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 0.4px;
+          text-transform: uppercase;
         }
 
         strong {
           display: block;
           overflow: hidden;
-          color: #0a2e73;
+          color: #ffffff;
           font-size: clamp(24px, 3vw, 32px);
           font-weight: 950;
           text-overflow: ellipsis;
@@ -1485,7 +1571,7 @@ function StatCard({
         small {
           display: block;
           margin-top: 8px;
-          color: #98a2b3;
+          color: rgba(255, 255, 255, 0.66);
           font-size: 10px;
         }
       `}</style>
@@ -1518,14 +1604,31 @@ function VisitorCard({
 
       <style jsx>{`
         .visitorCard {
+          position: relative;
+          overflow: hidden;
           min-height: 135px;
           display: flex;
           align-items: flex-start;
           gap: 13px;
           padding: 18px;
-          border: 1px solid #dbe6ff;
+          border: 1px solid rgba(212, 175, 55, 0.18);
           border-radius: 16px;
-          background: linear-gradient(145deg, #ffffff, #f5f8ff);
+          background: linear-gradient(
+            135deg,
+            rgba(10, 46, 115, 0.98),
+            rgba(3, 21, 63, 0.96)
+          );
+          box-shadow: 0 10px 24px rgba(3, 21, 63, 0.12);
+          transition:
+            transform 0.2s ease,
+            box-shadow 0.2s ease,
+            border-color 0.2s ease;
+        }
+
+        .visitorCard:hover {
+          transform: translateY(-2px);
+          border-color: rgba(212, 175, 55, 0.4);
+          box-shadow: 0 14px 28px rgba(3, 21, 63, 0.18);
         }
 
         .visitorIcon {
@@ -1536,21 +1639,22 @@ function VisitorCard({
           justify-content: center;
           flex-shrink: 0;
           border-radius: 13px;
-          background: #0a2e73;
+          border: 1px solid rgba(212, 175, 55, 0.3);
+          background: rgba(255, 255, 255, 0.08);
           color: #d4af37;
           font-size: 19px;
         }
 
         p {
           margin: 1px 0 4px;
-          color: #667085;
+          color: rgba(212, 175, 55, 0.94);
           font-size: 11px;
           font-weight: 800;
         }
 
         strong {
           display: block;
-          color: #0a2e73;
+          color: #ffffff;
           font-size: 29px;
           font-weight: 950;
           line-height: 1.15;
@@ -1559,7 +1663,7 @@ function VisitorCard({
         span {
           display: block;
           margin-top: 7px;
-          color: #98a2b3;
+          color: rgba(255, 255, 255, 0.66);
           font-size: 9px;
           line-height: 1.4;
         }
@@ -1593,11 +1697,16 @@ function QuickAction({
           display: flex;
           flex-direction: column;
           padding: 18px;
-          border: 1px solid #e4e7ec;
+          border: 1px solid rgba(212, 175, 55, 0.18);
           border-radius: 15px;
-          background: #ffffff;
+          background: linear-gradient(
+            135deg,
+            rgba(10, 46, 115, 0.98),
+            rgba(3, 21, 63, 0.96)
+          );
           color: inherit;
           text-decoration: none;
+          box-shadow: 0 10px 24px rgba(3, 21, 63, 0.11);
           transition:
             transform 0.2s ease,
             border-color 0.2s ease,
@@ -1606,8 +1715,8 @@ function QuickAction({
 
         :global(.actionCard:hover) {
           transform: translateY(-3px);
-          border-color: #d4af37;
-          box-shadow: 0 14px 30px rgba(10, 46, 115, 0.12);
+          border-color: rgba(212, 175, 55, 0.52);
+          box-shadow: 0 16px 32px rgba(3, 21, 63, 0.2);
         }
 
         .actionIcon {
@@ -1617,22 +1726,22 @@ function QuickAction({
           align-items: center;
           justify-content: center;
           border-radius: 12px;
-          background: #eef4ff;
-          color: #0a2e73;
+          border: 1px solid rgba(212, 175, 55, 0.28);\n          background: rgba(255, 255, 255, 0.08);
+          color: #d4af37;
           font-size: 18px;
           font-weight: 950;
         }
 
         strong {
           margin-top: 15px;
-          color: #0a2e73;
+          color: #ffffff;
           font-size: 13px;
           font-weight: 900;
         }
 
         span {
           margin-top: 7px;
-          color: #667085;
+          color: rgba(255, 255, 255, 0.66);
           font-size: 10px;
           line-height: 1.5;
         }

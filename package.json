@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
+    "@types/jsbarcode": "^3.11.4",
+    "jsbarcode": "^3.12.3",
     "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4"

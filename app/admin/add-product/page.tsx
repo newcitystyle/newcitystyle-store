@@ -56,6 +56,22 @@ type AiStatus = {
   message: string;
 };
 
+type ExistingStockProduct = {
+  id: number;
+  name: string;
+  barcode: string;
+  sku: string;
+  stock: number;
+  onlineStockLimit: number;
+  sellOnline: boolean;
+  image: string;
+  variantId: number | null;
+  variantBarcode: string;
+  variantSku: string;
+  size: string;
+  color: string;
+};
+
 type ProductForm = {
   name: string;
   slug: string;
@@ -79,6 +95,8 @@ type ProductForm = {
   barcode: string;
   stock: string;
   lowStockLimit: string;
+  sellOnline: boolean;
+  onlineStockLimit: string;
 
   mainImage: string;
   galleryImages: string[];
@@ -145,6 +163,8 @@ const initialForm: ProductForm = {
   barcode: "",
   stock: "",
   lowStockLimit: "",
+  sellOnline: false,
+  onlineStockLimit: "0",
 
   mainImage: "",
   galleryImages: [],
@@ -247,6 +267,14 @@ export default function AddProductPage() {
   const [customTag, setCustomTag] = useState("");
   const [customSize, setCustomSize] = useState("");
 
+  const [stockSearch, setStockSearch] = useState("");
+  const [stockSearchResults, setStockSearchResults] = useState<
+    ExistingStockProduct[]
+  >([]);
+  const [searchingStock, setSearchingStock] = useState(false);
+  const [linkedStockProduct, setLinkedStockProduct] =
+    useState<ExistingStockProduct | null>(null);
+
   useEffect(() => {
     loadCollections();
   }, []);
@@ -278,6 +306,317 @@ export default function AddProductPage() {
     }
 
     setCollections((data as CollectionOption[]) || []);
+  }
+
+  function asString(value: unknown) {
+    return typeof value === "string" ? value : "";
+  }
+
+  function asNumber(value: unknown) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+  }
+
+  function asStringArray(value: unknown) {
+    return Array.isArray(value)
+      ? value.filter((item): item is string =>
+          typeof item === "string"
+        )
+      : [];
+  }
+
+  function asSpecifications(value: unknown): Specification[] {
+    if (!Array.isArray(value)) return [];
+
+    return value
+      .map((item) => {
+        const record = item as Record<string, unknown>;
+        return {
+          label: asString(record.label),
+          value: asString(record.value),
+        };
+      })
+      .filter((item) => item.label || item.value);
+  }
+
+  function asFaqs(value: unknown): Faq[] {
+    if (!Array.isArray(value)) return [];
+
+    return value
+      .map((item) => {
+        const record = item as Record<string, unknown>;
+        return {
+          question: asString(record.question),
+          answer: asString(record.answer),
+        };
+      })
+      .filter((item) => item.question || item.answer);
+  }
+
+  async function searchExistingStockProduct() {
+    const query = stockSearch.trim();
+
+    if (!query) {
+      alert("Scan a barcode or enter product name, SKU or barcode.");
+      return;
+    }
+
+    setSearchingStock(true);
+    setStockSearchResults([]);
+
+    try {
+      const safeQuery = query.replace(/[,%()]/g, " ").trim();
+      const pattern = `%${safeQuery}%`;
+
+      const [productsResponse, variantsResponse] = await Promise.all([
+        supabase
+          .from("products")
+          .select(
+            "id,name,barcode,sku,stock,online_stock_limit,sell_online,image"
+          )
+          .or(
+            `name.ilike.${pattern},barcode.ilike.${pattern},sku.ilike.${pattern}`
+          )
+          .limit(12),
+        supabase
+          .from("product_variants")
+          .select(
+            "id,product_id,barcode,sku,size,color,stock,reserved_stock,online_stock_limit,sell_online"
+          )
+          .or(`barcode.ilike.${pattern},sku.ilike.${pattern}`)
+          .limit(12),
+      ]);
+
+      if (productsResponse.error) throw productsResponse.error;
+      if (variantsResponse.error) throw variantsResponse.error;
+
+      const productRows =
+        (productsResponse.data || []) as Record<string, unknown>[];
+      const variantRows =
+        (variantsResponse.data || []) as Record<string, unknown>[];
+
+      const variantProductIds = Array.from(
+        new Set(
+          variantRows
+            .map((row) => asNumber(row.product_id))
+            .filter((id) => id > 0)
+        )
+      );
+
+      let variantParents: Record<string, unknown>[] = [];
+
+      if (variantProductIds.length) {
+        const { data, error } = await supabase
+          .from("products")
+          .select(
+            "id,name,barcode,sku,stock,online_stock_limit,sell_online,image"
+          )
+          .in("id", variantProductIds);
+
+        if (error) throw error;
+        variantParents =
+          (data || []) as Record<string, unknown>[];
+      }
+
+      const parentMap = new Map(
+        [...productRows, ...variantParents].map((row) => [
+          asNumber(row.id),
+          row,
+        ])
+      );
+
+      const directResults: ExistingStockProduct[] = productRows.map(
+        (row) => ({
+          id: asNumber(row.id),
+          name: asString(row.name) || "Unnamed Product",
+          barcode: asString(row.barcode),
+          sku: asString(row.sku),
+          stock: asNumber(row.stock),
+          onlineStockLimit: asNumber(row.online_stock_limit),
+          sellOnline: row.sell_online === true,
+          image: asString(row.image),
+          variantId: null,
+          variantBarcode: "",
+          variantSku: "",
+          size: "",
+          color: "",
+        })
+      );
+
+      const variantResults = variantRows
+        .map<ExistingStockProduct | null>((row) => {
+          const productId = asNumber(row.product_id);
+          const parent = parentMap.get(productId);
+
+          if (!parent) {
+            return null;
+          }
+
+          const variant: ExistingStockProduct = {
+            id: productId,
+            name: asString(parent.name) || "Unnamed Product",
+            barcode: asString(parent.barcode),
+            sku: asString(parent.sku),
+            stock: Math.max(
+              0,
+              asNumber(row.stock) - asNumber(row.reserved_stock)
+            ),
+            onlineStockLimit: asNumber(row.online_stock_limit),
+            sellOnline: row.sell_online === true,
+            image: asString(parent.image),
+            variantId: asNumber(row.id),
+            variantBarcode: asString(row.barcode),
+            variantSku: asString(row.sku),
+            size: asString(row.size),
+            color: asString(row.color),
+          };
+
+          return variant;
+        })
+        .filter(
+          (item): item is ExistingStockProduct => item !== null
+        );
+
+      const unique = new Map<string, ExistingStockProduct>();
+      [...variantResults, ...directResults].forEach((item) => {
+        unique.set(`${item.id}-${item.variantId || 0}`, item);
+      });
+
+      const results = Array.from(unique.values());
+      setStockSearchResults(results);
+
+      if (!results.length) {
+        alert("No existing stock product found for this search.");
+      }
+    } catch (error) {
+      console.error(error);
+      alert(
+        error instanceof Error
+          ? `Stock search failed: ${error.message}`
+          : "Stock search failed."
+      );
+    } finally {
+      setSearchingStock(false);
+    }
+  }
+
+  async function linkExistingStockProduct(
+    selected: ExistingStockProduct
+  ) {
+    setSearchingStock(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("id", selected.id)
+        .single();
+
+      if (error) throw error;
+
+      const row = data as Record<string, unknown>;
+      const existingSpecs = asSpecifications(
+        row.technical_specifications
+      );
+      const existingFaqs = asFaqs(row.faqs);
+
+      setLinkedStockProduct(selected);
+      setStockSearchResults([]);
+      setStockSearch(
+        selected.variantBarcode || selected.barcode || selected.name
+      );
+
+      setForm((current) => ({
+        ...current,
+        name: asString(row.name),
+        slug: asString(row.slug) || createSlug(asString(row.name)),
+        tagline: asString(row.tagline),
+        category: asString(row.category),
+        subcategory: asString(row.subcategory),
+        collectionId: row.collection_id
+          ? String(row.collection_id)
+          : "",
+        brand: asString(row.brand) || "NEW CITY STYLE",
+        gender: asString(row.gender),
+        ageGroup: asString(row.age_group),
+        shortDescription: asString(row.short_description),
+        description: asString(row.description),
+        mrp: String(asNumber(row.mrp) || ""),
+        price: String(asNumber(row.price) || ""),
+        discountPercent: String(asNumber(row.discount_percent)),
+        taxPercent: String(asNumber(row.tax_percent) || ""),
+        sku: selected.variantSku || selected.sku,
+        barcode: selected.variantBarcode || selected.barcode,
+        stock: String(selected.stock),
+        lowStockLimit: String(asNumber(row.low_stock_limit) || 5),
+        sellOnline: selected.sellOnline,
+        onlineStockLimit: String(selected.onlineStockLimit),
+        mainImage: asString(row.image),
+        galleryImages: asStringArray(row.gallery_images),
+        lifestyleImages: asStringArray(row.lifestyle_images),
+        tags: asStringArray(row.tags),
+        sizes: asStringArray(row.sizes),
+        material: asString(row.material),
+        fabric: asString(row.fabric),
+        pattern: asString(row.pattern),
+        sleeveType: asString(row.sleeve_type),
+        fitType: asString(row.fit_type),
+        occasion: asString(row.occasion),
+        lifestyleTitle: asString(row.lifestyle_title),
+        lifestyleSubtitle: asString(row.lifestyle_subtitle),
+        keyFeatures: asStringArray(row.key_features).length
+          ? asStringArray(row.key_features)
+          : current.keyFeatures,
+        specifications: existingSpecs.length
+          ? existingSpecs
+          : current.specifications,
+        whatsInBox: asStringArray(row.whats_in_box).length
+          ? asStringArray(row.whats_in_box)
+          : current.whatsInBox,
+        faqs: existingFaqs.length ? existingFaqs : current.faqs,
+        weight: String(asNumber(row.weight) || ""),
+        packageLength: String(asNumber(row.package_length) || ""),
+        packageWidth: String(asNumber(row.package_width) || ""),
+        packageHeight: String(asNumber(row.package_height) || ""),
+        shippingPolicy:
+          asString(row.shipping_policy) || current.shippingPolicy,
+        returnPolicy:
+          asString(row.return_policy) || current.returnPolicy,
+        seoTitle: asString(row.seo_title),
+        metaDescription: asString(row.meta_description),
+        seoKeywords: asString(row.seo_keywords),
+        socialPreviewUrl: asString(row.social_preview_url),
+        isFeatured: row.is_featured === true,
+        isNewArrival: row.is_new_arrival !== false,
+        isOnSale: row.is_on_sale === true,
+        isBestseller: row.is_bestseller === true,
+        isTrending: row.is_trending === true,
+        isActive: row.is_active !== false,
+      }));
+
+      setAiStatus({
+        type: "success",
+        message:
+          "Existing stock product linked. Upload photos and use AI. Barcode and physical stock will be preserved.",
+      });
+    } catch (error) {
+      console.error(error);
+      alert(
+        error instanceof Error
+          ? `Unable to link product: ${error.message}`
+          : "Unable to link product."
+      );
+    } finally {
+      setSearchingStock(false);
+    }
+  }
+
+  function unlinkExistingStockProduct() {
+    setLinkedStockProduct(null);
+    setStockSearch("");
+    setStockSearchResults([]);
+    setForm(initialForm);
+    setAiStatus({ type: "idle", message: "" });
   }
 
   function createSlug(value: string) {
@@ -875,6 +1214,15 @@ export default function AddProductPage() {
       return false;
     }
 
+    if (
+      form.sellOnline &&
+      (Number(form.onlineStockLimit) < 0 ||
+        Number(form.onlineStockLimit) > Number(form.stock))
+    ) {
+      alert("Online quantity must be between 0 and total stock.");
+      return false;
+    }
+
     if (!form.mainImage) {
       alert("Please upload the main product image.");
       return false;
@@ -918,6 +1266,14 @@ export default function AddProductPage() {
       barcode: form.barcode.trim() || null,
       stock: Number(form.stock),
       low_stock_limit: getOptionalNumber(form.lowStockLimit, 5),
+      sell_online: form.sellOnline,
+      available_in_pos: true,
+      online_stock_limit: form.sellOnline
+        ? Math.min(
+            Number(form.onlineStockLimit || 0),
+            Number(form.stock || 0)
+          )
+        : 0,
 
       image: form.mainImage,
       gallery_images: form.galleryImages,
@@ -993,23 +1349,71 @@ export default function AddProductPage() {
       updated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase
-      .from("products")
-      .insert(productData)
-      .select("id")
-      .single();
+    if (linkedStockProduct) {
+      const {
+        sku: _sku,
+        barcode: _barcode,
+        stock: _stock,
+        online_stock_limit: _onlineStockLimit,
+        ...detailsOnly
+      } = productData;
 
-    if (error) {
-      console.error(error);
+      const { error } = await supabase
+        .from("products")
+        .update(detailsOnly)
+        .eq("id", linkedStockProduct.id);
 
-      alert(`Unable to save product: ${error.message}`);
-      setSaving(false);
-      return;
+      if (error) {
+        console.error(error);
+        alert(`Unable to update product: ${error.message}`);
+        setSaving(false);
+        return;
+      }
+
+      const { error: onlineStockError } = await supabase.rpc(
+        "set_product_online_stock",
+        {
+          p_product_id: linkedStockProduct.id,
+          p_variant_id: linkedStockProduct.variantId,
+          p_online_quantity: form.sellOnline
+            ? Math.min(
+                Number(form.onlineStockLimit || 0),
+                linkedStockProduct.stock
+              )
+            : 0,
+          p_sell_online: form.sellOnline,
+        }
+      );
+
+      if (onlineStockError) {
+        console.error(onlineStockError);
+        alert(
+          `Product details were updated, but online stock failed: ${onlineStockError.message}`
+        );
+        setSaving(false);
+        return;
+      }
+
+      alert(
+        "Existing stock product updated successfully. Barcode and physical stock were preserved."
+      );
+    } else {
+      const { error } = await supabase
+        .from("products")
+        .insert(productData);
+
+      if (error) {
+        console.error(error);
+        alert(`Unable to save product: ${error.message}`);
+        setSaving(false);
+        return;
+      }
+
+      alert("Premium product added successfully.");
     }
 
-    alert("Premium product added successfully.");
-
     setForm(initialForm);
+    setLinkedStockProduct(null);
     setSaving(false);
 
     router.push(`/admin/products`);
@@ -1035,12 +1439,11 @@ export default function AddProductPage() {
           <p style={heroLabelStyle}>NEW CITY STYLE</p>
 
           <h1 style={heroTitleStyle}>
-            Add Premium Product
+            Add or Link Premium Product
           </h1>
 
           <p style={heroDescriptionStyle}>
-            Add complete product information, images, sizes,
-            SEO, specifications and FAQs.
+            Create a new product or link an existing barcode stock item, then add images, AI details, SEO and online visibility.
           </p>
         </section>
 
@@ -1059,7 +1462,9 @@ export default function AddProductPage() {
                   ? "Saving..."
                   : uploading
                     ? "Uploading..."
-                    : "Save Product"}
+                    : linkedStockProduct
+                      ? "Update Linked Product"
+                      : "Save Product"}
               </span>
             </button>
           </div>
@@ -1071,6 +1476,116 @@ export default function AddProductPage() {
                 gap: "22px",
               }}
             >
+              <Panel
+                title="Link to Existing Stock Product"
+                subtitle="Scan the barcode or search by product name/SKU. Linking preserves the existing barcode and physical stock."
+              >
+                <div className="existing-stock-search-row">
+                  <input
+                    value={stockSearch}
+                    onChange={(event) =>
+                      setStockSearch(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        searchExistingStockProduct();
+                      }
+                    }}
+                    placeholder="Scan barcode or enter product name / SKU"
+                    style={inputStyle}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={searchExistingStockProduct}
+                    disabled={searchingStock}
+                    className="existing-stock-search-button"
+                  >
+                    {searchingStock ? "Searching..." : "Search Stock"}
+                  </button>
+                </div>
+
+                {linkedStockProduct && (
+                  <div className="linked-stock-card">
+                    <div>
+                      <span>LINKED STOCK PRODUCT</span>
+                      <strong>{linkedStockProduct.name}</strong>
+                      <p>
+                        Product ID: {linkedStockProduct.id}
+                        {linkedStockProduct.variantId
+                          ? ` • Variant ID: ${linkedStockProduct.variantId}`
+                          : ""}
+                      </p>
+                      <p>
+                        Barcode: {linkedStockProduct.variantBarcode || linkedStockProduct.barcode || "Auto barcode"}
+                        {linkedStockProduct.size
+                          ? ` • Size: ${linkedStockProduct.size}`
+                          : ""}
+                        {linkedStockProduct.color
+                          ? ` • Colour: ${linkedStockProduct.color}`
+                          : ""}
+                      </p>
+                      <p>
+                        Physical Stock: {linkedStockProduct.stock} • Online Quantity: {form.onlineStockLimit || 0}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={unlinkExistingStockProduct}
+                    >
+                      Unlink
+                    </button>
+                  </div>
+                )}
+
+                {!linkedStockProduct && stockSearchResults.length > 0 && (
+                  <div className="existing-stock-results">
+                    {stockSearchResults.map((product) => (
+                      <button
+                        type="button"
+                        key={`${product.id}-${product.variantId || 0}`}
+                        onClick={() =>
+                          linkExistingStockProduct(product)
+                        }
+                      >
+                        <div className="existing-stock-result-image">
+                          {product.image ? (
+                            <img
+                              src={product.image}
+                              alt={product.name}
+                            />
+                          ) : (
+                            <span>📦</span>
+                          )}
+                        </div>
+
+                        <div>
+                          <strong>{product.name}</strong>
+                          <span>
+                            {product.variantBarcode || product.barcode || "No barcode"}
+                          </span>
+                          <small>
+                            Stock {product.stock}
+                            {product.size ? ` • ${product.size}` : ""}
+                            {product.color ? ` • ${product.color}` : ""}
+                          </small>
+                        </div>
+
+                        <b>Link</b>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="existing-stock-note">
+                  {linkedStockProduct
+                    ? "Now upload the shirt photo and use AI. Saving updates this same product; it does not create a duplicate."
+                    : "Leave this empty only when you want to create a completely new product."}
+                </div>
+              </Panel>
+
               <Panel
                 title="Basic Information"
                 subtitle="Add the main product identity and description."
@@ -1338,6 +1853,7 @@ export default function AddProductPage() {
                   <Field label="SKU">
                     <input
                       value={form.sku}
+                      readOnly={Boolean(linkedStockProduct)}
                       onChange={(event) =>
                         setField(
                           "sku",
@@ -1352,6 +1868,7 @@ export default function AddProductPage() {
                   <Field label="Barcode">
                     <input
                       value={form.barcode}
+                      readOnly={Boolean(linkedStockProduct)}
                       onChange={(event) =>
                         setField("barcode", event.target.value)
                       }
@@ -1365,6 +1882,7 @@ export default function AddProductPage() {
                       type="number"
                       min="0"
                       value={form.stock}
+                      readOnly={Boolean(linkedStockProduct)}
                       onChange={(event) =>
                         setField("stock", event.target.value)
                       }
@@ -1388,7 +1906,59 @@ export default function AddProductPage() {
                       style={inputStyle}
                     />
                   </Field>
+
+                  <Field label="Online Quantity">
+                    <input
+                      type="number"
+                      min="0"
+                      max={Number(form.stock || 0)}
+                      value={form.sellOnline ? form.onlineStockLimit : "0"}
+                      disabled={!form.sellOnline}
+                      onChange={(event) =>
+                        setField(
+                          "onlineStockLimit",
+                          String(
+                            Math.min(
+                              Number(form.stock || 0),
+                              Math.max(0, Number(event.target.value || 0))
+                            )
+                          )
+                        )
+                      }
+                      placeholder="Quantity for website/app"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Online Visibility">
+                    <div className="inventory-online-toggle">
+                      <input
+                        type="checkbox"
+                        checked={form.sellOnline}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setForm((current) => ({
+                            ...current,
+                            sellOnline: checked,
+                            onlineStockLimit: checked
+                              ? current.onlineStockLimit || current.stock || "0"
+                              : "0",
+                          }));
+                        }}
+                      />
+                      <div>
+                        <strong>Sell Online</strong>
+                        <span>Website and Android app visibility</span>
+                      </div>
+                    </div>
+                  </Field>
                 </FormGrid>
+
+                {linkedStockProduct && (
+                  <div className="inventory-lock-note">
+                    🔒 Barcode, SKU and physical stock are locked because this page is linked to an existing purchase stock item.
+                  </div>
+                )}
               </Panel>
 
               <Panel
@@ -2150,6 +2720,15 @@ export default function AddProductPage() {
                 />
 
                 <PreviewInfo
+                  label="Online Quantity"
+                  value={
+                    form.sellOnline
+                      ? `${form.onlineStockLimit || 0} units`
+                      : "Shop / POS only"
+                  }
+                />
+
+                <PreviewInfo
                   label="Sizes"
                   value={
                     form.sizes.join(", ") || "Not selected"
@@ -2229,7 +2808,9 @@ export default function AddProductPage() {
                   ? "Saving Product..."
                   : uploading
                     ? "Uploading Images..."
-                    : "Save Premium Product"}
+                    : linkedStockProduct
+                      ? "Update Linked Stock Product"
+                      : "Save Premium Product"}
               </button>
             </aside>
           </div>
@@ -2296,6 +2877,185 @@ export default function AddProductPage() {
           cursor: not-allowed;
         }
 
+        .existing-stock-search-row {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 10px;
+        }
+
+        .existing-stock-search-button {
+          min-height: 46px;
+          border: 1px solid #d4af37;
+          border-radius: 10px;
+          background: #0a2e73;
+          color: #ffffff;
+          padding: 0 18px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .existing-stock-results {
+          display: grid;
+          gap: 9px;
+          margin-top: 14px;
+        }
+
+        .existing-stock-results > button {
+          display: grid;
+          grid-template-columns: 58px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 12px;
+          width: 100%;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          background: #ffffff;
+          padding: 10px;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .existing-stock-results > button:hover {
+          border-color: #d4af37;
+          background: #fffdf5;
+        }
+
+        .existing-stock-result-image {
+          width: 58px;
+          height: 58px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          border-radius: 10px;
+          background: #f1f5f9;
+          font-size: 24px;
+        }
+
+        .existing-stock-result-image img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .existing-stock-results strong,
+        .existing-stock-results span,
+        .existing-stock-results small {
+          display: block;
+        }
+
+        .existing-stock-results strong {
+          color: #0a2e73;
+          font-size: 14px;
+        }
+
+        .existing-stock-results span {
+          margin-top: 3px;
+          color: #334155;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .existing-stock-results small {
+          margin-top: 3px;
+          color: #64748b;
+        }
+
+        .existing-stock-results b {
+          color: #0a2e73;
+        }
+
+        .linked-stock-card {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 16px;
+          margin-top: 14px;
+          padding: 16px;
+          border: 1px solid #86efac;
+          border-radius: 14px;
+          background: #f0fdf4;
+        }
+
+        .linked-stock-card span,
+        .linked-stock-card strong,
+        .linked-stock-card p {
+          display: block;
+        }
+
+        .linked-stock-card span {
+          color: #15803d;
+          font-size: 10px;
+          font-weight: 950;
+          letter-spacing: 0.8px;
+        }
+
+        .linked-stock-card strong {
+          margin-top: 4px;
+          color: #0a2e73;
+          font-size: 17px;
+        }
+
+        .linked-stock-card p {
+          margin: 4px 0 0;
+          color: #475569;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .linked-stock-card button {
+          border: 1px solid #fca5a5;
+          border-radius: 9px;
+          background: #ffffff;
+          color: #dc2626;
+          padding: 9px 13px;
+          font-weight: 850;
+          cursor: pointer;
+        }
+
+        .existing-stock-note,
+        .inventory-lock-note {
+          margin-top: 13px;
+          padding: 11px 13px;
+          border-radius: 10px;
+          background: #fffbea;
+          color: #7c5b00;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .inventory-online-toggle {
+          min-height: 46px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 9px 12px;
+          border: 1px solid #d1d5db;
+          border-radius: 9px;
+          background: #ffffff;
+        }
+
+        .inventory-online-toggle input {
+          width: 20px;
+          height: 20px;
+          accent-color: #0a2e73;
+        }
+
+        .inventory-online-toggle strong,
+        .inventory-online-toggle span {
+          display: block;
+        }
+
+        .inventory-online-toggle strong {
+          color: #0a2e73;
+          font-size: 13px;
+        }
+
+        .inventory-online-toggle span {
+          margin-top: 2px;
+          color: #64748b;
+          font-size: 10px;
+        }
+
         @media (max-width: 1100px) {
           .product-admin-layout {
             grid-template-columns: 1fr;
@@ -2310,6 +3070,22 @@ export default function AddProductPage() {
           .form-grid,
           .status-toggle-grid {
             grid-template-columns: 1fr;
+          }
+
+          .existing-stock-search-row {
+            grid-template-columns: 1fr;
+          }
+
+          .linked-stock-card {
+            flex-direction: column;
+          }
+
+          .existing-stock-results > button {
+            grid-template-columns: 52px minmax(0, 1fr);
+          }
+
+          .existing-stock-results > button > b {
+            display: none;
           }
 
           .mobile-sticky-save {

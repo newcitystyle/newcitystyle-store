@@ -431,9 +431,11 @@ export default function ReturnsPage() {
                 disabled={saving}
                 style={{
                   width: "100%",
-                  background: "#0A2E73",
+                  background:
+                    "linear-gradient(135deg, #03153F, #0A2E73)",
                   color: "#FFFFFF",
-                  border: "none",
+                  border:
+                    "1px solid rgba(212,175,55,0.85)",
                   padding: "14px",
                   borderRadius: "10px",
                   fontWeight: 800,
@@ -537,9 +539,11 @@ export default function ReturnsPage() {
                   type="button"
                   onClick={loadReturns}
                   style={{
-                    background: "#D4AF37",
-                    color: "#FFFFFF",
-                    border: "none",
+                    background:
+                      "linear-gradient(135deg, #D4AF37, #F0D267)",
+                    color: "#03153F",
+                    border:
+                      "1px solid rgba(10,46,115,0.18)",
                     padding: "11px 17px",
                     borderRadius: "9px",
                     cursor: "pointer",
@@ -569,12 +573,16 @@ export default function ReturnsPage() {
                 {filteredReturns.map((item) => (
                   <article
                     key={item.id}
+                    className="return-request-card"
                     style={{
-                      border: "1px solid #E5E7EB",
-                      borderRadius: "15px",
+                      border:
+                        "1px solid rgba(212,175,55,0.22)",
+                      borderRadius: "17px",
                       padding: "20px",
+                      background:
+                        "linear-gradient(180deg,#FFFFFF,#F8FAFD)",
                       boxShadow:
-                        "0 5px 18px rgba(0,0,0,0.05)",
+                        "0 8px 24px rgba(3,21,63,0.07)",
                     }}
                   >
                     <div
@@ -751,6 +759,174 @@ export default function ReturnsPage() {
       </div>
 
       <style jsx global>{`
+        .returns-summary-card {
+          position: relative;
+          isolation: isolate;
+          min-height: 138px;
+          overflow: hidden;
+          padding: 20px;
+          border: 1px solid rgba(212, 175, 55, 0.22);
+          border-radius: 18px;
+          background: linear-gradient(
+            135deg,
+            rgba(10, 46, 115, 0.99),
+            rgba(3, 21, 63, 0.98)
+          );
+          box-shadow:
+            0 12px 28px rgba(3, 21, 63, 0.16),
+            inset 0 1px 0 rgba(255, 255, 255, 0.06);
+          transition:
+            transform 0.22s ease,
+            box-shadow 0.22s ease,
+            border-color 0.22s ease;
+          animation: returnsStatRise 0.45s ease both;
+        }
+
+        .returns-summary-card:nth-child(2),
+        .returns-summary-card:nth-child(4) {
+          background: linear-gradient(
+            135deg,
+            rgba(10, 46, 115, 0.99),
+            rgba(22, 46, 102, 0.98),
+            rgba(103, 79, 16, 0.9)
+          );
+        }
+
+        .returns-summary-card:nth-child(3) {
+          background: linear-gradient(
+            135deg,
+            rgba(5, 25, 74, 0.99),
+            rgba(8, 37, 96, 0.98)
+          );
+        }
+
+        .returns-summary-card::before {
+          content: "";
+          position: absolute;
+          z-index: -1;
+          top: -40%;
+          right: -15%;
+          width: 125px;
+          height: 125px;
+          border-radius: 50%;
+          background: radial-gradient(
+            circle,
+            rgba(212, 175, 55, 0.34),
+            rgba(212, 175, 55, 0)
+          );
+        }
+
+        .returns-summary-card::after {
+          content: "";
+          position: absolute;
+          top: -145%;
+          left: -36%;
+          width: 42%;
+          height: 370%;
+          transform: rotate(22deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.14),
+            transparent
+          );
+          animation: returnsStatShine 5.2s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .returns-summary-card:hover {
+          transform: translateY(-2px) scale(1.004);
+          border-color: rgba(212, 175, 55, 0.42);
+          box-shadow:
+            0 16px 32px rgba(3, 21, 63, 0.22),
+            0 0 0 1px rgba(212, 175, 55, 0.1);
+        }
+
+        .returns-summary-icon {
+          position: relative;
+          z-index: 2;
+          color: #D4AF37;
+          font-size: 30px;
+          filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.18));
+        }
+
+        .returns-summary-card p {
+          position: relative;
+          z-index: 2;
+          margin: 10px 0 5px;
+          color: rgba(212, 175, 55, 0.94);
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 0.45px;
+          text-transform: uppercase;
+        }
+
+        .returns-summary-card h2 {
+          position: relative;
+          z-index: 2;
+          margin: 0;
+          color: #FFFFFF;
+          font-size: 29px;
+          font-weight: 950;
+          letter-spacing: -0.5px;
+          text-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+        }
+
+        .returns-summary-card:nth-child(4) h2 {
+          color: #F6D676;
+        }
+
+        .return-request-card {
+          transition:
+            transform 0.2s ease,
+            box-shadow 0.2s ease,
+            border-color 0.2s ease;
+        }
+
+        .return-request-card:hover {
+          transform: translateY(-2px);
+          border-color: rgba(212, 175, 55, 0.42) !important;
+          box-shadow: 0 14px 32px rgba(3, 21, 63, 0.11) !important;
+        }
+
+        button {
+          transition:
+            transform 0.18s ease,
+            box-shadow 0.18s ease,
+            filter 0.18s ease;
+        }
+
+        button:hover:not(:disabled) {
+          transform: translateY(-1px);
+          filter: brightness(1.04);
+        }
+
+        @keyframes returnsStatRise {
+          from {
+            opacity: 0;
+            transform: translateY(14px) scale(0.985);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes returnsStatShine {
+          0%,
+          62% {
+            left: -42%;
+            opacity: 0;
+          }
+          68% {
+            opacity: 0.7;
+          }
+          100% {
+            left: 126%;
+            opacity: 0;
+          }
+        }
+
         @media (max-width: 980px) {
           .returns-layout {
             grid-template-columns: 1fr !important;
@@ -821,39 +997,10 @@ function SummaryCard({
   value: string | number;
 }) {
   return (
-    <div
-      style={{
-        background: "#FFFFFF",
-        borderRadius: "16px",
-        padding: "20px",
-        boxShadow:
-          "0 7px 22px rgba(0,0,0,0.07)",
-        border:
-          "1px solid rgba(212,175,55,0.22)",
-      }}
-    >
-      <div style={{ fontSize: "29px" }}>
-        {icon}
-      </div>
-
-      <p
-        style={{
-          color: "#666",
-          margin: "9px 0 5px",
-        }}
-      >
-        {title}
-      </p>
-
-      <h2
-        style={{
-          color: "#0A2E73",
-          margin: 0,
-          fontSize: "29px",
-        }}
-      >
-        {value}
-      </h2>
+    <div className="returns-summary-card">
+      <div className="returns-summary-icon">{icon}</div>
+      <p>{title}</p>
+      <h2>{value}</h2>
     </div>
   );
 }

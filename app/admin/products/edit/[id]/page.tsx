@@ -25,6 +25,18 @@ type FAQItem = {
   answer: string;
 };
 
+type ProductVariantInfo = {
+  id: number;
+  size: string;
+  color: string;
+  sku: string;
+  barcode: string;
+  stock: number;
+  mrp: number;
+  sellingPrice: number;
+  isActive: boolean;
+};
+
 const MAX_IMAGES = 8;
 
 function makeId() {
@@ -63,6 +75,10 @@ export default function EditProductPage() {
   const [price, setPrice] = useState("");
   const [stock, setStock] = useState("");
   const [sku, setSku] = useState("");
+  const [barcode, setBarcode] = useState("");
+  const [sellOnline, setSellOnline] = useState(false);
+  const [onlineQuantity, setOnlineQuantity] = useState("");
+  const [productVariants, setProductVariants] = useState<ProductVariantInfo[]>([]);
   const [status, setStatus] = useState("active");
   const [featured, setFeatured] = useState(false);
 
@@ -135,6 +151,42 @@ export default function EditProductPage() {
         setPrice(data.price != null ? String(data.price) : "");
         setStock(data.stock != null ? String(data.stock) : "");
         setSku(data.sku || "");
+        setBarcode(data.barcode || "");
+        setSellOnline(Boolean(data.sell_online ?? data.is_online ?? false));
+        setOnlineQuantity(
+          data.online_stock_limit != null
+            ? String(data.online_stock_limit)
+            : data.online_stock != null
+              ? String(data.online_stock)
+              : "0"
+        );
+
+        const { data: variantData, error: variantError } = await supabase
+          .from("product_variants")
+          .select(
+            "id,size,color,sku,barcode,stock,mrp,selling_price,is_active"
+          )
+          .eq("product_id", productId)
+          .order("id", { ascending: true });
+
+        if (variantError) {
+          console.info("Unable to load product variants:", variantError.message);
+          setProductVariants([]);
+        } else {
+          setProductVariants(
+            (variantData || []).map((variant) => ({
+              id: Number(variant.id),
+              size: variant.size || "",
+              color: variant.color || "",
+              sku: variant.sku || "",
+              barcode: variant.barcode || "",
+              stock: Number(variant.stock || 0),
+              mrp: Number(variant.mrp || 0),
+              sellingPrice: Number(variant.selling_price || 0),
+              isActive: variant.is_active !== false,
+            }))
+          );
+        }
         setStatus(data.status || (data.is_active === false ? "inactive" : "active"));
         setFeatured(Boolean(data.is_featured ?? data.featured ?? false));
 
@@ -382,6 +434,16 @@ export default function EditProductPage() {
       return;
     }
 
+    if (sellOnline && Number(onlineQuantity || 0) < 0) {
+      setErrorMessage("Enter a valid online quantity.");
+      return;
+    }
+
+    if (sellOnline && Number(onlineQuantity || 0) > Number(stock || 0)) {
+      setErrorMessage("Online quantity cannot be greater than total stock.");
+      return;
+    }
+
     const finalSlug = makeSlug(slug || productName);
 
     setSaving(true);
@@ -419,6 +481,9 @@ export default function EditProductPage() {
         price: Number(price),
         stock: Number(stock),
         sku: sku.trim() || null,
+        barcode: barcode.trim() || null,
+        sell_online: sellOnline,
+        online_stock_limit: sellOnline ? Number(onlineQuantity || 0) : 0,
         status,
         is_active: status === "active",
         is_featured: featured,
@@ -711,6 +776,14 @@ export default function EditProductPage() {
                 />
               </Field>
 
+              <Field label="Barcode">
+                <input
+                  value={barcode}
+                  onChange={(e) => setBarcode(e.target.value)}
+                  placeholder="Purchase Stock barcode"
+                />
+              </Field>
+
               <Field label="Description" required full>
                 <textarea
                   rows={7}
@@ -744,13 +817,14 @@ export default function EditProductPage() {
                 />
               </Field>
 
-              <Field label="Stock Quantity" required>
+              <Field label="Total Stock" required>
                 <input
                   type="number"
                   min="0"
                   value={stock}
-                  onChange={(e) => setStock(e.target.value)}
-                  placeholder="25"
+                  readOnly
+                  aria-readonly="true"
+                  title="Stock is managed from Purchase Stock and POS"
                 />
               </Field>
 
@@ -764,6 +838,91 @@ export default function EditProductPage() {
                   <option value="inactive">Inactive</option>
                 </select>
               </Field>
+            </div>
+
+            <div className="inventorySyncCard">
+              <div className="inventorySyncHead">
+                <div>
+                  <strong>Inventory & Online Visibility</strong>
+                  <span>Barcode and total stock are linked with Purchase Stock and POS.</span>
+                </div>
+                <span className="syncBadge">Live Sync</span>
+              </div>
+
+              <div className="grid three inventoryFields">
+                <Field label="Product Barcode">
+                  <input
+                    value={barcode}
+                    onChange={(e) => setBarcode(e.target.value)}
+                    placeholder="Purchase Stock barcode"
+                  />
+                </Field>
+
+                <Field label="Online Quantity">
+                  <input
+                    type="number"
+                    min="0"
+                    max={Number(stock || 0)}
+                    value={onlineQuantity}
+                    onChange={(e) => setOnlineQuantity(e.target.value)}
+                    disabled={!sellOnline}
+                    placeholder="0"
+                  />
+                </Field>
+
+                <label className="onlineToggle">
+                  <input
+                    type="checkbox"
+                    checked={sellOnline}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setSellOnline(checked);
+                      if (!checked) setOnlineQuantity("0");
+                    }}
+                  />
+                  <span>
+                    <strong>Sell Online</strong>
+                    <small>Website and Android app visibility</small>
+                  </span>
+                </label>
+              </div>
+
+              {productVariants.length > 0 && (
+                <div className="variantInventory">
+                  <div className="variantInventoryTitle">
+                    <strong>Variant Barcodes</strong>
+                    <span>{productVariants.length} variant(s)</span>
+                  </div>
+
+                  <div className="variantTableWrap">
+                    <table className="variantTable">
+                      <thead>
+                        <tr>
+                          <th>Size</th>
+                          <th>Colour</th>
+                          <th>SKU</th>
+                          <th>Barcode</th>
+                          <th>Stock</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {productVariants.map((variant) => (
+                          <tr key={variant.id}>
+                            <td>{variant.size || "Standard"}</td>
+                            <td>{variant.color || "—"}</td>
+                            <td>{variant.sku || "—"}</td>
+                            <td><code>{variant.barcode || "—"}</code></td>
+                            <td>{variant.stock}</td>
+                            <td>{variant.isActive ? "Active" : "Inactive"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="variantNote">Variant stock and barcodes are managed through Purchase Stock. They are shown here for reference.</p>
+                </div>
+              )}
             </div>
 
             <div className="summary">
@@ -1388,6 +1547,10 @@ export default function EditProductPage() {
           grid-template-columns: repeat(4, minmax(0, 1fr));
         }
 
+        .three {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
         .full {
           grid-column: 1 / -1;
         }
@@ -1437,6 +1600,161 @@ export default function EditProductPage() {
         .row input:focus {
           border-color: #0a2e73;
           box-shadow: 0 0 0 4px rgba(10, 46, 115, 0.09);
+        }
+
+        .inventorySyncCard {
+          margin-top: 18px;
+          padding: 18px;
+          border: 1px solid #d8e2f5;
+          border-radius: 14px;
+          background: linear-gradient(180deg, #fbfdff, #f5f8ff);
+        }
+
+        .inventorySyncHead,
+        .variantInventoryTitle {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+        }
+
+        .inventorySyncHead strong,
+        .inventorySyncHead span,
+        .variantInventoryTitle strong,
+        .variantInventoryTitle span {
+          display: block;
+        }
+
+        .inventorySyncHead strong {
+          color: #0a2e73;
+          font-size: 15px;
+        }
+
+        .inventorySyncHead div > span {
+          margin-top: 4px;
+          color: #667085;
+          font-size: 12px;
+        }
+
+        .syncBadge {
+          padding: 6px 10px;
+          border-radius: 999px;
+          background: #ecfdf3;
+          color: #067647;
+          font-size: 11px;
+          font-weight: 800;
+          white-space: nowrap;
+        }
+
+        .inventoryFields {
+          margin-top: 16px;
+          align-items: end;
+        }
+
+        .onlineToggle {
+          min-height: 68px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 14px;
+          border: 1px solid #d0d5dd;
+          border-radius: 10px;
+          background: white;
+          cursor: pointer;
+        }
+
+        .onlineToggle input {
+          width: 19px;
+          height: 19px;
+          accent-color: #0a2e73;
+        }
+
+        .onlineToggle strong,
+        .onlineToggle small {
+          display: block;
+        }
+
+        .onlineToggle strong {
+          color: #0a2e73;
+          font-size: 13px;
+        }
+
+        .onlineToggle small {
+          margin-top: 3px;
+          color: #667085;
+          font-size: 10px;
+        }
+
+        .variantInventory {
+          margin-top: 18px;
+          padding-top: 16px;
+          border-top: 1px solid #d8e2f5;
+        }
+
+        .variantInventoryTitle strong {
+          color: #0a2e73;
+          font-size: 14px;
+        }
+
+        .variantInventoryTitle span {
+          color: #667085;
+          font-size: 11px;
+        }
+
+        .variantTableWrap {
+          margin-top: 10px;
+          overflow-x: auto;
+          border: 1px solid #e4e7ec;
+          border-radius: 10px;
+          background: white;
+        }
+
+        .variantTable {
+          width: 100%;
+          min-width: 680px;
+          border-collapse: collapse;
+        }
+
+        .variantTable th,
+        .variantTable td {
+          padding: 10px 11px;
+          border-bottom: 1px solid #eef1f5;
+          color: #344054;
+          font-size: 11px;
+          text-align: left;
+        }
+
+        .variantTable th {
+          background: #f8fafc;
+          color: #475467;
+          font-weight: 800;
+        }
+
+        .variantTable tr:last-child td {
+          border-bottom: 0;
+        }
+
+        .variantTable code {
+          color: #0a2e73;
+          font-weight: 800;
+        }
+
+        .variantNote {
+          margin: 9px 0 0;
+          color: #667085;
+          font-size: 11px;
+        }
+
+        .field input[readonly] {
+          background: #f2f4f7;
+          color: #475467;
+          cursor: not-allowed;
+        }
+
+        .field input:disabled {
+          background: #f2f4f7;
+          color: #98a2b3;
+          cursor: not-allowed;
         }
 
         .summary {
@@ -1710,6 +2028,7 @@ export default function EditProductPage() {
           }
 
           .four,
+          .three,
           .two {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
@@ -1741,6 +2060,7 @@ export default function EditProductPage() {
           }
 
           .four,
+          .three,
           .two {
             grid-template-columns: 1fr;
           }

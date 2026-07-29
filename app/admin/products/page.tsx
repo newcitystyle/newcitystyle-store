@@ -591,13 +591,13 @@ export default function AdminProductsPage() {
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
 
-<a
-  href="http://localhost:3000/admin/add-product"
+<Link
+  href="/admin/add-product"
   className="primary-button"
 >
   <span>＋</span>
   Add New Product
-</a>
+</Link>
           </div>
         </section>
 
@@ -831,16 +831,13 @@ export default function AdminProductsPage() {
               </p>
 
               {products.length === 0 ? (
-                <button
-  type="button"
-  className="primaryButton"
-  onClick={() => {
-    alert("BUTTON CLICKED");
-    window.location.href = "/admin/add-product";
-  }}
->
-  ＋ Add New Product
-</button>
+                <Link
+                  href="/admin/add-product"
+                  className="primary-button"
+                >
+                  <span>＋</span>
+                  Add New Product
+                </Link>
               ) : (
                 <button
                   type="button"
