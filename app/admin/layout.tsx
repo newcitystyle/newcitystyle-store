@@ -23,6 +23,22 @@ const menuItems = [
   { label: "Collections", href: "/admin/collections", icon: "✨" },
   { label: "Orders", href: "/admin/orders", icon: "📦" },
   { label: "Billing / POS", href: "/admin/pos", icon: "🧾" },
+  { label: "Daily Expenses", href: "/admin/expenses", icon: "💸" },
+  {
+    label: "Cash & Bank Book",
+    href: "/admin/cash-bank-book",
+    icon: "🏦",
+  },
+  {
+    label: "Party Ledgers",
+    href: "/admin/party-ledgers",
+    icon: "📒",
+  },
+  {
+    label: "Reconciliation",
+    href: "/admin/reconciliation",
+    icon: "✅",
+  },
   { label: "Purchase Stock", href: "/admin/purchases", icon: "📥" },
   {
     label: "Purchase History",

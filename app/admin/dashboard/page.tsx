@@ -1,7 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -14,6 +19,14 @@ type Product = {
   stock?: number | string | null;
   category?: string | null;
   created_at?: string | null;
+};
+
+type ProductVariant = {
+  id: number;
+  product_id: number;
+  stock?: number | string | null;
+  reserved_stock?: number | string | null;
+  is_active?: boolean | null;
 };
 
 type OrderItem = {
@@ -40,20 +53,75 @@ type Order = {
 type WebsiteVisit = {
   id: string | number;
   visitor_id?: string | null;
-  session_id?: string | null;
   page_path?: string | null;
-  page_title?: string | null;
-  referrer?: string | null;
-  device_type?: string | null;
-  browser?: string | null;
   visited_at?: string | null;
+};
+
+type PosSale = {
+  id: string;
+  invoice_number?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  sale_status?: string | null;
+  payment_method?: string | null;
+  total_amount?: number | string | null;
+  paid_amount?: number | string | null;
+  due_amount?: number | string | null;
+  created_at?: string | null;
+};
+
+type Expense = {
+  id: string;
+  expense_date: string;
+  category_name?: string | null;
+  amount?: number | string | null;
+  payment_method?: string | null;
+  is_deleted?: boolean | null;
+};
+
+type CreditAccount = {
+  id: string;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  current_balance?: number | string | null;
+  next_due_date?: string | null;
+  is_active?: boolean | null;
+};
+
+type Supplier = {
+  id: number;
+  supplier_name?: string | null;
+  phone?: string | null;
+  current_balance?: number | string | null;
+  is_active?: boolean | null;
+};
+
+type Purchase = {
+  id: string;
+  purchase_number?: string | null;
+  supplier_name?: string | null;
+  purchase_date?: string | null;
+  total_amount?: number | string | null;
+  paid_amount?: number | string | null;
+  due_amount?: number | string | null;
+  purchase_status?: string | null;
+  deleted_at?: string | null;
+};
+
+type CashBankTransaction = {
+  id: string;
+  transaction_date: string;
+  account_type?: string | null;
+  direction?: "in" | "out" | null;
+  amount?: number | string | null;
+  is_deleted?: boolean | null;
 };
 
 type DashboardStats = {
   totalProducts: number;
   totalOrders: number;
   totalCustomers: number;
-  totalRevenue: number;
+  websiteRevenue: number;
   pendingOrders: number;
   deliveredOrders: number;
   cancelledOrders: number;
@@ -68,6 +136,30 @@ type VisitorStats = {
   totalPageViews: number;
 };
 
+type SalesPoint = {
+  key: string;
+  label: string;
+  amount: number;
+};
+
+const ROYAL_BLUE = "#0A2E73";
+const DEEP_BLUE = "#03153F";
+const GOLD = "#D4AF37";
+const IVORY = "#F8F4EC";
+
+function toNumber(value: number | string | null | undefined) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatCurrency(value: number, digits = 0) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: digits,
+  }).format(value);
+}
+
 function getProductName(product: Product) {
   return (
     product.name ||
@@ -81,32 +173,22 @@ function getOrderStatus(order: Order) {
   return order.order_status || order.status || "Pending";
 }
 
-function getOrderTotal(order: Order) {
-  const value = Number(order.total_amount || 0);
-  return Number.isFinite(value) ? value : 0;
-}
+function parseOrderItems(order: Order): OrderItem[] {
+  if (!order.items) return [];
+  if (Array.isArray(order.items)) return order.items;
 
-function getStock(product: Product) {
-  const value = Number(product.stock || 0);
-  return Number.isFinite(value) ? value : 0;
-}
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(value);
+  try {
+    const parsed = JSON.parse(order.items);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function formatDate(value?: string | null) {
   if (!value) return "Date unavailable";
-
   const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
+  if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleString("en-IN", {
     dateStyle: "medium",
@@ -114,49 +196,58 @@ function formatDate(value?: string | null) {
   });
 }
 
-function parseOrderItems(order: Order): OrderItem[] {
-  if (!order.items) return [];
-
-  if (Array.isArray(order.items)) {
-    return order.items;
-  }
-
-  if (typeof order.items === "string") {
-    try {
-      const parsed = JSON.parse(order.items);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-
-  return [];
+function startOfLocalDay(date = new Date()) {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    0,
+    0,
+    0,
+    0,
+  );
 }
 
-function getStartOfToday() {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  return date;
+function startOfMonth(date = new Date()) {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    1,
+    0,
+    0,
+    0,
+    0,
+  );
 }
 
-function getDateDaysAgo(days: number) {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - days);
-  return date;
+function dateKey(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function isSuccessfulSale(sale: PosSale) {
+  const status = (sale.sale_status || "completed").toLowerCase();
+  return !["cancelled", "void", "refunded"].includes(status);
+}
+
+function salePaidAmount(sale: PosSale) {
+  const total = Math.max(0, toNumber(sale.total_amount));
+  const paid = toNumber(sale.paid_amount);
+  return Math.max(0, paid || total);
 }
 
 function getUniqueVisitorCount(
   visits: WebsiteVisit[],
-  startDate?: Date
+  startDate?: Date,
 ) {
-  const visitorIds = visits
+  const ids = visits
     .filter((visit) => {
       if (!startDate) return true;
       if (!visit.visited_at) return false;
-
       const visitDate = new Date(visit.visited_at);
-
       return (
         !Number.isNaN(visitDate.getTime()) &&
         visitDate >= startDate
@@ -164,144 +255,410 @@ function getUniqueVisitorCount(
     })
     .map((visit) => visit.visitor_id)
     .filter(
-      (visitorId): visitorId is string =>
-        typeof visitorId === "string" &&
-        visitorId.trim().length > 0
+      (id): id is string =>
+        typeof id === "string" &&
+        id.trim().length > 0,
     );
 
-  return new Set(visitorIds).size;
+  return new Set(ids).size;
 }
 
 export default function AdminDashboardPage() {
   const router = useRouter();
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [visits, setVisits] = useState<WebsiteVisit[]>([]);
+  const [posSales, setPosSales] = useState<PosSale[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [creditAccounts, setCreditAccounts] = useState<CreditAccount[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [cashTransactions, setCashTransactions] =
+    useState<CashBankTransaction[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [visitorError, setVisitorError] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
+  const [salesRange, setSalesRange] = useState<7 | 14 | 30>(7);
+
+  const loadDashboard = useCallback(
+    async (showRefresh = false) => {
+      if (showRefresh) setRefreshing(true);
+      else setLoading(true);
+
+      setErrorMessage("");
+      setVisitorError("");
+
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) throw userError;
+
+        if (!user) {
+          router.replace("/admin/login");
+          return;
+        }
+
+        setAdminEmail(user.email || "");
+
+        const [
+          productsResult,
+          variantsResult,
+          ordersResult,
+          visitsResult,
+          posSalesResult,
+          expensesResult,
+          creditResult,
+          suppliersResult,
+          purchasesResult,
+          cashTransactionsResult,
+        ] = await Promise.all([
+          supabase
+            .from("products")
+            .select("*")
+            .order("created_at", { ascending: false }),
+
+          supabase
+            .from("product_variants")
+            .select(
+              "id,product_id,stock,reserved_stock,is_active",
+            )
+            .eq("is_active", true),
+
+          supabase
+            .from("orders")
+            .select("*")
+            .order("created_at", { ascending: false }),
+
+          supabase
+            .from("website_visits")
+            .select("id,visitor_id,page_path,visited_at")
+            .order("visited_at", { ascending: false })
+            .limit(10000),
+
+          supabase
+            .from("pos_sales")
+            .select(
+              "id,invoice_number,customer_name,customer_phone,sale_status,payment_method,total_amount,paid_amount,due_amount,created_at",
+            )
+            .order("created_at", { ascending: false })
+            .limit(5000),
+
+          supabase
+            .from("expenses")
+            .select(
+              "id,expense_date,category_name,amount,payment_method,is_deleted",
+            )
+            .eq("is_deleted", false)
+            .order("expense_date", { ascending: false })
+            .limit(5000),
+
+          supabase
+            .from("customer_credit_accounts")
+            .select(
+              "id,customer_name,customer_phone,current_balance,next_due_date,is_active",
+            )
+            .eq("is_active", true)
+            .order("current_balance", { ascending: false }),
+
+          supabase
+            .from("suppliers")
+            .select(
+              "id,supplier_name,phone,current_balance,is_active",
+            )
+            .eq("is_active", true)
+            .order("current_balance", { ascending: false }),
+
+          supabase
+            .from("purchases")
+            .select(
+              "id,purchase_number,supplier_name,purchase_date,total_amount,paid_amount,due_amount,purchase_status,deleted_at",
+            )
+            .is("deleted_at", null)
+            .order("purchase_date", { ascending: false })
+            .limit(5000),
+
+          supabase
+            .from("cash_bank_transactions")
+            .select(
+              "id,transaction_date,account_type,direction,amount,is_deleted",
+            )
+            .eq("is_deleted", false)
+            .order("transaction_date", { ascending: false })
+            .limit(5000),
+        ]);
+
+        if (productsResult.error) throw productsResult.error;
+        if (ordersResult.error) throw ordersResult.error;
+        if (posSalesResult.error) throw posSalesResult.error;
+        if (expensesResult.error) throw expensesResult.error;
+        if (creditResult.error) throw creditResult.error;
+        if (suppliersResult.error) throw suppliersResult.error;
+        if (purchasesResult.error) throw purchasesResult.error;
+        if (cashTransactionsResult.error) {
+          console.info(
+            "Cash book manual entries are unavailable:",
+            cashTransactionsResult.error.message,
+          );
+        }
+
+        setProducts((productsResult.data || []) as Product[]);
+        setVariants(
+          variantsResult.error
+            ? []
+            : ((variantsResult.data || []) as ProductVariant[]),
+        );
+        setOrders((ordersResult.data || []) as Order[]);
+        setPosSales((posSalesResult.data || []) as PosSale[]);
+        setExpenses((expensesResult.data || []) as Expense[]);
+        setCreditAccounts(
+          (creditResult.data || []) as CreditAccount[],
+        );
+        setSuppliers((suppliersResult.data || []) as Supplier[]);
+        setPurchases((purchasesResult.data || []) as Purchase[]);
+        setCashTransactions(
+          cashTransactionsResult.error
+            ? []
+            : ((cashTransactionsResult.data ||
+                []) as CashBankTransaction[]),
+        );
+
+        if (visitsResult.error) {
+          console.error(
+            "Website visitors load error:",
+            visitsResult.error,
+          );
+          setVisitorError(
+            "Visitor information could not be loaded. Check website_visits table policies.",
+          );
+          setVisits([]);
+        } else {
+          setVisits(
+            (visitsResult.data || []) as WebsiteVisit[],
+          );
+        }
+      } catch (error) {
+        console.error("Admin dashboard load error:", error);
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "Unable to load dashboard data.",
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [router],
+  );
 
   useEffect(() => {
-    loadDashboard();
-  }, []);
+    void loadDashboard();
+  }, [loadDashboard]);
 
-  async function loadDashboard(showRefresh = false) {
-    if (showRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
+  const todayStart = startOfLocalDay();
+  const monthStart = startOfMonth();
+  const sevenDaysStart = new Date(todayStart);
+  sevenDaysStart.setDate(sevenDaysStart.getDate() - 6);
+  const thirtyDaysStart = new Date(todayStart);
+  thirtyDaysStart.setDate(thirtyDaysStart.getDate() - 29);
 
-    setErrorMessage("");
-    setVisitorError("");
+  const successfulPosSales = useMemo(
+    () => posSales.filter(isSuccessfulSale),
+    [posSales],
+  );
 
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+  const business = useMemo(() => {
+    const todaySalesRows = successfulPosSales.filter((sale) => {
+      if (!sale.created_at) return false;
+      const date = new Date(sale.created_at);
+      return !Number.isNaN(date.getTime()) && date >= todayStart;
+    });
 
-      if (userError) throw userError;
+    const monthSalesRows = successfulPosSales.filter((sale) => {
+      if (!sale.created_at) return false;
+      const date = new Date(sale.created_at);
+      return !Number.isNaN(date.getTime()) && date >= monthStart;
+    });
 
-      if (!user) {
-        router.replace("/admin/login");
-        return;
-      }
+    const todayExpenseRows = expenses.filter((expense) => {
+      return expense.expense_date === dateKey(todayStart);
+    });
 
-      setAdminEmail(user.email || "");
+    const monthExpenseRows = expenses.filter((expense) => {
+      const date = new Date(`${expense.expense_date}T00:00:00`);
+      return !Number.isNaN(date.getTime()) && date >= monthStart;
+    });
 
-      const [
-        productsResult,
-        ordersResult,
-        visitsResult,
-      ] = await Promise.all([
-        supabase
-          .from("products")
-          .select("*")
-          .order("created_at", { ascending: false }),
+    const monthPurchaseRows = purchases.filter((purchase) => {
+      if (!purchase.purchase_date) return false;
+      const date = new Date(`${purchase.purchase_date}T00:00:00`);
+      const status = (
+        purchase.purchase_status || "completed"
+      ).toLowerCase();
 
-        supabase
-          .from("orders")
-          .select("*")
-          .order("created_at", { ascending: false }),
-
-        supabase
-          .from("website_visits")
-          .select("*")
-          .order("visited_at", { ascending: false })
-          .limit(10000),
-      ]);
-
-      if (productsResult.error) {
-        throw productsResult.error;
-      }
-
-      if (ordersResult.error) {
-        throw ordersResult.error;
-      }
-
-      setProducts((productsResult.data as Product[]) || []);
-      setOrders((ordersResult.data as Order[]) || []);
-
-      if (visitsResult.error) {
-        console.error(
-          "Website visitors load error:",
-          visitsResult.error
-        );
-
-        setVisitorError(
-          "Visitor information could not be loaded. Check website_visits table policies."
-        );
-
-        setVisits([]);
-      } else {
-        setVisits(
-          (visitsResult.data as WebsiteVisit[]) || []
-        );
-      }
-    } catch (error) {
-      console.error("Admin dashboard load error:", error);
-
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to load dashboard data."
+      return (
+        !Number.isNaN(date.getTime()) &&
+        date >= monthStart &&
+        !["cancelled", "void"].includes(status)
       );
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }
+    });
 
-  async function handleLogout() {
-    try {
-      await supabase.auth.signOut({
-        scope: "local",
-      });
+    const totalReceivable = creditAccounts.reduce(
+      (sum, account) =>
+        sum + Math.max(0, toNumber(account.current_balance)),
+      0,
+    );
 
-      localStorage.clear();
-      sessionStorage.clear();
+    const totalPayable = suppliers.reduce(
+      (sum, supplier) =>
+        sum + Math.max(0, toNumber(supplier.current_balance)),
+      0,
+    );
 
-      window.location.replace("/admin/login");
-    } catch (error) {
-      console.error("Admin logout error:", error);
-      alert("Unable to logout. Please try again.");
-    }
-  }
+    const cashSales = monthSalesRows
+      .filter(
+        (sale) =>
+          (sale.payment_method || "").toLowerCase() === "cash",
+      )
+      .reduce((sum, sale) => sum + salePaidAmount(sale), 0);
 
-  const stats = useMemo<DashboardStats>(() => {
+    const digitalSales = monthSalesRows
+      .filter((sale) =>
+        ["upi", "card", "bank", "bank_transfer"].includes(
+          (sale.payment_method || "").toLowerCase(),
+        ),
+      )
+      .reduce((sum, sale) => sum + salePaidAmount(sale), 0);
+
+    const cashExpenses = monthExpenseRows
+      .filter(
+        (expense) =>
+          (expense.payment_method || "").toLowerCase() ===
+          "cash",
+      )
+      .reduce(
+        (sum, expense) => sum + toNumber(expense.amount),
+        0,
+      );
+
+    const digitalExpenses = monthExpenseRows
+      .filter((expense) =>
+        ["upi", "card", "bank_transfer"].includes(
+          (expense.payment_method || "").toLowerCase(),
+        ),
+      )
+      .reduce(
+        (sum, expense) => sum + toNumber(expense.amount),
+        0,
+      );
+
+    const manualCash = cashTransactions
+      .filter((transaction) => {
+        const date = new Date(
+          `${transaction.transaction_date}T00:00:00`,
+        );
+        return (
+          !Number.isNaN(date.getTime()) &&
+          date >= monthStart &&
+          transaction.account_type === "cash"
+        );
+      })
+      .reduce(
+        (sum, transaction) =>
+          sum +
+          (transaction.direction === "in" ? 1 : -1) *
+            toNumber(transaction.amount),
+        0,
+      );
+
+    const manualDigital = cashTransactions
+      .filter((transaction) => {
+        const date = new Date(
+          `${transaction.transaction_date}T00:00:00`,
+        );
+        return (
+          !Number.isNaN(date.getTime()) &&
+          date >= monthStart &&
+          ["upi", "card", "bank"].includes(
+            transaction.account_type || "",
+          )
+        );
+      })
+      .reduce(
+        (sum, transaction) =>
+          sum +
+          (transaction.direction === "in" ? 1 : -1) *
+            toNumber(transaction.amount),
+        0,
+      );
+
+    const monthSales = monthSalesRows.reduce(
+      (sum, sale) => sum + toNumber(sale.total_amount),
+      0,
+    );
+
+    const monthExpenses = monthExpenseRows.reduce(
+      (sum, expense) => sum + toNumber(expense.amount),
+      0,
+    );
+
+    const monthPurchases = monthPurchaseRows.reduce(
+      (sum, purchase) =>
+        sum + toNumber(purchase.total_amount),
+      0,
+    );
+
+    return {
+      todaySales: todaySalesRows.reduce(
+        (sum, sale) => sum + toNumber(sale.total_amount),
+        0,
+      ),
+      todayBills: todaySalesRows.length,
+      monthSales,
+      monthBills: monthSalesRows.length,
+      todayExpenses: todayExpenseRows.reduce(
+        (sum, expense) => sum + toNumber(expense.amount),
+        0,
+      ),
+      monthExpenses,
+      monthPurchases,
+      totalReceivable,
+      totalPayable,
+      cashBalance:
+        cashSales + manualCash - cashExpenses,
+      digitalBalance:
+        digitalSales + manualDigital - digitalExpenses,
+      estimatedOperatingProfit:
+        monthSales - monthPurchases - monthExpenses,
+    };
+  }, [
+    cashTransactions,
+    creditAccounts,
+    expenses,
+    monthStart,
+    purchases,
+    successfulPosSales,
+    suppliers,
+    todayStart,
+  ]);
+
+  const dashboardStats = useMemo<DashboardStats>(() => {
     const activeRevenue = orders
       .filter(
         (order) =>
-          getOrderStatus(order).toLowerCase() !==
-          "cancelled"
+          getOrderStatus(order).toLowerCase() !== "cancelled",
       )
       .reduce(
-        (sum, order) => sum + getOrderTotal(order),
-        0
+        (sum, order) => sum + toNumber(order.total_amount),
+        0,
       );
 
     const uniqueCustomers = new Set(
@@ -310,114 +667,196 @@ export default function AdminDashboardPage() {
           (order) =>
             order.email ||
             order.phone ||
-            order.customer_name
+            order.customer_name,
         )
         .filter(Boolean)
-        .map(String)
+        .map(String),
     );
+
+    const stockByProduct = new Map<number, number>();
+    variants.forEach((variant) => {
+      const available = Math.max(
+        0,
+        toNumber(variant.stock) -
+          toNumber(variant.reserved_stock),
+      );
+      stockByProduct.set(
+        variant.product_id,
+        (stockByProduct.get(variant.product_id) || 0) +
+          available,
+      );
+    });
+
+    const lowStock = products.filter((product) => {
+      const productId = Number(product.id);
+      const stock = stockByProduct.has(productId)
+        ? stockByProduct.get(productId) || 0
+        : toNumber(product.stock);
+      return stock >= 0 && stock <= 5;
+    }).length;
 
     return {
       totalProducts: products.length,
       totalOrders: orders.length,
       totalCustomers: uniqueCustomers.size,
-      totalRevenue: activeRevenue,
+      websiteRevenue: activeRevenue,
       pendingOrders: orders.filter(
         (order) =>
-          getOrderStatus(order).toLowerCase() ===
-          "pending"
+          getOrderStatus(order).toLowerCase() === "pending",
       ).length,
       deliveredOrders: orders.filter(
         (order) =>
-          getOrderStatus(order).toLowerCase() ===
-          "delivered"
+          getOrderStatus(order).toLowerCase() === "delivered",
       ).length,
       cancelledOrders: orders.filter(
         (order) =>
           getOrderStatus(order).toLowerCase() ===
-          "cancelled"
+          "cancelled",
       ).length,
-      lowStockProducts: products.filter((product) => {
-        const stock = getStock(product);
-        return stock >= 0 && stock <= 5;
-      }).length,
+      lowStockProducts: lowStock,
     };
-  }, [orders, products]);
+  }, [orders, products, variants]);
 
-  const visitorStats = useMemo<VisitorStats>(() => {
-    const todayStart = getStartOfToday();
-    const sevenDaysStart = getDateDaysAgo(6);
-    const thirtyDaysStart = getDateDaysAgo(29);
-
-    return {
+  const visitorStats = useMemo<VisitorStats>(
+    () => ({
       todayVisitors: getUniqueVisitorCount(
         visits,
-        todayStart
+        todayStart,
       ),
       sevenDayVisitors: getUniqueVisitorCount(
         visits,
-        sevenDaysStart
+        sevenDaysStart,
       ),
       thirtyDayVisitors: getUniqueVisitorCount(
         visits,
-        thirtyDaysStart
+        thirtyDaysStart,
       ),
-      totalUniqueVisitors:
-        getUniqueVisitorCount(visits),
+      totalUniqueVisitors: getUniqueVisitorCount(visits),
       totalPageViews: visits.length,
-    };
-  }, [visits]);
+    }),
+    [thirtyDaysStart, todayStart, sevenDaysStart, visits],
+  );
 
-  const recentOrders = useMemo(() => {
-    return orders.slice(0, 6);
-  }, [orders]);
+  const salesTrend = useMemo<SalesPoint[]>(() => {
+    const points: SalesPoint[] = [];
 
-  const lowStockProducts = useMemo(() => {
-    return products
-      .filter((product) => {
-        const stock = getStock(product);
-        return stock >= 0 && stock <= 5;
-      })
-      .sort(
-        (firstProduct, secondProduct) =>
-          getStock(firstProduct) -
-          getStock(secondProduct)
-      )
-      .slice(0, 6);
-  }, [products]);
+    for (let index = salesRange - 1; index >= 0; index -= 1) {
+      const day = new Date(todayStart);
+      day.setDate(day.getDate() - index);
+      const key = dateKey(day);
 
-  const popularPages = useMemo(() => {
-    const pageCounts = new Map<string, number>();
+      const amount = successfulPosSales
+        .filter((sale) => {
+          if (!sale.created_at) return false;
+          const date = new Date(sale.created_at);
+          return !Number.isNaN(date.getTime()) &&
+            dateKey(date) === key;
+        })
+        .reduce(
+          (sum, sale) => sum + toNumber(sale.total_amount),
+          0,
+        );
 
-    visits.forEach((visit) => {
-      const pagePath =
-        visit.page_path?.trim() || "/";
+      points.push({
+        key,
+        label: day.toLocaleDateString("en-IN", {
+          day: "2-digit",
+          month: "short",
+        }),
+        amount,
+      });
+    }
 
-      pageCounts.set(
-        pagePath,
-        (pageCounts.get(pagePath) || 0) + 1
+    return points;
+  }, [salesRange, successfulPosSales, todayStart]);
+
+  const trendMax = Math.max(
+    1,
+    ...salesTrend.map((point) => point.amount),
+  );
+
+  const recentOrders = orders.slice(0, 5);
+
+  const stockByProduct = useMemo(() => {
+    const map = new Map<number, number>();
+    variants.forEach((variant) => {
+      const available = Math.max(
+        0,
+        toNumber(variant.stock) -
+          toNumber(variant.reserved_stock),
+      );
+      map.set(
+        variant.product_id,
+        (map.get(variant.product_id) || 0) + available,
       );
     });
+    return map;
+  }, [variants]);
 
-    return Array.from(pageCounts.entries())
-      .map(([pagePath, count]) => ({
-        pagePath,
-        count,
-      }))
-      .sort(
-        (firstPage, secondPage) =>
-          secondPage.count - firstPage.count
-      )
+  const lowStockProducts = useMemo(
+    () =>
+      products
+        .map((product) => ({
+          ...product,
+          computedStock: stockByProduct.has(Number(product.id))
+            ? stockByProduct.get(Number(product.id)) || 0
+            : toNumber(product.stock),
+        }))
+        .filter(
+          (product) =>
+            product.computedStock >= 0 &&
+            product.computedStock <= 5,
+        )
+        .sort(
+          (first, second) =>
+            first.computedStock - second.computedStock,
+        )
+        .slice(0, 6),
+    [products, stockByProduct],
+  );
+
+  const dueCustomers = creditAccounts
+    .filter((account) => toNumber(account.current_balance) > 0)
+    .slice(0, 5);
+
+  const dueSuppliers = suppliers
+    .filter((supplier) => toNumber(supplier.current_balance) > 0)
+    .slice(0, 5);
+
+  const popularPages = useMemo(() => {
+    const counts = new Map<string, number>();
+    visits.forEach((visit) => {
+      const path = visit.page_path?.trim() || "/";
+      counts.set(path, (counts.get(path) || 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .map(([pagePath, count]) => ({ pagePath, count }))
+      .sort((first, second) => second.count - first.count)
       .slice(0, 5);
   }, [visits]);
+
+  async function handleLogout() {
+    try {
+      await supabase.auth.signOut({ scope: "local" });
+      localStorage.clear();
+      sessionStorage.clear();
+      window.location.replace("/admin/login");
+    } catch (error) {
+      console.error("Admin logout error:", error);
+      alert("Unable to logout. Please try again.");
+    }
+  }
 
   if (loading) {
     return (
       <main className="loadingPage">
         <div className="loadingLogo">NCS</div>
         <div className="loader" />
-        <h2>Loading Admin Dashboard...</h2>
+        <h2>Opening Business Command Centre...</h2>
         <p>
-          Loading orders, products and website visitors.
+          Loading POS, accounts, inventory, orders and website
+          analytics.
         </p>
 
         <style jsx>{`
@@ -428,32 +867,37 @@ export default function AdminDashboardPage() {
             align-items: center;
             justify-content: center;
             padding: 24px;
-            background: #f8f4ec;
-            color: #0a2e73;
-            font-family: Inter, Poppins, Arial, sans-serif;
+            background:
+              radial-gradient(
+                circle at 20% 10%,
+                rgba(212, 175, 55, 0.18),
+                transparent 28%
+              ),
+              ${IVORY};
+            color: ${ROYAL_BLUE};
+            font-family: Poppins, Inter, Arial, sans-serif;
             text-align: center;
           }
 
           .loadingLogo {
-            width: 76px;
-            height: 76px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 2px solid #d4af37;
-            border-radius: 22px;
-            background: #0a2e73;
-            color: #d4af37;
+            width: 80px;
+            height: 80px;
+            display: grid;
+            place-items: center;
+            border: 2px solid ${GOLD};
+            border-radius: 24px;
+            background: ${ROYAL_BLUE};
+            color: ${GOLD};
             font-size: 22px;
             font-weight: 950;
           }
 
           .loader {
-            width: 45px;
-            height: 45px;
+            width: 46px;
+            height: 46px;
             margin-top: 24px;
             border: 4px solid #e4e7ec;
-            border-top-color: #0a2e73;
+            border-top-color: ${ROYAL_BLUE};
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
           }
@@ -479,304 +923,363 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <main className="page">
-      <div className="container">
-        <section className="topbar">
+    <main className="dashboardPage">
+      <section className="hero">
+        <div>
+          <span>NEW CITY STYLE • BUSINESS COMMAND CENTRE</span>
+          <h1>Premium Business Dashboard</h1>
+          <p>
+            Live retail sales, cash flow, receivables, payables,
+            inventory, online orders and customer activity.
+          </p>
+          <small>
+            Signed in as {adminEmail || "Administrator"}
+          </small>
+        </div>
+
+        <div className="heroActions">
+          <button
+            type="button"
+            onClick={() => void loadDashboard(true)}
+            disabled={refreshing}
+          >
+            {refreshing ? "Refreshing..." : "↻ Refresh"}
+          </button>
+          <Link href="/admin/pos">＋ New Bill</Link>
+          <button type="button" onClick={handleLogout}>
+            Logout
+          </button>
+        </div>
+      </section>
+
+      {errorMessage && (
+        <div className="message errorMessage">
+          {errorMessage}
+        </div>
+      )}
+
+      {visitorError && (
+        <div className="message warningMessage">
+          {visitorError}
+        </div>
+      )}
+
+      <section className="primaryKpis">
+        <BusinessKpi
+          icon="₹"
+          label="Today Sales"
+          value={formatCurrency(business.todaySales)}
+          note={`${business.todayBills} POS bill${
+            business.todayBills === 1 ? "" : "s"
+          } today`}
+          tone="blue"
+        />
+        <BusinessKpi
+          icon="↗"
+          label="This Month Sales"
+          value={formatCurrency(business.monthSales)}
+          note={`${business.monthBills} completed POS bills`}
+          tone="gold"
+        />
+        <BusinessKpi
+          icon="↓"
+          label="Total Receivable"
+          value={formatCurrency(business.totalReceivable)}
+          note={`${
+            creditAccounts.filter(
+              (account) =>
+                toNumber(account.current_balance) > 0,
+            ).length
+          } customers pending`}
+          tone="green"
+        />
+        <BusinessKpi
+          icon="↑"
+          label="Total Payable"
+          value={formatCurrency(business.totalPayable)}
+          note={`${
+            suppliers.filter(
+              (supplier) =>
+                toNumber(supplier.current_balance) > 0,
+            ).length
+          } suppliers pending`}
+          tone="red"
+        />
+      </section>
+
+      <section className="secondaryKpis">
+        <MiniKpi
+          label="Cash Balance"
+          value={formatCurrency(business.cashBalance)}
+          note="Current month estimate"
+        />
+        <MiniKpi
+          label="Digital Balance"
+          value={formatCurrency(business.digitalBalance)}
+          note="UPI / Card / Bank"
+        />
+        <MiniKpi
+          label="Today Expenses"
+          value={formatCurrency(business.todayExpenses)}
+          note="Daily expense book"
+        />
+        <MiniKpi
+          label="Month Expenses"
+          value={formatCurrency(business.monthExpenses)}
+          note="All expense categories"
+        />
+        <MiniKpi
+          label="Month Purchases"
+          value={formatCurrency(business.monthPurchases)}
+          note="Supplier stock purchases"
+        />
+        <MiniKpi
+          label="Est. Operating Profit"
+          value={formatCurrency(
+            business.estimatedOperatingProfit,
+          )}
+          note="Sales − purchases − expenses"
+        />
+      </section>
+
+      <section className="quickActionsPanel">
+        <div className="sectionHeader">
           <div>
-            <p className="eyebrow">NEW CITY STYLE</p>
-            <h1>Admin Dashboard</h1>
-            <p className="welcomeText">
-              Welcome back
-              {adminEmail ? `, ${adminEmail}` : ""}.
-            </p>
+            <span>FAST OPERATIONS</span>
+            <h2>Retail Quick Actions</h2>
           </div>
+        </div>
 
-          <div className="topActions">
-            <button
-              type="button"
-              className="refreshButton"
-              onClick={() => loadDashboard(true)}
-              disabled={refreshing}
-            >
-              {refreshing
-                ? "Refreshing..."
-                : "↻ Refresh"}
-            </button>
+        <div className="quickActionGrid">
+          <QuickAction
+            href="/admin/pos"
+            icon="🧾"
+            title="New Bill"
+            text="Open the premium billing counter"
+          />
+          <QuickAction
+            href="/admin/purchases"
+            icon="📥"
+            title="Add Purchase"
+            text="Receive supplier stock"
+          />
+          <QuickAction
+            href="/admin/expenses"
+            icon="💸"
+            title="Add Expense"
+            text="Record a daily business expense"
+          />
+          <QuickAction
+            href="/admin/party-ledgers"
+            icon="📒"
+            title="Receive Customer Due"
+            text="Open customer receivable ledger"
+          />
+          <QuickAction
+            href="/admin/party-ledgers"
+            icon="🚚"
+            title="Pay Supplier"
+            text="Open supplier payable ledger"
+          />
+          <QuickAction
+            href="/admin/cash-bank-book"
+            icon="🏦"
+            title="Cash & Bank"
+            text="Review daily money movement"
+          />
+        </div>
+      </section>
 
-            <Link href="/" className="storeButton">
-              View Store
-            </Link>
-
-            <button
-              type="button"
-              className="logoutButton"
-              onClick={handleLogout}
-            >
-              Logout
-            </button>
-          </div>
-        </section>
-
-        {errorMessage && (
-          <div className="errorBox">
-            <strong>!</strong>
-            <span>{errorMessage}</span>
-          </div>
-        )}
-
-        {visitorError && (
-          <div className="warningBox">
-            <strong>!</strong>
-            <span>{visitorError}</span>
-          </div>
-        )}
-
-        <section className="visitorSection">
-          <div className="sectionHeading">
+      <section className="analyticsGrid">
+        <article className="panel salesTrendPanel">
+          <div className="sectionHeader">
             <div>
-              <p>WEBSITE ANALYTICS</p>
-              <h2>Customer Visitors</h2>
+              <span>POS PERFORMANCE</span>
+              <h2>Sales Trend</h2>
             </div>
 
-            <span className="liveBadge">
-              ● Live Tracking
-            </span>
+            <select
+              value={salesRange}
+              onChange={(event) =>
+                setSalesRange(
+                  Number(event.target.value) as 7 | 14 | 30,
+                )
+              }
+            >
+              <option value={7}>Last 7 days</option>
+              <option value={14}>Last 14 days</option>
+              <option value={30}>Last 30 days</option>
+            </select>
           </div>
 
-          <div className="visitorGrid">
-            <VisitorCard
-              icon="☀️"
-              label="Today Visitors"
-              value={visitorStats.todayVisitors}
-              note="Unique visitors today"
-            />
+          <div className="trendChart">
+            {salesTrend.map((point) => {
+              const height = Math.max(
+                3,
+                (point.amount / trendMax) * 100,
+              );
 
-            <VisitorCard
-              icon="📅"
-              label="Last 7 Days"
-              value={visitorStats.sevenDayVisitors}
-              note="Unique visitors in 7 days"
-            />
-
-            <VisitorCard
-              icon="🗓️"
-              label="Last 30 Days"
-              value={visitorStats.thirtyDayVisitors}
-              note="Unique visitors in 30 days"
-            />
-
-            <VisitorCard
-              icon="👤"
-              label="Total Visitors"
-              value={visitorStats.totalUniqueVisitors}
-              note="All unique visitors"
-            />
-
-            <VisitorCard
-              icon="👁️"
-              label="Page Views"
-              value={visitorStats.totalPageViews}
-              note="Total pages opened"
-            />
+              return (
+                <div className="trendColumn" key={point.key}>
+                  <div className="trendValue">
+                    {point.amount > 0
+                      ? formatCurrency(point.amount)
+                      : "₹0"}
+                  </div>
+                  <div className="trendTrack">
+                    <div
+                      className="trendBar"
+                      style={{ height: `${height}%` }}
+                    />
+                  </div>
+                  <span>{point.label}</span>
+                </div>
+              );
+            })}
           </div>
-        </section>
+        </article>
 
-        <section className="statsGrid">
-          <StatCard
-            icon="🛍️"
-            label="Total Products"
-            value={stats.totalProducts}
-            note="Products in catalogue"
-          />
-
-          <StatCard
-            icon="📦"
-            label="Total Orders"
-            value={stats.totalOrders}
-            note={`${stats.pendingOrders} pending orders`}
-          />
-
-          <StatCard
-            icon="👥"
-            label="Customers"
-            value={stats.totalCustomers}
-            note="Unique customer records"
-          />
-
-          <StatCard
-            icon="💰"
-            label="Total Revenue"
-            value={formatCurrency(stats.totalRevenue)}
-            note="Excluding cancelled orders"
-          />
-
-          <StatCard
-            icon="✅"
-            label="Delivered"
-            value={stats.deliveredOrders}
-            note="Completed deliveries"
-          />
-
-          <StatCard
-            icon="❌"
-            label="Cancelled"
-            value={stats.cancelledOrders}
-            note="Cancelled orders"
-          />
-
-          <StatCard
-            icon="⚠️"
-            label="Low Stock"
-            value={stats.lowStockProducts}
-            note="Products with 5 or fewer"
-          />
-
-          <StatCard
-            icon="⏳"
-            label="Pending"
-            value={stats.pendingOrders}
-            note="Orders awaiting action"
-          />
-        </section>
-
-        <section className="quickActions">
-          <div className="sectionHeading">
+        <article className="panel alertPanel">
+          <div className="sectionHeader">
             <div>
-              <p>ADMIN SHORTCUTS</p>
-              <h2>Quick Actions</h2>
+              <span>ATTENTION REQUIRED</span>
+              <h2>Business Alerts</h2>
             </div>
           </div>
 
-          <div className="actionGrid">
-            <QuickAction
-              href="/admin/add-product"
-              icon="＋"
-              title="Add Product"
-              description="Create a new product listing"
+          <div className="alertList">
+            <AlertRow
+              icon="⚠️"
+              title="Low Stock Products"
+              value={dashboardStats.lowStockProducts}
+              href="/admin/barcodes"
+              tone="amber"
             />
-
-            <QuickAction
-              href="/admin/products"
-              icon="🛍️"
-              title="Manage Products"
-              description="Edit products, prices and stock"
+            <AlertRow
+              icon="💰"
+              title="Customers with Dues"
+              value={
+                creditAccounts.filter(
+                  (account) =>
+                    toNumber(account.current_balance) > 0,
+                ).length
+              }
+              href="/admin/party-ledgers"
+              tone="red"
             />
-
-            <QuickAction
-              href="/admin/orders"
+            <AlertRow
+              icon="🚚"
+              title="Suppliers Payable"
+              value={
+                suppliers.filter(
+                  (supplier) =>
+                    toNumber(supplier.current_balance) > 0,
+                ).length
+              }
+              href="/admin/party-ledgers"
+              tone="blue"
+            />
+            <AlertRow
               icon="📦"
-              title="Manage Orders"
-              description="Update order and delivery status"
-            />
-
-            <QuickAction
-              href="/admin/categories"
-              icon="🏷️"
-              title="Categories"
-              description="Manage shopping categories"
-            />
-
-            <QuickAction
-              href="/admin/seo"
-              icon="🔍"
-              title="SEO Settings"
-              description="Manage search engine information"
-            />
-
-            <QuickAction
-              href="/admin/analytics"
-              icon="📊"
-              title="Analytics"
-              description="Manage tracking integrations"
+              title="Pending Online Orders"
+              value={dashboardStats.pendingOrders}
+              href="/admin/orders"
+              tone="green"
             />
           </div>
-        </section>
+        </article>
+      </section>
 
-        <section className="contentGrid">
-          <div className="panel">
-            <div className="panelHeader">
-              <div>
-                <p>ORDER ACTIVITY</p>
-                <h2>Recent Orders</h2>
-              </div>
-
-              <Link href="/admin/orders">View All</Link>
+      <section className="detailGrid">
+        <article className="panel">
+          <div className="sectionHeader">
+            <div>
+              <span>RECEIVABLE WATCH</span>
+              <h2>Customer Dues</h2>
             </div>
+            <Link href="/admin/party-ledgers">View All</Link>
+          </div>
 
-            {recentOrders.length === 0 ? (
+          <div className="compactList">
+            {dueCustomers.length === 0 ? (
               <EmptyState
-                icon="📦"
-                title="No Orders Yet"
-                text="New customer orders will appear here."
+                icon="✅"
+                title="No Customer Dues"
+                text="All customer balances are clear."
               />
             ) : (
-              <div className="orderList">
-                {recentOrders.map((order) => {
-                  const status = getOrderStatus(order);
-                  const items = parseOrderItems(order);
-
-                  return (
-                    <article
-                      className="orderRow"
-                      key={String(order.id)}
-                    >
-                      <div className="orderIdentity">
-                        <div className="orderIcon">#</div>
-
-                        <div>
-                          <strong>
-                            Order #{order.id}
-                          </strong>
-                          <span>
-                            {formatDate(order.created_at)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="customerInfo">
-                        <strong>
-                          {order.customer_name ||
-                            "Customer"}
-                        </strong>
-
-                        <span>
-                          {items.length} item
-                          {items.length === 1 ? "" : "s"}
-                        </span>
-                      </div>
-
-                      <div className="orderTotal">
-                        {formatCurrency(
-                          getOrderTotal(order)
-                        )}
-                      </div>
-
-                      <span
-                        className={`statusBadge ${status
-                          .toLowerCase()
-                          .replaceAll(" ", "-")}`}
-                      >
-                        {status}
-                      </span>
-                    </article>
-                  );
-                })}
-              </div>
+              dueCustomers.map((account) => (
+                <div className="compactRow" key={account.id}>
+                  <div className="rowIcon">👤</div>
+                  <div className="rowMain">
+                    <strong>
+                      {account.customer_name || "Customer"}
+                    </strong>
+                    <span>
+                      {account.customer_phone || "No mobile"}
+                    </span>
+                  </div>
+                  <div className="rowAmount danger">
+                    {formatCurrency(
+                      toNumber(account.current_balance),
+                    )}
+                    <small>
+                      Due {account.next_due_date || "not set"}
+                    </small>
+                  </div>
+                </div>
+              ))
             )}
           </div>
+        </article>
 
-          <div className="panel">
-            <div className="panelHeader">
-              <div>
-                <p>INVENTORY ALERTS</p>
-                <h2>Low Stock Products</h2>
-              </div>
-
-              <Link href="/admin/products">
-                Manage
-              </Link>
+        <article className="panel">
+          <div className="sectionHeader">
+            <div>
+              <span>PAYABLE WATCH</span>
+              <h2>Supplier Balances</h2>
             </div>
+            <Link href="/admin/party-ledgers">View All</Link>
+          </div>
 
+          <div className="compactList">
+            {dueSuppliers.length === 0 ? (
+              <EmptyState
+                icon="✅"
+                title="No Supplier Payables"
+                text="All supplier balances are clear."
+              />
+            ) : (
+              dueSuppliers.map((supplier) => (
+                <div className="compactRow" key={supplier.id}>
+                  <div className="rowIcon">🚚</div>
+                  <div className="rowMain">
+                    <strong>
+                      {supplier.supplier_name || "Supplier"}
+                    </strong>
+                    <span>{supplier.phone || "No mobile"}</span>
+                  </div>
+                  <div className="rowAmount warning">
+                    {formatCurrency(
+                      toNumber(supplier.current_balance),
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </article>
+
+        <article className="panel">
+          <div className="sectionHeader">
+            <div>
+              <span>INVENTORY WATCH</span>
+              <h2>Low Stock Products</h2>
+            </div>
+            <Link href="/admin/barcodes">Manage</Link>
+          </div>
+
+          <div className="compactList">
             {lowStockProducts.length === 0 ? (
               <EmptyState
                 icon="✅"
@@ -784,646 +1287,682 @@ export default function AdminDashboardPage() {
                 text="No low-stock products found."
               />
             ) : (
-              <div className="stockList">
-                {lowStockProducts.map((product) => {
-                  const stock = getStock(product);
-
-                  return (
-                    <article
-                      className="stockRow"
-                      key={String(product.id)}
-                    >
-                      <div className="stockIcon">🛍️</div>
-
-                      <div className="stockInfo">
-                        <strong>
-                          {getProductName(product)}
-                        </strong>
-
-                        <span>
-                          {product.category ||
-                            "Fashion Product"}
-                        </span>
-                      </div>
-
-                      <div
-                        className={
-                          stock === 0
-                            ? "stockCount out"
-                            : "stockCount low"
-                        }
-                      >
-                        {stock === 0
-                          ? "Out"
-                          : `${stock} left`}
-                      </div>
-
-                      <Link
-                        href={`/admin/products/edit/${product.id}`}
-                      >
-                        Edit
-                      </Link>
-                    </article>
-                  );
-                })}
-              </div>
+              lowStockProducts.map((product) => (
+                <div
+                  className="compactRow"
+                  key={String(product.id)}
+                >
+                  <div className="rowIcon">🛍️</div>
+                  <div className="rowMain">
+                    <strong>{getProductName(product)}</strong>
+                    <span>
+                      {product.category || "Fashion Product"}
+                    </span>
+                  </div>
+                  <div
+                    className={
+                      product.computedStock === 0
+                        ? "stockPill out"
+                        : "stockPill low"
+                    }
+                  >
+                    {product.computedStock === 0
+                      ? "Out"
+                      : `${product.computedStock} left`}
+                  </div>
+                </div>
+              ))
             )}
           </div>
+        </article>
+      </section>
 
-          <div className="panel popularPanel">
-            <div className="panelHeader">
-              <div>
-                <p>VISITOR ACTIVITY</p>
-                <h2>Popular Pages</h2>
-              </div>
-
-              <span>
-                {visitorStats.totalPageViews} views
-              </span>
+      <section className="commerceGrid">
+        <article className="panel">
+          <div className="sectionHeader">
+            <div>
+              <span>ONLINE STORE</span>
+              <h2>Recent Orders</h2>
             </div>
+            <Link href="/admin/orders">View All</Link>
+          </div>
 
-            {popularPages.length === 0 ? (
+          <div className="compactList">
+            {recentOrders.length === 0 ? (
               <EmptyState
-                icon="👁️"
-                title="No Visitor Data Yet"
-                text="Open the customer website to start tracking visits."
+                icon="📦"
+                title="No Orders Yet"
+                text="New online orders will appear here."
               />
             ) : (
-              <div className="popularList">
-                {popularPages.map((page, index) => (
-                  <article
-                    className="popularRow"
-                    key={page.pagePath}
-                  >
-                    <div className="popularNumber">
-                      {index + 1}
-                    </div>
+              recentOrders.map((order) => {
+                const status = getOrderStatus(order);
+                const items = parseOrderItems(order);
 
-                    <div className="popularInfo">
-                      <strong>{page.pagePath}</strong>
+                return (
+                  <div
+                    className="compactRow"
+                    key={String(order.id)}
+                  >
+                    <div className="rowIcon">#</div>
+                    <div className="rowMain">
+                      <strong>Order #{order.id}</strong>
                       <span>
-                        Customer website page
+                        {order.customer_name || "Customer"} •{" "}
+                        {items.length} item
+                        {items.length === 1 ? "" : "s"}
                       </span>
                     </div>
-
-                    <div className="popularCount">
-                      {page.count} views
+                    <div className="rowAmount">
+                      {formatCurrency(
+                        toNumber(order.total_amount),
+                      )}
+                      <small>{status}</small>
                     </div>
-                  </article>
-                ))}
-              </div>
+                  </div>
+                );
+              })
             )}
           </div>
-        </section>
-      </div>
+        </article>
 
-      <style jsx>{`
-        :global(*) {
+        <article className="panel">
+          <div className="sectionHeader">
+            <div>
+              <span>WEBSITE ANALYTICS</span>
+              <h2>Customer Visitors</h2>
+            </div>
+            <span className="liveBadge">● Live</span>
+          </div>
+
+          <div className="visitorMetrics">
+            <VisitorMetric
+              label="Today"
+              value={visitorStats.todayVisitors}
+            />
+            <VisitorMetric
+              label="7 Days"
+              value={visitorStats.sevenDayVisitors}
+            />
+            <VisitorMetric
+              label="30 Days"
+              value={visitorStats.thirtyDayVisitors}
+            />
+            <VisitorMetric
+              label="Total"
+              value={visitorStats.totalUniqueVisitors}
+            />
+            <VisitorMetric
+              label="Page Views"
+              value={visitorStats.totalPageViews}
+            />
+          </div>
+
+          <div className="popularPages">
+            {popularPages.map((page, index) => (
+              <div key={page.pagePath}>
+                <b>{index + 1}</b>
+                <span>{page.pagePath}</span>
+                <strong>{page.count}</strong>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      <section className="catalogueKpis">
+        <MiniKpi
+          label="Total Products"
+          value={String(dashboardStats.totalProducts)}
+          note="Website catalogue"
+        />
+        <MiniKpi
+          label="Online Orders"
+          value={String(dashboardStats.totalOrders)}
+          note={`${dashboardStats.pendingOrders} pending`}
+        />
+        <MiniKpi
+          label="Online Customers"
+          value={String(dashboardStats.totalCustomers)}
+          note="Unique customer records"
+        />
+        <MiniKpi
+          label="Online Revenue"
+          value={formatCurrency(
+            dashboardStats.websiteRevenue,
+          )}
+          note="Excluding cancelled orders"
+        />
+        <MiniKpi
+          label="Delivered"
+          value={String(dashboardStats.deliveredOrders)}
+          note="Completed deliveries"
+        />
+        <MiniKpi
+          label="Cancelled"
+          value={String(dashboardStats.cancelledOrders)}
+          note="Cancelled online orders"
+        />
+      </section>
+
+      <style jsx global>{`
+        * {
           box-sizing: border-box;
         }
 
-        :global(body) {
-          margin: 0;
-          background: #f8f4ec;
-          color: #172033;
-          font-family: Inter, Poppins, Arial, sans-serif;
-        }
-
-        button {
-          font: inherit;
-        }
-
-        .page {
+        .dashboardPage {
           min-height: 100vh;
-          padding: 34px 20px 70px;
+          padding: 24px;
           background:
             radial-gradient(
-              circle at top right,
-              rgba(212, 175, 55, 0.12),
-              transparent 28%
+              circle at 5% 0%,
+              rgba(212, 175, 55, 0.14),
+              transparent 25%
             ),
-            linear-gradient(180deg, #f8f4ec, #ffffff);
+            linear-gradient(180deg, ${IVORY}, #ffffff);
+          color: #243044;
+          font-family: Poppins, Inter, Arial, sans-serif;
         }
 
-        .container {
-          width: 100%;
-          max-width: 1500px;
-          margin: 0 auto;
-        }
-
-        .topbar {
+        .hero {
           display: flex;
-          align-items: center;
+          align-items: flex-end;
           justify-content: space-between;
           gap: 24px;
-          padding: 28px;
-          border-radius: 22px;
-          background: linear-gradient(135deg, #0a2e73, #164ca8);
+          padding: 25px 26px;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.38);
+          border-radius: 23px;
+          background:
+            radial-gradient(
+              circle at 92% 0%,
+              rgba(212, 175, 55, 0.28),
+              transparent 33%
+            ),
+            linear-gradient(
+              135deg,
+              ${DEEP_BLUE},
+              ${ROYAL_BLUE} 60%,
+              #174da4
+            );
           color: #ffffff;
-          box-shadow: 0 18px 45px rgba(10, 46, 115, 0.22);
+          box-shadow: 0 20px 48px rgba(3, 21, 63, 0.2);
         }
 
-        .eyebrow {
-          margin: 0 0 7px;
-          color: #d4af37;
-          font-size: 11px;
-          font-weight: 900;
-          letter-spacing: 2px;
+        .hero span,
+        .sectionHeader > div > span {
+          color: ${GOLD};
+          font-size: 9px;
+          font-weight: 950;
+          letter-spacing: 1px;
         }
 
-        .topbar h1 {
-          margin: 0;
-          font-size: clamp(32px, 4vw, 48px);
-          line-height: 1.05;
+        .hero h1 {
+          margin: 5px 0 0;
+          font-size: clamp(29px, 4vw, 43px);
+          line-height: 1.08;
         }
 
-        .welcomeText {
-          margin: 10px 0 0;
-          color: rgba(255, 255, 255, 0.74);
-          font-size: 13px;
+        .hero p {
+          max-width: 740px;
+          margin: 7px 0 0;
+          color: rgba(255, 255, 255, 0.75);
+          font-size: 10px;
+          line-height: 1.6;
         }
 
-        .topActions {
+        .hero small {
+          display: block;
+          margin-top: 9px;
+          color: rgba(255, 255, 255, 0.53);
+          font-size: 8px;
+        }
+
+        .heroActions {
           display: flex;
-          align-items: center;
           flex-wrap: wrap;
-          gap: 10px;
+          gap: 8px;
         }
 
-        .topActions button,
-        .topActions :global(a) {
-          min-height: 44px;
+        .heroActions button,
+        .heroActions a {
+          min-height: 41px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          padding: 0 16px;
+          padding: 0 14px;
           border-radius: 10px;
-          font-size: 12px;
-          font-weight: 850;
+          font: inherit;
+          font-size: 9px;
+          font-weight: 900;
           text-decoration: none;
           cursor: pointer;
         }
 
-        .refreshButton {
+        .heroActions button {
           border: 1px solid rgba(255, 255, 255, 0.25);
-          background: rgba(255, 255, 255, 0.1);
+          background: rgba(255, 255, 255, 0.09);
           color: #ffffff;
         }
 
-        .refreshButton:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
+        .heroActions a {
+          border: 1px solid ${GOLD};
+          background: ${GOLD};
+          color: ${ROYAL_BLUE};
         }
 
-        .storeButton {
-          border: 1px solid #d4af37;
-          background: #d4af37;
-          color: #0a2e73;
+        .message {
+          margin-top: 12px;
+          padding: 11px 13px;
+          border-radius: 10px;
+          font-size: 10px;
+          font-weight: 800;
         }
 
-        .logoutButton {
-          border: 1px solid rgba(255, 255, 255, 0.35);
-          background: transparent;
-          color: #ffffff;
-        }
-
-        .errorBox,
-        .warningBox {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          margin-top: 20px;
-          padding: 14px 16px;
-          border-radius: 12px;
-          font-size: 13px;
-          font-weight: 750;
-        }
-
-        .errorBox {
-          border: 1px solid #fecdca;
+        .errorMessage {
           background: #fef3f2;
           color: #b42318;
         }
 
-        .warningBox {
-          border: 1px solid #fedf89;
+        .warningMessage {
           background: #fffaeb;
           color: #93370d;
         }
 
-        .errorBox strong,
-        .warningBox strong {
-          width: 24px;
-          height: 24px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          border-radius: 50%;
-          color: #ffffff;
-        }
-
-        .errorBox strong {
-          background: #b42318;
-        }
-
-        .warningBox strong {
-          background: #f79009;
-        }
-
-        .visitorSection,
-        .quickActions,
-        .panel {
-          margin-top: 24px;
-          border: 1px solid #e4e7ec;
-          border-radius: 20px;
-          background: #ffffff;
-          box-shadow: 0 10px 30px rgba(16, 24, 40, 0.07);
-        }
-
-        .visitorSection,
-        .quickActions {
-          padding: 24px;
-        }
-
-        .sectionHeading {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 16px;
-        }
-
-        .sectionHeading p,
-        .panelHeader p {
-          margin: 0 0 5px;
-          color: #d4af37;
-          font-size: 10px;
-          font-weight: 900;
-          letter-spacing: 1.3px;
-        }
-
-        .sectionHeading h2,
-        .panelHeader h2 {
-          margin: 0;
-          color: #0a2e73;
-          font-size: 24px;
-        }
-
-        .liveBadge {
-          padding: 8px 12px;
-          border: 1px solid #abefc6;
-          border-radius: 999px;
-          background: #ecfdf3;
-          color: #067647;
-          font-size: 11px;
-          font-weight: 850;
-        }
-
-        .visitorGrid {
-          display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
-          gap: 14px;
-          margin-top: 20px;
-        }
-
-        .statsGrid {
+        .primaryKpis {
           display: grid;
           grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 18px;
-          margin-top: 24px;
+          gap: 12px;
+          margin-top: 15px;
         }
 
-        .actionGrid {
+        .secondaryKpis,
+        .catalogueKpis {
           display: grid;
           grid-template-columns: repeat(6, minmax(0, 1fr));
-          gap: 14px;
-          margin-top: 20px;
+          gap: 9px;
+          margin-top: 10px;
         }
 
-        .contentGrid {
-          display: grid;
-          grid-template-columns:
-            minmax(0, 1.35fr)
-            minmax(0, 1fr);
-          gap: 24px;
-        }
-
+        .quickActionsPanel,
         .panel {
-          overflow: hidden;
+          margin-top: 14px;
+          border: 1px solid rgba(10, 46, 115, 0.1);
+          border-radius: 19px;
+          background: #ffffff;
+          box-shadow: 0 12px 30px rgba(10, 46, 115, 0.07);
         }
 
-        .popularPanel {
-          grid-column: 1 / -1;
+        .quickActionsPanel {
+          padding: 17px;
         }
 
-        .panelHeader {
+        .sectionHeader {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 16px;
-          padding: 21px 22px;
-          border-bottom: 1px solid #eaecf0;
+          gap: 14px;
+          padding: 17px 18px;
+          border-bottom: 1px solid #edf0f4;
         }
 
-        .panelHeader :global(a),
-        .panelHeader > span {
-          color: #0a2e73;
-          font-size: 12px;
-          font-weight: 850;
+        .quickActionsPanel .sectionHeader {
+          padding: 0 0 13px;
+        }
+
+        .sectionHeader h2 {
+          margin: 4px 0 0;
+          color: ${ROYAL_BLUE};
+          font-size: 18px;
+        }
+
+        .sectionHeader a,
+        .sectionHeader > span {
+          color: ${ROYAL_BLUE};
+          font-size: 9px;
+          font-weight: 900;
           text-decoration: none;
         }
 
-        .orderList,
-        .stockList,
-        .popularList {
-          padding: 5px 22px;
+        .sectionHeader select {
+          min-height: 34px;
+          padding: 0 9px;
+          border: 1px solid #dce2eb;
+          border-radius: 9px;
+          background: #ffffff;
+          color: ${ROYAL_BLUE};
+          font: inherit;
+          font-size: 8px;
+          font-weight: 850;
         }
 
-        .orderRow {
+        .quickActionGrid {
           display: grid;
-          grid-template-columns:
-            minmax(170px, 1.4fr)
-            minmax(130px, 1fr)
-            auto
-            auto;
-          align-items: center;
-          gap: 15px;
-          min-height: 82px;
-          padding: 14px 0;
-          border-bottom: 1px solid #f0f1f3;
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+          gap: 9px;
         }
 
-        .orderRow:last-child,
-        .stockRow:last-child,
-        .popularRow:last-child {
-          border-bottom: 0;
+        .analyticsGrid {
+          display: grid;
+          grid-template-columns: minmax(0, 1.65fr) minmax(270px, 0.75fr);
+          gap: 14px;
         }
 
-        .orderIdentity {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          min-width: 0;
+        .detailGrid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 14px;
         }
 
-        .orderIcon,
-        .stockIcon,
-        .popularNumber {
-          width: 42px;
-          height: 42px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          border-radius: 12px;
-          background: #eef4ff;
-          color: #0a2e73;
-          font-weight: 950;
+        .commerceGrid {
+          display: grid;
+          grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+          gap: 14px;
         }
 
-        .orderIdentity strong,
-        .orderIdentity span,
-        .customerInfo strong,
-        .customerInfo span,
-        .stockInfo strong,
-        .stockInfo span,
-        .popularInfo strong,
-        .popularInfo span {
-          display: block;
-        }
-
-        .orderIdentity strong,
-        .customerInfo strong,
-        .stockInfo strong,
-        .popularInfo strong {
+        .panel {
           overflow: hidden;
-          color: #172033;
-          font-size: 13px;
+        }
+
+        .trendChart {
+          height: 285px;
+          display: flex;
+          align-items: stretch;
+          gap: 7px;
+          padding: 20px 17px 15px;
+          overflow-x: auto;
+          background:
+            linear-gradient(
+              to bottom,
+              rgba(10, 46, 115, 0.05) 1px,
+              transparent 1px
+            );
+          background-size: 100% 25%;
+        }
+
+        .trendColumn {
+          min-width: 35px;
+          flex: 1;
+          display: grid;
+          grid-template-rows: 28px minmax(0, 1fr) 20px;
+          align-items: end;
+          gap: 5px;
+          text-align: center;
+        }
+
+        .trendValue {
+          overflow: hidden;
+          color: ${ROYAL_BLUE};
+          font-size: 6.5px;
           font-weight: 850;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
 
-        .orderIdentity span,
-        .customerInfo span,
-        .stockInfo span,
-        .popularInfo span {
-          margin-top: 5px;
-          color: #667085;
-          font-size: 11px;
+        .trendTrack {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: flex-end;
+          overflow: hidden;
+          border-radius: 8px 8px 3px 3px;
+          background: rgba(10, 46, 115, 0.05);
         }
 
-        .orderTotal {
-          color: #0a2e73;
-          font-size: 13px;
-          font-weight: 900;
+        .trendBar {
+          width: 100%;
+          min-height: 3px;
+          border-radius: 8px 8px 3px 3px;
+          background: linear-gradient(
+            180deg,
+            #f0d36d,
+            ${GOLD} 40%,
+            ${ROYAL_BLUE}
+          );
+          animation: chartRise 0.7s ease both;
+        }
+
+        .trendColumn > span {
+          color: #7b8491;
+          font-size: 6.5px;
+          font-weight: 750;
           white-space: nowrap;
         }
 
-        .statusBadge {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          min-width: 82px;
-          padding: 7px 10px;
-          border-radius: 999px;
-          background: #fffaeb;
-          color: #b54708;
-          font-size: 10px;
-          font-weight: 850;
-          text-transform: capitalize;
+        .alertList,
+        .compactList {
+          display: grid;
+          gap: 7px;
+          padding: 11px;
+          background: #f8fafc;
         }
 
-        .statusBadge.delivered,
-        .statusBadge.completed {
-          background: #ecfdf3;
-          color: #067647;
+        .compactList {
+          max-height: 390px;
+          overflow: auto;
         }
 
-        .statusBadge.cancelled {
-          background: #fef3f2;
-          color: #b42318;
-        }
-
-        .statusBadge.shipped,
-        .statusBadge.confirmed,
-        .statusBadge.paid {
-          background: #eff8ff;
-          color: #175cd3;
-        }
-
-        .stockRow,
-        .popularRow {
+        .compactRow {
           display: flex;
           align-items: center;
-          gap: 12px;
-          min-height: 72px;
-          padding: 13px 0;
-          border-bottom: 1px solid #f0f1f3;
+          gap: 10px;
+          min-height: 62px;
+          padding: 10px;
+          border: 1px solid #e4e7ec;
+          border-radius: 11px;
+          background: #ffffff;
         }
 
-        .stockInfo,
-        .popularInfo {
+        .rowIcon {
+          width: 39px;
+          height: 39px;
+          display: grid;
+          place-items: center;
+          flex-shrink: 0;
+          border-radius: 11px;
+          background: #eef4ff;
+          color: ${ROYAL_BLUE};
+          font-size: 16px;
+          font-weight: 950;
+        }
+
+        .rowMain {
           min-width: 0;
           flex: 1;
         }
 
-        .stockCount,
-        .popularCount {
-          flex-shrink: 0;
-          padding: 7px 10px;
-          border-radius: 999px;
-          font-size: 10px;
-          font-weight: 850;
+        .rowMain strong,
+        .rowMain span,
+        .rowAmount,
+        .rowAmount small {
+          display: block;
+        }
+
+        .rowMain strong {
+          overflow: hidden;
+          color: ${ROYAL_BLUE};
+          font-size: 9px;
+          font-weight: 900;
+          text-overflow: ellipsis;
           white-space: nowrap;
         }
 
-        .stockCount.low {
+        .rowMain span {
+          margin-top: 3px;
+          overflow: hidden;
+          color: #7b8491;
+          font-size: 7px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .rowAmount {
+          flex-shrink: 0;
+          color: ${ROYAL_BLUE};
+          font-size: 9px;
+          font-weight: 950;
+          text-align: right;
+        }
+
+        .rowAmount.danger {
+          color: #b42318;
+        }
+
+        .rowAmount.warning {
+          color: #b54708;
+        }
+
+        .rowAmount small {
+          margin-top: 3px;
+          color: #98a2b3;
+          font-size: 6.5px;
+          font-weight: 700;
+        }
+
+        .stockPill {
+          flex-shrink: 0;
+          padding: 6px 8px;
+          border-radius: 999px;
+          font-size: 7px;
+          font-weight: 900;
+        }
+
+        .stockPill.low {
           background: #fffaeb;
           color: #b54708;
         }
 
-        .stockCount.out {
+        .stockPill.out {
           background: #fef3f2;
           color: #b42318;
         }
 
-        .popularCount {
-          background: #eef4ff;
-          color: #0a2e73;
+        .liveBadge {
+          padding: 6px 9px;
+          border-radius: 999px;
+          background: #ecfdf3;
+          color: #067647 !important;
         }
 
-        .stockRow :global(a) {
-          flex-shrink: 0;
-          color: #0a2e73;
-          font-size: 11px;
-          font-weight: 850;
-          text-decoration: none;
+        .visitorMetrics {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 7px;
+          padding: 11px;
         }
 
-        @keyframes dashboardStatRise {
+        .popularPages {
+          display: grid;
+          gap: 6px;
+          padding: 0 11px 11px;
+        }
+
+        .popularPages > div {
+          display: grid;
+          grid-template-columns: 26px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 8px;
+          padding: 8px;
+          border: 1px solid #e4e7ec;
+          border-radius: 9px;
+        }
+
+        .popularPages b {
+          width: 25px;
+          height: 25px;
+          display: grid;
+          place-items: center;
+          border-radius: 7px;
+          background: ${ROYAL_BLUE};
+          color: ${GOLD};
+          font-size: 7px;
+        }
+
+        .popularPages span {
+          overflow: hidden;
+          color: #667085;
+          font-size: 8px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .popularPages strong {
+          color: ${ROYAL_BLUE};
+          font-size: 9px;
+        }
+
+        @keyframes chartRise {
           from {
-            opacity: 0;
-            transform: translateY(14px) scale(0.985);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-          }
-        }
-
-        @keyframes dashboardStatShine {
-          0%,
-          62% {
-            left: -42%;
-            opacity: 0;
-          }
-          68% {
-            opacity: 0.7;
-          }
-          100% {
-            left: 126%;
-            opacity: 0;
+            height: 0;
+            opacity: 0.2;
           }
         }
 
         @media (max-width: 1250px) {
-          .visitorGrid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-
-          .actionGrid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-        }
-
-        @media (max-width: 1050px) {
-          .statsGrid {
+          .primaryKpis {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
-          .contentGrid {
-            grid-template-columns: 1fr;
+          .secondaryKpis,
+          .catalogueKpis,
+          .quickActionGrid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
           }
 
-          .popularPanel {
-            grid-column: auto;
-          }
-        }
-
-        @media (max-width: 760px) {
-          .page {
-            padding: 20px 12px 50px;
+          .detailGrid {
+            grid-template-columns: 1fr 1fr;
           }
 
-          .topbar {
-            align-items: flex-start;
-            flex-direction: column;
-            padding: 22px;
-          }
-
-          .topActions {
-            width: 100%;
-          }
-
-          .topActions button,
-          .topActions :global(a) {
-            flex: 1;
-          }
-
-          .visitorGrid,
-          .statsGrid,
-          .actionGrid {
-            grid-template-columns: 1fr;
-          }
-
-          .visitorSection,
-          .quickActions {
-            padding: 18px;
-          }
-
-          .sectionHeading {
-            align-items: flex-start;
-            flex-direction: column;
-          }
-
-          .orderRow {
-            grid-template-columns: 1fr auto;
-          }
-
-          .customerInfo {
-            display: none;
-          }
-
-          .orderTotal {
-            grid-column: 1;
-            padding-left: 54px;
-          }
-
-          .statusBadge {
-            grid-column: 2;
-            grid-row: 1 / span 2;
+          .detailGrid .panel:last-child {
+            grid-column: 1 / -1;
           }
         }
 
-        @media (max-width: 430px) {
-          .topActions {
+        @media (max-width: 950px) {
+          .hero {
+            align-items: stretch;
+            flex-direction: column;
+          }
+
+          .analyticsGrid,
+          .commerceGrid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 720px) {
+          .dashboardPage {
+            padding: 12px 8px 30px;
+          }
+
+          .hero {
+            padding: 20px;
+          }
+
+          .heroActions {
             display: grid;
             grid-template-columns: 1fr;
           }
 
-          .orderList,
-          .stockList,
-          .popularList {
-            padding: 5px 15px;
+          .primaryKpis,
+          .secondaryKpis,
+          .catalogueKpis,
+          .quickActionGrid,
+          .detailGrid {
+            grid-template-columns: 1fr;
           }
 
-          .stockRow {
-            flex-wrap: wrap;
+          .detailGrid .panel:last-child {
+            grid-column: auto;
           }
 
-          .stockInfo {
-            flex-basis: calc(100% - 56px);
+          .visitorMetrics {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .trendChart {
+            height: 250px;
           }
         }
       `}</style>
@@ -1431,241 +1970,183 @@ export default function AdminDashboardPage() {
   );
 }
 
-type StatCardProps = {
+type BusinessKpiProps = {
   icon: string;
   label: string;
-  value: number | string;
+  value: string;
   note: string;
+  tone: "blue" | "gold" | "green" | "red";
 };
 
-function StatCard({
+function BusinessKpi({
   icon,
   label,
   value,
   note,
-}: StatCardProps) {
+  tone,
+}: BusinessKpiProps) {
   return (
-    <article className="statCard">
-      <div className="statTop">
-        <div className="statIcon">{icon}</div>
-        <span>Overview</span>
+    <article className={`businessKpi ${tone}`}>
+      <div className="businessKpiIcon">{icon}</div>
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <small>{note}</small>
       </div>
 
-      <p>{label}</p>
-      <strong>{value}</strong>
-      <small>{note}</small>
-
       <style jsx>{`
-        .statCard {
+        .businessKpi {
           position: relative;
-          isolation: isolate;
-          min-height: 168px;
+          min-width: 0;
+          min-height: 124px;
+          display: grid;
+          grid-template-columns: 48px minmax(0, 1fr);
+          align-items: center;
+          gap: 12px;
           overflow: hidden;
-          padding: 20px;
-          border: 1px solid rgba(212, 175, 55, 0.22);
+          padding: 17px;
+          border: 1px solid rgba(212, 175, 55, 0.3);
           border-radius: 18px;
-          background: linear-gradient(
-            135deg,
-            rgba(10, 46, 115, 0.99),
-            rgba(3, 21, 63, 0.98)
-          );
-          box-shadow:
-            0 12px 28px rgba(3, 21, 63, 0.16),
-            inset 0 1px 0 rgba(255, 255, 255, 0.06);
-          transition:
-            transform 0.22s ease,
-            box-shadow 0.22s ease,
-            border-color 0.22s ease;
-          animation: dashboardStatRise 0.45s ease both;
+          color: #ffffff;
+          box-shadow: 0 12px 28px rgba(3, 21, 63, 0.14);
+          animation: cardEnter 0.55s ease both;
         }
 
-        .statCard::before {
+        .businessKpi.blue {
+          background: linear-gradient(135deg, #03153f, #0a2e73);
+        }
+
+        .businessKpi.gold {
+          background: linear-gradient(135deg, #0a2e73, #765b12);
+        }
+
+        .businessKpi.green {
+          background: linear-gradient(135deg, #063f42, #0a2e73);
+        }
+
+        .businessKpi.red {
+          background: linear-gradient(135deg, #4c2131, #0a2e73);
+        }
+
+        .businessKpi::after {
           content: "";
           position: absolute;
-          z-index: -1;
-          top: -40%;
-          right: -15%;
           width: 130px;
           height: 130px;
+          top: -80px;
+          right: -35px;
           border-radius: 50%;
-          background: radial-gradient(
-            circle,
-            rgba(212, 175, 55, 0.34),
-            rgba(212, 175, 55, 0)
-          );
+          background: rgba(212, 175, 55, 0.2);
         }
 
-        .statCard::after {
-          content: "";
-          position: absolute;
-          top: -145%;
-          left: -36%;
-          width: 42%;
-          height: 370%;
-          transform: rotate(22deg);
-          background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(255, 255, 255, 0.14),
-            transparent
-          );
-          animation: dashboardStatShine 5.2s ease-in-out infinite;
-          pointer-events: none;
+        .businessKpiIcon {
+          width: 46px;
+          height: 46px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(212, 175, 55, 0.55);
+          border-radius: 14px;
+          background: rgba(255, 255, 255, 0.09);
+          color: ${GOLD};
+          font-size: 19px;
+          font-weight: 950;
         }
 
-        .statCard:hover {
-          transform: translateY(-2px) scale(1.004);
-          border-color: rgba(212, 175, 55, 0.42);
-          box-shadow:
-            0 16px 32px rgba(3, 21, 63, 0.22),
-            0 0 0 1px rgba(212, 175, 55, 0.1);
+        span,
+        strong,
+        small {
+          display: block;
         }
 
-        .statTop {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-        }
-
-        .statIcon {
-          width: 43px;
-          height: 43px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 13px;
-          border: 1px solid rgba(212, 175, 55, 0.3);
-          background: rgba(255, 255, 255, 0.1);
-          color: #d4af37;
-          font-size: 20px;
-        }
-
-        .statTop span {
-          color: rgba(212, 175, 55, 0.9);
-          font-size: 9px;
-          font-weight: 850;
-          letter-spacing: 0.8px;
-          text-transform: uppercase;
-        }
-
-        p {
-          margin: 17px 0 5px;
-          color: rgba(212, 175, 55, 0.94);
-          font-size: 11px;
-          font-weight: 900;
-          letter-spacing: 0.4px;
+        span {
+          color: ${GOLD};
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 0.7px;
           text-transform: uppercase;
         }
 
         strong {
-          display: block;
+          margin-top: 6px;
           overflow: hidden;
           color: #ffffff;
-          font-size: clamp(24px, 3vw, 32px);
+          font-size: clamp(21px, 2.2vw, 27px);
           font-weight: 950;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
 
         small {
-          display: block;
-          margin-top: 8px;
-          color: rgba(255, 255, 255, 0.66);
-          font-size: 10px;
+          margin-top: 5px;
+          color: rgba(255, 255, 255, 0.64);
+          font-size: 7px;
+        }
+
+        @keyframes cardEnter {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
         }
       `}</style>
     </article>
   );
 }
 
-type VisitorCardProps = {
-  icon: string;
+type MiniKpiProps = {
   label: string;
-  value: number;
+  value: string;
   note: string;
 };
 
-function VisitorCard({
-  icon,
-  label,
-  value,
-  note,
-}: VisitorCardProps) {
+function MiniKpi({ label, value, note }: MiniKpiProps) {
   return (
-    <article className="visitorCard">
-      <div className="visitorIcon">{icon}</div>
-
-      <div>
-        <p>{label}</p>
-        <strong>{value}</strong>
-        <span>{note}</span>
-      </div>
+    <article className="miniKpi">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{note}</small>
 
       <style jsx>{`
-        .visitorCard {
-          position: relative;
-          overflow: hidden;
-          min-height: 135px;
-          display: flex;
-          align-items: flex-start;
-          gap: 13px;
-          padding: 18px;
-          border: 1px solid rgba(212, 175, 55, 0.18);
-          border-radius: 16px;
+        .miniKpi {
+          min-width: 0;
+          min-height: 91px;
+          padding: 13px;
+          border: 1px solid rgba(212, 175, 55, 0.23);
+          border-radius: 14px;
           background: linear-gradient(
             135deg,
-            rgba(10, 46, 115, 0.98),
-            rgba(3, 21, 63, 0.96)
+            ${ROYAL_BLUE},
+            ${DEEP_BLUE}
           );
-          box-shadow: 0 10px 24px rgba(3, 21, 63, 0.12);
-          transition:
-            transform 0.2s ease,
-            box-shadow 0.2s ease,
-            border-color 0.2s ease;
-        }
-
-        .visitorCard:hover {
-          transform: translateY(-2px);
-          border-color: rgba(212, 175, 55, 0.4);
-          box-shadow: 0 14px 28px rgba(3, 21, 63, 0.18);
-        }
-
-        .visitorIcon {
-          width: 42px;
-          height: 42px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          border-radius: 13px;
-          border: 1px solid rgba(212, 175, 55, 0.3);
-          background: rgba(255, 255, 255, 0.08);
-          color: #d4af37;
-          font-size: 19px;
-        }
-
-        p {
-          margin: 1px 0 4px;
-          color: rgba(212, 175, 55, 0.94);
-          font-size: 11px;
-          font-weight: 800;
-        }
-
-        strong {
-          display: block;
           color: #ffffff;
-          font-size: 29px;
-          font-weight: 950;
-          line-height: 1.15;
+        }
+
+        span,
+        strong,
+        small {
+          display: block;
         }
 
         span {
-          display: block;
-          margin-top: 7px;
-          color: rgba(255, 255, 255, 0.66);
-          font-size: 9px;
-          line-height: 1.4;
+          color: ${GOLD};
+          font-size: 7px;
+          font-weight: 950;
+          text-transform: uppercase;
+        }
+
+        strong {
+          margin-top: 6px;
+          overflow: hidden;
+          font-size: 15px;
+          font-weight: 950;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        small {
+          margin-top: 5px;
+          color: rgba(255, 255, 255, 0.62);
+          font-size: 6.5px;
         }
       `}</style>
     </article>
@@ -1676,77 +2157,203 @@ type QuickActionProps = {
   href: string;
   icon: string;
   title: string;
-  description: string;
+  text: string;
 };
 
 function QuickAction({
   href,
   icon,
   title,
-  description,
+  text,
 }: QuickActionProps) {
   return (
-    <Link href={href} className="actionCard">
-      <div className="actionIcon">{icon}</div>
+    <Link href={href} className="quickAction">
+      <div>{icon}</div>
       <strong>{title}</strong>
-      <span>{description}</span>
+      <span>{text}</span>
 
       <style jsx>{`
-        :global(.actionCard) {
-          min-height: 145px;
+        :global(.quickAction) {
+          min-height: 112px;
           display: flex;
           flex-direction: column;
-          padding: 18px;
-          border: 1px solid rgba(212, 175, 55, 0.18);
-          border-radius: 15px;
+          padding: 13px;
+          border: 1px solid rgba(212, 175, 55, 0.22);
+          border-radius: 13px;
           background: linear-gradient(
             135deg,
-            rgba(10, 46, 115, 0.98),
-            rgba(3, 21, 63, 0.96)
+            ${ROYAL_BLUE},
+            ${DEEP_BLUE}
           );
-          color: inherit;
           text-decoration: none;
-          box-shadow: 0 10px 24px rgba(3, 21, 63, 0.11);
           transition:
             transform 0.2s ease,
-            border-color 0.2s ease,
             box-shadow 0.2s ease;
         }
 
-        :global(.actionCard:hover) {
+        :global(.quickAction:hover) {
           transform: translateY(-3px);
-          border-color: rgba(212, 175, 55, 0.52);
-          box-shadow: 0 16px 32px rgba(3, 21, 63, 0.2);
+          box-shadow: 0 13px 25px rgba(3, 21, 63, 0.18);
         }
 
-        .actionIcon {
-          width: 41px;
-          height: 41px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 12px;
-          border: 1px solid rgba(212, 175, 55, 0.28);\n          background: rgba(255, 255, 255, 0.08);
-          color: #d4af37;
-          font-size: 18px;
-          font-weight: 950;
+        div {
+          width: 36px;
+          height: 36px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(212, 175, 55, 0.4);
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.08);
+          font-size: 15px;
         }
 
         strong {
-          margin-top: 15px;
+          margin-top: 10px;
           color: #ffffff;
-          font-size: 13px;
+          font-size: 9px;
           font-weight: 900;
         }
 
         span {
-          margin-top: 7px;
-          color: rgba(255, 255, 255, 0.66);
-          font-size: 10px;
-          line-height: 1.5;
+          margin-top: 4px;
+          color: rgba(255, 255, 255, 0.62);
+          font-size: 7px;
+          line-height: 1.4;
         }
       `}</style>
     </Link>
+  );
+}
+
+type AlertRowProps = {
+  icon: string;
+  title: string;
+  value: number;
+  href: string;
+  tone: "amber" | "red" | "blue" | "green";
+};
+
+function AlertRow({
+  icon,
+  title,
+  value,
+  href,
+  tone,
+}: AlertRowProps) {
+  return (
+    <Link href={href} className={`alertRow ${tone}`}>
+      <div>{icon}</div>
+      <span>{title}</span>
+      <strong>{value}</strong>
+
+      <style jsx>{`
+        :global(.alertRow) {
+          min-height: 58px;
+          display: grid;
+          grid-template-columns: 38px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 9px;
+          padding: 9px;
+          border: 1px solid #e4e7ec;
+          border-left-width: 4px;
+          border-radius: 11px;
+          background: #ffffff;
+          text-decoration: none;
+        }
+
+        :global(.alertRow.amber) {
+          border-left-color: #f79009;
+        }
+
+        :global(.alertRow.red) {
+          border-left-color: #f04438;
+        }
+
+        :global(.alertRow.blue) {
+          border-left-color: #2e90fa;
+        }
+
+        :global(.alertRow.green) {
+          border-left-color: #12b76a;
+        }
+
+        div {
+          width: 36px;
+          height: 36px;
+          display: grid;
+          place-items: center;
+          border-radius: 10px;
+          background: #eef4ff;
+          font-size: 15px;
+        }
+
+        span {
+          color: ${ROYAL_BLUE};
+          font-size: 9px;
+          font-weight: 850;
+        }
+
+        strong {
+          min-width: 29px;
+          height: 29px;
+          display: grid;
+          place-items: center;
+          border-radius: 9px;
+          background: ${ROYAL_BLUE};
+          color: ${GOLD};
+          font-size: 10px;
+        }
+      `}</style>
+    </Link>
+  );
+}
+
+type VisitorMetricProps = {
+  label: string;
+  value: number;
+};
+
+function VisitorMetric({
+  label,
+  value,
+}: VisitorMetricProps) {
+  return (
+    <div className="visitorMetric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+
+      <style jsx>{`
+        .visitorMetric {
+          min-width: 0;
+          padding: 10px;
+          border-radius: 11px;
+          background: linear-gradient(
+            135deg,
+            ${ROYAL_BLUE},
+            ${DEEP_BLUE}
+          );
+          color: #ffffff;
+          text-align: center;
+        }
+
+        span,
+        strong {
+          display: block;
+        }
+
+        span {
+          color: ${GOLD};
+          font-size: 6.5px;
+          font-weight: 900;
+        }
+
+        strong {
+          margin-top: 5px;
+          font-size: 17px;
+          font-weight: 950;
+        }
+      `}</style>
+    </div>
   );
 }
 
@@ -1769,38 +2376,35 @@ function EmptyState({
 
       <style jsx>{`
         .emptyState {
-          min-height: 230px;
+          min-height: 190px;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          padding: 30px;
+          padding: 24px;
           text-align: center;
         }
 
-        .emptyState div {
-          width: 58px;
-          height: 58px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 17px;
+        div {
+          width: 52px;
+          height: 52px;
+          display: grid;
+          place-items: center;
+          border-radius: 15px;
           background: #eef4ff;
-          font-size: 25px;
+          font-size: 22px;
         }
 
         strong {
-          margin-top: 15px;
-          color: #0a2e73;
-          font-size: 16px;
+          margin-top: 12px;
+          color: ${ROYAL_BLUE};
+          font-size: 13px;
         }
 
         p {
-          max-width: 280px;
-          margin: 8px 0 0;
+          margin: 6px 0 0;
           color: #667085;
-          font-size: 12px;
-          line-height: 1.6;
+          font-size: 9px;
         }
       `}</style>
     </div>

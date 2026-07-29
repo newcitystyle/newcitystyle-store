@@ -43,33 +43,5 @@ export default function manifest(): MetadataRoute.Manifest {
         purpose: "maskable",
       },
     ],
-    shortcuts: [
-      {
-        name: "Shop Products",
-        short_name: "Products",
-        description: "Browse NEW CITY STYLE products",
-        url: "/search",
-        icons: [
-          {
-            src: "/icons/icon-192.png",
-            sizes: "192x192",
-            type: "image/png",
-          },
-        ],
-      },
-      {
-        name: "My Orders",
-        short_name: "Orders",
-        description: "View your NEW CITY STYLE orders",
-        url: "/orders",
-        icons: [
-          {
-            src: "/icons/icon-192.png",
-            sizes: "192x192",
-            type: "image/png",
-          },
-        ],
-      },
-    ],
   };
 }

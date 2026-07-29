@@ -563,13 +563,13 @@ export default function AdminProductsPage() {
   }
 
   function editProduct(product: Product) {
-    router.push(`/admin/products/edit/${product.id}`)
+    router.push(`/admin/products/edit/${product.id}`);
   }
 
   return (
     <main className="admin-products-page">
       <div className="page-container">
-        <section className="page-header">
+        <section className="page-header premium-products-hero">
           <div>
             <div className="eyebrow">NEW CITY STYLE ADMIN</div>
 
@@ -583,7 +583,7 @@ export default function AdminProductsPage() {
           <div className="header-actions">
             <button
               type="button"
-              className="secondary-button"
+              className="secondary-button premium-secondary-button"
               onClick={() => loadProducts(true)}
               disabled={refreshing}
             >
@@ -593,7 +593,7 @@ export default function AdminProductsPage() {
 
 <Link
   href="/admin/add-product"
-  className="primary-button"
+  className="primary-button premium-primary-button"
 >
   <span>＋</span>
   Add New Product
@@ -631,8 +631,8 @@ export default function AdminProductsPage() {
           </div>
         )}
 
-        <section className="statistics-grid">
-          <article className="stat-card">
+        <section className="statistics-grid premium-products-statistics">
+          <article className="stat-card premium-stat-card">
             <div className="stat-icon blue">▦</div>
 
             <div>
@@ -641,7 +641,7 @@ export default function AdminProductsPage() {
             </div>
           </article>
 
-          <article className="stat-card">
+          <article className="stat-card premium-stat-card">
             <div className="stat-icon green">✓</div>
 
             <div>
@@ -650,7 +650,7 @@ export default function AdminProductsPage() {
             </div>
           </article>
 
-          <article className="stat-card">
+          <article className="stat-card premium-stat-card">
             <div className="stat-icon gold">★</div>
 
             <div>
@@ -659,7 +659,7 @@ export default function AdminProductsPage() {
             </div>
           </article>
 
-          <article className="stat-card">
+          <article className="stat-card premium-stat-card">
             <div className="stat-icon orange">!</div>
 
             <div>
@@ -668,7 +668,7 @@ export default function AdminProductsPage() {
             </div>
           </article>
 
-          <article className="stat-card">
+          <article className="stat-card premium-stat-card">
             <div className="stat-icon red">×</div>
 
             <div>
@@ -678,7 +678,7 @@ export default function AdminProductsPage() {
           </article>
         </section>
 
-        <section className="products-panel">
+        <section className="products-panel premium-products-panel">
           <div className="filters-section">
             <div className="search-wrapper">
               <span className="search-icon">⌕</span>
@@ -833,7 +833,7 @@ export default function AdminProductsPage() {
               {products.length === 0 ? (
                 <Link
                   href="/admin/add-product"
-                  className="primary-button"
+                  className="primary-button premium-primary-button"
                 >
                   <span>＋</span>
                   Add New Product
@@ -841,7 +841,7 @@ export default function AdminProductsPage() {
               ) : (
                 <button
                   type="button"
-                  className="secondary-button"
+                  className="secondary-button premium-secondary-button"
                   onClick={clearFilters}
                 >
                   Clear All Filters
@@ -1257,34 +1257,13 @@ export default function AdminProductsPage() {
       </div>
 
       <style jsx>{`
-      .header {
-  position: relative;
-}
-
-.header::before,
-.header::after {
-  pointer-events: none;
-}
-
-.header-actions {
-  position: relative;
-  z-index: 100;
-  pointer-events: auto;
-}
-
-.primary-button {
-  position: relative;
-  z-index: 101;
-  pointer-events: auto;
-  cursor: pointer;
-}
         :global(*) {
           box-sizing: border-box;
         }
 
         :global(body) {
           margin: 0;
-          background: #f4f6fb;
+          background: #f8f4ec;
           color: #172033;
           font-family:
             Inter, Poppins, Arial, Helvetica, sans-serif;
@@ -1301,51 +1280,145 @@ export default function AdminProductsPage() {
         }
 
         .admin-products-page {
+          position: relative;
+          isolation: isolate;
           min-height: 100vh;
+          overflow-x: hidden;
           padding: 32px 24px 60px;
           background:
             radial-gradient(
-              circle at top right,
-              rgba(212, 175, 55, 0.09),
-              transparent 28%
+              circle at 8% 0%,
+              rgba(212, 175, 55, 0.15),
+              transparent 27%
             ),
-            #f4f6fb;
+            radial-gradient(
+              circle at 95% 8%,
+              rgba(10, 46, 115, 0.1),
+              transparent 25%
+            ),
+            linear-gradient(180deg, #f8f4ec, #ffffff);
+        }
+
+        .admin-products-page::before,
+        .admin-products-page::after {
+          content: "";
+          position: fixed;
+          z-index: -1;
+          border-radius: 50%;
+          pointer-events: none;
+        }
+
+        .admin-products-page::before {
+          width: 420px;
+          height: 420px;
+          top: -150px;
+          right: -120px;
+          background: radial-gradient(
+            circle,
+            rgba(212, 175, 55, 0.18),
+            transparent 68%
+          );
+          animation: products-float 11s ease-in-out infinite;
+        }
+
+        .admin-products-page::after {
+          width: 360px;
+          height: 360px;
+          left: -130px;
+          bottom: -120px;
+          background: radial-gradient(
+            circle,
+            rgba(10, 46, 115, 0.14),
+            transparent 68%
+          );
+          animation: products-float 13s ease-in-out infinite reverse;
         }
 
         .page-container {
+          position: relative;
+          z-index: 1;
           width: 100%;
           max-width: 1500px;
           margin: 0 auto;
         }
 
         .page-header {
+          position: relative;
           display: flex;
-          align-items: center;
+          align-items: flex-end;
           justify-content: space-between;
           gap: 24px;
+          overflow: hidden;
           margin-bottom: 24px;
+          padding: 28px;
+          border: 1px solid rgba(212, 175, 55, 0.42);
+          border-radius: 24px;
+          background:
+            radial-gradient(
+              circle at 90% 5%,
+              rgba(212, 175, 55, 0.28),
+              transparent 30%
+            ),
+            linear-gradient(135deg, #03153f 0%, #0a2e73 60%, #164ca8);
+          color: #ffffff;
+          box-shadow: 0 20px 48px rgba(3, 21, 63, 0.23);
+          animation: products-rise 0.7s ease both;
+        }
+
+        .page-header::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            120deg,
+            transparent 0%,
+            rgba(255, 255, 255, 0.08) 45%,
+            transparent 63%
+          );
+          transform: translateX(-120%);
+          animation: products-hero-shine 6s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .page-header::after {
+          content: "PRODUCTS";
+          position: absolute;
+          right: 30px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: rgba(212, 175, 55, 0.08);
+          font-size: clamp(55px, 8vw, 120px);
+          font-weight: 950;
+          letter-spacing: 6px;
+          pointer-events: none;
+        }
+
+        .page-header > div,
+        .header-actions {
+          position: relative;
+          z-index: 2;
         }
 
         .eyebrow {
           margin-bottom: 8px;
           color: #d4af37;
-          font-size: 12px;
-          font-weight: 800;
+          font-size: 11px;
+          font-weight: 900;
           letter-spacing: 2px;
         }
 
         .page-header h1 {
           margin: 0;
-          color: #0a2e73;
-          font-size: clamp(28px, 4vw, 42px);
-          line-height: 1.1;
+          color: #ffffff;
+          font-size: clamp(31px, 4vw, 45px);
+          line-height: 1.05;
           letter-spacing: -1px;
         }
 
         .page-header p {
           margin: 10px 0 0;
-          color: #667085;
-          font-size: 15px;
+          color: rgba(255, 255, 255, 0.74);
+          font-size: 14px;
         }
 
         .header-actions {
@@ -1353,46 +1426,73 @@ export default function AdminProductsPage() {
           align-items: center;
           gap: 12px;
           flex-shrink: 0;
+          pointer-events: auto;
         }
 
         .primary-button,
         .secondary-button {
+          position: relative;
           min-height: 46px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           gap: 8px;
+          overflow: hidden;
           padding: 0 18px;
           border-radius: 12px;
-          font-weight: 750;
+          font-weight: 800;
           cursor: pointer;
+          text-decoration: none;
           transition:
             transform 0.2s ease,
             box-shadow 0.2s ease,
-            background 0.2s ease;
+            background 0.2s ease,
+            border-color 0.2s ease;
         }
 
         .primary-button {
-          border: 1px solid #0a2e73;
-          background: linear-gradient(135deg, #0a2e73, #16499d);
-          color: white;
-          box-shadow: 0 10px 24px rgba(10, 46, 115, 0.2);
+          border: 1px solid #d4af37;
+          background: linear-gradient(135deg, #d4af37, #b99525);
+          color: #03153f;
+          box-shadow: 0 10px 24px rgba(212, 175, 55, 0.25);
+        }
+
+        .primary-button::after {
+          content: "";
+          position: absolute;
+          top: -130%;
+          left: -35%;
+          width: 28%;
+          height: 360%;
+          transform: rotate(22deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.5),
+            transparent
+          );
+          animation: products-button-shine 4.2s ease-in-out infinite;
+        }
+
+        .primary-button:hover,
+        .secondary-button:hover {
+          transform: translateY(-2px);
         }
 
         .primary-button:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 14px 28px rgba(10, 46, 115, 0.26);
+          box-shadow: 0 15px 30px rgba(212, 175, 55, 0.34);
         }
 
         .secondary-button {
-          border: 1px solid #d9dfeb;
-          background: white;
-          color: #344054;
+          border: 1px solid rgba(255, 255, 255, 0.28);
+          background: rgba(255, 255, 255, 0.1);
+          color: #ffffff;
+          backdrop-filter: blur(8px);
         }
 
         .secondary-button:hover {
-          border-color: #0a2e73;
-          color: #0a2e73;
+          border-color: #d4af37;
+          color: #d4af37;
         }
 
         .primary-button:disabled,
@@ -1407,12 +1507,6 @@ export default function AdminProductsPage() {
           animation: rotate 0.9s linear infinite;
         }
 
-        @keyframes rotate {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
         .alert {
           position: relative;
           display: flex;
@@ -1423,6 +1517,7 @@ export default function AdminProductsPage() {
           border-radius: 12px;
           font-size: 14px;
           font-weight: 650;
+          animation: products-rise 0.35s ease both;
         }
 
         .alert-icon {
@@ -1478,15 +1573,72 @@ export default function AdminProductsPage() {
         }
 
         .stat-card {
-          min-height: 108px;
+          position: relative;
+          min-height: 118px;
           display: flex;
           align-items: center;
           gap: 14px;
+          overflow: hidden;
           padding: 18px;
-          border: 1px solid #e4e7ec;
-          border-radius: 16px;
-          background: rgba(255, 255, 255, 0.95);
-          box-shadow: 0 8px 24px rgba(16, 24, 40, 0.05);
+          border: 1px solid rgba(212, 175, 55, 0.3);
+          border-radius: 17px;
+          background:
+            radial-gradient(
+              circle at 88% 10%,
+              rgba(212, 175, 55, 0.22),
+              transparent 34%
+            ),
+            linear-gradient(135deg, #0a2e73, #03153f);
+          box-shadow:
+            0 14px 32px rgba(3, 21, 63, 0.17),
+            inset 0 1px 0 rgba(255, 255, 255, 0.07);
+          animation: products-card-enter 0.55s ease both;
+          transition:
+            transform 0.22s ease,
+            box-shadow 0.22s ease,
+            border-color 0.22s ease;
+        }
+
+        .stat-card:nth-child(2) {
+          animation-delay: 0.07s;
+        }
+
+        .stat-card:nth-child(3) {
+          animation-delay: 0.14s;
+        }
+
+        .stat-card:nth-child(4) {
+          animation-delay: 0.21s;
+        }
+
+        .stat-card:nth-child(5) {
+          animation-delay: 0.28s;
+        }
+
+        .stat-card::after {
+          content: "";
+          position: absolute;
+          top: -175%;
+          left: -38%;
+          width: 42%;
+          height: 450%;
+          transform: rotate(23deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.13),
+            transparent
+          );
+          animation: products-card-shine 5.4s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .stat-card:hover {
+          transform: translateY(-5px) scale(1.01);
+          border-color: rgba(212, 175, 55, 0.62);
+          box-shadow:
+            0 22px 42px rgba(3, 21, 63, 0.25),
+            0 0 0 1px rgba(212, 175, 55, 0.1);
         }
 
         .stat-icon {
@@ -1496,63 +1648,68 @@ export default function AdminProductsPage() {
           align-items: center;
           justify-content: center;
           flex-shrink: 0;
+          border: 1px solid rgba(212, 175, 55, 0.36);
           border-radius: 13px;
+          background: rgba(255, 255, 255, 0.09) !important;
+          color: #d4af37 !important;
           font-size: 20px;
           font-weight: 900;
-        }
-
-        .stat-icon.blue {
-          background: #eaf0ff;
-          color: #0a2e73;
-        }
-
-        .stat-icon.green {
-          background: #e8f8ef;
-          color: #14804a;
-        }
-
-        .stat-icon.gold {
-          background: #fff8df;
-          color: #a97b00;
-        }
-
-        .stat-icon.orange {
-          background: #fff1e5;
-          color: #d15c00;
-        }
-
-        .stat-icon.red {
-          background: #feeceb;
-          color: #d92d20;
         }
 
         .stat-card span {
           display: block;
           margin-bottom: 5px;
-          color: #667085;
-          font-size: 13px;
-          font-weight: 650;
+          color: rgba(212, 175, 55, 0.95);
+          font-size: 11px;
+          font-weight: 850;
+          text-transform: uppercase;
+          letter-spacing: 0.35px;
         }
 
         .stat-card strong {
           display: block;
-          color: #172033;
-          font-size: 27px;
+          color: #ffffff;
+          font-size: 28px;
           line-height: 1;
         }
 
         .products-panel {
+          position: relative;
           overflow: hidden;
-          border: 1px solid #e4e7ec;
-          border-radius: 18px;
+          border: 1px solid rgba(212, 175, 55, 0.24);
+          border-radius: 19px;
           background: white;
-          box-shadow: 0 12px 32px rgba(16, 24, 40, 0.06);
+          box-shadow: 0 14px 36px rgba(3, 21, 63, 0.09);
+          animation: products-rise 0.65s ease both;
+        }
+
+        .products-panel::before {
+          content: "";
+          position: absolute;
+          inset: 0 0 auto 0;
+          height: 3px;
+          background: linear-gradient(
+            90deg,
+            #0a2e73,
+            #d4af37,
+            #0a2e73
+          );
+          background-size: 200% 100%;
+          animation: products-gold-flow 4s linear infinite;
+          z-index: 2;
         }
 
         .filters-section {
+          position: relative;
           padding: 20px;
           border-bottom: 1px solid #eaecf0;
-          background: linear-gradient(180deg, #ffffff, #fbfcff);
+          background:
+            radial-gradient(
+              circle at 96% 0%,
+              rgba(212, 175, 55, 0.08),
+              transparent 30%
+            ),
+            linear-gradient(180deg, #ffffff, #fbfcff);
         }
 
         .search-wrapper {
@@ -1572,19 +1729,24 @@ export default function AdminProductsPage() {
           font-size: 14px;
           transition:
             border-color 0.2s ease,
-            box-shadow 0.2s ease;
+            box-shadow 0.2s ease,
+            transform 0.2s ease;
         }
 
-        .search-wrapper input:focus {
-          border-color: #0a2e73;
-          box-shadow: 0 0 0 4px rgba(10, 46, 115, 0.1);
+        .search-wrapper input:focus,
+        .filter-grid select:focus {
+          border-color: #d4af37;
+          box-shadow:
+            0 0 0 4px rgba(212, 175, 55, 0.13),
+            0 8px 20px rgba(10, 46, 115, 0.08);
+          transform: translateY(-1px);
         }
 
         .search-icon {
           position: absolute;
           top: 50%;
           left: 16px;
-          color: #667085;
+          color: #0a2e73;
           font-size: 24px;
           transform: translateY(-53%);
           pointer-events: none;
@@ -1623,11 +1785,10 @@ export default function AdminProductsPage() {
           font-size: 13px;
           font-weight: 600;
           cursor: pointer;
-        }
-
-        .filter-grid select:focus {
-          border-color: #0a2e73;
-          box-shadow: 0 0 0 3px rgba(10, 46, 115, 0.08);
+          transition:
+            border-color 0.2s ease,
+            box-shadow 0.2s ease,
+            transform 0.2s ease;
         }
 
         .filter-footer {
@@ -1645,7 +1806,7 @@ export default function AdminProductsPage() {
         }
 
         .filter-footer strong {
-          color: #344054;
+          color: #0a2e73;
         }
 
         .text-button {
@@ -1658,6 +1819,7 @@ export default function AdminProductsPage() {
         }
 
         .text-button:hover {
+          color: #b68c13;
           text-decoration: underline;
         }
 
@@ -1667,8 +1829,8 @@ export default function AdminProductsPage() {
           justify-content: space-between;
           gap: 16px;
           padding: 13px 20px;
-          border-bottom: 1px solid #b9c8eb;
-          background: #eef3ff;
+          border-bottom: 1px solid rgba(212, 175, 55, 0.35);
+          background: linear-gradient(90deg, #eef3ff, #fff8df);
           color: #0a2e73;
           font-size: 14px;
         }
@@ -1686,6 +1848,15 @@ export default function AdminProductsPage() {
           font-size: 13px;
           font-weight: 750;
           cursor: pointer;
+          transition:
+            transform 0.2s ease,
+            box-shadow 0.2s ease;
+        }
+
+        .clear-selection-button:hover,
+        .delete-selected-button:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 16px rgba(3, 21, 63, 0.12);
         }
 
         .clear-selection-button {
@@ -1713,10 +1884,10 @@ export default function AdminProductsPage() {
         .products-table th {
           padding: 13px 14px;
           border-bottom: 1px solid #eaecf0;
-          background: #f8fafc;
-          color: #475467;
+          background: linear-gradient(180deg, #f8fafc, #f2f5fa);
+          color: #0a2e73;
           font-size: 11px;
-          font-weight: 800;
+          font-weight: 850;
           letter-spacing: 0.5px;
           text-align: left;
           text-transform: uppercase;
@@ -1732,11 +1903,13 @@ export default function AdminProductsPage() {
         }
 
         .products-table tbody tr {
-          transition: background 0.2s ease;
+          transition:
+            background 0.2s ease,
+            transform 0.2s ease;
         }
 
         .products-table tbody tr:hover {
-          background: #fbfcff;
+          background: #fffdf7;
         }
 
         .products-table tbody tr:last-child td {
@@ -1744,7 +1917,7 @@ export default function AdminProductsPage() {
         }
 
         .products-table .selected-row {
-          background: #f1f5ff;
+          background: #f3f6ff;
         }
 
         .checkbox-column {
@@ -1774,9 +1947,10 @@ export default function AdminProductsPage() {
           height: 72px;
           overflow: hidden;
           flex-shrink: 0;
-          border: 1px solid #e4e7ec;
+          border: 1px solid rgba(212, 175, 55, 0.28);
           border-radius: 10px;
           background: #f8f9fc;
+          box-shadow: 0 6px 14px rgba(3, 21, 63, 0.08);
         }
 
         .product-image-wrapper img {
@@ -1784,6 +1958,11 @@ export default function AdminProductsPage() {
           height: 100%;
           display: block;
           object-fit: cover;
+          transition: transform 0.35s ease;
+        }
+
+        .products-table tbody tr:hover .product-image-wrapper img {
+          transform: scale(1.06);
         }
 
         .image-fallback {
@@ -1791,7 +1970,7 @@ export default function AdminProductsPage() {
           height: 100%;
           align-items: center;
           justify-content: center;
-          background: linear-gradient(135deg, #0a2e73, #17499b);
+          background: linear-gradient(135deg, #0a2e73, #03153f);
           color: #d4af37;
           font-size: 13px;
           font-weight: 900;
@@ -1811,7 +1990,7 @@ export default function AdminProductsPage() {
           background: transparent;
           color: #101828;
           font-size: 14px;
-          font-weight: 750;
+          font-weight: 800;
           text-align: left;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -1920,7 +2099,7 @@ export default function AdminProductsPage() {
         .featured-button {
           width: 38px;
           height: 38px;
-          border: 1px solid #d8dde8;
+          border: 1px solid rgba(212, 175, 55, 0.38);
           border-radius: 10px;
           background: white;
           color: #98a2b3;
@@ -1929,12 +2108,14 @@ export default function AdminProductsPage() {
           transition:
             transform 0.2s ease,
             border-color 0.2s ease,
-            background 0.2s ease;
+            background 0.2s ease,
+            box-shadow 0.2s ease;
         }
 
         .featured-button:hover {
           border-color: #d4af37;
-          transform: scale(1.05);
+          transform: scale(1.08);
+          box-shadow: 0 8px 16px rgba(212, 175, 55, 0.18);
         }
 
         .featured-button:disabled {
@@ -1977,11 +2158,13 @@ export default function AdminProductsPage() {
           cursor: pointer;
           transition:
             transform 0.2s ease,
-            background 0.2s ease;
+            background 0.2s ease,
+            box-shadow 0.2s ease;
         }
 
         .icon-button:hover {
-          transform: translateY(-1px);
+          transform: translateY(-2px);
+          box-shadow: 0 8px 16px rgba(3, 21, 63, 0.12);
         }
 
         .view-button {
@@ -2032,7 +2215,7 @@ export default function AdminProductsPage() {
           height: 47px;
           margin-bottom: 20px;
           border: 4px solid #e7ebf3;
-          border-top-color: #0a2e73;
+          border-top-color: #d4af37;
           border-radius: 50%;
           animation: rotate 0.8s linear infinite;
         }
@@ -2060,14 +2243,110 @@ export default function AdminProductsPage() {
           align-items: center;
           justify-content: center;
           margin-bottom: 19px;
+          border: 1px solid rgba(212, 175, 55, 0.28);
           border-radius: 20px;
-          background: #eef3ff;
-          color: #0a2e73;
+          background: linear-gradient(135deg, #0a2e73, #03153f);
+          color: #d4af37;
           font-size: 31px;
+          box-shadow: 0 12px 24px rgba(3, 21, 63, 0.16);
         }
 
         .mobile-products-list {
           display: none;
+        }
+
+        @keyframes rotate {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        @keyframes products-rise {
+          from {
+            opacity: 0;
+            transform: translateY(18px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes products-card-enter {
+          from {
+            opacity: 0;
+            transform: translateY(14px) scale(0.985);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes products-card-shine {
+          0%,
+          62% {
+            left: -40%;
+            opacity: 0;
+          }
+          70% {
+            opacity: 0.8;
+          }
+          100% {
+            left: 128%;
+            opacity: 0;
+          }
+        }
+
+        @keyframes products-hero-shine {
+          0%,
+          64% {
+            transform: translateX(-120%);
+          }
+          100% {
+            transform: translateX(120%);
+          }
+        }
+
+        @keyframes products-button-shine {
+          0%,
+          68% {
+            left: -35%;
+            opacity: 0;
+          }
+          76% {
+            opacity: 0.7;
+          }
+          100% {
+            left: 120%;
+            opacity: 0;
+          }
+        }
+
+        @keyframes products-gold-flow {
+          to {
+            background-position: 200% 0;
+          }
+        }
+
+        @keyframes products-float {
+          0%,
+          100% {
+            transform: translate3d(0, 0, 0);
+          }
+          50% {
+            transform: translate3d(0, 18px, 0);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .admin-products-page *,
+          .admin-products-page::before,
+          .admin-products-page::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            scroll-behavior: auto !important;
+          }
         }
 
         @media (max-width: 1180px) {
@@ -2090,7 +2369,8 @@ export default function AdminProductsPage() {
             width: 100%;
           }
 
-          .header-actions button {
+          .header-actions button,
+          .header-actions a {
             flex: 1;
           }
 
@@ -2118,7 +2398,7 @@ export default function AdminProductsPage() {
             gap: 9px;
             margin-bottom: 13px;
             padding: 12px 13px;
-            border: 1px solid #e4e7ec;
+            border: 1px solid rgba(212, 175, 55, 0.24);
             border-radius: 11px;
             background: white;
             color: #475467;
@@ -2127,12 +2407,23 @@ export default function AdminProductsPage() {
           }
 
           .mobile-product-card {
+            position: relative;
             margin-bottom: 14px;
             padding: 14px;
-            border: 1px solid #e4e7ec;
+            overflow: hidden;
+            border: 1px solid rgba(212, 175, 55, 0.24);
             border-radius: 15px;
             background: white;
-            box-shadow: 0 5px 16px rgba(16, 24, 40, 0.05);
+            box-shadow: 0 8px 20px rgba(3, 21, 63, 0.08);
+            animation: products-card-enter 0.5s ease both;
+            transition:
+              transform 0.22s ease,
+              box-shadow 0.22s ease;
+          }
+
+          .mobile-product-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 14px 28px rgba(3, 21, 63, 0.14);
           }
 
           .mobile-product-card:last-child {
@@ -2140,8 +2431,8 @@ export default function AdminProductsPage() {
           }
 
           .mobile-card-selected {
-            border-color: #98aee2;
-            background: #f7f9ff;
+            border-color: #d4af37;
+            background: #fffdf7;
           }
 
           .mobile-card-top {
@@ -2162,7 +2453,7 @@ export default function AdminProductsPage() {
             height: 92px;
             overflow: hidden;
             flex-shrink: 0;
-            border: 1px solid #e4e7ec;
+            border: 1px solid rgba(212, 175, 55, 0.24);
             border-radius: 11px;
             background: #f8fafc;
           }
@@ -2268,6 +2559,14 @@ export default function AdminProductsPage() {
             font-size: 12px;
             font-weight: 750;
             cursor: pointer;
+            transition:
+              transform 0.2s ease,
+              box-shadow 0.2s ease;
+          }
+
+          .mobile-card-actions button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 16px rgba(3, 21, 63, 0.1);
           }
 
           .mobile-view-button {
@@ -2296,6 +2595,12 @@ export default function AdminProductsPage() {
 
           .page-header {
             margin-bottom: 18px;
+            padding: 22px;
+          }
+
+          .page-header::after {
+            right: 8px;
+            font-size: 42px;
           }
 
           .page-header h1 {
@@ -2318,7 +2623,7 @@ export default function AdminProductsPage() {
           }
 
           .stat-card {
-            min-height: 95px;
+            min-height: 102px;
             gap: 10px;
             padding: 13px;
           }
@@ -2331,11 +2636,11 @@ export default function AdminProductsPage() {
           }
 
           .stat-card span {
-            font-size: 11px;
+            font-size: 10px;
           }
 
           .stat-card strong {
-            font-size: 22px;
+            font-size: 23px;
           }
 
           .filters-section {

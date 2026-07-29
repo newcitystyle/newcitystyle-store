@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import jsPDF from "jspdf";
 
 type ProductRow = {
   id: number;
@@ -66,10 +67,39 @@ type PosProduct = {
   size: string;
   color: string;
   taxPercent: number;
+  isQuickItem?: boolean;
+  quickPurchasePrice?: number;
+  quickSaveAsProduct?: boolean;
+  quickRemainingStock?: number;
 };
 
 type CartItem = PosProduct & {
   quantity: number;
+};
+
+
+type QuickItemForm = {
+  name: string;
+  category: string;
+  quantity: number;
+  mrp: number;
+  sellingPrice: number;
+  purchasePrice: number;
+  taxPercent: number;
+  saveAsProduct: boolean;
+  remainingStock: number;
+};
+
+const EMPTY_QUICK_ITEM_FORM: QuickItemForm = {
+  name: "",
+  category: "Others",
+  quantity: 1,
+  mrp: 0,
+  sellingPrice: 0,
+  purchasePrice: 0,
+  taxPercent: 0,
+  saveAsProduct: false,
+  remainingStock: 0,
 };
 
 type PaymentMethod = "cash" | "upi" | "card" | "credit";
@@ -105,6 +135,36 @@ type CompleteSaleResult = {
   message?: string;
 };
 
+type CustomerRewardLookup = {
+  customer_id: number;
+  full_name?: string | null;
+  phone?: string | null;
+  reward_points?: number | string | null;
+  total_reward_points_earned?: number | string | null;
+  total_reward_points_redeemed?: number | string | null;
+  total_orders?: number | string | null;
+  total_spent?: number | string | null;
+};
+
+type RewardApplyResult = {
+  success?: boolean;
+  duplicate?: boolean;
+  opening_balance?: number;
+  points_used?: number;
+  reward_discount?: number;
+  points_earned?: number;
+  closing_balance?: number;
+};
+
+type PosOverview = {
+  todaySales: number;
+  todayBills: number;
+  todayCash: number;
+  todayDigital: number;
+  customerCredit: number;
+  creditCustomers: number;
+};
+
 type CompletedSale = {
   saleId: string;
   invoiceNumber: string;
@@ -119,6 +179,10 @@ type CompletedSale = {
   paidAmount: number;
   dueAmount: number;
   paymentMethod: PaymentMethod;
+  rewardPointsUsed: number;
+  rewardDiscount: number;
+  rewardPointsEarned: number;
+  rewardClosingBalance: number;
   completedAt: string;
 };
 
@@ -217,6 +281,10 @@ function normalizeText(value: string | null | undefined) {
 }
 
 function getAvailableStock(product: PosProduct) {
+  if (product.isQuickItem) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
   return Math.max(0, product.stock);
 }
 
@@ -251,6 +319,16 @@ export default function PosPage() {
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [loadError, setLoadError] = useState("");
 
+  const [posOverview, setPosOverview] = useState<PosOverview>({
+    todaySales: 0,
+    todayBills: 0,
+    todayCash: 0,
+    todayDigital: 0,
+    customerCredit: 0,
+    creditCustomers: 0,
+  });
+  const [loadingOverview, setLoadingOverview] = useState(true);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] =
     useState("All");
@@ -261,6 +339,17 @@ export default function PosPage() {
 
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+
+  const [rewardCustomerId, setRewardCustomerId] =
+    useState<number | null>(null);
+  const [availableRewardPoints, setAvailableRewardPoints] =
+    useState(0);
+  const [rewardPointsToUse, setRewardPointsToUse] =
+    useState(0);
+  const [rewardLookupLoading, setRewardLookupLoading] =
+    useState(false);
+  const [rewardCustomerFound, setRewardCustomerFound] =
+    useState(false);
 
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>("cash");
@@ -283,6 +372,10 @@ export default function PosPage() {
   const [completedSale, setCompletedSale] =
     useState<CompletedSale | null>(null);
 
+  const [showQuickItem, setShowQuickItem] = useState(false);
+  const [quickItemForm, setQuickItemForm] =
+    useState<QuickItemForm>(EMPTY_QUICK_ITEM_FORM);
+
   const showNotice = useCallback(
     (
       message: string,
@@ -297,6 +390,140 @@ export default function PosPage() {
     },
     []
   );
+
+  const loadPosOverview = useCallback(async () => {
+    setLoadingOverview(true);
+
+    try {
+      const now = new Date();
+      const startOfDay = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        0,
+        0,
+        0,
+        0,
+      );
+      const endOfDay = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + 1,
+        0,
+        0,
+        0,
+        0,
+      );
+
+      const [salesResponse, creditResponse] = await Promise.all([
+        supabase
+          .from("pos_sales")
+          .select(
+            "total_amount,paid_amount,due_amount,payment_method,sale_status,created_at",
+          )
+          .gte("created_at", startOfDay.toISOString())
+          .lt("created_at", endOfDay.toISOString()),
+
+        supabase
+          .from("customer_credit_accounts")
+          .select("current_balance,is_active")
+          .eq("is_active", true),
+      ]);
+
+      let todaySales = 0;
+      let todayCash = 0;
+      let todayDigital = 0;
+      let todayBills = 0;
+
+      if (!salesResponse.error) {
+        const saleRows = (salesResponse.data || []) as Array<{
+          total_amount?: number | string | null;
+          paid_amount?: number | string | null;
+          due_amount?: number | string | null;
+          payment_method?: string | null;
+          sale_status?: string | null;
+        }>;
+
+        const completedSaleRows = saleRows.filter((sale) => {
+          const status = normalizeText(sale.sale_status || "completed");
+          return !["cancelled", "void", "refunded"].includes(status);
+        });
+
+        todayBills = completedSaleRows.length;
+
+        completedSaleRows.forEach((sale) => {
+          const total = Math.max(0, toNumber(sale.total_amount));
+          const paid = Math.max(
+            0,
+            toNumber(sale.paid_amount, total),
+          );
+          const method = normalizeText(sale.payment_method);
+
+          todaySales += total;
+
+          if (method === "cash") {
+            todayCash += paid;
+          } else if (
+            method === "upi" ||
+            method === "card" ||
+            method === "bank" ||
+            method === "bank_transfer"
+          ) {
+            todayDigital += paid;
+          }
+        });
+      } else {
+        console.info(
+          "Today sales overview is unavailable:",
+          salesResponse.error.message,
+        );
+      }
+
+      let customerCredit = 0;
+      let creditCustomers = 0;
+
+      if (!creditResponse.error) {
+        const creditRows = (creditResponse.data || []) as Array<{
+          current_balance?: number | string | null;
+          is_active?: boolean | null;
+        }>;
+
+        creditRows.forEach((account) => {
+          const balance = Math.max(
+            0,
+            toNumber(account.current_balance),
+          );
+
+          if (balance > 0) {
+            customerCredit += balance;
+            creditCustomers += 1;
+          }
+        });
+      } else {
+        console.info(
+          "Customer credit overview is unavailable:",
+          creditResponse.error.message,
+        );
+      }
+
+      setPosOverview({
+        todaySales,
+        todayBills,
+        todayCash,
+        todayDigital,
+        customerCredit,
+        creditCustomers,
+      });
+    } catch (error) {
+      console.error("Unable to load POS overview:", error);
+    } finally {
+      setLoadingOverview(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPosOverview();
+  }, [loadPosOverview]);
 
   const loadHeldBills = useCallback(() => {
     try {
@@ -531,6 +758,83 @@ if (!variantsError) {
     loadProducts();
   }, [loadProducts]);
 
+  const lookupCustomerRewards = useCallback(
+    async (rawPhone: string) => {
+      const digits = rawPhone.replace(/\D/g, "");
+      const phone = digits.length > 10 ? digits.slice(-10) : digits;
+
+      if (phone.length !== 10) {
+        setRewardCustomerId(null);
+        setAvailableRewardPoints(0);
+        setRewardPointsToUse(0);
+        setRewardCustomerFound(false);
+        return;
+      }
+
+      setRewardLookupLoading(true);
+
+      try {
+        const { data, error } = await supabase.rpc(
+          "ncs_get_customer_by_phone",
+          {
+            p_phone: phone,
+          },
+        );
+
+        if (error) throw error;
+
+        const rows = (Array.isArray(data) ? data : []) as CustomerRewardLookup[];
+        const customer = rows[0];
+
+        if (!customer) {
+          setRewardCustomerId(null);
+          setAvailableRewardPoints(0);
+          setRewardPointsToUse(0);
+          setRewardCustomerFound(false);
+          return;
+        }
+
+        setRewardCustomerId(Number(customer.customer_id));
+        setAvailableRewardPoints(
+          Math.max(0, toNumber(customer.reward_points)),
+        );
+        setRewardPointsToUse(0);
+        setRewardCustomerFound(true);
+
+        if (customer.full_name?.trim()) {
+          setCustomerName(customer.full_name.trim());
+        }
+      } catch (error) {
+        console.error("Unable to load customer rewards:", error);
+        setRewardCustomerId(null);
+        setAvailableRewardPoints(0);
+        setRewardPointsToUse(0);
+        setRewardCustomerFound(false);
+      } finally {
+        setRewardLookupLoading(false);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const digits = customerPhone.replace(/\D/g, "");
+
+    if (digits.length !== 10) {
+      setRewardCustomerId(null);
+      setAvailableRewardPoints(0);
+      setRewardPointsToUse(0);
+      setRewardCustomerFound(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void lookupCustomerRewards(digits);
+    }, 450);
+
+    return () => window.clearTimeout(timer);
+  }, [customerPhone, lookupCustomerRewards]);
+
   const categories = useMemo(() => {
     const categorySet = new Set<string>();
 
@@ -616,9 +920,24 @@ if (!variantsError) {
   const billDiscountAmount =
     (billBaseTotal * safeBillDiscountPercent) / 100;
 
-  const grandTotal = Math.max(
+  const grandTotalBeforeRewards = Math.max(
     0,
     billBaseTotal - billDiscountAmount
+  );
+
+  const safeRewardPointsToUse = Math.floor(
+    Math.min(
+      availableRewardPoints,
+      grandTotalBeforeRewards,
+      Math.max(0, rewardPointsToUse),
+    ),
+  );
+
+  const rewardDiscountAmount = safeRewardPointsToUse;
+
+  const grandTotal = Math.max(
+    0,
+    grandTotalBeforeRewards - rewardDiscountAmount
   );
 
   const safeRoundOffAmount = Math.min(
@@ -652,6 +971,172 @@ if (!variantsError) {
       ),
     [cartItems]
   );
+
+  function resetQuickItemForm() {
+    setQuickItemForm(EMPTY_QUICK_ITEM_FORM);
+  }
+
+  function openQuickItem() {
+    setQuickItemForm((current) => ({
+      ...EMPTY_QUICK_ITEM_FORM,
+      category:
+        selectedCategory !== "All"
+          ? selectedCategory
+          : current.category || "Others",
+    }));
+    setShowQuickItem(true);
+  }
+
+  function addQuickItemToCart(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const name = quickItemForm.name.trim();
+    const category = quickItemForm.category.trim() || "Others";
+    const quantity = Math.max(1, Math.floor(toNumber(quickItemForm.quantity, 1)));
+    const sellingPrice = Math.max(0, toNumber(quickItemForm.sellingPrice));
+    const mrp = Math.max(
+      sellingPrice,
+      toNumber(quickItemForm.mrp, sellingPrice),
+    );
+    const purchasePrice = Math.max(
+      0,
+      toNumber(quickItemForm.purchasePrice),
+    );
+    const remainingStock = Math.max(
+      0,
+      Math.floor(toNumber(quickItemForm.remainingStock)),
+    );
+    const taxPercent = Math.max(
+      0,
+      toNumber(quickItemForm.taxPercent),
+    );
+
+    if (!name) {
+      showNotice("Enter the quick item name.", "error");
+      return;
+    }
+
+    if (sellingPrice <= 0) {
+      showNotice("Enter a valid selling price.", "error");
+      return;
+    }
+
+    const quickKey =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? `quick-${crypto.randomUUID()}`
+        : `quick-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const quickItem: CartItem = {
+      key: quickKey,
+      productId: 0,
+      variantId: null,
+      name,
+      category,
+      subcategory: "",
+      brand: "NEW CITY STYLE",
+      price: sellingPrice,
+      mrp,
+      stock: Number.MAX_SAFE_INTEGER,
+      sku: "",
+      barcode: "",
+      imageUrl: "",
+      size: "",
+      color: "",
+      taxPercent,
+      quantity,
+      isQuickItem: true,
+      quickPurchasePrice: purchasePrice,
+      quickSaveAsProduct: quickItemForm.saveAsProduct,
+      quickRemainingStock: remainingStock,
+    };
+
+    setCartItems((current) => [...current, quickItem]);
+    setShowQuickItem(false);
+    resetQuickItemForm();
+    setMobileCartOpen(true);
+
+    showNotice(
+      `${name} added as a quick item.`,
+      "success",
+    );
+  }
+
+  async function createQuickProductForSale(item: CartItem) {
+    const timestamp = Date.now();
+    const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
+    const quickSku = `QUICK-${timestamp}-${randomPart}`;
+    const totalStock =
+      Math.max(1, item.quantity) +
+      Math.max(0, Math.floor(toNumber(item.quickRemainingStock)));
+
+    const { data: productData, error: productError } = await supabase
+      .from("products")
+      .insert({
+        name: item.name,
+        category: item.category || "Others",
+        subcategory: null,
+        brand: "NEW CITY STYLE",
+        price: item.price,
+        mrp: Math.max(item.mrp, item.price),
+        stock: totalStock,
+        sku: quickSku,
+        barcode: null,
+        tax_percent: item.taxPercent,
+        is_active: item.quickSaveAsProduct === true,
+        status:
+          item.quickSaveAsProduct === true
+            ? "active"
+            : "inactive",
+      })
+      .select("id")
+      .single();
+
+    if (productError) {
+      throw new Error(
+        `Unable to prepare quick item "${item.name}": ${productError.message}`,
+      );
+    }
+
+    const productId = Number(productData.id);
+    let variantId: number | null = null;
+
+    const { data: variantData, error: variantError } = await supabase
+      .from("product_variants")
+      .insert({
+        product_id: productId,
+        variant_name: "Quick Item",
+        size: null,
+        color: null,
+        sku: quickSku,
+        barcode: null,
+        purchase_price: Math.max(
+          0,
+          toNumber(item.quickPurchasePrice),
+        ),
+        selling_price: item.price,
+        mrp: Math.max(item.mrp, item.price),
+        stock: totalStock,
+        reserved_stock: 0,
+        low_stock_limit: 0,
+        is_active: true,
+      })
+      .select("id")
+      .single();
+
+    if (!variantError && variantData?.id) {
+      variantId = Number(variantData.id);
+    } else if (variantError) {
+      console.info(
+        `Quick item variant was not created for ${item.name}; product stock will be used:`,
+        variantError.message,
+      );
+    }
+
+    return {
+      productId,
+      variantId,
+    };
+  }
 
   function addProductToCart(product: PosProduct) {
     if (getAvailableStock(product) <= 0) {
@@ -715,7 +1200,7 @@ if (!variantsError) {
           return item;
         }
 
-        if (item.quantity >= item.stock) {
+        if (!item.isQuickItem && item.quantity >= item.stock) {
           showNotice(
             `Only ${item.stock} item(s) available.`,
             "error"
@@ -773,6 +1258,10 @@ if (!variantsError) {
     setRoundOffAmount(0);
     setCustomerName("");
     setCustomerPhone("");
+    setRewardCustomerId(null);
+    setAvailableRewardPoints(0);
+    setRewardPointsToUse(0);
+    setRewardCustomerFound(false);
     setPaymentMethod("cash");
     setCreditPaidNow(0);
     setCreditDueDate(getDefaultCreditDueDate());
@@ -825,6 +1314,10 @@ if (!variantsError) {
     setRoundOffAmount(0);
     setCustomerName("");
     setCustomerPhone("");
+    setRewardCustomerId(null);
+    setAvailableRewardPoints(0);
+    setRewardPointsToUse(0);
+    setRewardCustomerFound(false);
     setPaymentMethod("cash");
     setCreditPaidNow(0);
     setCreditDueDate(getDefaultCreditDueDate());
@@ -872,6 +1365,10 @@ if (!variantsError) {
     );
     setCustomerName(heldBill.customerName);
     setCustomerPhone(heldBill.customerPhone);
+    setRewardCustomerId(null);
+    setAvailableRewardPoints(0);
+    setRewardPointsToUse(0);
+    setRewardCustomerFound(false);
     setPaymentMethod(heldBill.paymentMethod);
     setCreditPaidNow(
       heldBill.paymentMethod === "credit"
@@ -1241,6 +1738,397 @@ if (!variantsError) {
     }
   }
 
+  function safePdfFileName(value: string) {
+    return (
+      value
+        .trim()
+        .replace(/[^a-zA-Z0-9-_]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "") || "NEW-CITY-STYLE-INVOICE"
+    );
+  }
+
+  function generateCustomerInvoicePdf(sale: CompletedSale) {
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+      compress: true,
+    });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const left = 14;
+    const right = pageWidth - 14;
+    const contentWidth = right - left;
+
+    const royalBlue: [number, number, number] = [10, 46, 115];
+    const deepBlue: [number, number, number] = [3, 21, 63];
+    const gold: [number, number, number] = [212, 175, 55];
+    const charcoal: [number, number, number] = [44, 44, 44];
+    const softGray: [number, number, number] = [112, 120, 130];
+
+    function money(value: number) {
+      return `Rs. ${toNumber(value).toFixed(2)}`;
+    }
+
+    function addPageHeader() {
+      pdf.setFillColor(...deepBlue);
+      pdf.roundedRect(left, 12, contentWidth, 42, 4, 4, "F");
+
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(22);
+      pdf.text("NEW CITY STYLE", left + 7, 23);
+
+      pdf.setTextColor(...gold);
+      pdf.setFontSize(11);
+      pdf.text("Style for Every Family", left + 7, 30);
+
+      pdf.setTextColor(245, 245, 245);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(8.5);
+      pdf.text(
+        [
+          "Main Road, Sarubujjili",
+          "Srikakulam, Andhra Pradesh - 532458",
+          "Mobile: 9010014001",
+          "Email: badri.nsv@gmail.com",
+        ],
+        left + 7,
+        36,
+        { lineHeightFactor: 1.35 },
+      );
+
+      pdf.setDrawColor(...gold);
+      pdf.setFillColor(...royalBlue);
+      pdf.roundedRect(right - 58, 17, 51, 30, 3, 3, "FD");
+
+      pdf.setTextColor(...gold);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(7.5);
+      pdf.text("CUSTOMER INVOICE", right - 54, 23);
+
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(9);
+      const invoiceLines = pdf.splitTextToSize(
+        sale.invoiceNumber,
+        43,
+      );
+      pdf.text(invoiceLines, right - 54, 29);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(7.5);
+      pdf.text(
+        new Date(sale.completedAt).toLocaleString("en-IN"),
+        right - 54,
+        43,
+      );
+    }
+
+    addPageHeader();
+
+    let y = 62;
+
+    pdf.setFillColor(248, 249, 251);
+    pdf.setDrawColor(222, 227, 234);
+    pdf.roundedRect(left, y, contentWidth / 2 - 3, 22, 3, 3, "FD");
+    pdf.roundedRect(
+      left + contentWidth / 2 + 3,
+      y,
+      contentWidth / 2 - 3,
+      22,
+      3,
+      3,
+      "FD",
+    );
+
+    pdf.setTextColor(...softGray);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(7.5);
+    pdf.text("CUSTOMER", left + 5, y + 6);
+    pdf.text("PAYMENT", left + contentWidth / 2 + 8, y + 6);
+
+    pdf.setTextColor(...royalBlue);
+    pdf.setFontSize(10);
+    pdf.text(
+      sale.customerName || "Walk-in Customer",
+      left + 5,
+      y + 13,
+    );
+    pdf.text(
+      sale.paymentMethod.toUpperCase(),
+      left + contentWidth / 2 + 8,
+      y + 13,
+    );
+
+    pdf.setTextColor(...charcoal);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8);
+    pdf.text(
+      sale.customerPhone || "Mobile not provided",
+      left + 5,
+      y + 18,
+    );
+    pdf.text(
+      sale.dueAmount > 0 ? "Credit / Due Bill" : "Paid Bill",
+      left + contentWidth / 2 + 8,
+      y + 18,
+    );
+
+    y += 30;
+
+    const columns = {
+      no: left,
+      product: left + 9,
+      qty: right - 58,
+      rate: right - 39,
+      amount: right,
+    };
+
+    pdf.setFillColor(...royalBlue);
+    pdf.rect(left, y, contentWidth, 9, "F");
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.text("#", columns.no + 2, y + 6);
+    pdf.text("PRODUCT / VARIANT", columns.product, y + 6);
+    pdf.text("QTY", columns.qty, y + 6, { align: "right" });
+    pdf.text("RATE", columns.rate, y + 6, { align: "right" });
+    pdf.text("AMOUNT", columns.amount - 2, y + 6, { align: "right" });
+
+    y += 9;
+
+    sale.items.forEach((item, index) => {
+      const variant =
+        [item.size, item.color].filter(Boolean).join(" / ") ||
+        item.barcode ||
+        item.sku ||
+        "Standard Product";
+
+      const productLines = pdf.splitTextToSize(item.name, 78);
+      const variantLines = pdf.splitTextToSize(variant, 78);
+      const rowHeight = Math.max(
+        13,
+        productLines.length * 4.2 + variantLines.length * 3.4 + 3,
+      );
+
+      if (y + rowHeight > pageHeight - 58) {
+        pdf.addPage();
+        addPageHeader();
+        y = 62;
+
+        pdf.setFillColor(...royalBlue);
+        pdf.rect(left, y, contentWidth, 9, "F");
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(8);
+        pdf.text("#", columns.no + 2, y + 6);
+        pdf.text("PRODUCT / VARIANT", columns.product, y + 6);
+        pdf.text("QTY", columns.qty, y + 6, { align: "right" });
+        pdf.text("RATE", columns.rate, y + 6, { align: "right" });
+        pdf.text("AMOUNT", columns.amount - 2, y + 6, { align: "right" });
+        y += 9;
+      }
+
+      if (index % 2 === 0) {
+        pdf.setFillColor(250, 251, 253);
+        pdf.rect(left, y, contentWidth, rowHeight, "F");
+      }
+
+      pdf.setDrawColor(228, 232, 238);
+      pdf.line(left, y + rowHeight, right, y + rowHeight);
+
+      pdf.setTextColor(...charcoal);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8.5);
+      pdf.text(String(index + 1), columns.no + 2, y + 6);
+      pdf.text(productLines, columns.product, y + 5.5);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...softGray);
+      pdf.setFontSize(7);
+      pdf.text(
+        variantLines,
+        columns.product,
+        y + 5.5 + productLines.length * 4.2,
+      );
+
+      pdf.setTextColor(...charcoal);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8);
+      pdf.text(String(item.quantity), columns.qty, y + 7, {
+        align: "right",
+      });
+      pdf.text(money(item.price), columns.rate, y + 7, {
+        align: "right",
+      });
+      pdf.text(
+        money(item.price * item.quantity),
+        columns.amount - 2,
+        y + 7,
+        { align: "right" },
+      );
+
+      y += rowHeight;
+    });
+
+    y += 8;
+
+    if (y > pageHeight - 82) {
+      pdf.addPage();
+      addPageHeader();
+      y = 64;
+    }
+
+    const totalsX = right - 78;
+    const totalsWidth = 78;
+
+    pdf.setFillColor(248, 249, 251);
+    pdf.setDrawColor(222, 227, 234);
+    pdf.roundedRect(totalsX, y, totalsWidth, 56, 3, 3, "FD");
+
+    const totalRows = [
+      ["Subtotal", sale.subtotal],
+      ["Tax", sale.taxAmount],
+      ["Discount", -sale.billDiscount],
+      ["Round Off", -sale.roundOff],
+      ["Paid", sale.paidAmount],
+      ["Due", sale.dueAmount],
+    ] as const;
+
+    let totalY = y + 7;
+
+    totalRows.forEach(([label, value]) => {
+      pdf.setTextColor(...softGray);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(8);
+      pdf.text(label, totalsX + 5, totalY);
+
+      pdf.setTextColor(
+        label === "Due" && Number(value) > 0 ? 180 : charcoal[0],
+        label === "Due" && Number(value) > 0 ? 35 : charcoal[1],
+        label === "Due" && Number(value) > 0 ? 24 : charcoal[2],
+      );
+      pdf.setFont("helvetica", "bold");
+      pdf.text(money(Number(value)), right - 5, totalY, {
+        align: "right",
+      });
+
+      totalY += 7;
+    });
+
+    pdf.setFillColor(...royalBlue);
+    pdf.roundedRect(totalsX, y + 58, totalsWidth, 14, 3, 3, "F");
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(11);
+    pdf.text("TOTAL", totalsX + 5, y + 67);
+    pdf.text(money(sale.totalAmount), right - 5, y + 67, {
+      align: "right",
+    });
+
+    const footerY = pageHeight - 24;
+    pdf.setDrawColor(...gold);
+    pdf.setLineWidth(0.7);
+    pdf.line(left, footerY, right, footerY);
+
+    pdf.setTextColor(...royalBlue);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
+    pdf.text(
+      "Thank you for shopping with NEW CITY STYLE.",
+      pageWidth / 2,
+      footerY + 7,
+      { align: "center" },
+    );
+
+    pdf.setTextColor(...softGray);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(7.5);
+    pdf.text(
+      "We look forward to serving your family again.",
+      pageWidth / 2,
+      footerY + 12,
+      { align: "center" },
+    );
+    pdf.text(
+      "NEW CITY STYLE - Style for Every Family",
+      pageWidth / 2,
+      footerY + 17,
+      { align: "center" },
+    );
+
+    return pdf;
+  }
+
+  function downloadCustomerInvoicePdf(sale: CompletedSale) {
+    const pdf = generateCustomerInvoicePdf(sale);
+    const fileName = `${safePdfFileName(sale.invoiceNumber)}.pdf`;
+
+    pdf.save(fileName);
+    showNotice(`${fileName} downloaded successfully.`, "success");
+  }
+
+  async function shareCustomerInvoicePdf(sale: CompletedSale) {
+    try {
+      const pdf = generateCustomerInvoicePdf(sale);
+      const fileName = `${safePdfFileName(sale.invoiceNumber)}.pdf`;
+      const blob = pdf.output("blob");
+      const file = new File([blob], fileName, {
+        type: "application/pdf",
+      });
+
+      const shareData = {
+        title: `NEW CITY STYLE Invoice ${sale.invoiceNumber}`,
+        text: `NEW CITY STYLE invoice ${sale.invoiceNumber}`,
+        files: [file],
+      };
+
+      if (
+        typeof navigator !== "undefined" &&
+        typeof navigator.share === "function" &&
+        (!navigator.canShare || navigator.canShare(shareData))
+      ) {
+        await navigator.share(shareData);
+        showNotice("PDF invoice sharing opened.", "success");
+        return;
+      }
+
+      pdf.save(fileName);
+
+      const digits = sale.customerPhone.replace(/\D/g, "");
+      const phone = digits.length === 10 ? `91${digits}` : digits;
+      const message = [
+        "NEW CITY STYLE",
+        `Invoice: ${sale.invoiceNumber}`,
+        `Total: ${formatCurrency(sale.totalAmount)}`,
+        "",
+        `The PDF invoice "${fileName}" has been downloaded.`,
+        "Please attach the downloaded PDF in this WhatsApp chat.",
+      ].join("\n");
+
+      const whatsappUrl = phone
+        ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+        : `https://wa.me/?text=${encodeURIComponent(message)}`;
+
+      window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+
+      showNotice(
+        "PDF downloaded. WhatsApp opened—attach the downloaded invoice PDF.",
+        "info",
+      );
+    } catch (error) {
+      console.error("Unable to share PDF invoice:", error);
+      showNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to generate the PDF invoice.",
+        "error",
+      );
+    }
+  }
+
   function buildWhatsAppInvoiceMessage(sale: CompletedSale) {
     const itemLines = sale.items
       .map((item, index) => {
@@ -1277,11 +2165,15 @@ if (!variantsError) {
       `Subtotal: ${formatCurrency(sale.subtotal)}`,
       `Tax: ${formatCurrency(sale.taxAmount)}`,
       `Discount: -${formatCurrency(sale.billDiscount)}`,
+      `Reward Points Used: ${sale.rewardPointsUsed}`,
+      `Reward Discount: -${formatCurrency(sale.rewardDiscount)}`,
       `Round Off: -${formatCurrency(sale.roundOff)}`,
       `*Total: ${formatCurrency(sale.totalAmount)}*`,
       `Paid: ${formatCurrency(sale.paidAmount)}`,
       `Due: ${formatCurrency(sale.dueAmount)}`,
       `Payment: ${sale.paymentMethod.toUpperCase()}`,
+      `Points Earned: ${sale.rewardPointsEarned}`,
+      `Reward Balance: ${sale.rewardClosingBalance}`,
       "",
       "Thank you for shopping with NEW CITY STYLE.",
     ]
@@ -1311,26 +2203,58 @@ if (!variantsError) {
     }
   }
 
-  function printCompletedSaleInvoice(sale: CompletedSale) {
-    const rows = sale.items
-      .map(
-        (item) => `
+  function buildCustomerInvoiceRows(
+    sale: CompletedSale,
+    compact = false
+  ) {
+    return sale.items
+      .map((item, index) => {
+        const variant =
+          [item.size, item.color].filter(Boolean).join(" / ") ||
+          item.barcode ||
+          item.sku ||
+          "—";
+
+        if (compact) {
+          return `
+            <div class="receiptItem">
+              <div class="receiptItemName">
+                <span>${index + 1}. ${item.name}</span>
+                <small>${variant}</small>
+              </div>
+              <div class="receiptItemLine">
+                <span>${item.quantity} × ${formatCurrency(item.price)}</span>
+                <strong>${formatCurrency(
+                  item.price * item.quantity
+                )}</strong>
+              </div>
+            </div>
+          `;
+        }
+
+        return `
           <tr>
-            <td>${item.name}</td>
-            <td>${[item.size, item.color].filter(Boolean).join(" / ") || item.barcode || item.sku || "—"}</td>
+            <td>${index + 1}</td>
+            <td>
+              <strong>${item.name}</strong>
+              <small>${variant}</small>
+            </td>
             <td>${item.quantity}</td>
             <td>${formatCurrency(item.price)}</td>
             <td>${formatCurrency(item.price * item.quantity)}</td>
           </tr>
-        `
-      )
+        `;
+      })
       .join("");
+  }
 
-    const popup = window.open("", "_blank", "width=900,height=900");
+  function printCustomerInvoiceA4(sale: CompletedSale) {
+    const rows = buildCustomerInvoiceRows(sale);
+    const popup = window.open("", "_blank", "width=1000,height=900");
 
     if (!popup) {
       showNotice(
-        "Please allow popups to print the invoice.",
+        "Please allow popups to print the A4 invoice.",
         "error"
       );
       return;
@@ -1343,67 +2267,517 @@ if (!variantsError) {
         <meta charset="utf-8" />
         <title>${sale.invoiceNumber}</title>
         <style>
-          body{font-family:Arial,sans-serif;color:#222;padding:28px}
-          .head{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #0A2E73;padding-bottom:18px}
-          h1{margin:4px 0;color:#0A2E73}.gold{color:#D4AF37;font-weight:800}
-          .info{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}
-          .box{border:1px solid #ddd;border-radius:10px;padding:12px}
-          table{width:100%;border-collapse:collapse}
-          th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left}
-          th{background:#F8F4EC}.totals{width:360px;margin:20px 0 0 auto}
-          .line{display:flex;justify-content:space-between;padding:7px 0}
-          .grand{border-top:2px solid #0A2E73;padding-top:12px;color:#0A2E73;font-size:20px}
+          @page { size: A4; margin: 12mm; }
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            color: #202020;
+            font-family: Arial, sans-serif;
+            background: #fff;
+          }
+          .invoice {
+            min-height: 270mm;
+            display: flex;
+            flex-direction: column;
+          }
+          .brandHeader {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 24px;
+            padding: 22px 24px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #03153F, #0A2E73);
+            color: #fff;
+          }
+          .storeName {
+            margin: 0;
+            color: #fff;
+            font-size: 34px;
+            font-weight: 900;
+            letter-spacing: 1.2px;
+          }
+          .tagline {
+            margin: 4px 0 12px;
+            color: #D4AF37;
+            font-size: 15px;
+            font-weight: 800;
+          }
+          .storeDetails {
+            margin: 0;
+            color: rgba(255,255,255,.88);
+            font-size: 12px;
+            line-height: 1.65;
+          }
+          .invoiceBadge {
+            min-width: 220px;
+            padding: 16px;
+            border: 1px solid rgba(212,175,55,.75);
+            border-radius: 12px;
+            background: rgba(255,255,255,.08);
+          }
+          .invoiceBadge span,
+          .invoiceBadge strong {
+            display: block;
+          }
+          .invoiceBadge span {
+            color: #D4AF37;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+          }
+          .invoiceBadge strong {
+            margin-top: 5px;
+            font-size: 16px;
+          }
+          .invoiceBadge p {
+            margin: 8px 0 0;
+            font-size: 11px;
+            line-height: 1.5;
+          }
+          .infoGrid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 16px;
+          }
+          .infoBox {
+            padding: 14px;
+            border: 1px solid #dfe4eb;
+            border-radius: 11px;
+            background: #fafbfc;
+          }
+          .infoBox span {
+            display: block;
+            color: #7b8491;
+            font-size: 9px;
+            font-weight: 800;
+            text-transform: uppercase;
+          }
+          .infoBox strong {
+            display: block;
+            margin-top: 5px;
+            color: #0A2E73;
+            font-size: 13px;
+          }
+          .infoBox p {
+            margin: 5px 0 0;
+            font-size: 11px;
+            line-height: 1.5;
+          }
+          table {
+            width: 100%;
+            margin-top: 16px;
+            border-collapse: collapse;
+          }
+          th, td {
+            padding: 10px 9px;
+            border: 1px solid #dfe4eb;
+            text-align: left;
+            vertical-align: top;
+            font-size: 11px;
+          }
+          th {
+            background: #0A2E73;
+            color: #fff;
+            font-size: 10px;
+            text-transform: uppercase;
+          }
+          td small {
+            display: block;
+            margin-top: 3px;
+            color: #7b8491;
+          }
+          .totalsWrap {
+            width: 360px;
+            margin: 18px 0 0 auto;
+            padding: 14px;
+            border: 1px solid #dfe4eb;
+            border-radius: 12px;
+            background: #fafbfc;
+          }
+          .totalLine {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 7px 0;
+            border-bottom: 1px solid #e9edf2;
+            font-size: 11px;
+          }
+          .grandTotal {
+            margin-top: 6px;
+            padding: 12px;
+            border-radius: 9px;
+            background: #0A2E73;
+            color: #fff;
+            font-size: 17px;
+            font-weight: 900;
+          }
+          .dueLine {
+            color: #B42318;
+            font-weight: 900;
+          }
+          .footer {
+            margin-top: auto;
+            padding-top: 22px;
+            text-align: center;
+          }
+          .footerMessage {
+            padding: 14px;
+            border-top: 2px solid #D4AF37;
+            color: #0A2E73;
+            font-size: 13px;
+            font-weight: 800;
+          }
+          .footer small {
+            display: block;
+            margin-top: 6px;
+            color: #6f7782;
+            font-size: 10px;
+          }
+          @media print {
+            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+          }
         </style>
       </head>
       <body>
-        <div class="head">
-          <div>
-            <div class="gold">NEW CITY STYLE</div>
-            <h1>Style for Every Family</h1>
+        <div class="invoice">
+          <header class="brandHeader">
+            <div>
+              <h1 class="storeName">NEW CITY STYLE</h1>
+              <p class="tagline">Style for Every Family</p>
+              <p class="storeDetails">
+                Main Road, Sarubujjili<br/>
+                Srikakulam, Andhra Pradesh - 532458<br/>
+                Mobile: 9010014001<br/>
+                Email: badri.nsv@gmail.com
+              </p>
+            </div>
+
+            <div class="invoiceBadge">
+              <span>Tax Invoice / Customer Bill</span>
+              <strong>${sale.invoiceNumber}</strong>
+              <p>${new Date(sale.completedAt).toLocaleString("en-IN")}</p>
+            </div>
+          </header>
+
+          <section class="infoGrid">
+            <div class="infoBox">
+              <span>Customer</span>
+              <strong>${sale.customerName || "Walk-in Customer"}</strong>
+              <p>${sale.customerPhone || "Mobile not provided"}</p>
+            </div>
+
+            <div class="infoBox">
+              <span>Payment</span>
+              <strong>${sale.paymentMethod.toUpperCase()}</strong>
+              <p>${sale.dueAmount > 0 ? "Credit / Due Bill" : "Paid Bill"}</p>
+            </div>
+          </section>
+
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Product / Variant</th>
+                <th>Qty</th>
+                <th>Rate</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+
+          <section class="totalsWrap">
+            <div class="totalLine"><span>Subtotal</span><strong>${formatCurrency(sale.subtotal)}</strong></div>
+            <div class="totalLine"><span>Tax</span><strong>${formatCurrency(sale.taxAmount)}</strong></div>
+            <div class="totalLine"><span>Discount</span><strong>-${formatCurrency(sale.billDiscount)}</strong></div>
+            <div class="totalLine"><span>Reward Points Used</span><strong>${sale.rewardPointsUsed}</strong></div>
+            <div class="totalLine"><span>Reward Discount</span><strong>-${formatCurrency(sale.rewardDiscount)}</strong></div>
+            <div class="totalLine"><span>Round Off</span><strong>-${formatCurrency(sale.roundOff)}</strong></div>
+            <div class="totalLine grandTotal"><span>Total</span><strong>${formatCurrency(sale.totalAmount)}</strong></div>
+            <div class="totalLine"><span>Paid</span><strong>${formatCurrency(sale.paidAmount)}</strong></div>
+            <div class="totalLine dueLine"><span>Due</span><strong>${formatCurrency(sale.dueAmount)}</strong></div>
+            <div class="totalLine"><span>Points Earned</span><strong>${sale.rewardPointsEarned}</strong></div>
+            <div class="totalLine"><span>Reward Balance</span><strong>${sale.rewardClosingBalance}</strong></div>
+          </section>
+
+          <footer class="footer">
+            <div class="footerMessage">
+              Thank you for shopping with NEW CITY STYLE.
+              We look forward to serving your family again.
+            </div>
+            <small>NEW CITY STYLE — Style for Every Family</small>
+          </footer>
+        </div>
+
+        <script>
+          window.onload = function () {
+            window.print();
+          };
+        </script>
+      </body>
+      </html>
+    `);
+
+    popup.document.close();
+  }
+
+  function printCustomerInvoiceT82(sale: CompletedSale) {
+    const rows = buildCustomerInvoiceRows(sale, true);
+
+    // Epson T82 uses roll paper. Giving Chrome an exact short page height
+    // prevents it from feeding a long blank section after the receipt.
+    const itemCount = Math.max(1, sale.items.length);
+    const receiptHeightMm = Math.min(
+      260,
+      Math.max(165, 150 + itemCount * 12),
+    );
+
+    const popup = window.open("", "_blank", "width=430,height=900");
+
+    if (!popup) {
+      showNotice(
+        "Please allow popups to print the Epson T82 receipt.",
+        "error"
+      );
+      return;
+    }
+
+    popup.document.write(`
+      <!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${sale.invoiceNumber}</title>
+        <style>
+          @page {
+            size: 80mm ${receiptHeightMm}mm;
+            margin: 2mm 5mm 2mm 4mm;
+          }
+          * { box-sizing: border-box; }
+          html, body {
+            width: 66mm;
+            max-width: 66mm;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #fff;
+            color: #000;
+            font-family: Arial, Helvetica, sans-serif;
+            font-weight: 800;
+          }
+          .receipt {
+            width: 66mm;
+            max-width: 66mm;
+            height: auto;
+            min-height: 0;
+            padding: 1mm 0 0;
+            overflow: hidden;
+          }
+          .center { text-align: center; }
+          .storeName {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 1000;
+            letter-spacing: .8px;
+            line-height: 1.05;
+          }
+          .tagline {
+            margin: 2px 0 4px;
+            font-size: 12px;
+            font-weight: 900;
+          }
+          .address {
+            margin: 0;
+            font-size: 9.5px;
+            font-weight: 800;
+            line-height: 1.35;
+          }
+          .divider {
+            margin: 4px 0;
+            border-top: 1px dashed #000;
+          }
+          .meta {
+            width: 100%;
+            font-size: 9.5px;
+            font-weight: 800;
+            line-height: 1.4;
+          }
+          .metaRow,
+          .receiptItemLine,
+          .totalRow {
+            width: 100%;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: start;
+            gap: 5px;
+          }
+
+          .metaRow span,
+          .receiptItemLine span,
+          .totalRow span {
+            min-width: 0;
+            overflow-wrap: anywhere;
+          }
+
+          .metaRow strong,
+          .receiptItemLine strong,
+          .totalRow strong {
+            max-width: 36mm;
+            text-align: right;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+          }
+          .receiptItem {
+            padding: 3px 0;
+            border-bottom: 1px dotted #000;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          .receiptItemName span {
+            display: block;
+            max-width: 100%;
+            font-size: 12px;
+            font-weight: 1000;
+            overflow-wrap: anywhere;
+          }
+          .receiptItemName small {
+            display: block;
+            max-width: 100%;
+            margin-top: 2px;
+            font-size: 9px;
+            font-weight: 800;
+            overflow-wrap: anywhere;
+          }
+          .receiptItemLine {
+            margin-top: 3px;
+            font-size: 10px;
+            font-weight: 900;
+          }
+          .totals {
+            width: 100%;
+            margin-top: 4px;
+            font-size: 9.8px;
+            font-weight: 900;
+            line-height: 1.45;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          .grand {
+            padding: 5px 0;
+            border-top: 2px solid #000;
+            border-bottom: 2px solid #000;
+            font-size: 14px;
+            font-weight: 1000;
+          }
+          .due {
+            font-weight: 1000;
+          }
+          .thanks {
+            margin-top: 6px;
+            font-size: 10px;
+            font-weight: 1000;
+            line-height: 1.35;
+            text-align: center;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          .footer {
+            margin-top: 4px;
+            font-size: 8.5px;
+            font-weight: 900;
+            line-height: 1.3;
+            text-align: center;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+
+          @media print {
+            html, body, .receipt {
+              width: 66mm !important;
+              max-width: 66mm !important;
+              min-height: 0 !important;
+            }
+
+            html, body {
+              height: auto !important;
+              overflow: hidden !important;
+            }
+
+            .receipt {
+              break-after: avoid-page !important;
+              page-break-after: avoid !important;
+            }
+
+            body {
+              print-color-adjust: exact;
+              -webkit-print-color-adjust: exact;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="receipt">
+          <div class="center">
+            <h1 class="storeName">NEW CITY STYLE</h1>
+            <p class="tagline">Style for Every Family</p>
+            <p class="address">
+              Main Road, Sarubujjili<br/>
+              Srikakulam, Andhra Pradesh - 532458<br/>
+              Mob: 9010014001<br/>
+              badri.nsv@gmail.com
+            </p>
           </div>
-          <div>
-            <b>${sale.invoiceNumber}</b><br/>
-            ${new Date(sale.completedAt).toLocaleString("en-IN")}
+
+          <div class="divider"></div>
+
+          <div class="meta">
+            <div class="metaRow"><span>Invoice</span><strong>${sale.invoiceNumber}</strong></div>
+            <div class="metaRow"><span>Date</span><strong>${new Date(sale.completedAt).toLocaleString("en-IN")}</strong></div>
+            <div class="metaRow"><span>Customer</span><strong>${sale.customerName || "Walk-in"}</strong></div>
+            ${
+              sale.customerPhone
+                ? `<div class="metaRow"><span>Mobile</span><strong>${sale.customerPhone}</strong></div>`
+                : ""
+            }
+            <div class="metaRow"><span>Payment</span><strong>${sale.paymentMethod.toUpperCase()}</strong></div>
+          </div>
+
+          <div class="divider"></div>
+
+          ${rows}
+
+          <div class="totals">
+            <div class="totalRow"><span>Subtotal</span><strong>${formatCurrency(sale.subtotal)}</strong></div>
+            <div class="totalRow"><span>Tax</span><strong>${formatCurrency(sale.taxAmount)}</strong></div>
+            <div class="totalRow"><span>Discount</span><strong>-${formatCurrency(sale.billDiscount)}</strong></div>
+            <div class="totalRow"><span>Reward Used</span><strong>${sale.rewardPointsUsed}</strong></div>
+            <div class="totalRow"><span>Reward Disc.</span><strong>-${formatCurrency(sale.rewardDiscount)}</strong></div>
+            <div class="totalRow"><span>Round Off</span><strong>-${formatCurrency(sale.roundOff)}</strong></div>
+            <div class="totalRow grand"><span>TOTAL</span><strong>${formatCurrency(sale.totalAmount)}</strong></div>
+            <div class="totalRow"><span>Paid</span><strong>${formatCurrency(sale.paidAmount)}</strong></div>
+            <div class="totalRow due"><span>Due</span><strong>${formatCurrency(sale.dueAmount)}</strong></div>
+            <div class="totalRow"><span>Points Earned</span><strong>${sale.rewardPointsEarned}</strong></div>
+            <div class="totalRow"><span>Reward Balance</span><strong>${sale.rewardClosingBalance}</strong></div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="thanks">
+            Thank you for shopping with us!<br/>
+            Please visit NEW CITY STYLE again.
+          </div>
+
+          <div class="footer">
+            NEW CITY STYLE — Style for Every Family
           </div>
         </div>
 
-        <div class="info">
-          <div class="box">
-            <b>Customer</b><br/>
-            ${sale.customerName || "Walk-in Customer"}<br/>
-            ${sale.customerPhone || ""}
-          </div>
-          <div class="box">
-            <b>Payment</b><br/>
-            ${sale.paymentMethod.toUpperCase()}<br/>
-            ${sale.dueAmount > 0 ? "DUE" : "PAID"}
-          </div>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th>Variant</th>
-              <th>Qty</th>
-              <th>Price</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-
-        <div class="totals">
-          <div class="line"><span>Subtotal</span><b>${formatCurrency(sale.subtotal)}</b></div>
-          <div class="line"><span>Tax</span><b>${formatCurrency(sale.taxAmount)}</b></div>
-          <div class="line"><span>Discount</span><b>-${formatCurrency(sale.billDiscount)}</b></div>
-          <div class="line"><span>Round Off</span><b>-${formatCurrency(sale.roundOff)}</b></div>
-          <div class="line grand"><span>Total</span><b>${formatCurrency(sale.totalAmount)}</b></div>
-          <div class="line"><span>Paid</span><b>${formatCurrency(sale.paidAmount)}</b></div>
-          <div class="line"><span>Due</span><b>${formatCurrency(sale.dueAmount)}</b></div>
-        </div>
-
-        <script>window.onload=()=>window.print()</script>
+        <script>
+          window.onload = function () {
+            window.print();
+          };
+        </script>
       </body>
       </html>
     `);
@@ -1478,7 +2852,7 @@ if (!variantsError) {
     const invalidStockItem = cartItems.find(
       (item) =>
         item.quantity <= 0 ||
-        item.quantity > item.stock
+        (!item.isQuickItem && item.quantity > item.stock)
     );
 
     if (invalidStockItem) {
@@ -1500,11 +2874,29 @@ if (!variantsError) {
               .toString(36)
               .slice(2, 10)}`;
 
-      const rpcItems = cartItems.map((item) => ({
-        product_id: item.productId,
-        variant_id: item.variantId,
-        quantity: item.quantity,
-      }));
+      const rpcItems: Array<{
+        product_id: number;
+        variant_id: number | null;
+        quantity: number;
+      }> = [];
+
+      for (const item of cartItems) {
+        if (!item.isQuickItem) {
+          rpcItems.push({
+            product_id: item.productId,
+            variant_id: item.variantId,
+            quantity: item.quantity,
+          });
+          continue;
+        }
+
+        const quickProduct = await createQuickProductForSale(item);
+        rpcItems.push({
+          product_id: quickProduct.productId,
+          variant_id: quickProduct.variantId,
+          quantity: item.quantity,
+        });
+      }
 
       const { data, error } = await supabase.rpc(
         "complete_pos_sale",
@@ -1516,9 +2908,13 @@ if (!variantsError) {
             customerPhone.trim() || null,
           p_customer_email: null,
           p_payment_method: paymentMethod,
-          p_bill_discount: billDiscountAmount,
+          p_bill_discount:
+            billDiscountAmount + rewardDiscountAmount,
           p_round_off: safeRoundOffAmount,
-          p_notes: null,
+          p_notes:
+            cartItems.some((item) => item.isQuickItem)
+              ? `${cartItems.filter((item) => item.isQuickItem).length} quick item(s) included`
+              : null,
           p_client_transaction_id:
             clientTransactionId,
           p_device_id: "web-admin-pos",
@@ -1570,6 +2966,74 @@ if (!variantsError) {
         }
       }
 
+      let rewardResult: RewardApplyResult = {
+        points_used: 0,
+        reward_discount: 0,
+        points_earned: 0,
+        closing_balance: availableRewardPoints,
+      };
+      let rewardSyncWarning = "";
+
+      if (customerPhone.trim()) {
+        try {
+          const rewardEligibleAmount =
+            paymentMethod === "credit"
+              ? safeCreditPaidNow
+              : finalPayable;
+
+          const { data: rewardData, error: rewardError } =
+            await supabase.rpc(
+              "ncs_apply_sale_rewards_by_phone",
+              {
+                p_customer_phone: customerPhone.trim(),
+                p_sale_id: result.sale_id
+                  ? String(result.sale_id)
+                  : null,
+                p_invoice_number: invoiceNumber,
+                p_redeem_points: safeRewardPointsToUse,
+                p_eligible_amount: rewardEligibleAmount,
+              },
+            );
+
+          if (rewardError) throw rewardError;
+
+          rewardResult =
+            (rewardData || {}) as RewardApplyResult;
+        } catch (rewardError) {
+          const rewardErrorRecord =
+            typeof rewardError === "object" &&
+            rewardError !== null
+              ? (rewardError as {
+                  message?: unknown;
+                  details?: unknown;
+                  hint?: unknown;
+                  code?: unknown;
+                })
+              : null;
+
+          const rewardErrorMessage = [
+            rewardError instanceof Error
+              ? rewardError.message
+              : rewardErrorRecord?.message,
+            rewardErrorRecord?.details,
+            rewardErrorRecord?.hint,
+            rewardErrorRecord?.code,
+          ]
+            .filter(Boolean)
+            .map(String)
+            .join(" • ");
+
+          console.error(
+            "Sale completed, but reward sync failed:",
+            rewardErrorRecord || rewardError,
+          );
+
+          rewardSyncWarning =
+            rewardErrorMessage ||
+            "Reward points sync failed. Check Supabase RPC.";
+        }
+      }
+
       if (paymentMethod === "credit") {
         await saveCustomerCredit(
           result.sale_id,
@@ -1586,9 +3050,31 @@ if (!variantsError) {
         items: cartItems.map((item) => ({ ...item })),
         subtotal: toNumber(result.subtotal, subtotal),
         taxAmount: toNumber(result.tax_amount, itemTax),
-        billDiscount: toNumber(
-          result.bill_discount,
-          billDiscountAmount
+        billDiscount: billDiscountAmount,
+        rewardPointsUsed: toNumber(
+          rewardResult.points_used,
+          safeRewardPointsToUse,
+        ),
+        rewardDiscount: toNumber(
+          rewardResult.reward_discount,
+          rewardDiscountAmount,
+        ),
+        rewardPointsEarned: toNumber(
+          rewardResult.points_earned,
+          paymentMethod === "credit"
+            ? Math.floor(safeCreditPaidNow / 100)
+            : Math.floor(finalPayable / 100),
+        ),
+        rewardClosingBalance: toNumber(
+          rewardResult.closing_balance,
+          Math.max(
+            0,
+            availableRewardPoints -
+              safeRewardPointsToUse +
+              (paymentMethod === "credit"
+                ? Math.floor(safeCreditPaidNow / 100)
+                : Math.floor(finalPayable / 100)),
+          ),
         ),
         roundOff: toNumber(
           result.round_off,
@@ -1617,19 +3103,36 @@ if (!variantsError) {
       setRoundOffAmount(0);
       setCustomerName("");
       setCustomerPhone("");
+      setRewardCustomerId(null);
+      setAvailableRewardPoints(0);
+      setRewardPointsToUse(0);
+      setRewardCustomerFound(false);
       setPaymentMethod("cash");
       setCreditPaidNow(0);
       setCreditDueDate(getDefaultCreditDueDate());
       setMobileCartOpen(false);
       setSearchQuery("");
 
-      await loadProducts();
+      await Promise.all([
+        loadProducts(),
+        loadPosOverview(),
+      ]);
 
       showNotice(
-        customerSyncWarning
-          ? `${invoiceNumber} completed. Customer sync warning: ${customerSyncWarning}`
+        customerSyncWarning || rewardSyncWarning
+          ? `${invoiceNumber} completed. ${
+              customerSyncWarning
+                ? `Customer warning: ${customerSyncWarning}`
+                : ""
+            } ${
+              rewardSyncWarning
+                ? `Reward warning: ${rewardSyncWarning}`
+                : ""
+            }`
           : `${invoiceNumber} completed successfully.`,
-        customerSyncWarning ? "info" : "success"
+        customerSyncWarning || rewardSyncWarning
+          ? "info"
+          : "success"
       );
 
       window.setTimeout(() => {
@@ -1709,8 +3212,11 @@ if (!variantsError) {
           <button
             type="button"
             className="ncsPosRefreshButton"
-            onClick={loadProducts}
-            disabled={loadingProducts}
+            onClick={() => {
+              void loadProducts();
+              void loadPosOverview();
+            }}
+            disabled={loadingProducts || loadingOverview}
           >
             <span
               className={
@@ -1724,6 +3230,60 @@ if (!variantsError) {
             Refresh Stock
           </button>
         </div>
+      </section>
+
+      <section className="ncsPosQuickStats" aria-label="POS live summary">
+        <article className="ncsPosQuickCard ncsPosSalesCard">
+          <div className="ncsPosQuickGlow" />
+          <div className="ncsPosQuickIcon">₹</div>
+
+          <div className="ncsPosQuickContent">
+            <span>TODAY&apos;S SALES</span>
+            <strong>
+              {loadingOverview
+                ? "Loading..."
+                : formatCurrency(posOverview.todaySales)}
+            </strong>
+            <p>
+              {posOverview.todayBills} bill
+              {posOverview.todayBills === 1 ? "" : "s"} today
+            </p>
+          </div>
+
+          <div className="ncsPosQuickMini">
+            <span>
+              Cash
+              <b>{formatCurrency(posOverview.todayCash)}</b>
+            </span>
+            <span>
+              UPI / Card
+              <b>{formatCurrency(posOverview.todayDigital)}</b>
+            </span>
+          </div>
+        </article>
+
+        <article className="ncsPosQuickCard ncsPosCreditCard">
+          <div className="ncsPosQuickGlow" />
+          <div className="ncsPosQuickIcon">◷</div>
+
+          <div className="ncsPosQuickContent">
+            <span>CUSTOMER CREDIT</span>
+            <strong>
+              {loadingOverview
+                ? "Loading..."
+                : formatCurrency(posOverview.customerCredit)}
+            </strong>
+            <p>
+              {posOverview.creditCustomers} customer
+              {posOverview.creditCustomers === 1 ? "" : "s"} pending
+            </p>
+          </div>
+
+          <div className="ncsPosQuickCreditBadge">
+            Live Dues
+            <b>{posOverview.creditCustomers}</b>
+          </div>
+        </article>
       </section>
 
       <section className="ncsPosWorkspace">
@@ -1765,6 +3325,15 @@ if (!variantsError) {
               className="ncsPosSearchButton"
             >
               Search
+            </button>
+
+            <button
+              type="button"
+              className="ncsPosQuickItemButton ncsPosSearchQuickItemButton"
+              onClick={openQuickItem}
+            >
+              <span>＋</span>
+              Quick Item
             </button>
           </form>
 
@@ -2050,6 +3619,66 @@ if (!variantsError) {
                 inputMode="tel"
               />
             </div>
+
+            <div className="ncsPosRewardLookup">
+              {rewardLookupLoading ? (
+                <span>Checking customer rewards...</span>
+              ) : rewardCustomerFound ? (
+                <>
+                  <div>
+                    <span>Returning Customer</span>
+                    <strong>
+                      Available Rewards: {availableRewardPoints} points
+                    </strong>
+                    <small>
+                      ₹100 purchase = 1 point • 1 point = ₹1
+                    </small>
+                  </div>
+
+                  <label>
+                    <span>Use Points</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max={Math.min(
+                        availableRewardPoints,
+                        grandTotalBeforeRewards,
+                      )}
+                      step="1"
+                      value={
+                        rewardPointsToUse === 0
+                          ? ""
+                          : rewardPointsToUse
+                      }
+                      onChange={(event) =>
+                        setRewardPointsToUse(
+                          Math.floor(
+                            Math.min(
+                              availableRewardPoints,
+                              grandTotalBeforeRewards,
+                              Math.max(
+                                0,
+                                toNumber(event.target.value),
+                              ),
+                            ),
+                          ),
+                        )
+                      }
+                      placeholder="0"
+                    />
+                  </label>
+                </>
+              ) : customerPhone.replace(/\D/g, "").length === 10 ? (
+                <span>
+                  New customer — rewards start after this bill.
+                </span>
+              ) : (
+                <span>
+                  Enter 10-digit mobile number to load customer name and
+                  reward points.
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="ncsPosCartItems">
@@ -2081,7 +3710,14 @@ if (!variantsError) {
                     </div>
 
                     <div className="ncsPosCartProductInfo">
-                      <h3>{item.name}</h3>
+                      <h3>
+                        {item.name}
+                        {item.isQuickItem && (
+                          <span className="ncsPosQuickItemBadge">
+                            QUICK
+                          </span>
+                        )}
+                      </h3>
 
                       <p>
                         {[item.size, item.color]
@@ -2195,6 +3831,15 @@ if (!variantsError) {
               </span>
               <strong>
                 − {formatCurrency(billDiscountAmount)}
+              </strong>
+            </div>
+
+            <div className="ncsPosSummaryLine ncsPosRewardDiscountLine">
+              <span>
+                Reward Discount ({safeRewardPointsToUse} points)
+              </span>
+              <strong>
+                − {formatCurrency(rewardDiscountAmount)}
               </strong>
             </div>
 
@@ -2470,6 +4115,256 @@ if (!variantsError) {
         />
       )}
 
+      {showQuickItem && (
+        <div
+          className="ncsPosModalOverlay"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) {
+              setShowQuickItem(false);
+            }
+          }}
+        >
+          <section
+            className="ncsPosQuickItemModal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ncs-quick-item-title"
+          >
+            <header>
+              <div>
+                <span>FAST MIGRATION BILLING</span>
+                <h2 id="ncs-quick-item-title">Add Quick Item</h2>
+                <p>
+                  Bill an old unregistered product immediately without delaying
+                  the customer.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowQuickItem(false)}
+                aria-label="Close quick item"
+              >
+                ×
+              </button>
+            </header>
+
+            <form onSubmit={addQuickItemToCart}>
+              <div className="ncsPosQuickItemGrid">
+                <label className="ncsPosQuickWide">
+                  <span>Item Name *</span>
+                  <input
+                    autoFocus
+                    value={quickItemForm.name}
+                    placeholder="Example: Men Shirt"
+                    onChange={(event) =>
+                      setQuickItemForm((current) => ({
+                        ...current,
+                        name: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  <span>Category *</span>
+                  <select
+                    value={quickItemForm.category}
+                    onChange={(event) =>
+                      setQuickItemForm((current) => ({
+                        ...current,
+                        category: event.target.value,
+                      }))
+                    }
+                  >
+                    {Array.from(
+                      new Set([
+                        "Men",
+                        "Women",
+                        "Kids",
+                        "Sarees",
+                        "Shirts",
+                        "Jeans",
+                        "Kurtis",
+                        "Innerwear",
+                        "Others",
+                        ...categories.filter((item) => item !== "All"),
+                      ]),
+                    ).map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  <span>Quantity *</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={quickItemForm.quantity}
+                    onChange={(event) =>
+                      setQuickItemForm((current) => ({
+                        ...current,
+                        quantity: Math.max(1, Number(event.target.value) || 1),
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  <span>Selling Price *</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={quickItemForm.sellingPrice || ""}
+                    placeholder="0"
+                    onChange={(event) =>
+                      setQuickItemForm((current) => ({
+                        ...current,
+                        sellingPrice: Math.max(
+                          0,
+                          Number(event.target.value) || 0,
+                        ),
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  <span>MRP (Optional)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={quickItemForm.mrp || ""}
+                    placeholder="0"
+                    onChange={(event) =>
+                      setQuickItemForm((current) => ({
+                        ...current,
+                        mrp: Math.max(0, Number(event.target.value) || 0),
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  <span>Purchase Price (Optional)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={quickItemForm.purchasePrice || ""}
+                    placeholder="For profit reports"
+                    onChange={(event) =>
+                      setQuickItemForm((current) => ({
+                        ...current,
+                        purchasePrice: Math.max(
+                          0,
+                          Number(event.target.value) || 0,
+                        ),
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  <span>GST % (Optional)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={quickItemForm.taxPercent || ""}
+                    placeholder="0"
+                    onChange={(event) =>
+                      setQuickItemForm((current) => ({
+                        ...current,
+                        taxPercent: Math.max(
+                          0,
+                          Number(event.target.value) || 0,
+                        ),
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+
+              <label className="ncsPosQuickSaveToggle">
+                <input
+                  type="checkbox"
+                  checked={quickItemForm.saveAsProduct}
+                  onChange={(event) =>
+                    setQuickItemForm((current) => ({
+                      ...current,
+                      saveAsProduct: event.target.checked,
+                    }))
+                  }
+                />
+                <span>
+                  <strong>Keep this item in Product Catalogue</strong>
+                  <small>
+                    Turn this on when the same item may be sold again.
+                  </small>
+                </span>
+              </label>
+
+              {quickItemForm.saveAsProduct && (
+                <label className="ncsPosQuickRemaining">
+                  <span>Remaining Stock After This Bill</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={quickItemForm.remainingStock}
+                    onChange={(event) =>
+                      setQuickItemForm((current) => ({
+                        ...current,
+                        remainingStock: Math.max(
+                          0,
+                          Math.floor(Number(event.target.value) || 0),
+                        ),
+                      }))
+                    }
+                  />
+                  <small>
+                    Example: customer buys 1 and 5 are still in the shop, enter 5.
+                  </small>
+                </label>
+              )}
+
+              <div className="ncsPosQuickInfo">
+                <b>Bill Only:</b> sale total, payment, rewards, customer credit
+                and reports will be recorded. Stock tracking starts only when
+                “Keep this item” is enabled.
+              </div>
+
+              <footer>
+                <button
+                  type="button"
+                  className="ncsPosQuickCancel"
+                  onClick={() => setShowQuickItem(false)}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="ncsPosQuickAdd"
+                >
+                  <span>＋</span>
+                  Add to Bill
+                </button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      )}
+
       {showHeldBills && (
         <div className="ncsPosModalOverlay">
           <section className="ncsPosHeldModal">
@@ -2677,6 +4572,24 @@ if (!variantsError) {
                   {formatCurrency(completedSale.roundOff)}
                 </strong>
               </p>
+              <p>
+                <span>Rewards Used</span>
+                <strong>
+                  {completedSale.rewardPointsUsed}
+                </strong>
+              </p>
+              <p>
+                <span>Points Earned</span>
+                <strong>
+                  {completedSale.rewardPointsEarned}
+                </strong>
+              </p>
+              <p>
+                <span>Reward Balance</span>
+                <strong>
+                  {completedSale.rewardClosingBalance}
+                </strong>
+              </p>
             </div>
 
             <div className="ncsPosSuccessActions">
@@ -2684,21 +4597,51 @@ if (!variantsError) {
                 type="button"
                 className="ncsPosSuccessWhatsApp"
                 onClick={() =>
-                  shareCompletedSaleOnWhatsApp(completedSale)
+                  shareCustomerInvoicePdf(completedSale)
                 }
               >
                 <span>◉</span>
-                Send WhatsApp Invoice
+                Share PDF Invoice
+              </button>
+
+              <button
+                type="button"
+                className="ncsPosSuccessPdf"
+                onClick={() =>
+                  downloadCustomerInvoicePdf(completedSale)
+                }
+              >
+                Download PDF Invoice
+              </button>
+
+              <button
+                type="button"
+                className="ncsPosSuccessTextWhatsApp"
+                onClick={() =>
+                  shareCompletedSaleOnWhatsApp(completedSale)
+                }
+              >
+                WhatsApp Text Invoice
               </button>
 
               <button
                 type="button"
                 className="ncsPosSuccessPrint"
                 onClick={() =>
-                  printCompletedSaleInvoice(completedSale)
+                  printCustomerInvoiceT82(completedSale)
                 }
               >
-                Print Invoice
+                EPSON T82 RECEIPT
+              </button>
+
+              <button
+                type="button"
+                className="ncsPosSuccessPrintA4"
+                onClick={() =>
+                  printCustomerInvoiceA4(completedSale)
+                }
+              >
+                A4 PRINTER INVOICE
               </button>
 
               <button
@@ -2711,8 +4654,9 @@ if (!variantsError) {
             </div>
 
             <small className="ncsPosSuccessHint">
-              WhatsApp opens with the invoice ready. Tap Send to
-              deliver it from your logged-in WhatsApp number.
+              Mobileలో “Share PDF Invoice” నొక్కితే PDFను WhatsAppకు
+              directగా share చేయవచ్చు. Desktopలో PDF download అయ్యి,
+              WhatsApp chat open అవుతుంది; downloaded PDFను attach చేయండి.
             </small>
           </section>
         </div>
@@ -2794,6 +4738,8 @@ if (!variantsError) {
 
         .ncsPosHeaderActions {
           display: flex;
+          flex-wrap: wrap;
+          justify-content: flex-end;
           gap: 10px;
           flex-shrink: 0;
         }
@@ -2855,6 +4801,156 @@ if (!variantsError) {
           display: inline-block;
           animation: ncsPosSpin 0.8s linear
             infinite;
+        }
+
+        .ncsPosQuickStats {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+          margin: -8px 0 18px;
+        }
+
+        .ncsPosQuickCard {
+          position: relative;
+          min-width: 0;
+          min-height: 108px;
+          display: grid;
+          grid-template-columns: 52px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 13px;
+          overflow: hidden;
+          padding: 17px 18px;
+          border: 1px solid rgba(212, 175, 55, 0.34);
+          border-radius: 18px;
+          color: #ffffff;
+          box-shadow: 0 14px 34px rgba(3, 21, 63, 0.16);
+          isolation: isolate;
+          animation: ncsPosQuickCardEnter 0.6s ease both;
+        }
+
+        .ncsPosCreditCard {
+          animation-delay: 0.09s;
+        }
+
+        .ncsPosSalesCard {
+          background:
+            radial-gradient(
+              circle at 92% 0%,
+              rgba(212, 175, 55, 0.31),
+              transparent 34%
+            ),
+            linear-gradient(135deg, #03153f, #0a2e73 62%, #174da4);
+        }
+
+        .ncsPosCreditCard {
+          background:
+            radial-gradient(
+              circle at 88% 12%,
+              rgba(255, 255, 255, 0.15),
+              transparent 30%
+            ),
+            linear-gradient(135deg, #0a2e73, #133f8d 60%, #8b6812);
+        }
+
+        .ncsPosQuickGlow {
+          position: absolute;
+          z-index: -1;
+          width: 150px;
+          height: 150px;
+          top: -95px;
+          right: -25px;
+          border-radius: 50%;
+          background: rgba(212, 175, 55, 0.22);
+          filter: blur(2px);
+          animation: ncsPosQuickGlow 3.4s ease-in-out infinite;
+        }
+
+        .ncsPosQuickIcon {
+          width: 48px;
+          height: 48px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(212, 175, 55, 0.68);
+          border-radius: 15px;
+          background: rgba(255, 255, 255, 0.1);
+          color: ${GOLD};
+          font-size: 22px;
+          font-weight: 950;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        }
+
+        .ncsPosQuickContent {
+          min-width: 0;
+        }
+
+        .ncsPosQuickContent > span {
+          display: block;
+          color: ${GOLD};
+          font-size: 9px;
+          font-weight: 950;
+          letter-spacing: 1px;
+        }
+
+        .ncsPosQuickContent > strong {
+          display: block;
+          margin-top: 5px;
+          overflow: hidden;
+          color: #ffffff;
+          font-size: clamp(20px, 2.2vw, 29px);
+          font-weight: 950;
+          letter-spacing: -0.7px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .ncsPosQuickContent > p {
+          margin: 4px 0 0;
+          color: rgba(255, 255, 255, 0.67);
+          font-size: 9px;
+          font-weight: 700;
+        }
+
+        .ncsPosQuickMini {
+          min-width: 130px;
+          display: grid;
+          gap: 7px;
+        }
+
+        .ncsPosQuickMini span {
+          padding: 7px 9px;
+          border: 1px solid rgba(255, 255, 255, 0.11);
+          border-radius: 9px;
+          background: rgba(255, 255, 255, 0.08);
+          color: rgba(255, 255, 255, 0.62);
+          font-size: 7px;
+          font-weight: 800;
+        }
+
+        .ncsPosQuickMini b {
+          display: block;
+          margin-top: 2px;
+          color: #ffffff;
+          font-size: 9px;
+        }
+
+        .ncsPosQuickCreditBadge {
+          min-width: 86px;
+          padding: 9px;
+          border: 1px solid rgba(212, 175, 55, 0.55);
+          border-radius: 12px;
+          background: rgba(255, 255, 255, 0.09);
+          color: rgba(255, 255, 255, 0.7);
+          font-size: 8px;
+          font-weight: 850;
+          text-align: center;
+        }
+
+        .ncsPosQuickCreditBadge b {
+          display: block;
+          margin-top: 4px;
+          color: ${GOLD};
+          font-size: 18px;
+          font-weight: 950;
         }
 
         .ncsPosWorkspace {
@@ -3033,31 +5129,42 @@ if (!variantsError) {
           display: grid;
           grid-template-columns: repeat(
             auto-fill,
-            minmax(190px, 1fr)
+            minmax(142px, 1fr)
           );
-          gap: 14px;
+          gap: 10px;
         }
 
         .ncsPosProductCard {
+          position: relative;
           min-width: 0;
           overflow: hidden;
-          border: 1px solid
-            rgba(10, 46, 115, 0.1);
-          border-radius: 18px;
-          background: #ffffff;
-          box-shadow: 0 10px 28px
-            rgba(10, 46, 115, 0.07);
+          border: 1px solid rgba(10, 46, 115, 0.11);
+          border-radius: 15px;
+          background:
+            linear-gradient(180deg, #ffffff, #fffdf8);
+          box-shadow:
+            0 8px 20px rgba(10, 46, 115, 0.07),
+            inset 0 1px 0 rgba(255, 255, 255, 0.9);
           transition:
-            transform 0.22s ease,
-            box-shadow 0.22s ease,
-            border-color 0.22s ease;
+            transform 0.2s ease,
+            box-shadow 0.2s ease,
+            border-color 0.2s ease;
+        }
+
+        .ncsPosProductCard::after {
+          content: "";
+          position: absolute;
+          inset: auto 10px 0;
+          height: 2px;
+          border-radius: 3px 3px 0 0;
+          background: linear-gradient(90deg, transparent, ${GOLD}, transparent);
+          opacity: 0.7;
         }
 
         .ncsPosProductCard:hover {
-          transform: translateY(-4px);
-          border-color: rgba(212, 175, 55, 0.7);
-          box-shadow: 0 18px 38px
-            rgba(10, 46, 115, 0.13);
+          transform: translateY(-3px);
+          border-color: rgba(212, 175, 55, 0.78);
+          box-shadow: 0 14px 28px rgba(10, 46, 115, 0.14);
         }
 
         .ncsPosProductCardButton {
@@ -3076,14 +5183,10 @@ if (!variantsError) {
 
         .ncsPosProductImage {
           position: relative;
-          height: 165px;
+          height: 108px;
           overflow: hidden;
           background:
-            linear-gradient(
-              145deg,
-              #f4f0e6,
-              #ffffff
-            );
+            linear-gradient(145deg, #f4f0e6, #ffffff);
         }
 
         .ncsPosProductImage img {
@@ -3109,29 +5212,25 @@ if (!variantsError) {
           background:
             radial-gradient(
               circle at 30% 20%,
-              rgba(212, 175, 55, 0.25),
+              rgba(212, 175, 55, 0.28),
               transparent 34%
             ),
-            linear-gradient(
-              135deg,
-              ${DEEP_BLUE},
-              ${ROYAL_BLUE}
-            );
+            linear-gradient(135deg, ${DEEP_BLUE}, ${ROYAL_BLUE});
           color: ${GOLD};
-          font-size: 25px;
+          font-size: 20px;
           font-weight: 950;
-          letter-spacing: 2px;
+          letter-spacing: 1.8px;
         }
 
         .ncsPosStockBadge {
           position: absolute;
-          top: 10px;
-          right: 10px;
-          padding: 6px 9px;
+          top: 7px;
+          right: 7px;
+          padding: 4px 7px;
           border-radius: 30px;
           background: rgba(13, 119, 67, 0.92);
           color: #ffffff;
-          font-size: 9px;
+          font-size: 7px;
           font-weight: 900;
           backdrop-filter: blur(8px);
         }
@@ -3150,27 +5249,27 @@ if (!variantsError) {
         }
 
         .ncsPosProductInfo {
-          padding: 14px;
+          padding: 10px 10px 11px;
         }
 
         .ncsPosProductCategory {
           display: block;
           color: ${GOLD};
-          font-size: 9px;
+          font-size: 7px;
           font-weight: 950;
-          letter-spacing: 0.7px;
+          letter-spacing: 0.65px;
           text-transform: uppercase;
         }
 
         .ncsPosProductInfo h3 {
-          min-height: 42px;
+          min-height: 32px;
           display: -webkit-box;
-          margin: 6px 0 8px;
+          margin: 4px 0 6px;
           overflow: hidden;
           color: ${DEEP_BLUE};
-          font-size: 13px;
-          font-weight: 850;
-          line-height: 1.45;
+          font-size: 10px;
+          font-weight: 900;
+          line-height: 1.42;
           -webkit-box-orient: vertical;
           -webkit-line-clamp: 2;
         }
@@ -3178,17 +5277,17 @@ if (!variantsError) {
         .ncsPosVariantChips {
           display: flex;
           flex-wrap: wrap;
-          gap: 5px;
-          margin-bottom: 9px;
+          gap: 4px;
+          margin-bottom: 6px;
         }
 
         .ncsPosVariantChips span {
-          padding: 4px 7px;
-          border-radius: 6px;
+          padding: 3px 5px;
+          border-radius: 5px;
           background: #eef2f9;
           color: #586375;
-          font-size: 8px;
-          font-weight: 800;
+          font-size: 6.5px;
+          font-weight: 850;
         }
 
         .ncsPosProductBottom {
@@ -3205,7 +5304,7 @@ if (!variantsError) {
         .ncsPosProductBottom strong {
           display: block;
           color: ${ROYAL_BLUE};
-          font-size: 15px;
+          font-size: 12px;
           font-weight: 950;
         }
 
@@ -3213,37 +5312,32 @@ if (!variantsError) {
           display: block;
           margin-top: 1px;
           color: #9b9fac;
-          font-size: 9px;
+          font-size: 7px;
           font-weight: 650;
         }
 
         .ncsPosAddIcon {
-          width: 34px;
-          height: 34px;
+          width: 28px;
+          height: 28px;
           display: flex;
           align-items: center;
           justify-content: center;
           flex-shrink: 0;
-          border-radius: 11px;
-          background: linear-gradient(
-            135deg,
-            ${GOLD},
-            #f0d36d
-          );
+          border-radius: 9px;
+          background: linear-gradient(135deg, ${GOLD}, #f0d36d);
           color: ${ROYAL_BLUE};
-          font-size: 20px;
+          font-size: 16px;
           font-weight: 950;
-          box-shadow: 0 7px 18px
-            rgba(212, 175, 55, 0.24);
+          box-shadow: 0 6px 14px rgba(212, 175, 55, 0.24);
         }
 
         .ncsPosProductInfo small {
           display: block;
-          margin-top: 9px;
+          margin-top: 6px;
           overflow: hidden;
           color: #9a9faa;
-          font-size: 8px;
-          font-weight: 650;
+          font-size: 6.5px;
+          font-weight: 700;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
@@ -3393,6 +5487,80 @@ if (!variantsError) {
           border-color: ${GOLD};
           box-shadow: 0 0 0 3px
             rgba(212, 175, 55, 0.12);
+        }
+
+        .ncsPosRewardLookup {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-top: 10px;
+          padding: 10px;
+          border: 1px solid rgba(212, 175, 55, 0.45);
+          border-radius: 12px;
+          background: #fffaf0;
+        }
+
+        .ncsPosRewardLookup > span {
+          color: #667085;
+          font-size: 9px;
+          font-weight: 750;
+          line-height: 1.45;
+        }
+
+        .ncsPosRewardLookup div span,
+        .ncsPosRewardLookup div strong,
+        .ncsPosRewardLookup div small {
+          display: block;
+        }
+
+        .ncsPosRewardLookup div span {
+          color: ${GOLD};
+          font-size: 8px;
+          font-weight: 900;
+          text-transform: uppercase;
+        }
+
+        .ncsPosRewardLookup div strong {
+          margin-top: 3px;
+          color: ${ROYAL_BLUE};
+          font-size: 11px;
+        }
+
+        .ncsPosRewardLookup div small {
+          margin-top: 3px;
+          color: #667085;
+          font-size: 8px;
+        }
+
+        .ncsPosRewardLookup label {
+          min-width: 92px;
+        }
+
+        .ncsPosRewardLookup label span {
+          display: block;
+          margin-bottom: 4px;
+          color: #667085;
+          font-size: 8px;
+          font-weight: 850;
+        }
+
+        .ncsPosRewardLookup input {
+          width: 100%;
+          min-height: 38px;
+          padding: 0 9px;
+          border: 1px solid #d6b64d;
+          border-radius: 9px;
+          outline: none;
+          background: #fff;
+          color: ${ROYAL_BLUE};
+          font-family: inherit;
+          font-size: 11px;
+          font-weight: 900;
+        }
+
+        .ncsPosRewardDiscountLine {
+          color: #7A5A00;
         }
 
         .ncsPosCartItems {
@@ -4390,6 +6558,29 @@ if (!variantsError) {
           display: none;
         }
 
+        @keyframes ncsPosQuickCardEnter {
+          from {
+            opacity: 0;
+            transform: translateY(10px) scale(0.985);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes ncsPosQuickGlow {
+          0%,
+          100% {
+            transform: scale(1);
+            opacity: 0.7;
+          }
+          50% {
+            transform: scale(1.12);
+            opacity: 1;
+          }
+        }
+
         @keyframes ncsPosSpin {
           to {
             transform: rotate(360deg);
@@ -4651,12 +6842,32 @@ if (!variantsError) {
           font-size: 17px;
         }
 
-        .ncsPosSuccessPrint {
+        .ncsPosSuccessPdf,
+        .ncsPosSuccessTextWhatsApp,
+        .ncsPosSuccessPrint,
+        .ncsPosSuccessPrintA4 {
           background: ${ROYAL_BLUE};
           color: #ffffff;
         }
 
+        .ncsPosSuccessPdf {
+          background: ${GOLD};
+          color: ${DEEP_BLUE};
+        }
+
+        .ncsPosSuccessTextWhatsApp {
+          background: #ffffff;
+          color: ${ROYAL_BLUE};
+          border: 1px solid rgba(10, 46, 115, 0.22);
+        }
+
+        .ncsPosSuccessPrintA4 {
+          background: ${GOLD};
+          color: ${DEEP_BLUE};
+        }
+
         .ncsPosSuccessNewBill {
+          grid-column: 1 / -1;
           border: 1px solid rgba(10, 46, 115, 0.15) !important;
           background: #eef2f8;
           color: ${ROYAL_BLUE};
@@ -4804,6 +7015,47 @@ if (!variantsError) {
           }
         }
 
+        @media (max-width: 980px) {
+          .ncsPosQuickStats {
+            grid-template-columns: 1fr;
+          }
+
+          .ncsPosQuickCard {
+            min-height: 100px;
+          }
+        }
+
+        @media (max-width: 620px) {
+          .ncsPosQuickCard {
+            grid-template-columns: 44px minmax(0, 1fr);
+            padding: 14px;
+          }
+
+          .ncsPosQuickIcon {
+            width: 42px;
+            height: 42px;
+          }
+
+          .ncsPosQuickMini,
+          .ncsPosQuickCreditBadge {
+            grid-column: 1 / -1;
+            min-width: 0;
+          }
+
+          .ncsPosQuickMini {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .ncsPosProductGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+          }
+
+          .ncsPosProductImage {
+            height: 102px;
+          }
+        }
+
         @media (max-width: 900px) {
           .ncsPosMobileCartButton {
             left: 18px;
@@ -4932,6 +7184,382 @@ if (!variantsError) {
           .ncsPosCreditFields,
           .ncsPosCreditSummary {
             grid-template-columns: 1fr;
+          }
+        }
+
+        .ncsPosSearchQuickItemButton {
+          min-width: 132px;
+          flex-shrink: 0;
+          margin-left: 2px;
+        }
+
+        .ncsPosQuickItemButton {
+          position: relative;
+          min-height: 46px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          overflow: hidden;
+          padding: 0 18px;
+          border: 1px solid #f0d46f;
+          border-radius: 13px;
+          background: linear-gradient(135deg, #d4af37, #b68d19);
+          color: #03153f;
+          font-weight: 950;
+          cursor: pointer;
+          box-shadow: 0 11px 25px rgba(212, 175, 55, 0.27);
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .ncsPosQuickItemButton::after {
+          content: "";
+          position: absolute;
+          top: -150%;
+          left: -38%;
+          width: 32%;
+          height: 420%;
+          transform: rotate(22deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.58),
+            transparent
+          );
+          animation: ncsQuickButtonShine 4s ease-in-out infinite;
+        }
+
+        .ncsPosQuickItemButton:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 16px 32px rgba(212, 175, 55, 0.36);
+        }
+
+        .ncsPosQuickItemBadge {
+          display: inline-flex;
+          align-items: center;
+          margin-left: 7px;
+          padding: 3px 7px;
+          border: 1px solid rgba(212, 175, 55, 0.65);
+          border-radius: 999px;
+          background: #fff8df;
+          color: #8a6500;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 0.5px;
+          vertical-align: middle;
+        }
+
+        .ncsPosQuickItemModal {
+          width: min(720px, calc(100vw - 28px));
+          max-height: calc(100vh - 30px);
+          overflow-y: auto;
+          border: 1px solid rgba(212, 175, 55, 0.48);
+          border-radius: 24px;
+          background: #ffffff;
+          box-shadow: 0 32px 90px rgba(3, 21, 63, 0.34);
+          animation: ncsQuickModalIn 0.24s ease both;
+        }
+
+        .ncsPosQuickItemModal > header {
+          position: relative;
+          display: flex;
+          justify-content: space-between;
+          gap: 18px;
+          overflow: hidden;
+          padding: 24px;
+          border-bottom: 1px solid rgba(212, 175, 55, 0.3);
+          background:
+            radial-gradient(
+              circle at 92% 0%,
+              rgba(212, 175, 55, 0.28),
+              transparent 34%
+            ),
+            linear-gradient(135deg, #03153f, #0a2e73);
+          color: #ffffff;
+        }
+
+        .ncsPosQuickItemModal > header::after {
+          content: "QUICK";
+          position: absolute;
+          right: 62px;
+          bottom: -16px;
+          color: rgba(212, 175, 55, 0.09);
+          font-size: 70px;
+          font-weight: 950;
+          letter-spacing: 4px;
+          pointer-events: none;
+        }
+
+        .ncsPosQuickItemModal > header span {
+          color: #d4af37;
+          font-size: 10px;
+          font-weight: 950;
+          letter-spacing: 1.3px;
+        }
+
+        .ncsPosQuickItemModal > header h2 {
+          position: relative;
+          z-index: 1;
+          margin: 5px 0 0;
+          font-size: 27px;
+        }
+
+        .ncsPosQuickItemModal > header p {
+          position: relative;
+          z-index: 1;
+          max-width: 490px;
+          margin: 7px 0 0;
+          color: rgba(255, 255, 255, 0.72);
+          font-size: 12px;
+          line-height: 1.55;
+        }
+
+        .ncsPosQuickItemModal > header > button {
+          position: relative;
+          z-index: 2;
+          width: 38px;
+          height: 38px;
+          flex-shrink: 0;
+          border: 1px solid rgba(255, 255, 255, 0.25);
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.09);
+          color: #ffffff;
+          font-size: 24px;
+          cursor: pointer;
+        }
+
+        .ncsPosQuickItemModal form {
+          padding: 22px;
+        }
+
+        .ncsPosQuickItemGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 15px;
+        }
+
+        .ncsPosQuickItemGrid label,
+        .ncsPosQuickRemaining {
+          display: grid;
+          gap: 7px;
+        }
+
+        .ncsPosQuickItemGrid label > span,
+        .ncsPosQuickRemaining > span {
+          color: #0a2e73;
+          font-size: 12px;
+          font-weight: 850;
+        }
+
+        .ncsPosQuickItemGrid input,
+        .ncsPosQuickItemGrid select,
+        .ncsPosQuickRemaining input {
+          width: 100%;
+          min-height: 45px;
+          padding: 0 13px;
+          border: 1px solid #d6dbe5;
+          border-radius: 11px;
+          outline: none;
+          background: #ffffff;
+          color: #172033;
+          transition:
+            border-color 0.2s ease,
+            box-shadow 0.2s ease,
+            transform 0.2s ease;
+        }
+
+        .ncsPosQuickItemGrid input:focus,
+        .ncsPosQuickItemGrid select:focus,
+        .ncsPosQuickRemaining input:focus {
+          border-color: #d4af37;
+          box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.14);
+          transform: translateY(-1px);
+        }
+
+        .ncsPosQuickWide {
+          grid-column: 1 / -1;
+        }
+
+        .ncsPosQuickSaveToggle {
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+          margin-top: 18px;
+          padding: 15px;
+          border: 1px solid rgba(212, 175, 55, 0.35);
+          border-radius: 13px;
+          background: #fffdf6;
+          cursor: pointer;
+        }
+
+        .ncsPosQuickSaveToggle input {
+          width: 19px;
+          height: 19px;
+          margin-top: 2px;
+          accent-color: #0a2e73;
+        }
+
+        .ncsPosQuickSaveToggle span {
+          display: grid;
+          gap: 4px;
+        }
+
+        .ncsPosQuickSaveToggle strong {
+          color: #0a2e73;
+          font-size: 13px;
+        }
+
+        .ncsPosQuickSaveToggle small,
+        .ncsPosQuickRemaining small {
+          color: #737b89;
+          font-size: 10px;
+          line-height: 1.45;
+        }
+
+        .ncsPosQuickRemaining {
+          margin-top: 14px;
+          padding: 15px;
+          border: 1px solid #dce3ef;
+          border-radius: 13px;
+          background: #f8fafc;
+        }
+
+        .ncsPosQuickInfo {
+          margin-top: 16px;
+          padding: 13px 14px;
+          border-left: 4px solid #d4af37;
+          border-radius: 10px;
+          background: #f4f7ff;
+          color: #4d586b;
+          font-size: 11px;
+          line-height: 1.55;
+        }
+
+        .ncsPosQuickInfo b {
+          color: #0a2e73;
+        }
+
+        .ncsPosQuickItemModal footer {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          margin-top: 20px;
+        }
+
+        .ncsPosQuickCancel,
+        .ncsPosQuickAdd {
+          min-height: 46px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 0 20px;
+          border-radius: 11px;
+          font-weight: 850;
+          cursor: pointer;
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .ncsPosQuickCancel {
+          border: 1px solid #d6dbe5;
+          background: #ffffff;
+          color: #586174;
+        }
+
+        .ncsPosQuickAdd {
+          border: 1px solid rgba(212, 175, 55, 0.48);
+          background: linear-gradient(135deg, #0a2e73, #03153f);
+          color: #ffffff;
+          box-shadow: 0 10px 22px rgba(3, 21, 63, 0.2);
+        }
+
+        .ncsPosQuickCancel:hover,
+        .ncsPosQuickAdd:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 24px rgba(3, 21, 63, 0.16);
+        }
+
+        @keyframes ncsQuickButtonShine {
+          0%,
+          66% {
+            left: -38%;
+            opacity: 0;
+          }
+          75% {
+            opacity: 0.9;
+          }
+          100% {
+            left: 125%;
+            opacity: 0;
+          }
+        }
+
+        @keyframes ncsQuickModalIn {
+          from {
+            opacity: 0;
+            transform: translateY(18px) scale(0.985);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @media (max-width: 820px) {
+          .ncsPosSearchPanel {
+            flex-wrap: wrap;
+            padding: 8px;
+          }
+
+          .ncsPosSearchPanel input {
+            min-width: 0;
+            flex: 1 1 220px;
+          }
+
+          .ncsPosSearchQuickItemButton {
+            min-width: 118px;
+          }
+        }
+
+        @media (max-width: 560px) {
+          .ncsPosSearchQuickItemButton {
+            width: 100%;
+            min-width: 0;
+            margin: 2px 0 0;
+          }
+        }
+
+        @media (max-width: 700px) {
+          .ncsPosQuickItemGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .ncsPosQuickWide {
+            grid-column: auto;
+          }
+
+          .ncsPosQuickItemModal form {
+            padding: 17px;
+          }
+        }
+
+        @media (max-width: 520px) {
+          .ncsPosQuickItemModal > header {
+            padding: 19px;
+          }
+
+          .ncsPosQuickItemModal > header::after {
+            font-size: 48px;
+          }
+
+          .ncsPosQuickItemModal footer {
+            display: grid;
+            grid-template-columns: 1fr;
+          }
+
+          .ncsPosQuickCancel,
+          .ncsPosQuickAdd {
+            width: 100%;
           }
         }
 

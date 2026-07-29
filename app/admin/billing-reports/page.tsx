@@ -53,6 +53,7 @@ type PurchaseItemRow = {
 type ProductRow = {
   id: number;
   name?: string | null;
+  category?: string | null;
   stock?: number | string | null;
   price?: number | string | null;
   mrp?: number | string | null;
@@ -100,6 +101,35 @@ type CreditAccountRow = {
   id: number;
   current_balance?: number | string | null;
   is_active?: boolean | null;
+};
+
+type ExpenseRow = {
+  id: string;
+  expense_date?: string | null;
+  category_name?: string | null;
+  amount?: number | string | null;
+  payment_method?: string | null;
+  is_deleted?: boolean | null;
+  created_at?: string | null;
+};
+
+type SupplierRow = {
+  id: number;
+  supplier_name?: string | null;
+  current_balance?: number | string | null;
+  is_active?: boolean | null;
+};
+
+type CashBankTransactionRow = {
+  id: string;
+  transaction_date?: string | null;
+  account_name?: string | null;
+  account_type?: string | null;
+  entry_type?: string | null;
+  direction?: string | null;
+  amount?: number | string | null;
+  is_deleted?: boolean | null;
+  created_at?: string | null;
 };
 
 const BLUE = "#0A2E73";
@@ -178,6 +208,11 @@ export default function BillingReportsPage() {
     ExchangeSettlementRow[]
   >([]);
   const [creditAccounts, setCreditAccounts] = useState<CreditAccountRow[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierRow[]>([]);
+  const [cashBankTransactions, setCashBankTransactions] = useState<
+    CashBankTransactionRow[]
+  >([]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -197,7 +232,7 @@ export default function BillingReportsPage() {
         supabase.from("pos_sale_items").select("*").order("created_at", { ascending: false }),
         supabase.from("purchases").select("*").order("created_at", { ascending: false }),
         supabase.from("purchase_items").select("*").order("created_at", { ascending: false }),
-        supabase.from("products").select("id,name,stock,price,mrp,is_active,status"),
+        supabase.from("products").select("*"),
         supabase.from("product_variants").select(
           "id,product_id,stock,purchase_price,selling_price,mrp,is_active",
         ),
@@ -208,6 +243,21 @@ export default function BillingReportsPage() {
           .select("*")
           .order("created_at", { ascending: false }),
         supabase.from("customer_credit_accounts").select("*"),
+        supabase
+          .from("expenses")
+          .select("*")
+          .eq("is_deleted", false)
+          .order("expense_date", { ascending: false }),
+        supabase
+          .from("suppliers")
+          .select("*")
+          .eq("is_active", true)
+          .order("current_balance", { ascending: false }),
+        supabase
+          .from("cash_bank_transactions")
+          .select("*")
+          .eq("is_deleted", false)
+          .order("transaction_date", { ascending: false }),
       ]);
 
       const [
@@ -221,6 +271,9 @@ export default function BillingReportsPage() {
         refundsResult,
         exchangesResult,
         creditResult,
+        expensesResult,
+        suppliersResult,
+        cashBankResult,
       ] = results;
 
       const mandatoryErrors = [
@@ -251,6 +304,15 @@ export default function BillingReportsPage() {
         creditResult.error
           ? `Customer dues: ${creditResult.error.message}`
           : "",
+        expensesResult.error
+          ? `Expenses: ${expensesResult.error.message}`
+          : "",
+        suppliersResult.error
+          ? `Suppliers: ${suppliersResult.error.message}`
+          : "",
+        cashBankResult.error
+          ? `Cash & Bank: ${cashBankResult.error.message}`
+          : "",
       ].filter(Boolean);
 
       setWarnings(optionalWarnings);
@@ -269,6 +331,15 @@ export default function BillingReportsPage() {
       );
       setCreditAccounts(
         (creditResult.data || []) as unknown as CreditAccountRow[],
+      );
+      setExpenses(
+        (expensesResult.data || []) as unknown as ExpenseRow[],
+      );
+      setSuppliers(
+        (suppliersResult.data || []) as unknown as SupplierRow[],
+      );
+      setCashBankTransactions(
+        (cashBankResult.data || []) as unknown as CashBankTransactionRow[],
       );
     } catch (error) {
       console.error("Billing reports load error:", error);
@@ -370,6 +441,34 @@ export default function BillingReportsPage() {
     [dateRange, exchangeSettlements],
   );
 
+  const filteredExpenses = useMemo(
+    () =>
+      expenses.filter((row) =>
+        isBetween(
+          row.expense_date
+            ? `${row.expense_date}T12:00:00`
+            : row.created_at,
+          dateRange.from,
+          dateRange.to,
+        ),
+      ),
+    [dateRange, expenses],
+  );
+
+  const filteredCashBankTransactions = useMemo(
+    () =>
+      cashBankTransactions.filter((row) =>
+        isBetween(
+          row.transaction_date
+            ? `${row.transaction_date}T12:00:00`
+            : row.created_at,
+          dateRange.from,
+          dateRange.to,
+        ),
+      ),
+    [cashBankTransactions, dateRange],
+  );
+
   const saleIdSet = useMemo(
     () => new Set(filteredSales.map((sale) => sale.id)),
     [filteredSales],
@@ -409,6 +508,19 @@ export default function BillingReportsPage() {
 
     return map;
   }, [purchaseItems, variants]);
+
+  const productCategoryMap = useMemo(() => {
+    const map = new Map<number, string>();
+
+    products.forEach((product) => {
+      map.set(
+        product.id,
+        product.category?.trim() || "Uncategorized",
+      );
+    });
+
+    return map;
+  }, [products]);
 
   const report = useMemo(() => {
     const salesValue = filteredSales.reduce(
@@ -515,6 +627,64 @@ export default function BillingReportsPage() {
         numberValue(product.stock) <= 5,
     ).length;
 
+    const operatingExpenses = filteredExpenses.reduce(
+      (sum, expense) => sum + numberValue(expense.amount),
+      0,
+    );
+
+    const estimatedOperatingProfit =
+      estimatedProfit - operatingExpenses;
+
+    const currentSupplierDue = suppliers
+      .filter((supplier) => supplier.is_active !== false)
+      .reduce(
+        (sum, supplier) =>
+          sum + Math.max(0, numberValue(supplier.current_balance)),
+        0,
+      );
+
+    const cashFlow = filteredCashBankTransactions.reduce(
+      (summary, transaction) => {
+        const amount = numberValue(transaction.amount);
+
+        if (normalize(transaction.direction) === "in") {
+          summary.moneyIn += amount;
+        } else if (normalize(transaction.direction) === "out") {
+          summary.moneyOut += amount;
+        }
+
+        return summary;
+      },
+      { moneyIn: 0, moneyOut: 0 },
+    );
+
+    const expenseCategories = filteredExpenses.reduce<
+      Record<string, number>
+    >((totals, expense) => {
+      const category =
+        expense.category_name?.trim() || "Other";
+      totals[category] =
+        (totals[category] || 0) + numberValue(expense.amount);
+      return totals;
+    }, {});
+
+    const categorySales = filteredSaleItems.reduce<
+      Record<string, number>
+    >((totals, item) => {
+      const category =
+        item.product_id != null
+          ? productCategoryMap.get(item.product_id) || "Uncategorized"
+          : "Uncategorized";
+
+      totals[category] =
+        (totals[category] || 0) +
+        (numberValue(item.line_total) ||
+          numberValue(item.unit_price) *
+            numberValue(item.quantity));
+
+      return totals;
+    }, {});
+
     return {
       bills: filteredSales.length,
       salesValue,
@@ -532,18 +702,30 @@ export default function BillingReportsPage() {
       paymentTotals,
       stockValue,
       lowStock,
+      operatingExpenses,
+      estimatedOperatingProfit,
+      currentSupplierDue,
+      cashMoneyIn: cashFlow.moneyIn,
+      cashMoneyOut: cashFlow.moneyOut,
+      cashNetMovement: cashFlow.moneyIn - cashFlow.moneyOut,
+      expenseCategories,
+      categorySales,
     };
   }, [
     creditAccounts,
+    filteredCashBankTransactions,
     filteredExchanges,
+    filteredExpenses,
     filteredPurchases,
     filteredRefunds,
     filteredReturns,
     filteredSaleItems,
     filteredSales,
     latestCostMap,
+    productCategoryMap,
     products,
     purchases,
+    suppliers,
     variants,
   ]);
 
@@ -579,6 +761,24 @@ export default function BillingReportsPage() {
       .sort((a, b) => b.quantity - a.quantity)
       .slice(0, 8);
   }, [filteredSaleItems]);
+
+  const expenseCategoryRows = useMemo(
+    () =>
+      Object.entries(report.expenseCategories)
+        .map(([name, value]) => ({ name, value }))
+        .sort((first, second) => second.value - first.value)
+        .slice(0, 8),
+    [report.expenseCategories],
+  );
+
+  const categorySalesRows = useMemo(
+    () =>
+      Object.entries(report.categorySales)
+        .map(([name, value]) => ({ name, value }))
+        .sort((first, second) => second.value - first.value)
+        .slice(0, 8),
+    [report.categorySales],
+  );
 
   const dailyTrend = useMemo(() => {
     const days: Array<{ date: Date; label: string; value: number }> = [];
@@ -625,7 +825,12 @@ export default function BillingReportsPage() {
       ["Exchange Value", report.exchangeValue],
       ["Estimated Cost", report.estimatedCost],
       ["Estimated Gross Profit", report.estimatedProfit],
+      ["Operating Expenses", report.operatingExpenses],
+      ["Estimated Operating Profit", report.estimatedOperatingProfit],
       ["Current Stock Value", report.stockValue],
+      ["Cash / Bank Money In", report.cashMoneyIn],
+      ["Cash / Bank Money Out", report.cashMoneyOut],
+      ["Cash / Bank Net Movement", report.cashNetMovement],
       [],
       ["Payment Method", "Collected"],
       ...Object.entries(report.paymentTotals).map(([method, value]) => [
@@ -637,6 +842,18 @@ export default function BillingReportsPage() {
       ...bestSellers.map((item) => [
         item.name,
         item.quantity,
+        item.value,
+      ]),
+      [],
+      ["Category Sales", "Value"],
+      ...categorySalesRows.map((item) => [
+        item.name,
+        item.value,
+      ]),
+      [],
+      ["Expense Category", "Value"],
+      ...expenseCategoryRows.map((item) => [
+        item.name,
         item.value,
       ]),
     ];
@@ -814,6 +1031,19 @@ export default function BillingReportsPage() {
           highlight
         />
         <ReportCard
+          label="Operating Expenses"
+          value={money(report.operatingExpenses)}
+          note="Daily expense book total"
+          icon="💸"
+        />
+        <ReportCard
+          label="Estimated Operating Profit"
+          value={money(report.estimatedOperatingProfit)}
+          note="Gross profit minus expenses"
+          icon="★"
+          highlight
+        />
+        <ReportCard
           label="Purchase Value"
           value={money(report.purchaseValue)}
           note={`Paid ${money(report.purchasePaid)}`}
@@ -827,8 +1057,8 @@ export default function BillingReportsPage() {
         />
         <ReportCard
           label="Supplier Due"
-          value={money(report.supplierDue)}
-          note="Current pending supplier balance"
+          value={money(report.currentSupplierDue)}
+          note="Current supplier ledger balance"
           icon="🏭"
         />
         <ReportCard
@@ -906,6 +1136,82 @@ export default function BillingReportsPage() {
           </div>
         </article>
 
+        <article className="reportPanel">
+          <header>
+            <div>
+              <span>OPERATING COSTS</span>
+              <h2>Expense Categories</h2>
+            </div>
+            <strong>{money(report.operatingExpenses)}</strong>
+          </header>
+
+          {expenseCategoryRows.length === 0 ? (
+            <div className="emptyReport">
+              No expenses found for this period.
+            </div>
+          ) : (
+            <div className="rankList">
+              {expenseCategoryRows.map((item, index) => (
+                <div key={item.name}>
+                  <span>{index + 1}</span>
+                  <strong>{item.name}</strong>
+                  <b>{money(item.value)}</b>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+
+        <article className="reportPanel">
+          <header>
+            <div>
+              <span>SALES MIX</span>
+              <h2>Category-wise Sales</h2>
+            </div>
+          </header>
+
+          {categorySalesRows.length === 0 ? (
+            <div className="emptyReport">
+              No category sales found for this period.
+            </div>
+          ) : (
+            <div className="rankList">
+              {categorySalesRows.map((item, index) => (
+                <div key={item.name}>
+                  <span>{index + 1}</span>
+                  <strong>{item.name}</strong>
+                  <b>{money(item.value)}</b>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+
+        <article className="reportPanel">
+          <header>
+            <div>
+              <span>CASH FLOW</span>
+              <h2>Manual Money Movement</h2>
+            </div>
+            <strong>{money(report.cashNetMovement)}</strong>
+          </header>
+
+          <div className="cashFlowStats">
+            <div>
+              <span>Money In</span>
+              <strong>{money(report.cashMoneyIn)}</strong>
+            </div>
+            <div>
+              <span>Money Out</span>
+              <strong>{money(report.cashMoneyOut)}</strong>
+            </div>
+            <div>
+              <span>Net Movement</span>
+              <strong>{money(report.cashNetMovement)}</strong>
+            </div>
+          </div>
+        </article>
+
         <article className="reportPanel trendPanel">
           <header>
             <div>
@@ -963,8 +1269,8 @@ export default function BillingReportsPage() {
 
       <p className="profitNote">
         Estimated gross profit uses the latest available purchase price for
-        each sold product or variant. It does not include rent, salaries,
-        electricity or other operating expenses.
+        each sold product or variant. Estimated operating profit subtracts
+        the recorded Daily Expenses for the selected period.
       </p>
 
       <style jsx global>{`
@@ -1347,6 +1653,82 @@ export default function BillingReportsPage() {
         .trendPanel,
         .bestPanel {
           grid-column: span 1;
+        }
+
+        .rankList {
+          display: grid;
+          gap: 7px;
+          padding: 12px;
+        }
+
+        .rankList > div {
+          min-height: 48px;
+          display: grid;
+          grid-template-columns: 30px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 9px;
+          padding: 9px;
+          border: 1px solid #e8ebf1;
+          border-radius: 10px;
+          background: #f9fafc;
+        }
+
+        .rankList > div > span {
+          width: 27px;
+          height: 27px;
+          display: grid;
+          place-items: center;
+          border-radius: 8px;
+          background: ${BLUE};
+          color: ${GOLD};
+          font-size: 8px;
+          font-weight: 950;
+        }
+
+        .rankList > div > strong {
+          overflow: hidden;
+          color: ${DEEP};
+          font-size: 9px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .rankList > div > b {
+          color: ${BLUE};
+          font-size: 9px;
+          white-space: nowrap;
+        }
+
+        .cashFlowStats {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 9px;
+          padding: 18px;
+        }
+
+        .cashFlowStats > div {
+          padding: 14px;
+          border: 1px solid #e8ebf1;
+          border-radius: 12px;
+          background: #f9fafc;
+        }
+
+        .cashFlowStats span,
+        .cashFlowStats strong {
+          display: block;
+        }
+
+        .cashFlowStats span {
+          color: #818997;
+          font-size: 8px;
+          font-weight: 850;
+          text-transform: uppercase;
+        }
+
+        .cashFlowStats strong {
+          margin-top: 6px;
+          color: ${BLUE};
+          font-size: 16px;
         }
 
         .trendChart {

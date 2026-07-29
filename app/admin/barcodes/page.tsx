@@ -38,8 +38,45 @@ type VariantRow = {
   is_active?: boolean | null;
 };
 
+type PurchaseRow = {
+  id: string;
+  purchase_number?: string | null;
+  supplier_name?: string | null;
+  supplier_phone?: string | null;
+  supplier_invoice_number?: string | null;
+  purchase_date?: string | null;
+  purchase_status?: string | null;
+  deleted_at?: string | null;
+};
+
+type PurchaseItemRow = {
+  id: number;
+  purchase_id: string;
+  product_id?: number | null;
+  variant_id?: number | null;
+  product_name?: string | null;
+  size?: string | null;
+  color?: string | null;
+  barcode?: string | null;
+  sku?: string | null;
+  quantity?: number | string | null;
+  returned_quantity?: number | string | null;
+  mrp?: number | string | null;
+  selling_price?: number | string | null;
+  item_status?: string | null;
+  created_at?: string | null;
+};
+
 type BarcodeItem = {
   key: string;
+  source: "purchase" | "product";
+  purchaseId: string | null;
+  purchaseItemId: number | null;
+  purchaseNumber: string;
+  supplierName: string;
+  supplierPhone: string;
+  supplierInvoice: string;
+  purchaseDate: string;
   productId: number;
   variantId: number | null;
   name: string;
@@ -48,6 +85,9 @@ type BarcodeItem = {
   color: string;
   barcode: string;
   sku: string;
+  purchaseQuantity: number;
+  returnedQuantity: number;
+  availableQuantity: number;
   stock: number;
   mrp: number;
   sellingPrice: number;
@@ -56,8 +96,8 @@ type BarcodeItem = {
   imageUrl: string;
 };
 
+type ViewMode = "purchases" | "products";
 type StockFilter = "all" | "in-stock" | "low-stock" | "out-of-stock";
-type OnlineFilter = "all" | "online" | "offline";
 
 const ROYAL_BLUE = "#0A2E73";
 const DEEP_BLUE = "#03153F";
@@ -81,7 +121,20 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function getImage(product: ProductRow) {
+function formatDate(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function getImage(product?: ProductRow | null) {
+  if (!product) return "";
   return product.image_url?.trim() || product.image?.trim() || "";
 }
 
@@ -103,15 +156,18 @@ export default function BarcodesPage() {
   const router = useRouter();
   const previewSvgRef = useRef<SVGSVGElement | null>(null);
 
-  const [items, setItems] = useState<BarcodeItem[]>([]);
+  const [purchaseItems, setPurchaseItems] = useState<BarcodeItem[]>([]);
+  const [productItems, setProductItems] = useState<BarcodeItem[]>([]);
+  const [viewMode, setViewMode] = useState<ViewMode>("purchases");
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [fixingBarcodes, setFixingBarcodes] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [notice, setNotice] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
-  const [onlineFilter, setOnlineFilter] = useState<OnlineFilter>("all");
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
 
   const [previewItem, setPreviewItem] = useState<BarcodeItem | null>(null);
@@ -129,68 +185,221 @@ export default function BarcodesPage() {
     setErrorMessage("");
 
     try {
-      const { data: productData, error: productError } = await supabase
-        .from("products")
-        .select(
-          [
-            "id",
-            "name",
-            "category",
-            "subcategory",
-            "price",
-            "mrp",
-            "stock",
-            "barcode",
-            "sku",
-            "image",
-            "image_url",
-            "sell_online",
-            "online_stock_limit",
-            "is_active",
-            "status",
-          ].join(","),
-        )
-        .order("created_at", { ascending: false });
+      const [
+        productResponse,
+        variantResponse,
+        purchaseResponse,
+        purchaseItemResponse,
+      ] = await Promise.all([
+        supabase
+          .from("products")
+          .select(
+            [
+              "id",
+              "name",
+              "category",
+              "subcategory",
+              "price",
+              "mrp",
+              "stock",
+              "barcode",
+              "sku",
+              "image",
+              "image_url",
+              "sell_online",
+              "online_stock_limit",
+              "is_active",
+              "status",
+            ].join(","),
+          )
+          .order("created_at", { ascending: false }),
 
-      if (productError) throw productError;
+        supabase
+          .from("product_variants")
+          .select(
+            [
+              "id",
+              "product_id",
+              "size",
+              "color",
+              "barcode",
+              "sku",
+              "stock",
+              "mrp",
+              "selling_price",
+              "sell_online",
+              "online_stock_limit",
+              "is_active",
+            ].join(","),
+          ),
 
-      const { data: variantData, error: variantError } = await supabase
-        .from("product_variants")
-        .select(
-          [
-            "id",
-            "product_id",
-            "size",
-            "color",
-            "barcode",
-            "sku",
-            "stock",
-            "mrp",
-            "selling_price",
-            "sell_online",
-            "online_stock_limit",
-            "is_active",
-          ].join(","),
-        );
+        supabase
+          .from("purchases")
+          .select(
+            [
+              "id",
+              "purchase_number",
+              "supplier_name",
+              "supplier_phone",
+              "supplier_invoice_number",
+              "purchase_date",
+              "purchase_status",
+              "deleted_at",
+            ].join(","),
+          )
+          .order("purchase_date", { ascending: false })
+          .order("created_at", { ascending: false }),
 
-      if (variantError) {
-        console.warn("Variants could not be loaded:", variantError.message);
-      }
+        supabase
+          .from("purchase_items")
+          .select(
+            [
+              "id",
+              "purchase_id",
+              "product_id",
+              "variant_id",
+              "product_name",
+              "size",
+              "color",
+              "barcode",
+              "sku",
+              "quantity",
+              "returned_quantity",
+              "mrp",
+              "selling_price",
+              "item_status",
+              "created_at",
+            ].join(","),
+          )
+          .order("created_at", { ascending: false }),
+      ]);
 
-      const products = (productData || []) as unknown as ProductRow[];
-      const variants = (variantData || []) as unknown as VariantRow[];
+      if (productResponse.error) throw productResponse.error;
+      if (variantResponse.error) throw variantResponse.error;
+      if (purchaseResponse.error) throw purchaseResponse.error;
+      if (purchaseItemResponse.error) throw purchaseItemResponse.error;
 
+      const products =
+        (productResponse.data || []) as unknown as ProductRow[];
+      const variants =
+        (variantResponse.data || []) as unknown as VariantRow[];
+      const purchases =
+        (purchaseResponse.data || []) as unknown as PurchaseRow[];
+      const purchaseRows =
+        (purchaseItemResponse.data || []) as unknown as PurchaseItemRow[];
+
+      const productMap = new Map<number, ProductRow>();
+      products.forEach((product) => productMap.set(Number(product.id), product));
+
+      const variantMap = new Map<number, VariantRow>();
       const variantsByProduct = new Map<number, VariantRow[]>();
 
       variants.forEach((variant) => {
         if (variant.is_active === false) return;
 
-        const current = variantsByProduct.get(variant.product_id) || [];
-        current.push(variant);
-        variantsByProduct.set(variant.product_id, current);
+        variantMap.set(Number(variant.id), variant);
+
+        const list = variantsByProduct.get(Number(variant.product_id)) || [];
+        list.push(variant);
+        variantsByProduct.set(Number(variant.product_id), list);
       });
 
-      const mapped: BarcodeItem[] = [];
+      const purchaseMap = new Map<string, PurchaseRow>();
+
+      purchases.forEach((purchase) => {
+        if (
+          purchase.deleted_at ||
+          normalize(purchase.purchase_status) === "cancelled"
+        ) {
+          return;
+        }
+
+        purchaseMap.set(purchase.id, purchase);
+      });
+
+      const mappedPurchaseItems: BarcodeItem[] = purchaseRows
+        .filter((item) => purchaseMap.has(item.purchase_id))
+        .map((item) => {
+          const purchase = purchaseMap.get(item.purchase_id)!;
+          const product = item.product_id
+            ? productMap.get(Number(item.product_id))
+            : undefined;
+          const variant = item.variant_id
+            ? variantMap.get(Number(item.variant_id))
+            : undefined;
+
+          const quantity = Math.max(0, toNumber(item.quantity));
+          const returnedQuantity = Math.max(
+            0,
+            toNumber(item.returned_quantity),
+          );
+
+          return {
+            key: `purchase-${item.id}`,
+            source: "purchase",
+            purchaseId: item.purchase_id,
+            purchaseItemId: item.id,
+            purchaseNumber:
+              purchase.purchase_number?.trim() || "PURCHASE",
+            supplierName:
+              purchase.supplier_name?.trim() || "Unknown Supplier",
+            supplierPhone: purchase.supplier_phone?.trim() || "",
+            supplierInvoice:
+              purchase.supplier_invoice_number?.trim() || "",
+            purchaseDate: purchase.purchase_date || "",
+            productId: Number(item.product_id || 0),
+            variantId: item.variant_id ? Number(item.variant_id) : null,
+            name:
+              item.product_name?.trim() ||
+              product?.name?.trim() ||
+              "NEW CITY STYLE Product",
+            category:
+              product?.category?.trim() ||
+              product?.subcategory?.trim() ||
+              "Others",
+            size:
+              item.size?.trim() || variant?.size?.trim() || "",
+            color:
+              item.color?.trim() || variant?.color?.trim() || "",
+            barcode:
+              item.barcode?.trim() ||
+              variant?.barcode?.trim() ||
+              product?.barcode?.trim() ||
+              "",
+            sku:
+              item.sku?.trim() ||
+              variant?.sku?.trim() ||
+              product?.sku?.trim() ||
+              "",
+            purchaseQuantity: quantity,
+            returnedQuantity,
+            availableQuantity: Math.max(0, quantity - returnedQuantity),
+            stock: Math.max(
+              0,
+              toNumber(variant?.stock) || toNumber(product?.stock),
+            ),
+            mrp:
+              toNumber(item.mrp) ||
+              toNumber(variant?.mrp) ||
+              toNumber(product?.mrp) ||
+              toNumber(product?.price),
+            sellingPrice:
+              toNumber(item.selling_price) ||
+              toNumber(variant?.selling_price) ||
+              toNumber(product?.price),
+            sellOnline:
+              variant?.sell_online === true ||
+              (!variant && product?.sell_online === true),
+            onlineStock: Math.max(
+              0,
+              toNumber(variant?.online_stock_limit) ||
+                toNumber(product?.online_stock_limit),
+            ),
+            imageUrl: getImage(product),
+          };
+        });
+
+      const mappedProductItems: BarcodeItem[] = [];
 
       products.forEach((product) => {
         if (
@@ -211,10 +420,18 @@ export default function BarcodesPage() {
 
         if (productVariants.length > 0) {
           productVariants.forEach((variant) => {
-            mapped.push({
-              key: `variant-${variant.id}`,
+            mappedProductItems.push({
+              key: `product-variant-${variant.id}`,
+              source: "product",
+              purchaseId: null,
+              purchaseItemId: null,
+              purchaseNumber: "",
+              supplierName: "",
+              supplierPhone: "",
+              supplierInvoice: "",
+              purchaseDate: "",
               productId,
-              variantId: variant.id,
+              variantId: Number(variant.id),
               name,
               category,
               size: variant.size?.trim() || "",
@@ -222,15 +439,22 @@ export default function BarcodesPage() {
               barcode:
                 variant.barcode?.trim() || product.barcode?.trim() || "",
               sku: variant.sku?.trim() || product.sku?.trim() || "",
+              purchaseQuantity: 0,
+              returnedQuantity: 0,
+              availableQuantity: 0,
               stock: Math.max(0, toNumber(variant.stock)),
               mrp:
                 toNumber(variant.mrp) ||
                 toNumber(product.mrp) ||
                 toNumber(product.price),
               sellingPrice:
-                toNumber(variant.selling_price) || toNumber(product.price),
+                toNumber(variant.selling_price) ||
+                toNumber(product.price),
               sellOnline: variant.sell_online === true,
-              onlineStock: Math.max(0, toNumber(variant.online_stock_limit)),
+              onlineStock: Math.max(
+                0,
+                toNumber(variant.online_stock_limit),
+              ),
               imageUrl,
             });
           });
@@ -238,8 +462,16 @@ export default function BarcodesPage() {
           return;
         }
 
-        mapped.push({
+        mappedProductItems.push({
           key: `product-${productId}`,
+          source: "product",
+          purchaseId: null,
+          purchaseItemId: null,
+          purchaseNumber: "",
+          supplierName: "",
+          supplierPhone: "",
+          supplierInvoice: "",
+          purchaseDate: "",
           productId,
           variantId: null,
           name,
@@ -248,20 +480,29 @@ export default function BarcodesPage() {
           color: "",
           barcode: product.barcode?.trim() || "",
           sku: product.sku?.trim() || "",
+          purchaseQuantity: 0,
+          returnedQuantity: 0,
+          availableQuantity: 0,
           stock: Math.max(0, toNumber(product.stock)),
           mrp: toNumber(product.mrp) || toNumber(product.price),
           sellingPrice: toNumber(product.price),
           sellOnline: product.sell_online === true,
-          onlineStock: Math.max(0, toNumber(product.online_stock_limit)),
+          onlineStock: Math.max(
+            0,
+            toNumber(product.online_stock_limit),
+          ),
           imageUrl,
         });
       });
 
-      setItems(mapped);
+      setPurchaseItems(mappedPurchaseItems);
+      setProductItems(mappedProductItems);
     } catch (error) {
       console.error(error);
       setErrorMessage(
-        error instanceof Error ? error.message : "Unable to load barcodes.",
+        error instanceof Error
+          ? error.message
+          : "Unable to load barcode records.",
       );
     } finally {
       setLoading(false);
@@ -292,10 +533,13 @@ export default function BarcodesPage() {
     }
   }, [previewItem]);
 
+  const currentItems =
+    viewMode === "purchases" ? purchaseItems : productItems;
+
   const duplicateBarcodeSet = useMemo(() => {
     const counts = new Map<string, number>();
 
-    items.forEach((item) => {
+    productItems.forEach((item) => {
       const barcode = item.barcode.trim();
       if (!barcode) return;
       counts.set(barcode, (counts.get(barcode) || 0) + 1);
@@ -306,15 +550,19 @@ export default function BarcodesPage() {
         .filter(([, count]) => count > 1)
         .map(([barcode]) => barcode),
     );
-  }, [items]);
+  }, [productItems]);
 
   const filteredItems = useMemo(() => {
     const query = normalize(searchQuery);
 
-    return items.filter((item) => {
+    return currentItems.filter((item) => {
       const matchesSearch =
         !query ||
         [
+          item.purchaseNumber,
+          item.supplierName,
+          item.supplierPhone,
+          item.supplierInvoice,
           item.name,
           item.category,
           item.size,
@@ -333,28 +581,35 @@ export default function BarcodesPage() {
         (stockFilter === "low-stock" && item.stock > 0 && item.stock <= 5) ||
         (stockFilter === "out-of-stock" && item.stock <= 0);
 
-      const matchesOnline =
-        onlineFilter === "all" ||
-        (onlineFilter === "online" && item.sellOnline) ||
-        (onlineFilter === "offline" && !item.sellOnline);
-
-      return matchesSearch && matchesStock && matchesOnline;
+      return matchesSearch && matchesStock;
     });
-  }, [items, onlineFilter, searchQuery, stockFilter]);
+  }, [currentItems, searchQuery, stockFilter]);
 
   const allVisibleSelected =
     filteredItems.length > 0 &&
     filteredItems.every((item) => selectedKeys.includes(item.key));
 
-  const statistics = useMemo(() => {
-    return {
-      total: items.length,
-      missingBarcode: items.filter((item) => !item.barcode).length,
-      duplicates: duplicateBarcodeSet.size,
-      outOfStock: items.filter((item) => item.stock <= 0).length,
-      online: items.filter((item) => item.sellOnline).length,
-    };
-  }, [duplicateBarcodeSet, items]);
+  const statistics = useMemo(
+    () => ({
+      purchaseBatches: purchaseItems.length,
+      products: productItems.length,
+      missingBarcode: currentItems.filter((item) => !item.barcode).length,
+      totalPurchasedQty: purchaseItems.reduce(
+        (sum, item) => sum + item.purchaseQuantity,
+        0,
+      ),
+      suppliers: new Set(
+        purchaseItems.map((item) => item.supplierName).filter(Boolean),
+      ).size,
+    }),
+    [currentItems, productItems.length, purchaseItems],
+  );
+
+  function changeView(next: ViewMode) {
+    setViewMode(next);
+    setSelectedKeys([]);
+    setSearchQuery("");
+  }
 
   function toggleItem(key: string) {
     setSelectedKeys((current) =>
@@ -380,8 +635,50 @@ export default function BarcodesPage() {
     });
   }
 
+  async function generateMissingBarcodes() {
+    if (fixingBarcodes) return;
+
+    setFixingBarcodes(true);
+    setNotice("");
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "ncs_fill_missing_barcodes",
+      );
+
+      if (error) throw error;
+
+      const result = (data || {}) as {
+        total_updated?: number;
+        message?: string;
+      };
+
+      setNotice(
+        result.total_updated && result.total_updated > 0
+          ? `${result.total_updated} missing barcode(s) generated successfully.`
+          : "All products already have barcodes.",
+      );
+
+      await loadItems(true);
+      window.setTimeout(() => setNotice(""), 3500);
+    } catch (error) {
+      console.error(error);
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to generate missing barcodes.",
+      );
+      window.setTimeout(() => setNotice(""), 3500);
+    } finally {
+      setFixingBarcodes(false);
+    }
+  }
+
   function buildBarcodeSvg(barcode: string) {
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const svg = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "svg",
+    );
 
     JsBarcode(svg, barcode, {
       format: "CODE128",
@@ -397,23 +694,48 @@ export default function BarcodesPage() {
     return svg.outerHTML;
   }
 
-  function printItems(selectedItems: BarcodeItem[], copyCount = 1) {
+  function printItems(selectedItems: BarcodeItem[], copyCount: number) {
     const printableItems = selectedItems.filter((item) => item.barcode);
 
     if (printableItems.length === 0) {
-      setNotice("Select at least one product with a barcode.");
+      setNotice("Select at least one item with a barcode.");
       window.setTimeout(() => setNotice(""), 3000);
       return;
     }
 
     const labelSizes: Record<
       string,
-      { pageWidth: number; pageHeight: number; labelWidth: number; columns: number }
+      {
+        pageWidth: number;
+        pageHeight: number;
+        labelWidth: number;
+        columns: number;
+      }
     > = {
-      "38x25": { pageWidth: 38, pageHeight: 25, labelWidth: 38, columns: 1 },
-      "50x25": { pageWidth: 50, pageHeight: 25, labelWidth: 50, columns: 1 },
-      "50x30": { pageWidth: 50, pageHeight: 30, labelWidth: 50, columns: 1 },
-      "60x40": { pageWidth: 60, pageHeight: 40, labelWidth: 60, columns: 1 },
+      "38x25": {
+        pageWidth: 38,
+        pageHeight: 25,
+        labelWidth: 38,
+        columns: 1,
+      },
+      "50x25": {
+        pageWidth: 50,
+        pageHeight: 25,
+        labelWidth: 50,
+        columns: 1,
+      },
+      "50x30": {
+        pageWidth: 50,
+        pageHeight: 30,
+        labelWidth: 50,
+        columns: 1,
+      },
+      "60x40": {
+        pageWidth: 60,
+        pageHeight: 40,
+        labelWidth: 60,
+        columns: 1,
+      },
       "tsc-te244-2up": {
         pageWidth: 100,
         pageHeight: 30,
@@ -422,19 +744,26 @@ export default function BarcodesPage() {
       },
     };
 
-    const selectedSize = labelSizes[labelSize] || labelSizes["tsc-te244-2up"];
+    const selectedSize =
+      labelSizes[labelSize] || labelSizes["tsc-te244-2up"];
     const safeCopies = Math.max(1, Math.min(500, Math.floor(copyCount)));
 
     const labelList = printableItems.flatMap((item) =>
       Array.from({ length: safeCopies }, () => {
-        const sizeText = item.size?.trim() ? `SIZE: ${item.size.trim()}` : "";
+        const variantText = [item.size, item.color]
+          .filter(Boolean)
+          .join(" • ");
         const svg = buildBarcodeSvg(item.barcode);
 
         return `
           <div class="label">
             <p class="store">NEW CITY STYLE</p>
             <p class="product">${escapeHtml(item.name)}</p>
-            ${sizeText ? `<p class="variant">${escapeHtml(sizeText)}</p>` : ""}
+            ${
+              variantText
+                ? `<p class="variant">${escapeHtml(variantText)}</p>`
+                : ""
+            }
             <div class="barcode">${svg}</div>
             <div class="priceRow">
               ${
@@ -450,8 +779,15 @@ export default function BarcodesPage() {
 
     const sheets: string[] = [];
 
-    for (let index = 0; index < labelList.length; index += selectedSize.columns) {
-      const rowLabels = labelList.slice(index, index + selectedSize.columns);
+    for (
+      let index = 0;
+      index < labelList.length;
+      index += selectedSize.columns
+    ) {
+      const rowLabels = labelList.slice(
+        index,
+        index + selectedSize.columns,
+      );
 
       while (rowLabels.length < selectedSize.columns) {
         rowLabels.push('<div class="label emptyLabel"></div>');
@@ -460,9 +796,11 @@ export default function BarcodesPage() {
       sheets.push(`<div class="sheet">${rowLabels.join("")}</div>`);
     }
 
-    const labels = sheets.join("");
-
-    const printWindow = window.open("", "_blank", "width=760,height=760");
+    const printWindow = window.open(
+      "",
+      "_blank",
+      "width=760,height=760",
+    );
 
     if (!printWindow) {
       setNotice("Allow browser pop-ups to print labels.");
@@ -495,7 +833,6 @@ export default function BarcodesPage() {
               height: ${selectedSize.pageHeight}mm;
               display: flex;
               align-items: stretch;
-              justify-content: flex-start;
               gap: ${selectedSize.columns === 2 ? 2 : 0}mm;
               overflow: hidden;
               page-break-after: always;
@@ -511,23 +848,20 @@ export default function BarcodesPage() {
               width: ${selectedSize.labelWidth}mm;
               height: ${selectedSize.pageHeight}mm;
               display: flex;
+              flex: 0 0 ${selectedSize.labelWidth}mm;
               flex-direction: column;
               align-items: center;
               justify-content: center;
-              flex: 0 0 ${selectedSize.labelWidth}mm;
               padding: 0.7mm 1mm;
               overflow: hidden;
-              color: #000;
               text-align: center;
             }
 
-            .emptyLabel {
-              visibility: hidden;
-            }
+            .emptyLabel { visibility: hidden; }
 
             .store {
               margin: 0 0 .25mm;
-              font-size: ${selectedSize.labelWidth <= 38 ? 7 : 8}px;
+              font-size: 8px;
               font-weight: 900;
               letter-spacing: .7px;
             }
@@ -536,7 +870,7 @@ export default function BarcodesPage() {
               width: 100%;
               margin: 0;
               overflow: hidden;
-              font-size: ${selectedSize.labelWidth <= 38 ? 7 : 8}px;
+              font-size: 8px;
               font-weight: 700;
               line-height: 1.15;
               text-overflow: ellipsis;
@@ -545,12 +879,11 @@ export default function BarcodesPage() {
 
             .variant {
               margin: .2mm 0 0;
-              padding: .35mm 1.2mm;
+              padding: .3mm 1mm;
               border: 1px solid #000;
               border-radius: 1mm;
-              font-size: ${selectedSize.labelWidth <= 38 ? 7 : 8}px;
+              font-size: 7px;
               font-weight: 900;
-              letter-spacing: .3px;
             }
 
             .barcode {
@@ -569,10 +902,9 @@ export default function BarcodesPage() {
               display: flex;
               align-items: center;
               justify-content: center;
-              gap: 2mm;
               margin-top: .1mm;
               padding-bottom: .4mm;
-              font-size: ${selectedSize.labelWidth <= 38 ? 9 : 11}px;
+              font-size: 11px;
               font-weight: 950;
               line-height: 1;
               white-space: nowrap;
@@ -580,7 +912,7 @@ export default function BarcodesPage() {
           </style>
         </head>
         <body>
-          ${labels}
+          ${sheets.join("")}
           <script>
             window.onload = function () {
               window.print();
@@ -597,35 +929,66 @@ export default function BarcodesPage() {
   }
 
   function printSelected() {
-    const selectedItems = items.filter((item) =>
+    const selectedItems = currentItems.filter((item) =>
       selectedKeys.includes(item.key),
     );
+
     printItems(selectedItems, copies);
   }
 
   function printSingle(item: BarcodeItem) {
-    printItems([item], copies);
+    const defaultCopies =
+      item.source === "purchase"
+        ? Math.max(1, item.availableQuantity || item.purchaseQuantity)
+        : Math.max(1, copies);
+
+    printItems([item], defaultCopies);
+  }
+
+  function openPreview(item: BarcodeItem) {
+    setPreviewItem(item);
+    setCopies(
+      item.source === "purchase"
+        ? Math.max(1, item.availableQuantity || item.purchaseQuantity)
+        : 1,
+    );
   }
 
   return (
     <main className="barcodePage">
       <section className="pageHeader">
         <div>
-          <span>NEW CITY STYLE • INVENTORY</span>
-          <h1>Barcodes & Stock</h1>
+          <span>NEW CITY STYLE • PURCHASE BARCODES</span>
+          <h1>Barcodes by Purchase</h1>
           <p>
-            Search products, check stock, detect duplicate barcodes and print
-            labels.
+            ప్రతి supplier purchase, invoice, product మరియు quantity
+            separateగా కనిపిస్తుంది. ఎప్పుడైనా అదే purchase barcode labels
+            మళ్లీ print చేయవచ్చు.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => loadItems(true)}
-          disabled={refreshing}
-        >
-          {refreshing ? "Refreshing..." : "↻ Refresh"}
-        </button>
+        <div className="pageHeaderActions">
+          {statistics.missingBarcode > 0 && (
+            <button
+              type="button"
+              className="fixBarcodeButton"
+              onClick={generateMissingBarcodes}
+              disabled={fixingBarcodes}
+            >
+              {fixingBarcodes
+                ? "Generating..."
+                : `Generate Missing (${statistics.missingBarcode})`}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => loadItems(true)}
+            disabled={refreshing}
+          >
+            {refreshing ? "Refreshing..." : "↻ Refresh"}
+          </button>
+        </div>
       </section>
 
       {notice && <div className="notice">{notice}</div>}
@@ -633,39 +996,61 @@ export default function BarcodesPage() {
 
       <section className="statsGrid">
         <article>
-          <span>Total Barcode Items</span>
-          <strong>{statistics.total}</strong>
+          <span>Purchase Item Batches</span>
+          <strong>{statistics.purchaseBatches}</strong>
+        </article>
+
+        <article>
+          <span>Total Purchased Qty</span>
+          <strong>{statistics.totalPurchasedQty}</strong>
+        </article>
+
+        <article>
+          <span>Suppliers</span>
+          <strong>{statistics.suppliers}</strong>
+        </article>
+
+        <article>
+          <span>Product Barcode Items</span>
+          <strong>{statistics.products}</strong>
         </article>
 
         <article>
           <span>Missing Barcode</span>
           <strong>{statistics.missingBarcode}</strong>
         </article>
-
-        <article>
-          <span>Duplicate Codes</span>
-          <strong>{statistics.duplicates}</strong>
-        </article>
-
-        <article>
-          <span>Out of Stock</span>
-          <strong>{statistics.outOfStock}</strong>
-        </article>
-
-        <article>
-          <span>Sell Online</span>
-          <strong>{statistics.online}</strong>
-        </article>
       </section>
 
       <section className="panel">
+        <div className="viewTabs">
+          <button
+            type="button"
+            className={viewMode === "purchases" ? "active" : ""}
+            onClick={() => changeView("purchases")}
+          >
+            Purchase Batches ({purchaseItems.length})
+          </button>
+
+          <button
+            type="button"
+            className={viewMode === "products" ? "active" : ""}
+            onClick={() => changeView("products")}
+          >
+            Product Master ({productItems.length})
+          </button>
+        </div>
+
         <div className="toolbar">
           <div className="searchBox">
             <span>⌕</span>
             <input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search product, barcode, SKU, size..."
+              placeholder={
+                viewMode === "purchases"
+                  ? "Search supplier, purchase no, invoice, product or barcode..."
+                  : "Search product, barcode, SKU, size..."
+              }
             />
           </div>
 
@@ -680,22 +1065,11 @@ export default function BarcodesPage() {
             <option value="low-stock">Low Stock</option>
             <option value="out-of-stock">Out of Stock</option>
           </select>
-
-          <select
-            value={onlineFilter}
-            onChange={(event) =>
-              setOnlineFilter(event.target.value as OnlineFilter)
-            }
-          >
-            <option value="all">All Visibility</option>
-            <option value="online">Sell Online</option>
-            <option value="offline">Shop Only</option>
-          </select>
         </div>
 
         <div className="printBar">
           <label>
-            <span>Copies</span>
+            <span>Copies per selected row</span>
             <input
               type="number"
               min="1"
@@ -705,7 +1079,10 @@ export default function BarcodesPage() {
                 setCopies(
                   Math.max(
                     1,
-                    Math.min(500, Math.floor(toNumber(event.target.value, 1))),
+                    Math.min(
+                      500,
+                      Math.floor(toNumber(event.target.value, 1)),
+                    ),
                   ),
                 )
               }
@@ -750,11 +1127,11 @@ export default function BarcodesPage() {
         {loading ? (
           <div className="loadingState">
             <div className="spinner" />
-            <h2>Loading barcodes...</h2>
+            <h2>Loading barcode records...</h2>
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="emptyState">
-            <h2>No matching products</h2>
+            <h2>No matching records</h2>
             <p>Try changing the search or filters.</p>
           </div>
         ) : (
@@ -778,199 +1155,91 @@ export default function BarcodesPage() {
               </button>
             </div>
 
-            <div className="desktopTable">
-              <table>
-                <thead>
-                  <tr>
-                    <th />
-                    <th>Product</th>
-                    <th>Barcode</th>
-                    <th>Stock</th>
-                    <th>MRP</th>
-                    <th>Online</th>
-                    <th>Photo</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredItems.map((item) => {
-                    const duplicate =
-                      item.barcode && duplicateBarcodeSet.has(item.barcode);
-
-                    return (
-                      <tr key={item.key}>
-                        <td>
-                          <input
-                            type="checkbox"
-                            checked={selectedKeys.includes(item.key)}
-                            onChange={() => toggleItem(item.key)}
-                          />
-                        </td>
-
-                        <td>
-                          <div className="productCell">
-                            <div className="image">
-                              {item.imageUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={item.imageUrl} alt={item.name} />
-                              ) : (
-                                <span>NCS</span>
-                              )}
-                            </div>
-
-                            <div>
-                              <strong>{item.name}</strong>
-                              <span>{item.category}</span>
-                              {(item.size || item.color) && (
-                                <span>
-                                  {[item.size, item.color]
-                                    .filter(Boolean)
-                                    .join(" • ")}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-
-                        <td>
-                          <div className="barcodeCell">
-                            <strong>{item.barcode || "Missing"}</strong>
-                            {item.sku && <span>SKU: {item.sku}</span>}
-                            {duplicate && (
-                              <b>Duplicate barcode warning</b>
-                            )}
-                          </div>
-                        </td>
-
-                        <td>
-                          <span
-                            className={`stockBadge ${
-                              item.stock <= 0
-                                ? "out"
-                                : item.stock <= 5
-                                  ? "low"
-                                  : "good"
-                            }`}
-                          >
-                            {item.stock}
-                          </span>
-                        </td>
-
-                        <td>{formatCurrency(item.mrp)}</td>
-
-                        <td>
-                          <span
-                            className={
-                              item.sellOnline
-                                ? "onlineBadge"
-                                : "offlineBadge"
-                            }
-                          >
-                            {item.sellOnline
-                              ? `Online (${item.onlineStock})`
-                              : "Shop Only"}
-                          </span>
-                        </td>
-
-                        <td>
-                          <span
-                            className={
-                              item.imageUrl ? "photoYes" : "photoNo"
-                            }
-                          >
-                            {item.imageUrl ? "Photo Added" : "No Photo"}
-                          </span>
-                        </td>
-
-                        <td>
-                          <div className="actions">
-                            <button
-                              type="button"
-                              onClick={() => setPreviewItem(item)}
-                              disabled={!item.barcode}
-                            >
-                              Preview
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => printSingle(item)}
-                              disabled={!item.barcode}
-                            >
-                              Print
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                router.push(
-                                  `/admin/products/edit/${item.productId}`,
-                                )
-                              }
-                            >
-                              Edit
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mobileList">
+            <div className="batchList">
               {filteredItems.map((item) => {
                 const duplicate =
-                  item.barcode && duplicateBarcodeSet.has(item.barcode);
+                  item.barcode &&
+                  duplicateBarcodeSet.has(item.barcode);
 
                 return (
-                  <article key={item.key} className="mobileCard">
-                    <div className="mobileTop">
+                  <article className="batchCard" key={item.key}>
+                    <div className="batchSelect">
                       <input
                         type="checkbox"
                         checked={selectedKeys.includes(item.key)}
                         onChange={() => toggleItem(item.key)}
                       />
-
-                      <span
-                        className={
-                          item.sellOnline ? "onlineBadge" : "offlineBadge"
-                        }
-                      >
-                        {item.sellOnline ? "Online" : "Shop Only"}
-                      </span>
                     </div>
 
-                    <div className="mobileProduct">
-                      <div className="image">
-                        {item.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={item.imageUrl} alt={item.name} />
-                        ) : (
-                          <span>NCS</span>
-                        )}
-                      </div>
-
-                      <div>
-                        <strong>{item.name}</strong>
-                        <span>{item.category}</span>
-                        <span>
-                          {[item.size, item.color].filter(Boolean).join(" • ") ||
-                            "Standard Product"}
-                        </span>
-                      </div>
+                    <div className="productImage">
+                      {item.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={item.imageUrl} alt={item.name} />
+                      ) : (
+                        <span>NCS</span>
+                      )}
                     </div>
 
-                    <div className="mobileInfo">
+                    <div className="batchMain">
+                      {viewMode === "purchases" && (
+                        <div className="purchaseLine">
+                          <strong>{item.purchaseNumber}</strong>
+                          <span>{formatDate(item.purchaseDate)}</span>
+                        </div>
+                      )}
+
+                      <h3>{item.name}</h3>
+
                       <p>
-                        <span>Barcode</span>
-                        <strong>{item.barcode || "Missing"}</strong>
+                        {[item.size, item.color]
+                          .filter(Boolean)
+                          .join(" • ") || item.category}
                       </p>
 
+                      {viewMode === "purchases" && (
+                        <div className="supplierLine">
+                          <span>Supplier</span>
+                          <strong>{item.supplierName}</strong>
+                          {item.supplierInvoice && (
+                            <small>
+                              Invoice: {item.supplierInvoice}
+                            </small>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="barcodeLine">
+                        <span>Barcode</span>
+                        <strong>{item.barcode || "Missing"}</strong>
+                        {item.sku && <small>SKU: {item.sku}</small>}
+                        {duplicate && (
+                          <b>Same product barcode — valid for repeat purchase</b>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="batchNumbers">
+                      {viewMode === "purchases" && (
+                        <>
+                          <p>
+                            <span>Purchased Qty</span>
+                            <strong>{item.purchaseQuantity}</strong>
+                          </p>
+
+                          <p>
+                            <span>Returned</span>
+                            <strong>{item.returnedQuantity}</strong>
+                          </p>
+
+                          <p>
+                            <span>Labels Available</span>
+                            <strong>{item.availableQuantity}</strong>
+                          </p>
+                        </>
+                      )}
+
                       <p>
-                        <span>Stock</span>
+                        <span>Current Stock</span>
                         <strong>{item.stock}</strong>
                       </p>
 
@@ -978,23 +1247,12 @@ export default function BarcodesPage() {
                         <span>MRP</span>
                         <strong>{formatCurrency(item.mrp)}</strong>
                       </p>
-
-                      <p>
-                        <span>Photo</span>
-                        <strong>{item.imageUrl ? "Added" : "Missing"}</strong>
-                      </p>
                     </div>
 
-                    {duplicate && (
-                      <div className="duplicateWarning">
-                        Duplicate barcode warning
-                      </div>
-                    )}
-
-                    <div className="mobileActions">
+                    <div className="batchActions">
                       <button
                         type="button"
-                        onClick={() => setPreviewItem(item)}
+                        onClick={() => openPreview(item)}
                         disabled={!item.barcode}
                       >
                         Preview
@@ -1002,19 +1260,29 @@ export default function BarcodesPage() {
 
                       <button
                         type="button"
+                        className="printButton"
                         onClick={() => printSingle(item)}
                         disabled={!item.barcode}
                       >
-                        Print
+                        🖨 Print{" "}
+                        {viewMode === "purchases"
+                          ? `(${Math.max(
+                              1,
+                              item.availableQuantity ||
+                                item.purchaseQuantity,
+                            )})`
+                          : ""}
                       </button>
 
                       <button
                         type="button"
                         onClick={() =>
-                          router.push(`/admin/products/edit/${item.productId}`)
+                          router.push(
+                            `/admin/products/edit/${item.productId}`,
+                          )
                         }
                       >
-                        Edit
+                        Edit Product
                       </button>
                     </div>
                   </article>
@@ -1032,12 +1300,28 @@ export default function BarcodesPage() {
               type="button"
               className="close"
               onClick={() => setPreviewItem(null)}
+              aria-label="Close barcode preview"
             >
-              ×
+              ✕
             </button>
 
             <span>BARCODE PREVIEW</span>
             <h2>{previewItem.name}</h2>
+
+            {previewItem.source === "purchase" && (
+              <div className="previewPurchase">
+                <strong>{previewItem.purchaseNumber}</strong>
+                <span>
+                  {previewItem.supplierName} •{" "}
+                  {formatDate(previewItem.purchaseDate)}
+                </span>
+                <small>
+                  Purchased {previewItem.purchaseQuantity} • Returned{" "}
+                  {previewItem.returnedQuantity}
+                </small>
+              </div>
+            )}
+
             <p>
               {[previewItem.size, previewItem.color]
                 .filter(Boolean)
@@ -1050,15 +1334,43 @@ export default function BarcodesPage() {
 
             <strong>{previewItem.barcode}</strong>
 
+            <label className="previewCopies">
+              <span>Labels to print</span>
+              <input
+                type="number"
+                min="1"
+                max="500"
+                value={copies}
+                onChange={(event) =>
+                  setCopies(
+                    Math.max(
+                      1,
+                      Math.min(
+                        500,
+                        Math.floor(
+                          toNumber(event.target.value, 1),
+                        ),
+                      ),
+                    ),
+                  )
+                }
+              />
+            </label>
+
             <div className="previewActions">
-              <button type="button" onClick={() => printSingle(previewItem)}>
-                🖨 Print Label
+              <button
+                type="button"
+                onClick={() => printItems([previewItem], copies)}
+              >
+                🖨 Print {copies} Label(s)
               </button>
 
               <button
                 type="button"
                 onClick={() =>
-                  router.push(`/admin/products/edit/${previewItem.productId}`)
+                  router.push(
+                    `/admin/products/edit/${previewItem.productId}`,
+                  )
                 }
               >
                 Edit Product
@@ -1075,7 +1387,7 @@ export default function BarcodesPage() {
 
         .barcodePage {
           min-height: 100vh;
-          padding: 26px;
+          padding: 24px;
           background:
             radial-gradient(
               circle at 10% 0%,
@@ -1092,7 +1404,7 @@ export default function BarcodesPage() {
           align-items: flex-end;
           justify-content: space-between;
           gap: 20px;
-          margin-bottom: 20px;
+          margin-bottom: 18px;
           padding: 22px 24px;
           border: 1px solid rgba(212, 175, 55, 0.35);
           border-radius: 22px;
@@ -1116,33 +1428,46 @@ export default function BarcodesPage() {
 
         .pageHeader h1 {
           margin: 5px 0 0;
-          font-size: 32px;
+          font-size: 31px;
           font-weight: 950;
         }
 
         .pageHeader p {
+          max-width: 760px;
           margin: 6px 0 0;
-          color: rgba(255, 255, 255, 0.7);
-          font-size: 12px;
+          color: rgba(255, 255, 255, 0.72);
+          font-size: 11px;
+          line-height: 1.6;
+        }
+
+        .pageHeaderActions {
+          display: flex;
+          gap: 9px;
         }
 
         .pageHeader button {
-          min-height: 44px;
-          padding: 0 15px;
+          min-height: 43px;
+          padding: 0 14px;
           border: 1px solid ${GOLD};
-          border-radius: 12px;
+          border-radius: 11px;
           background: ${GOLD};
           color: ${ROYAL_BLUE};
+          font-size: 9px;
           font-weight: 900;
           cursor: pointer;
         }
 
+        .pageHeader .fixBarcodeButton {
+          background: rgba(255, 255, 255, 0.12);
+          color: white;
+        }
+
         .notice,
         .error {
-          margin-bottom: 14px;
-          padding: 13px 15px;
-          border-radius: 12px;
-          font-size: 13px;
+          margin-bottom: 13px;
+          padding: 12px 14px;
+          border-radius: 11px;
+          font-size: 11px;
           font-weight: 750;
         }
 
@@ -1161,159 +1486,41 @@ export default function BarcodesPage() {
         .statsGrid {
           display: grid;
           grid-template-columns: repeat(5, minmax(0, 1fr));
-          gap: 12px;
-          margin-bottom: 16px;
+          gap: 10px;
+          margin-bottom: 14px;
         }
 
         .statsGrid article {
-          position: relative;
-          isolation: isolate;
-          min-height: 108px;
-          overflow: hidden;
-          padding: 18px;
-          border: 1px solid rgba(212, 175, 55, 0.2);
-          border-radius: 18px;
+          min-height: 94px;
+          padding: 15px;
+          border: 1px solid rgba(212, 175, 55, 0.22);
+          border-radius: 16px;
           background: linear-gradient(
             135deg,
-            rgba(10, 46, 115, 0.99),
-            rgba(3, 21, 63, 0.98)
+            ${ROYAL_BLUE},
+            ${DEEP_BLUE}
           );
-          box-shadow:
-            0 12px 28px rgba(3, 21, 63, 0.16),
-            inset 0 1px 0 rgba(255, 255, 255, 0.06);
-          transition:
-            transform 0.22s ease,
-            box-shadow 0.22s ease,
-            border-color 0.22s ease;
-          animation: barcodeStatRise 0.45s ease both;
+          box-shadow: 0 10px 24px rgba(3, 21, 63, 0.14);
         }
 
-        .statsGrid article:nth-child(1) {
-          animation-delay: 0.04s;
-        }
-
-        .statsGrid article:nth-child(2) {
-          animation-delay: 0.09s;
-          background: linear-gradient(
-            135deg,
-            rgba(10, 46, 115, 0.99),
-            rgba(18, 44, 101, 0.98),
-            rgba(103, 79, 16, 0.9)
-          );
-        }
-
-        .statsGrid article:nth-child(3) {
-          animation-delay: 0.14s;
-          background: linear-gradient(
-            135deg,
-            rgba(5, 25, 74, 0.99),
-            rgba(8, 37, 96, 0.98)
-          );
-        }
-
-        .statsGrid article:nth-child(4) {
-          animation-delay: 0.19s;
-          background: linear-gradient(
-            135deg,
-            rgba(8, 37, 98, 0.99),
-            rgba(3, 21, 63, 0.98),
-            rgba(95, 72, 13, 0.9)
-          );
-        }
-
-        .statsGrid article:nth-child(5) {
-          animation-delay: 0.24s;
-        }
-
-        .statsGrid article::before {
-          content: "";
-          position: absolute;
-          z-index: -1;
-          top: -42%;
-          right: -18%;
-          width: 126px;
-          height: 126px;
-          border-radius: 50%;
-          background: radial-gradient(
-            circle,
-            rgba(212, 175, 55, 0.34),
-            rgba(212, 175, 55, 0)
-          );
-          transition: transform 0.28s ease;
-        }
-
-        .statsGrid article::after {
-          content: "";
-          position: absolute;
-          top: -145%;
-          left: -36%;
-          width: 42%;
-          height: 370%;
-          transform: rotate(22deg);
-          background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(255, 255, 255, 0.14),
-            transparent
-          );
-          animation: barcodeStatShine 5.2s ease-in-out infinite;
-          pointer-events: none;
-        }
-
-        .statsGrid article:nth-child(2)::after {
-          animation-delay: 0.7s;
-        }
-
-        .statsGrid article:nth-child(3)::after {
-          animation-delay: 1.4s;
-        }
-
-        .statsGrid article:nth-child(4)::after {
-          animation-delay: 2.1s;
-        }
-
-        .statsGrid article:nth-child(5)::after {
-          animation-delay: 2.8s;
-        }
-
-        .statsGrid article:hover {
-          transform: translateY(-2px) scale(1.004);
-          border-color: rgba(212, 175, 55, 0.42);
-          box-shadow:
-            0 16px 32px rgba(3, 21, 63, 0.22),
-            0 0 0 1px rgba(212, 175, 55, 0.1);
-        }
-
-        .statsGrid article:hover::before {
-          transform: scale(1.08);
+        .statsGrid span,
+        .statsGrid strong {
+          display: block;
         }
 
         .statsGrid span {
-          position: relative;
-          z-index: 2;
-          display: block;
-          color: rgba(212, 175, 55, 0.94);
-          font-size: 9px;
+          color: ${GOLD};
+          font-size: 8px;
           font-weight: 900;
           letter-spacing: 0.55px;
           text-transform: uppercase;
         }
 
         .statsGrid strong {
-          position: relative;
-          z-index: 2;
-          display: block;
-          margin-top: 9px;
-          color: #ffffff;
-          font-size: 24px;
+          margin-top: 8px;
+          color: white;
+          font-size: 23px;
           font-weight: 950;
-          letter-spacing: -0.45px;
-          text-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
-        }
-
-        .statsGrid article:nth-child(2) strong,
-        .statsGrid article:nth-child(4) strong {
-          color: #f6d676;
         }
 
         .panel {
@@ -1324,42 +1531,70 @@ export default function BarcodesPage() {
           box-shadow: 0 12px 32px rgba(10, 46, 115, 0.07);
         }
 
+        .viewTabs {
+          display: flex;
+          gap: 8px;
+          padding: 13px 15px 0;
+        }
+
+        .viewTabs button {
+          min-height: 40px;
+          padding: 0 14px;
+          border: 1px solid #dfe4eb;
+          border-bottom: 0;
+          border-radius: 11px 11px 0 0;
+          background: #f8fafc;
+          color: #667085;
+          font-size: 9px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .viewTabs button.active {
+          border-color: ${GOLD};
+          background: ${ROYAL_BLUE};
+          color: white;
+        }
+
         .toolbar {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 190px 190px;
+          grid-template-columns: minmax(0, 1fr) 190px;
           gap: 10px;
-          padding: 16px;
+          padding: 14px 15px;
+          border-top: 1px solid #edf0f4;
           border-bottom: 1px solid #edf0f4;
         }
 
         .searchBox {
           display: flex;
           align-items: center;
-          min-height: 46px;
+          min-height: 44px;
           padding: 0 12px;
           border: 1px solid #dfe4eb;
-          border-radius: 11px;
+          border-radius: 10px;
           background: #fbfcfe;
         }
 
         .searchBox span {
           margin-right: 8px;
           color: ${ROYAL_BLUE};
-          font-size: 21px;
+          font-size: 20px;
         }
 
         .searchBox input,
         .toolbar select,
         .printBar input,
-        .printBar select {
+        .printBar select,
+        .previewCopies input {
           width: 100%;
-          min-height: 43px;
+          min-height: 41px;
+          padding: 0 10px;
           border: 1px solid #dfe4eb;
-          border-radius: 10px;
+          border-radius: 9px;
           outline: none;
           background: white;
           font: inherit;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 700;
         }
 
@@ -1370,17 +1605,11 @@ export default function BarcodesPage() {
           background: transparent;
         }
 
-        .toolbar select,
-        .printBar input,
-        .printBar select {
-          padding: 0 10px;
-        }
-
         .printBar {
           display: flex;
           align-items: end;
-          gap: 10px;
-          padding: 13px 16px;
+          gap: 9px;
+          padding: 12px 15px;
           border-bottom: 1px solid #edf0f4;
           background: #f8fafc;
         }
@@ -1392,57 +1621,45 @@ export default function BarcodesPage() {
 
         .printBar label > span {
           color: #667085;
-          font-size: 9px;
+          font-size: 8px;
           font-weight: 800;
         }
 
         .printBar .check {
-          min-height: 43px;
+          min-height: 41px;
           display: flex;
           align-items: center;
           gap: 7px;
           padding: 0 11px;
           border: 1px solid #dfe4eb;
-          border-radius: 10px;
+          border-radius: 9px;
           background: white;
-          font-size: 10px;
+          font-size: 9px;
           font-weight: 800;
         }
 
         .printBar .check input {
           width: 16px;
-          min-height: auto;
           height: 16px;
           accent-color: ${ROYAL_BLUE};
         }
 
         .printSelected {
-          min-height: 43px;
+          min-height: 41px;
           margin-left: auto;
-          padding: 0 16px;
-          border: 1px solid rgba(212, 175, 55, 0.9);
-          border-radius: 11px;
-          background: linear-gradient(135deg, ${DEEP_BLUE}, ${ROYAL_BLUE});
-          color: #ffffff;
+          padding: 0 15px;
+          border: 1px solid ${GOLD};
+          border-radius: 10px;
+          background: ${ROYAL_BLUE};
+          color: white;
+          font-size: 9px;
           font-weight: 900;
           cursor: pointer;
-          box-shadow: 0 10px 22px rgba(3, 21, 63, 0.16);
-          transition:
-            transform 0.2s ease,
-            box-shadow 0.2s ease,
-            filter 0.2s ease;
         }
 
-        .printSelected:hover:not(:disabled) {
-          transform: translateY(-2px);
-          box-shadow: 0 14px 28px rgba(3, 21, 63, 0.22);
-          filter: brightness(1.06);
-        }
-
-        .printSelected:disabled,
         button:disabled {
+          opacity: 0.5;
           cursor: not-allowed;
-          opacity: 0.55;
         }
 
         .selectAll {
@@ -1450,7 +1667,7 @@ export default function BarcodesPage() {
           align-items: center;
           justify-content: space-between;
           gap: 12px;
-          padding: 12px 16px;
+          padding: 11px 15px;
           border-bottom: 1px solid #edf0f4;
           background: #fffdf5;
         }
@@ -1460,7 +1677,7 @@ export default function BarcodesPage() {
           align-items: center;
           gap: 8px;
           color: #475467;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 800;
         }
 
@@ -1471,195 +1688,193 @@ export default function BarcodesPage() {
         }
 
         .selectAll button {
-          min-height: 34px;
+          min-height: 32px;
           padding: 0 10px;
           border: 1px solid #d0d5dd;
-          border-radius: 9px;
+          border-radius: 8px;
           background: white;
           color: #475467;
-          font-size: 10px;
+          font-size: 9px;
           font-weight: 800;
           cursor: pointer;
         }
 
-        .desktopTable {
-          overflow-x: auto;
-        }
-
-        table {
-          width: 100%;
-          min-width: 1180px;
-          border-collapse: collapse;
-        }
-
-        th,
-        td {
-          padding: 12px;
-          border-bottom: 1px solid #f0f1f3;
-          text-align: left;
-          vertical-align: middle;
-        }
-
-        th {
-          background: #f8fafc;
-          color: #667085;
-          font-size: 10px;
-          font-weight: 900;
-          text-transform: uppercase;
-        }
-
-        td {
-          color: #344054;
-          font-size: 11px;
-        }
-
-        .productCell {
-          min-width: 230px;
-          display: flex;
-          align-items: center;
+        .batchList {
+          display: grid;
           gap: 10px;
+          padding: 12px;
+          background: #f8fafc;
         }
 
-        .image {
+        .batchCard {
+          display: grid;
+          grid-template-columns:
+            28px 58px minmax(260px, 1.5fr)
+            minmax(300px, 1fr) 150px;
+          align-items: center;
+          gap: 11px;
+          padding: 12px;
+          border: 1px solid #e4e7ec;
+          border-radius: 14px;
+          background: white;
+          box-shadow: 0 6px 16px rgba(16, 24, 40, 0.04);
+        }
+
+        .batchSelect input {
+          width: 17px;
+          height: 17px;
+          accent-color: ${ROYAL_BLUE};
+        }
+
+        .productImage {
           width: 56px;
           height: 64px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
+          display: grid;
+          place-items: center;
           overflow: hidden;
           border-radius: 10px;
           background: ${ROYAL_BLUE};
           color: ${GOLD};
-          font-size: 10px;
+          font-size: 9px;
           font-weight: 950;
         }
 
-        .image img {
+        .productImage img {
           width: 100%;
           height: 100%;
           object-fit: cover;
         }
 
-        .productCell strong,
-        .productCell span {
-          display: block;
+        .purchaseLine {
+          display: flex;
+          align-items: center;
+          gap: 8px;
         }
 
-        .productCell strong {
+        .purchaseLine strong {
+          color: ${GOLD};
+          font-size: 9px;
+          letter-spacing: 0.4px;
+        }
+
+        .purchaseLine span {
+          color: #98a2b3;
+          font-size: 8px;
+        }
+
+        .batchMain h3 {
+          margin: 4px 0 0;
           color: ${DEEP_BLUE};
-          font-size: 11px;
+          font-size: 12px;
         }
 
-        .productCell span {
-          margin-top: 3px;
+        .batchMain > p {
+          margin: 4px 0 0;
           color: #8a93a0;
-          font-size: 9px;
+          font-size: 8px;
         }
 
-        .barcodeCell strong,
-        .barcodeCell span,
-        .barcodeCell b {
+        .supplierLine,
+        .barcodeLine {
+          margin-top: 7px;
+          padding: 8px;
+          border-radius: 9px;
+          background: #f8fafc;
+        }
+
+        .supplierLine span,
+        .supplierLine strong,
+        .supplierLine small,
+        .barcodeLine span,
+        .barcodeLine strong,
+        .barcodeLine small,
+        .barcodeLine b {
           display: block;
         }
 
-        .barcodeCell strong {
-          color: ${ROYAL_BLUE};
-          font-size: 11px;
+        .supplierLine span,
+        .barcodeLine span {
+          color: #98a2b3;
+          font-size: 7px;
+          font-weight: 800;
+          text-transform: uppercase;
         }
 
-        .barcodeCell span {
+        .supplierLine strong,
+        .barcodeLine strong {
+          margin-top: 3px;
+          color: ${ROYAL_BLUE};
+          font-size: 9px;
+        }
+
+        .supplierLine small,
+        .barcodeLine small,
+        .barcodeLine b {
           margin-top: 3px;
           color: #8a93a0;
-          font-size: 9px;
+          font-size: 7px;
         }
 
-        .barcodeCell b,
-        .duplicateWarning {
-          margin-top: 5px;
-          color: #b42318;
-          font-size: 9px;
-        }
-
-        .stockBadge,
-        .onlineBadge,
-        .offlineBadge,
-        .photoYes,
-        .photoNo {
-          display: inline-flex;
-          padding: 6px 8px;
-          border-radius: 999px;
-          font-size: 9px;
-          font-weight: 850;
-          white-space: nowrap;
-        }
-
-        .stockBadge.good,
-        .onlineBadge,
-        .photoYes {
-          background: #ecfdf3;
+        .barcodeLine b {
           color: #067647;
         }
 
-        .stockBadge.low {
-          background: #fff4e8;
-          color: #b54708;
-        }
-
-        .stockBadge.out,
-        .photoNo {
-          background: #fef3f2;
-          color: #b42318;
-        }
-
-        .offlineBadge {
-          background: #f2f4f7;
-          color: #667085;
-        }
-
-        .actions {
-          display: flex;
+        .batchNumbers {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 6px;
         }
 
-        .actions button,
-        .mobileActions button {
-          min-height: 34px;
-          padding: 0 10px;
-          border: 1px solid rgba(10, 46, 115, 0.16);
+        .batchNumbers p {
+          margin: 0;
+          padding: 8px;
           border-radius: 9px;
-          background: linear-gradient(180deg, #ffffff, #f6f8fc);
+          background: #f8fafc;
+        }
+
+        .batchNumbers span,
+        .batchNumbers strong {
+          display: block;
+        }
+
+        .batchNumbers span {
+          color: #98a2b3;
+          font-size: 7px;
+          font-weight: 800;
+        }
+
+        .batchNumbers strong {
+          margin-top: 3px;
           color: ${ROYAL_BLUE};
-          font-size: 9px;
-          font-weight: 900;
+          font-size: 10px;
+        }
+
+        .batchActions {
+          display: grid;
+          gap: 6px;
+        }
+
+        .batchActions button {
+          min-height: 34px;
+          padding: 0 9px;
+          border: 1px solid #d0d5dd;
+          border-radius: 8px;
+          background: white;
+          color: ${ROYAL_BLUE};
+          font-size: 8px;
+          font-weight: 850;
           cursor: pointer;
-          transition:
-            transform 0.18s ease,
-            box-shadow 0.18s ease,
-            border-color 0.18s ease;
         }
 
-        .actions button:hover:not(:disabled),
-        .mobileActions button:hover:not(:disabled) {
-          transform: translateY(-1px);
-          border-color: rgba(212, 175, 55, 0.58);
-          box-shadow: 0 8px 18px rgba(3, 21, 63, 0.1);
-        }
-
-        .actions button:nth-child(2),
-        .mobileActions button:nth-child(2) {
-          border-color: rgba(212, 175, 55, 0.65);
-          background: linear-gradient(135deg, ${GOLD}, #f0d267);
+        .batchActions .printButton {
+          border-color: ${GOLD};
+          background: ${GOLD};
           color: ${DEEP_BLUE};
-        }
-
-        .mobileList {
-          display: none;
         }
 
         .loadingState,
         .emptyState {
-          min-height: 360px;
+          min-height: 330px;
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -1669,8 +1884,8 @@ export default function BarcodesPage() {
         }
 
         .spinner {
-          width: 43px;
-          height: 43px;
+          width: 42px;
+          height: 42px;
           border: 4px solid #e6eaf0;
           border-top-color: ${ROYAL_BLUE};
           border-radius: 50%;
@@ -1679,13 +1894,9 @@ export default function BarcodesPage() {
 
         .loadingState h2,
         .emptyState h2 {
-          margin: 14px 0 0;
+          margin: 13px 0 0;
           color: ${ROYAL_BLUE};
-          font-size: 19px;
-        }
-
-        .emptyState p {
-          color: #667085;
+          font-size: 18px;
         }
 
         .modalOverlay {
@@ -1701,7 +1912,7 @@ export default function BarcodesPage() {
 
         .previewModal {
           position: relative;
-          width: min(460px, 100%);
+          width: min(470px, 100%);
           padding: 25px;
           border: 1px solid rgba(212, 175, 55, 0.4);
           border-radius: 20px;
@@ -1712,7 +1923,7 @@ export default function BarcodesPage() {
 
         .previewModal > span {
           color: ${GOLD};
-          font-size: 10px;
+          font-size: 9px;
           font-weight: 900;
           letter-spacing: 1px;
         }
@@ -1722,26 +1933,56 @@ export default function BarcodesPage() {
           color: ${ROYAL_BLUE};
         }
 
+        .previewPurchase {
+          margin-top: 10px;
+          padding: 10px;
+          border-radius: 10px;
+          background: #f8fafc;
+        }
+
+        .previewPurchase strong,
+        .previewPurchase span,
+        .previewPurchase small {
+          display: block;
+        }
+
+        .previewPurchase strong {
+          color: ${ROYAL_BLUE};
+          font-size: 10px;
+        }
+
+        .previewPurchase span,
+        .previewPurchase small {
+          margin-top: 3px;
+          color: #8a93a0;
+          font-size: 8px;
+        }
+
         .previewModal p {
           color: #667085;
-          font-size: 11px;
+          font-size: 10px;
         }
 
         .close {
           position: absolute;
           top: 12px;
           right: 12px;
-          width: 34px;
-          height: 34px;
-          border: 1px solid #d0d5dd;
-          border-radius: 9px;
-          background: white;
-          font-size: 20px;
+          width: 38px;
+          height: 38px;
+          display: grid;
+          place-items: center;
+          padding: 0;
+          border: 1px solid ${GOLD};
+          border-radius: 50%;
+          background: ${ROYAL_BLUE};
+          color: white;
+          font-size: 17px;
+          font-weight: 950;
           cursor: pointer;
         }
 
         .barcodePreview {
-          margin: 18px 0 8px;
+          margin: 16px 0 8px;
           padding: 12px;
           border: 1px solid #e4e7ec;
           border-radius: 12px;
@@ -1753,11 +1994,24 @@ export default function BarcodesPage() {
           height: auto;
         }
 
+        .previewCopies {
+          display: grid;
+          gap: 5px;
+          margin-top: 14px;
+          text-align: left;
+        }
+
+        .previewCopies span {
+          color: #667085;
+          font-size: 8px;
+          font-weight: 800;
+        }
+
         .previewActions {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 9px;
-          margin-top: 18px;
+          margin-top: 15px;
         }
 
         .previewActions button {
@@ -1766,6 +2020,7 @@ export default function BarcodesPage() {
           border-radius: 10px;
           background: ${ROYAL_BLUE};
           color: white;
+          font-size: 9px;
           font-weight: 900;
           cursor: pointer;
         }
@@ -1776,57 +2031,26 @@ export default function BarcodesPage() {
           }
         }
 
-        @keyframes barcodeStatRise {
-          from {
-            opacity: 0;
-            transform: translateY(14px) scale(0.985);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-          }
-        }
-
-        @keyframes barcodeStatShine {
-          0%,
-          62% {
-            left: -42%;
-            opacity: 0;
-          }
-          68% {
-            opacity: 0.7;
-          }
-          100% {
-            left: 126%;
-            opacity: 0;
-          }
-        }
-
-        @media (max-width: 1100px) {
+        @media (max-width: 1180px) {
           .statsGrid {
             grid-template-columns: repeat(3, minmax(0, 1fr));
           }
 
-          .toolbar {
-            grid-template-columns: 1fr 1fr;
+          .batchCard {
+            grid-template-columns:
+              28px 58px minmax(240px, 1fr)
+              minmax(260px, 1fr);
           }
 
-          .searchBox {
-            grid-column: 1 / -1;
-          }
-
-          .printBar {
-            flex-wrap: wrap;
-          }
-
-          .printSelected {
-            margin-left: 0;
+          .batchActions {
+            grid-column: 2 / -1;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
           }
         }
 
         @media (max-width: 900px) {
           .barcodePage {
-            padding: 16px 10px 40px;
+            padding: 14px 9px 36px;
           }
 
           .pageHeader {
@@ -1834,8 +2058,10 @@ export default function BarcodesPage() {
             flex-direction: column;
           }
 
-          .pageHeader button {
+          .pageHeaderActions {
             width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
           }
 
           .statsGrid {
@@ -1846,10 +2072,6 @@ export default function BarcodesPage() {
             grid-template-columns: 1fr;
           }
 
-          .searchBox {
-            grid-column: auto;
-          }
-
           .printBar {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1857,119 +2079,55 @@ export default function BarcodesPage() {
 
           .printSelected {
             grid-column: 1 / -1;
+            margin-left: 0;
           }
 
-          .desktopTable {
-            display: none;
+          .batchCard {
+            grid-template-columns: 28px 58px minmax(0, 1fr);
           }
 
-          .mobileList {
-            display: grid;
-            gap: 12px;
-            padding: 12px;
-            background: #f8fafc;
+          .batchNumbers,
+          .batchActions {
+            grid-column: 1 / -1;
           }
 
-          .mobileCard {
-            padding: 13px;
-            border: 1px solid #e4e7ec;
-            border-radius: 15px;
-            background: white;
-          }
-
-          .mobileTop {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-          }
-
-          .mobileTop input {
-            width: 17px;
-            height: 17px;
-            accent-color: ${ROYAL_BLUE};
-          }
-
-          .mobileProduct {
-            display: flex;
-            align-items: center;
-            gap: 11px;
-            margin-top: 11px;
-          }
-
-          .mobileProduct strong,
-          .mobileProduct span {
-            display: block;
-          }
-
-          .mobileProduct strong {
-            color: ${DEEP_BLUE};
-            font-size: 12px;
-          }
-
-          .mobileProduct span {
-            margin-top: 4px;
-            color: #8a93a0;
-            font-size: 9px;
-          }
-
-          .mobileInfo {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px;
-            margin-top: 12px;
-            padding: 10px;
-            border-radius: 11px;
-            background: #f8fafc;
-          }
-
-          .mobileInfo p {
-            margin: 0;
-          }
-
-          .mobileInfo span,
-          .mobileInfo strong {
-            display: block;
-          }
-
-          .mobileInfo span {
-            color: #98a2b3;
-            font-size: 8px;
-            font-weight: 800;
-            text-transform: uppercase;
-          }
-
-          .mobileInfo strong {
-            margin-top: 3px;
-            color: #344054;
-            font-size: 10px;
-          }
-
-          .mobileActions {
-            display: grid;
+          .batchActions {
             grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 7px;
-            margin-top: 11px;
           }
         }
 
         @media (max-width: 560px) {
-          .statsGrid {
+          .pageHeaderActions,
+          .statsGrid,
+          .printBar,
+          .previewActions {
+            grid-template-columns: 1fr;
+          }
+
+          .viewTabs {
+            display: grid;
             grid-template-columns: 1fr 1fr;
           }
 
-          .printBar {
-            grid-template-columns: 1fr;
+          .viewTabs button {
+            border: 1px solid #dfe4eb;
+            border-radius: 9px;
           }
 
-          .printSelected {
-            grid-column: auto;
+          .batchCard {
+            grid-template-columns: 28px 52px minmax(0, 1fr);
           }
 
-          .mobileActions {
-            grid-template-columns: 1fr;
+          .productImage {
+            width: 50px;
+            height: 58px;
           }
 
-          .previewActions {
+          .batchNumbers {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .batchActions {
             grid-template-columns: 1fr;
           }
         }

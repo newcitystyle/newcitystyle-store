@@ -5,11 +5,29 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
-import JsBarcode from "jsbarcode";
+
+type TaxType = "intra_state" | "inter_state" | "non_gst";
+type PaymentMethod =
+  | "cash"
+  | "upi"
+  | "card"
+  | "bank_transfer"
+  | "other";
+
+type SupplierRow = {
+  id: number;
+  supplier_name: string;
+  phone?: string | null;
+  gst_number?: string | null;
+  state?: string | null;
+  state_code?: string | null;
+  place_of_supply?: string | null;
+  current_balance?: number | string | null;
+  is_active?: boolean | null;
+};
 
 type ProductRow = {
   id: number;
@@ -25,8 +43,9 @@ type ProductRow = {
   image?: string | null;
   image_url?: string | null;
   tax_percent?: number | string | null;
-  online_stock_limit?: number | string | null;
+  cess_percent?: number | string | null;
   sell_online?: boolean | null;
+  online_stock_limit?: number | string | null;
   is_active?: boolean | null;
   status?: string | null;
 };
@@ -42,57 +61,64 @@ type VariantRow = {
   selling_price?: number | string | null;
   mrp?: number | string | null;
   stock?: number | string | null;
-  online_stock_limit?: number | string | null;
+  tax_percent?: number | string | null;
+  cess_percent?: number | string | null;
   sell_online?: boolean | null;
+  online_stock_limit?: number | string | null;
   is_active?: boolean | null;
 };
 
-type PurchaseProduct = {
+type ProductOption = {
   key: string;
   productId: number;
   variantId: number | null;
   name: string;
   category: string;
-  price: number;
-  mrp: number;
-  stock: number;
-  sku: string;
-  barcode: string;
+  subcategory: string;
+  brand: string;
   size: string;
   color: string;
+  sku: string;
+  barcode: string;
+  stock: number;
+  purchasePrice: number;
+  onlineSellingPrice: number;
+  mrp: number;
   taxPercent: number;
-  imageUrl: string;
-  onlineStockLimit: number;
+  cessPercent: number;
   sellOnline: boolean;
+  onlineQuantity: number;
+  imageUrl: string;
 };
 
-type PurchaseItem = PurchaseProduct & {
+type PurchaseItem = {
+  rowId: string;
+  productId: number | null;
+  variantId: number | null;
+  productName: string;
+  category: string;
+  subcategory: string;
+  brand: string;
+  size: string;
+  color: string;
+  sku: string;
+  barcode: string;
   quantity: number;
   purchasePrice: number;
-  sellingPrice: number;
-  purchaseMrp: number;
-  purchaseTaxPercent: number;
-  onlineStockLimit: number;
+  mrp: number;
+  taxPercent: number;
+  cessPercent: number;
   sellOnline: boolean;
+  onlineQuantity: number;
+  onlineSellingPrice: number;
+  currentStock: number;
 };
 
-type PaymentMethod =
-  | "cash"
-  | "upi"
-  | "card"
-  | "bank_transfer"
-  | "credit"
-  | "other";
-
-type TaxType =
-  | "intra_state"
-  | "inter_state"
-  | "non_gst";
-
-type DesignMode = "same_design" | "different_designs";
-
-type GeneratedProductResult = NewProductPurchaseResult & {
-  sequence: number;
+type PaymentRow = {
+  id: string;
+  method: PaymentMethod;
+  amount: number;
+  reference: string;
 };
 
 type PurchaseResult = {
@@ -100,35 +126,19 @@ type PurchaseResult = {
   purchase_id?: string;
   purchase_number?: string;
   supplier_id?: number;
-  subtotal?: number;
-  tax_amount?: number;
+  previous_supplier_balance?: number;
+  current_purchase_due?: number;
+  closing_supplier_balance?: number;
   taxable_amount?: number;
   cgst_amount?: number;
   sgst_amount?: number;
   igst_amount?: number;
   cess_amount?: number;
-  tax_type?: TaxType;
-  discount_amount?: number;
-  transport_charge?: number;
-  other_charge?: number;
+  tax_amount?: number;
   total_amount?: number;
   paid_amount?: number;
   due_amount?: number;
   payment_status?: string;
-  message?: string;
-};
-
-type NewProductPurchaseResult = {
-  success?: boolean;
-  product_id?: number;
-  variant_id?: number | null;
-  product_name?: string;
-  product_barcode?: string;
-  variant_barcode?: string | null;
-  barcode?: string;
-  available_in_pos?: boolean;
-  sell_online?: boolean;
-  purchase?: PurchaseResult;
   message?: string;
 };
 
@@ -140,7 +150,7 @@ const CHARCOAL = "#2C2C2C";
 
 function toNumber(
   value: number | string | null | undefined,
-  fallback = 0
+  fallback = 0,
 ) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -158,46 +168,82 @@ function normalizeText(value: string | null | undefined) {
   return value?.trim().toLowerCase() || "";
 }
 
-function getImage(product: ProductRow) {
-  return (
-    product.image_url?.trim() ||
-    product.image?.trim() ||
-    ""
-  );
+function newId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 9)}`;
+}
+
+function createBlankItem(): PurchaseItem {
+  return {
+    rowId: newId("item"),
+    productId: null,
+    variantId: null,
+    productName: "",
+    category: "",
+    subcategory: "",
+    brand: "NEW CITY STYLE",
+    size: "",
+    color: "",
+    sku: "",
+    barcode: "",
+    quantity: 1,
+    purchasePrice: 0,
+    mrp: 0,
+    taxPercent: 0,
+    cessPercent: 0,
+    sellOnline: false,
+    onlineQuantity: 0,
+    onlineSellingPrice: 0,
+    currentStock: 0,
+  };
+}
+
+function createBlankPayment(): PaymentRow {
+  return {
+    id: newId("payment"),
+    method: "cash",
+    amount: 0,
+    reference: "",
+  };
 }
 
 export default function PurchasesPage() {
-  const barcodeSvgRef = useRef<SVGSVGElement | null>(null);
-  const [products, setProducts] = useState<PurchaseProduct[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierRow[]>([]);
+  const [products, setProducts] = useState<ProductOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [items, setItems] = useState<PurchaseItem[]>([]);
-
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [showSupplierResults, setShowSupplierResults] = useState(false);
+  const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(
+    null,
+  );
   const [supplierName, setSupplierName] = useState("");
   const [supplierPhone, setSupplierPhone] = useState("");
   const [supplierGstin, setSupplierGstin] = useState("");
-  const [supplierState, setSupplierState] =
-    useState("Andhra Pradesh");
-  const [supplierStateCode, setSupplierStateCode] =
-    useState("37");
-  const [placeOfSupply, setPlaceOfSupply] =
-    useState("Andhra Pradesh");
-  const [taxType, setTaxType] =
-    useState<TaxType>("intra_state");
-  const [supplierInvoiceNumber, setSupplierInvoiceNumber] =
-    useState("");
+  const [supplierState, setSupplierState] = useState("Andhra Pradesh");
+  const [supplierStateCode, setSupplierStateCode] = useState("37");
+  const [placeOfSupply, setPlaceOfSupply] = useState("Andhra Pradesh");
+  const [previousSupplierBalance, setPreviousSupplierBalance] = useState(0);
+
+  const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("");
   const [purchaseDate, setPurchaseDate] = useState(
-    new Date().toISOString().slice(0, 10)
+    new Date().toISOString().slice(0, 10),
   );
+  const [dueDate, setDueDate] = useState("");
+  const [taxType, setTaxType] = useState<TaxType>("intra_state");
+
+  const [items, setItems] = useState<PurchaseItem[]>([createBlankItem()]);
+  const [productSearch, setProductSearch] = useState("");
+  const [showProductResults, setShowProductResults] = useState(false);
 
   const [discountAmount, setDiscountAmount] = useState(0);
   const [transportCharge, setTransportCharge] = useState(0);
   const [otherCharge, setOtherCharge] = useState(0);
-  const [paidAmount, setPaidAmount] = useState(0);
-  const [paymentMethod, setPaymentMethod] =
-    useState<PaymentMethod>("cash");
+  const [payments, setPayments] = useState<PaymentRow[]>([
+    createBlankPayment(),
+  ]);
   const [notes, setNotes] = useState("");
 
   const [saving, setSaving] = useState(false);
@@ -205,150 +251,103 @@ export default function PurchasesPage() {
   const [noticeType, setNoticeType] = useState<
     "success" | "error" | "info"
   >("info");
-
   const [successPurchase, setSuccessPurchase] =
     useState<PurchaseResult | null>(null);
-
-  const [showNewProductForm, setShowNewProductForm] =
-    useState(false);
-  const [creatingNewProduct, setCreatingNewProduct] =
-    useState(false);
-
-  const [newProductName, setNewProductName] = useState("");
-  const [newProductCategory, setNewProductCategory] =
-    useState("");
-  const [newProductSubcategory, setNewProductSubcategory] =
-    useState("");
-  const [newProductBrand, setNewProductBrand] =
-    useState("NEW CITY STYLE");
-  const [newProductSize, setNewProductSize] = useState("");
-  const [newProductColor, setNewProductColor] = useState("");
-  const [newProductQuantity, setNewProductQuantity] =
-    useState(1);
-  const [newProductDesignMode, setNewProductDesignMode] =
-    useState<DesignMode>("same_design");
-  const [newProductPurchasePrice, setNewProductPurchasePrice] =
-    useState(0);
-  const [newProductSellingPrice, setNewProductSellingPrice] =
-    useState(0);
-  const [newProductMrp, setNewProductMrp] = useState(0);
-  const [newProductHsn, setNewProductHsn] = useState("");
-  const [newProductTaxPercent, setNewProductTaxPercent] =
-    useState(0);
-  const [newProductCessPercent, setNewProductCessPercent] =
-    useState(0);
-  const [newProductSellOnline, setNewProductSellOnline] =
-    useState(false);
-  const [
-    newProductOnlineQuantity,
-    setNewProductOnlineQuantity,
-  ] = useState(0);
-  const [newProductResult, setNewProductResult] =
-    useState<NewProductPurchaseResult | null>(null);
-  const [generatedProductResults, setGeneratedProductResults] =
-    useState<GeneratedProductResult[]>([]);
-
-  const [barcodePrintQuantity, setBarcodePrintQuantity] =
-    useState(1);
-  const [barcodeLabelSize, setBarcodeLabelSize] =
-    useState("50x30");
-  const [showPriceOnBarcode, setShowPriceOnBarcode] =
-    useState(true);
-  const [showMrpOnBarcode, setShowMrpOnBarcode] =
-    useState(true);
 
   const showNotice = useCallback(
     (
       message: string,
-      type: "success" | "error" | "info" = "info"
+      type: "success" | "error" | "info" = "info",
     ) => {
       setNotice(message);
       setNoticeType(type);
-
-      window.setTimeout(() => {
-        setNotice("");
-      }, 3500);
+      window.setTimeout(() => setNotice(""), 4000);
     },
-    []
+    [],
   );
 
-  const loadProducts = useCallback(async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setLoadError("");
 
     try {
-      const { data: productData, error: productError } =
-        await supabase
-          .from("products")
-          .select(
-            [
-              "id",
-              "name",
-              "category",
-              "subcategory",
-              "brand",
-              "price",
-              "mrp",
-              "stock",
-              "sku",
-              "barcode",
-              "image",
-              "image_url",
-              "tax_percent",
-              "online_stock_limit",
-              "sell_online",
-              "is_active",
-              "status",
-            ].join(",")
-          )
-          .order("created_at", {
-            ascending: false,
-          });
+      const [supplierResponse, productResponse, variantResponse] =
+        await Promise.all([
+          supabase
+            .from("suppliers")
+            .select(
+              "id,supplier_name,phone,gst_number,state,state_code,place_of_supply,current_balance,is_active",
+            )
+            .eq("is_active", true)
+            .order("supplier_name", { ascending: true }),
+          supabase
+            .from("products")
+            .select(
+              [
+                "id",
+                "name",
+                "category",
+                "subcategory",
+                "brand",
+                "price",
+                "mrp",
+                "stock",
+                "sku",
+                "barcode",
+                "image",
+                "image_url",
+                "tax_percent",
+                "cess_percent",
+                "sell_online",
+                "online_stock_limit",
+                "is_active",
+                "status",
+              ].join(","),
+            )
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("product_variants")
+            .select(
+              [
+                "id",
+                "product_id",
+                "size",
+                "color",
+                "sku",
+                "barcode",
+                "purchase_price",
+                "selling_price",
+                "mrp",
+                "stock",
+                "tax_percent",
+                "cess_percent",
+                "sell_online",
+                "online_stock_limit",
+                "is_active",
+              ].join(","),
+            )
+            .eq("is_active", true),
+        ]);
 
-      if (productError) {
-        throw productError;
-      }
+      if (supplierResponse.error) throw supplierResponse.error;
+      if (productResponse.error) throw productResponse.error;
+      if (variantResponse.error) throw variantResponse.error;
 
-      const { data: variantData } = await supabase
-        .from("product_variants")
-        .select(
-          [
-            "id",
-            "product_id",
-            "size",
-            "color",
-            "sku",
-            "barcode",
-            "purchase_price",
-            "selling_price",
-            "mrp",
-            "stock",
-            "online_stock_limit",
-            "sell_online",
-            "is_active",
-          ].join(",")
-        )
-        .eq("is_active", true);
+      const safeSuppliers = (supplierResponse.data || []) as SupplierRow[];
+      const safeProducts = (productResponse.data || []) as unknown as ProductRow[];
+      const safeVariants = (variantResponse.data || []) as unknown as VariantRow[];
 
-      const safeProducts =
-        (productData || []) as unknown as ProductRow[];
-      const safeVariants =
-        (variantData || []) as unknown as VariantRow[];
+      setSuppliers(safeSuppliers);
 
       const variantsByProduct = new Map<number, VariantRow[]>();
 
       safeVariants.forEach((variant) => {
-        const current =
-          variantsByProduct.get(variant.product_id) || [];
-
-        current.push(variant);
-        variantsByProduct.set(
-          variant.product_id,
-          current
-        );
+        const list = variantsByProduct.get(variant.product_id) || [];
+        list.push(variant);
+        variantsByProduct.set(variant.product_id, list);
       });
 
-      const mapped: PurchaseProduct[] = [];
+      const mapped: ProductOption[] = [];
 
       safeProducts.forEach((product) => {
         if (
@@ -359,86 +358,83 @@ export default function PurchasesPage() {
         }
 
         const productId = Number(product.id);
-        const variants =
-          variantsByProduct.get(productId) || [];
-
-        const common = {
-          productId,
-          name:
-            product.name?.trim() ||
-            "NEW CITY STYLE Product",
-          category:
-            product.category?.trim() || "Others",
-          imageUrl: getImage(product),
-          taxPercent: Math.max(
-            0,
-            toNumber(product.tax_percent)
-          ),
-          onlineStockLimit: Math.max(
-            0,
-            toNumber(product.online_stock_limit)
-          ),
-          sellOnline:
-            product.sell_online === true,
-        };
+        const variants = variantsByProduct.get(productId) || [];
+        const imageUrl =
+          product.image_url?.trim() || product.image?.trim() || "";
 
         if (variants.length > 0) {
           variants.forEach((variant) => {
-            const sellingPrice =
-              toNumber(variant.selling_price) ||
-              toNumber(product.price);
-
             mapped.push({
-              ...common,
               key: `variant-${variant.id}`,
-              variantId: variant.id,
-              price: sellingPrice,
-              mrp:
-                toNumber(variant.mrp) ||
-                toNumber(product.mrp) ||
-                sellingPrice,
-              stock: Math.max(
-                0,
-                toNumber(variant.stock)
-              ),
-              sku:
-                variant.sku?.trim() ||
-                product.sku?.trim() ||
-                "",
-              barcode:
-                variant.barcode?.trim() ||
-                product.barcode?.trim() ||
-                "",
+              productId,
+              variantId: Number(variant.id),
+              name: product.name?.trim() || "NEW CITY STYLE Product",
+              category: product.category?.trim() || "Others",
+              subcategory: product.subcategory?.trim() || "",
+              brand: product.brand?.trim() || "NEW CITY STYLE",
               size: variant.size?.trim() || "",
               color: variant.color?.trim() || "",
-              onlineStockLimit: Math.max(
+              sku: variant.sku?.trim() || product.sku?.trim() || "",
+              barcode:
+                variant.barcode?.trim() || product.barcode?.trim() || "",
+              stock: Math.max(0, toNumber(variant.stock)),
+              purchasePrice: Math.max(
                 0,
-                toNumber(variant.online_stock_limit)
+                toNumber(variant.purchase_price),
               ),
-              sellOnline:
-                variant.sell_online === true,
+              onlineSellingPrice: Math.max(
+                0,
+                toNumber(variant.selling_price) ||
+                  toNumber(product.price),
+              ),
+              mrp:
+                Math.max(0, toNumber(variant.mrp)) ||
+                Math.max(0, toNumber(product.mrp)),
+              taxPercent: Math.max(
+                0,
+                toNumber(variant.tax_percent) ||
+                  toNumber(product.tax_percent),
+              ),
+              cessPercent: Math.max(
+                0,
+                toNumber(variant.cess_percent) ||
+                  toNumber(product.cess_percent),
+              ),
+              sellOnline: variant.sell_online === true,
+              onlineQuantity: Math.max(
+                0,
+                toNumber(variant.online_stock_limit),
+              ),
+              imageUrl,
             });
           });
-
           return;
         }
 
-        const price = toNumber(product.price);
-
         mapped.push({
-          ...common,
           key: `product-${productId}`,
+          productId,
           variantId: null,
-          price,
-          mrp: toNumber(product.mrp) || price,
-          stock: Math.max(
-            0,
-            toNumber(product.stock)
-          ),
-          sku: product.sku?.trim() || "",
-          barcode: product.barcode?.trim() || "",
+          name: product.name?.trim() || "NEW CITY STYLE Product",
+          category: product.category?.trim() || "Others",
+          subcategory: product.subcategory?.trim() || "",
+          brand: product.brand?.trim() || "NEW CITY STYLE",
           size: "",
           color: "",
+          sku: product.sku?.trim() || "",
+          barcode: product.barcode?.trim() || "",
+          stock: Math.max(0, toNumber(product.stock)),
+          purchasePrice: 0,
+          onlineSellingPrice: Math.max(0, toNumber(product.price)),
+          mrp: Math.max(0, toNumber(product.mrp)),
+          taxPercent: Math.max(0, toNumber(product.tax_percent)),
+          cessPercent: Math.max(0, toNumber(product.cess_percent)),
+          sellOnline: product.sell_online === true,
+          onlineQuantity: Math.max(
+            0,
+            toNumber(product.online_stock_limit),
+          ),
+          imageUrl,
         });
       });
 
@@ -448,7 +444,7 @@ export default function PurchasesPage() {
       setLoadError(
         error instanceof Error
           ? error.message
-          : "Unable to load products."
+          : "Unable to load purchase data.",
       );
     } finally {
       setLoading(false);
@@ -456,810 +452,305 @@ export default function PurchasesPage() {
   }, []);
 
   useEffect(() => {
-    loadProducts();
-  }, [loadProducts]);
+    loadData();
+  }, [loadData]);
 
-  useEffect(() => {
-    const barcodeValue =
-      newProductResult?.barcode?.trim();
+  const filteredSuppliers = useMemo(() => {
+    const query = normalizeText(supplierSearch);
 
-    if (!barcodeValue || !barcodeSvgRef.current) {
-      return;
-    }
+    if (!query) return suppliers.slice(0, 10);
 
-    try {
-      JsBarcode(
-        barcodeSvgRef.current,
-        barcodeValue,
-        {
-          format: "CODE128",
-          width: 2,
-          height: 58,
-          displayValue: true,
-          fontSize: 15,
-          margin: 8,
-          background: "#FFFFFF",
-          lineColor: "#000000",
-        }
-      );
-    } catch (error) {
-      console.error(
-        "Unable to render barcode:",
-        error
-      );
-    }
-  }, [newProductResult]);
+    return suppliers
+      .filter((supplier) =>
+        [
+          supplier.supplier_name,
+          supplier.phone,
+          supplier.gst_number,
+          supplier.state,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(query),
+      )
+      .slice(0, 12);
+  }, [supplierSearch, suppliers]);
 
   const filteredProducts = useMemo(() => {
-    const query = normalizeText(searchQuery);
+    const query = normalizeText(productSearch);
 
-    if (!query) {
-      return products;
-    }
+    if (!query) return products.slice(0, 12);
 
-    return products.filter((product) =>
-      [
-        product.name,
-        product.category,
-        product.sku,
-        product.barcode,
-        product.size,
-        product.color,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query)
-    );
-  }, [products, searchQuery]);
+    return products
+      .filter((product) =>
+        [
+          product.name,
+          product.category,
+          product.subcategory,
+          product.size,
+          product.color,
+          product.sku,
+          product.barcode,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(query),
+      )
+      .slice(0, 20);
+  }, [productSearch, products]);
 
   const subtotal = useMemo(
     () =>
       items.reduce(
-        (total, item) =>
-          total +
-          item.purchasePrice * item.quantity,
-        0
+        (sum, item) => sum + item.purchasePrice * item.quantity,
+        0,
       ),
-    [items]
+    [items],
   );
 
-  const taxAmount = useMemo(
-    () =>
-      taxType === "non_gst"
-        ? 0
-        : items.reduce((total, item) => {
-            const line =
-              item.purchasePrice * item.quantity;
+  const taxAmount = useMemo(() => {
+    if (taxType === "non_gst") return 0;
 
-            return (
-              total +
-              (line * item.purchaseTaxPercent) / 100
-            );
-          }, 0),
-    [items, taxType]
-  );
+    return items.reduce((sum, item) => {
+      const taxable = item.purchasePrice * item.quantity;
+      return sum + (taxable * item.taxPercent) / 100;
+    }, 0);
+  }, [items, taxType]);
 
-  const cgstAmount =
-    taxType === "intra_state"
-      ? taxAmount / 2
-      : 0;
+  const cessAmount = useMemo(() => {
+    if (taxType === "non_gst") return 0;
 
+    return items.reduce((sum, item) => {
+      const taxable = item.purchasePrice * item.quantity;
+      return sum + (taxable * item.cessPercent) / 100;
+    }, 0);
+  }, [items, taxType]);
+
+  const cgstAmount = taxType === "intra_state" ? taxAmount / 2 : 0;
   const sgstAmount =
-    taxType === "intra_state"
-      ? taxAmount - cgstAmount
-      : 0;
-
-  const igstAmount =
-    taxType === "inter_state"
-      ? taxAmount
-      : 0;
+    taxType === "intra_state" ? taxAmount - cgstAmount : 0;
+  const igstAmount = taxType === "inter_state" ? taxAmount : 0;
 
   const totalAmount = Math.max(
     0,
     subtotal +
       taxAmount +
+      cessAmount +
       transportCharge +
       otherCharge -
-      discountAmount
+      discountAmount,
   );
 
-  const safePaidAmount = Math.min(
-    Math.max(0, paidAmount),
-    totalAmount
+  const totalPaid = useMemo(
+    () => payments.reduce((sum, payment) => sum + payment.amount, 0),
+    [payments],
   );
 
-  const dueAmount = Math.max(
-    0,
-    totalAmount - safePaidAmount
-  );
+  const safePaid = Math.min(totalPaid, totalAmount);
+  const currentPurchaseDue = Math.max(0, totalAmount - safePaid);
+  const closingSupplierBalance =
+    previousSupplierBalance + currentPurchaseDue;
 
-  function addProduct(product: PurchaseProduct) {
-    setItems((current) => {
-      const existing = current.find(
-        (item) => item.key === product.key
-      );
-
-      if (existing) {
-        return current.map((item) =>
-          item.key === product.key
-            ? {
-                ...item,
-                quantity: item.quantity + 1,
-              }
-            : item
-        );
-      }
-
-      return [
-        ...current,
-        {
-          ...product,
-          quantity: 1,
-          purchasePrice: 0,
-          sellingPrice: product.price,
-          purchaseMrp: product.mrp,
-          purchaseTaxPercent: product.taxPercent,
-          onlineStockLimit:
-            product.onlineStockLimit,
-          sellOnline: product.sellOnline,
-        },
-      ];
-    });
-
-    setSearchQuery("");
-    showNotice(
-      `${product.name} added to purchase.`,
-      "success"
+  function selectSupplier(supplier: SupplierRow) {
+    setSelectedSupplierId(supplier.id);
+    setSupplierSearch(supplier.supplier_name);
+    setSupplierName(supplier.supplier_name);
+    setSupplierPhone(supplier.phone || "");
+    setSupplierGstin(supplier.gst_number || "");
+    setSupplierState(supplier.state || "Andhra Pradesh");
+    setSupplierStateCode(supplier.state_code || "37");
+    setPlaceOfSupply(
+      supplier.place_of_supply ||
+        supplier.state ||
+        "Andhra Pradesh",
     );
+    setPreviousSupplierBalance(
+      Math.max(0, toNumber(supplier.current_balance)),
+    );
+    setShowSupplierResults(false);
   }
 
-  function updateItem(
-    key: string,
-    field:
-      | "quantity"
-      | "purchasePrice"
-      | "sellingPrice"
-      | "purchaseMrp"
-      | "purchaseTaxPercent"
-      | "onlineStockLimit",
-    value: number
-  ) {
-    setItems((current) =>
-      current.map((item) =>
-        item.key === key
-          ? {
-              ...item,
-              [field]:
-                field === "quantity"
-                  ? Math.max(1, Math.floor(value))
-                  : Math.max(0, value),
-            }
-          : item
-      )
-    );
-  }
-
-  function removeItem(key: string) {
-    setItems((current) =>
-      current.filter((item) => item.key !== key)
-    );
-  }
-
-  function clearForm() {
-    setItems([]);
+  function clearSupplierSelection() {
+    setSelectedSupplierId(null);
+    setSupplierSearch("");
     setSupplierName("");
     setSupplierPhone("");
     setSupplierGstin("");
     setSupplierState("Andhra Pradesh");
     setSupplierStateCode("37");
     setPlaceOfSupply("Andhra Pradesh");
-    setTaxType("intra_state");
-    setSupplierInvoiceNumber("");
-    setPurchaseDate(
-      new Date().toISOString().slice(0, 10)
+    setPreviousSupplierBalance(0);
+  }
+
+  function addExistingProduct(product: ProductOption) {
+    setItems((current) => {
+      const existingIndex = current.findIndex(
+        (item) =>
+          item.productId === product.productId &&
+          item.variantId === product.variantId,
+      );
+
+      if (existingIndex >= 0) {
+        return current.map((item, index) =>
+          index === existingIndex
+            ? { ...item, quantity: item.quantity + 1 }
+            : item,
+        );
+      }
+
+      const newItem: PurchaseItem = {
+        rowId: newId("item"),
+        productId: product.productId,
+        variantId: product.variantId,
+        productName: product.name,
+        category: product.category,
+        subcategory: product.subcategory,
+        brand: product.brand,
+        size: product.size,
+        color: product.color,
+        sku: product.sku,
+        barcode: product.barcode,
+        quantity: 1,
+        purchasePrice: product.purchasePrice,
+        mrp: product.mrp,
+        taxPercent: product.taxPercent,
+        cessPercent: product.cessPercent,
+        sellOnline: false,
+        onlineQuantity: 0,
+        onlineSellingPrice: product.onlineSellingPrice,
+        currentStock: product.stock,
+      };
+
+      const blankOnly =
+        current.length === 1 &&
+        !current[0].productName.trim() &&
+        current[0].productId === null;
+
+      return blankOnly ? [newItem] : [...current, newItem];
+    });
+
+    setProductSearch("");
+    setShowProductResults(false);
+    showNotice(`${product.name} added.`, "success");
+  }
+
+  function updateItem<K extends keyof PurchaseItem>(
+    rowId: string,
+    field: K,
+    value: PurchaseItem[K],
+  ) {
+    setItems((current) =>
+      current.map((item) =>
+        item.rowId === rowId ? { ...item, [field]: value } : item,
+      ),
     );
+  }
+
+  function removeItem(rowId: string) {
+    setItems((current) => {
+      const next = current.filter((item) => item.rowId !== rowId);
+      return next.length > 0 ? next : [createBlankItem()];
+    });
+  }
+
+  function addBlankItem() {
+    setItems((current) => [...current, createBlankItem()]);
+  }
+
+  function duplicateItem(item: PurchaseItem) {
+    setItems((current) => [
+      ...current,
+      {
+        ...item,
+        rowId: newId("item"),
+        productId: null,
+        variantId: null,
+        barcode: "",
+        sku: "",
+        currentStock: 0,
+      },
+    ]);
+  }
+
+  function updatePayment<K extends keyof PaymentRow>(
+    id: string,
+    field: K,
+    value: PaymentRow[K],
+  ) {
+    setPayments((current) =>
+      current.map((payment) =>
+        payment.id === id ? { ...payment, [field]: value } : payment,
+      ),
+    );
+  }
+
+  function addPaymentRow() {
+    setPayments((current) => [...current, createBlankPayment()]);
+  }
+
+  function removePaymentRow(id: string) {
+    setPayments((current) => {
+      const next = current.filter((payment) => payment.id !== id);
+      return next.length > 0 ? next : [createBlankPayment()];
+    });
+  }
+
+  function resetForm() {
+    clearSupplierSelection();
+    setSupplierInvoiceNumber("");
+    setPurchaseDate(new Date().toISOString().slice(0, 10));
+    setDueDate("");
+    setTaxType("intra_state");
+    setItems([createBlankItem()]);
+    setProductSearch("");
     setDiscountAmount(0);
     setTransportCharge(0);
     setOtherCharge(0);
-    setPaidAmount(0);
-    setPaymentMethod("cash");
+    setPayments([createBlankPayment()]);
     setNotes("");
   }
 
-  function printGeneratedBarcode() {
-    const barcodeValue =
-      newProductResult?.barcode?.trim();
-    const barcodeSvg =
-      barcodeSvgRef.current?.outerHTML;
-
-    if (!barcodeValue || !barcodeSvg) {
-      showNotice(
-        "Barcode is not ready to print.",
-        "error"
-      );
-      return;
-    }
-
-    const productName =
-      newProductResult?.product_name ||
-      "NEW CITY STYLE Product";
-
-    const printCount = Math.max(
-      1,
-      Math.floor(barcodePrintQuantity)
-    );
-
-    const labelSizes: Record<
-      string,
-      { width: number; height: number }
-    > = {
-      "38x25": { width: 38, height: 25 },
-      "50x25": { width: 50, height: 25 },
-      "50x30": { width: 50, height: 30 },
-      "60x40": { width: 60, height: 40 },
-    };
-
-    const selectedSize =
-      labelSizes[barcodeLabelSize] ||
-      labelSizes["50x30"];
-
-    const sellingPrice =
-      newProductSellingPrice > 0
-        ? newProductSellingPrice
-        : 0;
-
-    const mrp =
-      newProductMrp > 0
-        ? newProductMrp
-        : sellingPrice;
-
-    const escapeHtml = (value: string) =>
-      value.replace(
-        /[&<>"']/g,
-        (character) =>
-          ({
-            "&": "&amp;",
-            "<": "&lt;",
-            ">": "&gt;",
-            '"': "&quot;",
-            "'": "&#039;",
-          })[character] || character
-      );
-
-    const variantText = [
-      newProductSize,
-      newProductColor,
-    ]
-      .filter(Boolean)
-      .join(" • ");
-
-    const labelHtml = Array.from({
-      length: printCount,
-    })
-      .map(
-        () => `
-          <div class="label">
-            <p class="store">NEW CITY STYLE</p>
-            <p class="product">${escapeHtml(
-              productName
-            )}</p>
-            ${
-              variantText
-                ? `<p class="variant">${escapeHtml(
-                    variantText
-                  )}</p>`
-                : ""
-            }
-            <div class="barcode">${barcodeSvg}</div>
-            <div class="priceRow">
-              ${
-                showPriceOnBarcode &&
-                sellingPrice > 0
-                  ? `<span class="price">₹${sellingPrice.toFixed(
-                      2
-                    )}</span>`
-                  : ""
-              }
-              ${
-                showMrpOnBarcode &&
-                mrp > 0
-                  ? `<span class="mrp">MRP ₹${mrp.toFixed(
-                      2
-                    )}</span>`
-                  : ""
-              }
-            </div>
-          </div>
-        `
-      )
-      .join("");
-
-    const printWindow = window.open(
-      "",
-      "_blank",
-      "width=700,height=700"
-    );
-
-    if (!printWindow) {
-      showNotice(
-        "Allow browser pop-ups to print barcodes.",
-        "error"
-      );
-      return;
-    }
-
-    printWindow.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <title>${barcodeValue}</title>
-          <style>
-            @page {
-              size: ${selectedSize.width}mm ${selectedSize.height}mm;
-              margin: 0;
-            }
-
-            * {
-              box-sizing: border-box;
-            }
-
-            html,
-            body {
-              margin: 0;
-              padding: 0;
-              background: #ffffff;
-              font-family: Arial, sans-serif;
-            }
-
-            .label {
-              width: ${selectedSize.width}mm;
-              height: ${selectedSize.height}mm;
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              justify-content: center;
-              padding: 1.5mm;
-              overflow: hidden;
-              page-break-after: always;
-              break-after: page;
-              background: #ffffff;
-              color: #000000;
-              text-align: center;
-            }
-
-            .label:last-child {
-              page-break-after: auto;
-              break-after: auto;
-            }
-
-            .store {
-              margin: 0 0 0.6mm;
-              font-size: ${
-                selectedSize.width <= 38 ? 6 : 7
-              }px;
-              font-weight: 800;
-              letter-spacing: 0.4px;
-            }
-
-            .product {
-              max-width: 100%;
-              margin: 0;
-              overflow: hidden;
-              font-size: ${
-                selectedSize.width <= 38 ? 6 : 7
-              }px;
-              font-weight: 700;
-              line-height: 1.15;
-              text-overflow: ellipsis;
-              white-space: nowrap;
-            }
-
-            .variant {
-              margin: 0.5mm 0 0;
-              font-size: ${
-                selectedSize.width <= 38 ? 5 : 6
-              }px;
-              font-weight: 700;
-            }
-
-            .barcode {
-              width: 100%;
-              margin-top: 0.5mm;
-            }
-
-            .barcode svg {
-              width: 100%;
-              height: ${
-                selectedSize.height <= 25 ? 12 : 16
-              }mm;
-              display: block;
-            }
-
-            .priceRow {
-              width: 100%;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              gap: 2mm;
-              margin-top: 0.5mm;
-              font-size: ${
-                selectedSize.width <= 38 ? 6 : 7
-              }px;
-              font-weight: 800;
-            }
-
-            .mrp {
-              font-weight: 700;
-            }
-
-            @media print {
-              body {
-                width: ${selectedSize.width}mm;
-              }
-            }
-          </style>
-        </head>
-
-        <body>
-          ${labelHtml}
-
-          <script>
-            window.onload = function () {
-              window.print();
-              window.onafterprint = function () {
-                window.close();
-              };
-            };
-          </script>
-        </body>
-      </html>
-    `);
-
-    printWindow.document.close();
-  }
-
-  function printAllGeneratedBarcodes() {
-    if (generatedProductResults.length === 0) {
-      showNotice("No generated barcodes are ready.", "error");
-      return;
-    }
-
-    const labelSizes: Record<string, { width: number; height: number }> = {
-      "38x25": { width: 38, height: 25 },
-      "50x25": { width: 50, height: 25 },
-      "50x30": { width: 50, height: 30 },
-      "60x40": { width: 60, height: 40 },
-    };
-
-    const selectedSize =
-      labelSizes[barcodeLabelSize] || labelSizes["50x30"];
-
-    const labels = generatedProductResults
-      .map((result) => {
-        const barcodeValue =
-          result.barcode?.trim() ||
-          result.product_barcode?.trim() ||
-          result.variant_barcode?.trim() ||
-          "";
-
-        if (!barcodeValue) return "";
-
-        const svg = document.createElementNS(
-          "http://www.w3.org/2000/svg",
-          "svg"
-        );
-
-        JsBarcode(svg, barcodeValue, {
-          format: "CODE128",
-          width: 2,
-          height: 58,
-          displayValue: true,
-          fontSize: 15,
-          margin: 8,
-          background: "#FFFFFF",
-          lineColor: "#000000",
-        });
-
-        const productName =
-          result.product_name || `Design ${result.sequence}`;
-
-        return `
-          <div class="label">
-            <p class="store">NEW CITY STYLE</p>
-            <p class="product">${productName.replace(/[&<>"']/g, "")}</p>
-            <div class="barcode">${svg.outerHTML}</div>
-            <p class="code">${barcodeValue}</p>
-          </div>
-        `;
-      })
-      .filter(Boolean)
-      .join("");
-
-    if (!labels) {
-      showNotice("Generated barcode values are missing.", "error");
-      return;
-    }
-
-    const printWindow = window.open(
-      "",
-      "_blank",
-      "width=800,height=750"
-    );
-
-    if (!printWindow) {
-      showNotice("Allow browser pop-ups to print barcodes.", "error");
-      return;
-    }
-
-    printWindow.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <title>NEW CITY STYLE - Individual Barcodes</title>
-          <style>
-            @page { size: ${selectedSize.width}mm ${selectedSize.height}mm; margin: 0; }
-            * { box-sizing: border-box; }
-            html, body { margin: 0; padding: 0; background: #fff; font-family: Arial, sans-serif; }
-            .label { width: ${selectedSize.width}mm; height: ${selectedSize.height}mm; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.5mm; overflow: hidden; page-break-after: always; break-after: page; text-align: center; }
-            .label:last-child { page-break-after: auto; break-after: auto; }
-            .store { margin: 0 0 .5mm; font-size: 7px; font-weight: 800; letter-spacing: .4px; }
-            .product { width: 100%; margin: 0; overflow: hidden; font-size: 7px; font-weight: 700; white-space: nowrap; text-overflow: ellipsis; }
-            .barcode { width: 100%; margin-top: .4mm; }
-            .barcode svg { width: 100%; height: ${selectedSize.height <= 25 ? 12 : 16}mm; display: block; }
-            .code { margin: .2mm 0 0; font-size: 6px; font-weight: 700; }
-          </style>
-        </head>
-        <body>
-          ${labels}
-          <script>
-            window.onload = function () {
-              window.print();
-              window.onafterprint = function () { window.close(); };
-            };
-          </script>
-        </body>
-      </html>
-    `);
-
-    printWindow.document.close();
-  }
-
-  function resetNewProductForm() {
-    setNewProductName("");
-    setNewProductCategory("");
-    setNewProductSubcategory("");
-    setNewProductBrand("NEW CITY STYLE");
-    setNewProductSize("");
-    setNewProductColor("");
-    setNewProductQuantity(1);
-    setNewProductDesignMode("same_design");
-    setNewProductPurchasePrice(0);
-    setNewProductSellingPrice(0);
-    setNewProductMrp(0);
-    setNewProductHsn("");
-    setNewProductTaxPercent(0);
-    setNewProductCessPercent(0);
-    setNewProductSellOnline(false);
-    setNewProductOnlineQuantity(0);
-  }
-
-  async function createNewProductPurchase(
-    event: FormEvent<HTMLFormElement>
-  ) {
-    event.preventDefault();
-
-    if (creatingNewProduct) return;
-
-    if (!newProductName.trim()) {
-      showNotice("Product name is required.", "error");
-      return;
-    }
-
-    if (!newProductCategory.trim()) {
-      showNotice("Category is required.", "error");
-      return;
-    }
-
-    if (newProductQuantity <= 0) {
-      showNotice("Quantity must be greater than zero.", "error");
-      return;
-    }
-
-    if (newProductMrp <= 0) {
-      showNotice("Please enter the product MRP.", "error");
-      return;
-    }
-
-    if (newProductSellOnline && newProductSellingPrice <= 0) {
-      showNotice(
-        "Online selling price is required only when Sell Online is ON.",
-        "error"
-      );
-      return;
-    }
-
-    if (
-      newProductSellOnline &&
-      newProductOnlineQuantity > newProductQuantity
-    ) {
-      showNotice(
-        "Online quantity cannot exceed total quantity.",
-        "error"
-      );
-      return;
-    }
-
-    setCreatingNewProduct(true);
-    setGeneratedProductResults([]);
-
-    try {
-      const createCount =
-        newProductDesignMode === "different_designs"
-          ? newProductQuantity
-          : 1;
-
-      const createdResults: GeneratedProductResult[] = [];
-
-      for (let index = 0; index < createCount; index += 1) {
-        const isDifferentDesign =
-          newProductDesignMode === "different_designs";
-        const sequence = index + 1;
-        const productName = isDifferentDesign
-          ? `${newProductName.trim()} - Design ${String(sequence).padStart(2, "0")}`
-          : newProductName.trim();
-        const itemSellOnline =
-          newProductSellOnline &&
-          (!isDifferentDesign || sequence <= newProductOnlineQuantity);
-
-        const { data, error } = await supabase.rpc(
-          "create_new_product_purchase_gst",
-          {
-            p_product_name: productName,
-            p_category: newProductCategory.trim(),
-            p_subcategory: newProductSubcategory.trim() || null,
-            p_brand: newProductBrand.trim() || "NEW CITY STYLE",
-            p_size: newProductSize.trim() || null,
-            p_color: newProductColor.trim() || null,
-            p_quantity: isDifferentDesign ? 1 : newProductQuantity,
-            p_purchase_price: newProductPurchasePrice,
-            p_selling_price:
-              itemSellOnline && newProductSellingPrice > 0
-                ? newProductSellingPrice
-                : newProductMrp,
-            p_mrp: newProductMrp,
-            p_hsn_code: newProductHsn.trim() || null,
-            p_tax_percent:
-              taxType === "non_gst" ? 0 : newProductTaxPercent,
-            p_cess_percent:
-              taxType === "non_gst" ? 0 : newProductCessPercent,
-            p_available_in_pos: true,
-            p_sell_online: itemSellOnline,
-            p_supplier_id: null,
-            p_supplier_name: supplierName.trim() || null,
-            p_supplier_phone: supplierPhone.trim() || null,
-            p_supplier_gstin: supplierGstin.trim() || null,
-            p_supplier_state: supplierState.trim() || null,
-            p_supplier_state_code: supplierStateCode.trim() || null,
-            p_place_of_supply: placeOfSupply.trim() || null,
-            p_tax_type: taxType,
-            p_supplier_invoice_number:
-              supplierInvoiceNumber.trim() || null,
-            p_purchase_date: purchaseDate,
-            p_discount_amount: index === 0 ? discountAmount : 0,
-            p_transport_charge: index === 0 ? transportCharge : 0,
-            p_other_charge: index === 0 ? otherCharge : 0,
-            p_paid_amount: index === 0 ? safePaidAmount : 0,
-            p_payment_method: paymentMethod,
-            p_notes: notes.trim() || null,
-          }
-        );
-
-        if (error) throw error;
-
-        const result =
-          (data || {}) as unknown as NewProductPurchaseResult;
-
-        if (result.success === false) {
-          throw new Error(
-            result.message || `Unable to create product ${sequence}.`
-          );
-        }
-
-        if (result.product_id) {
-          const onlineQuantity = isDifferentDesign
-            ? itemSellOnline
-              ? 1
-              : 0
-            : newProductSellOnline
-              ? Math.min(newProductOnlineQuantity, newProductQuantity)
-              : 0;
-
-          const { error: onlineStockError } = await supabase.rpc(
-            "set_product_online_stock",
-            {
-              p_product_id: result.product_id,
-              p_variant_id: result.variant_id || null,
-              p_online_quantity: onlineQuantity,
-              p_sell_online: itemSellOnline,
-            }
-          );
-
-          if (onlineStockError) throw onlineStockError;
-        }
-
-        createdResults.push({
-          ...result,
-          product_name: result.product_name || productName,
-          sell_online: itemSellOnline,
-          sequence,
-        });
-      }
-
-      const firstResult = createdResults[0] || null;
-      setGeneratedProductResults(createdResults);
-      setNewProductResult(firstResult);
-      setBarcodePrintQuantity(
-        newProductDesignMode === "different_designs"
-          ? 1
-          : Math.max(1, newProductQuantity)
-      );
-      setShowNewProductForm(false);
-      resetNewProductForm();
-      clearForm();
-      await loadProducts();
-
-      showNotice(
-        createdResults.length > 1
-          ? `${createdResults.length} products and separate barcodes created successfully.`
-          : `${firstResult?.product_name || "New product"} created successfully.`,
-        "success"
-      );
-    } catch (error) {
-      console.error("Unable to create new product purchase:", error);
-      showNotice(
-        error instanceof Error
-          ? error.message
-          : "Unable to create new product.",
-        "error"
-      );
-    } finally {
-      setCreatingNewProduct(false);
-    }
-  }
-
   async function completePurchase(
-    event: FormEvent<HTMLFormElement>
+    event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
 
-    if (saving) {
+    if (saving) return;
+
+    const validItems = items.filter((item) => item.productName.trim());
+
+    if (!supplierName.trim()) {
+      showNotice("Select or enter a supplier.", "error");
       return;
     }
 
-    if (items.length === 0) {
-      showNotice(
-        "Add at least one product.",
-        "error"
-      );
+    if (validItems.length === 0) {
+      showNotice("Add at least one purchase item.", "error");
       return;
     }
 
-    const invalidItem = items.find(
+    const invalidItem = validItems.find(
       (item) =>
         item.quantity <= 0 ||
         item.purchasePrice < 0 ||
-        item.purchaseMrp <= 0 ||
+        item.mrp <= 0 ||
         (item.sellOnline &&
-          item.sellingPrice <= 0)
+          (item.onlineQuantity <= 0 ||
+            item.onlineSellingPrice <= 0 ||
+            item.onlineQuantity > item.quantity)),
     );
 
     if (invalidItem) {
       showNotice(
-        invalidItem.sellOnline &&
-          invalidItem.sellingPrice <= 0
-          ? `Enter the online selling price for ${invalidItem.name}.`
-          : `Check quantity, purchase price and MRP for ${invalidItem.name}.`,
-        "error"
+        `Check quantity, purchase price, MRP and online fields for ${invalidItem.productName}.`,
+        "error",
+      );
+      return;
+    }
+
+    if (totalPaid > totalAmount + 0.001) {
+      showNotice(
+        "Total paid amount cannot exceed purchase total.",
+        "error",
       );
       return;
     }
@@ -1267,105 +758,94 @@ export default function PurchasesPage() {
     setSaving(true);
 
     try {
-      const rpcItems = items.map((item) => ({
+      const rpcItems = validItems.map((item) => ({
         product_id: item.productId,
         variant_id: item.variantId,
-        quantity: item.quantity,
-        purchase_price: item.purchasePrice,
-        selling_price:
-          item.sellOnline &&
-          item.sellingPrice > 0
-            ? item.sellingPrice
-            : item.purchaseMrp,
-        mrp: item.purchaseMrp,
-        tax_percent: item.purchaseTaxPercent,
+        product_name: item.productName.trim(),
+        category: item.category.trim(),
+        subcategory: item.subcategory.trim() || null,
+        brand: item.brand.trim() || "NEW CITY STYLE",
+        size: item.size.trim() || null,
+        color: item.color.trim() || null,
+        sku: item.sku.trim() || null,
+        barcode: item.barcode.trim() || null,
+        quantity: Math.max(1, Math.floor(item.quantity)),
+        purchase_price: Math.max(0, item.purchasePrice),
+        mrp: Math.max(0, item.mrp),
+        tax_percent:
+          taxType === "non_gst" ? 0 : Math.max(0, item.taxPercent),
+        cess_percent:
+          taxType === "non_gst" ? 0 : Math.max(0, item.cessPercent),
+        sell_online: item.sellOnline,
+        online_quantity: item.sellOnline
+          ? Math.min(
+              Math.max(0, Math.floor(item.onlineQuantity)),
+              Math.max(1, Math.floor(item.quantity)),
+            )
+          : 0,
+        online_selling_price: item.sellOnline
+          ? Math.max(0, item.onlineSellingPrice)
+          : 0,
       }));
 
+      const rpcPayments = payments
+        .filter((payment) => payment.amount > 0)
+        .map((payment) => ({
+          method: payment.method,
+          amount: payment.amount,
+          reference: payment.reference.trim() || null,
+        }));
+
       const { data, error } = await supabase.rpc(
-        "complete_stock_purchase_gst",
+        "ncs_complete_purchase_v2",
         {
           p_items: rpcItems,
-          p_supplier_id: null,
-          p_supplier_name:
-            supplierName.trim() || null,
-          p_supplier_phone:
-            supplierPhone.trim() || null,
-          p_supplier_gstin:
-            supplierGstin.trim() || null,
-          p_supplier_state:
-            supplierState.trim() || null,
+          p_supplier_id: selectedSupplierId,
+          p_supplier_name: supplierName.trim(),
+          p_supplier_phone: supplierPhone.trim() || null,
+          p_supplier_gstin: supplierGstin.trim() || null,
+          p_supplier_state: supplierState.trim() || null,
           p_supplier_state_code:
             supplierStateCode.trim() || null,
-          p_place_of_supply:
-            placeOfSupply.trim() || null,
+          p_place_of_supply: placeOfSupply.trim() || null,
           p_tax_type: taxType,
           p_supplier_invoice_number:
             supplierInvoiceNumber.trim() || null,
           p_purchase_date: purchaseDate,
+          p_due_date: dueDate || null,
           p_discount_amount: discountAmount,
           p_transport_charge: transportCharge,
           p_other_charge: otherCharge,
-          p_paid_amount: safePaidAmount,
-          p_payment_method: paymentMethod,
+          p_payments: rpcPayments,
           p_notes: notes.trim() || null,
-        }
+        },
       );
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
-      const result =
-        (data || {}) as unknown as PurchaseResult;
+      const result = (data || {}) as unknown as PurchaseResult;
 
       if (result.success === false) {
         throw new Error(
-          result.message ||
-            "Unable to complete purchase."
+          result.message || "Unable to complete purchase.",
         );
       }
 
-      for (const item of items) {
-        const totalStockAfterPurchase =
-          item.stock + item.quantity;
-
-        const { error: onlineStockError } =
-          await supabase.rpc(
-            "set_product_online_stock",
-            {
-              p_product_id: item.productId,
-              p_variant_id: item.variantId,
-              p_online_quantity:
-                item.sellOnline
-                  ? Math.min(
-                      item.onlineStockLimit,
-                      totalStockAfterPurchase
-                    )
-                  : 0,
-              p_sell_online: item.sellOnline,
-            }
-          );
-
-        if (onlineStockError) {
-          throw onlineStockError;
-        }
-      }
-
       setSuccessPurchase(result);
-      clearForm();
-      await loadProducts();
+      resetForm();
+      await loadData();
 
       showNotice(
         `${result.purchase_number || "Purchase"} completed successfully.`,
-        "success"
+        "success",
       );
     } catch (error) {
-      console.error(error);
+      console.error("Purchase save error:", error);
       showNotice(
         error instanceof Error
           ? error.message
           : "Unable to complete purchase.",
-        "error"
+        "error",
       );
     } finally {
       setSaving(false);
@@ -1376,7 +856,7 @@ export default function PurchasesPage() {
     <main className="ncsPurchasePage">
       {notice && (
         <div
-          className={`ncsPurchaseNotice ncsPurchaseNotice-${noticeType}`}
+          className={`ncsNotice ncsNotice-${noticeType}`}
         >
           <span>
             {noticeType === "success"
@@ -1389,41 +869,120 @@ export default function PurchasesPage() {
         </div>
       )}
 
-      <section className="ncsPurchaseHeader">
+      <section className="ncsHero">
         <div>
-          <span>NEW CITY STYLE • INVENTORY</span>
-          <h1>Purchase Stock Entry</h1>
+          <span>NEW CITY STYLE • PURCHASE MANAGEMENT</span>
+          <h1>Supplier Purchase Entry</h1>
           <p>
-            Add supplier purchases, update stock and keep
-            barcodes ready for billing.
+            Enter one supplier invoice with shirts, pants,
+            variants, credit and online quantities in a single
+            safe transaction.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={loadProducts}
-          disabled={loading}
-        >
-          ↻ Refresh Products
-        </button>
+        <div className="ncsHeroActions">
+          <button
+            type="button"
+            onClick={loadData}
+            disabled={loading}
+          >
+            {loading ? "Refreshing..." : "↻ Refresh Data"}
+          </button>
+
+          <a href="/admin/purchase-history">
+            Purchase History →
+          </a>
+        </div>
       </section>
+
+      {loadError && (
+        <div className="ncsLoadError">{loadError}</div>
+      )}
 
       <form
         className="ncsPurchaseLayout"
         onSubmit={completePurchase}
       >
         <section className="ncsPurchaseMain">
-          <div className="ncsPurchaseCard">
-            <div className="ncsPurchaseCardTitle">
+          <article className="ncsCard">
+            <header className="ncsCardHeader">
               <div>
-                <span>SUPPLIER DETAILS</span>
-                <h2>Purchase Information</h2>
+                <span>STEP 1</span>
+                <h2>Select Supplier</h2>
+                <p>
+                  Existing supplier select చేస్తే previous due
+                  automaticగా కనిపిస్తుంది.
+                </p>
               </div>
+
+              {selectedSupplierId && (
+                <button
+                  type="button"
+                  className="ncsSecondaryButton"
+                  onClick={clearSupplierSelection}
+                >
+                  Change Supplier
+                </button>
+              )}
+            </header>
+
+            <div className="ncsSupplierSearchWrap">
+              <label>
+                <span>Search Supplier *</span>
+                <input
+                  value={supplierSearch}
+                  onFocus={() => setShowSupplierResults(true)}
+                  onChange={(event) => {
+                    setSupplierSearch(event.target.value);
+                    setSupplierName(event.target.value);
+                    setSelectedSupplierId(null);
+                    setPreviousSupplierBalance(0);
+                    setShowSupplierResults(true);
+                  }}
+                  placeholder="Supplier name, mobile or GSTIN"
+                />
+              </label>
+
+              {showSupplierResults && (
+                <div className="ncsDropdown">
+                  {filteredSuppliers.length === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowSupplierResults(false)
+                      }
+                    >
+                      <strong>
+                        + Create “{supplierSearch || "New Supplier"}”
+                      </strong>
+                      <span>
+                        Enter remaining supplier details below.
+                      </span>
+                    </button>
+                  ) : (
+                    filteredSuppliers.map((supplier) => (
+                      <button
+                        key={supplier.id}
+                        type="button"
+                        onClick={() => selectSupplier(supplier)}
+                      >
+                        <strong>{supplier.supplier_name}</strong>
+                        <span>
+                          {supplier.phone || "No mobile"} • Due{" "}
+                          {formatCurrency(
+                            toNumber(supplier.current_balance),
+                          )}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="ncsPurchaseFormGrid">
+            <div className="ncsSupplierGrid">
               <label>
-                <span>Supplier Name</span>
+                <span>Supplier Name *</span>
                 <input
                   value={supplierName}
                   onChange={(event) =>
@@ -1434,15 +993,15 @@ export default function PurchasesPage() {
               </label>
 
               <label>
-                <span>Supplier Mobile</span>
+                <span>Mobile</span>
                 <input
                   value={supplierPhone}
                   onChange={(event) =>
                     setSupplierPhone(
                       event.target.value.replace(
                         /[^0-9+]/g,
-                        ""
-                      )
+                        "",
+                      ),
                     )
                   }
                   placeholder="Mobile number"
@@ -1450,7 +1009,7 @@ export default function PurchasesPage() {
               </label>
 
               <label>
-                <span>Supplier GSTIN</span>
+                <span>GSTIN</span>
                 <input
                   value={supplierGstin}
                   onChange={(event) =>
@@ -1458,22 +1017,20 @@ export default function PurchasesPage() {
                       event.target.value
                         .toUpperCase()
                         .replace(/[^A-Z0-9]/g, "")
-                        .slice(0, 15)
+                        .slice(0, 15),
                     )
                   }
-                  placeholder="15-digit GSTIN"
-                  maxLength={15}
+                  placeholder="Optional"
                 />
               </label>
 
               <label>
-                <span>Supplier State</span>
+                <span>State</span>
                 <input
                   value={supplierState}
                   onChange={(event) =>
                     setSupplierState(event.target.value)
                   }
-                  placeholder="State"
                 />
               </label>
 
@@ -1485,10 +1042,9 @@ export default function PurchasesPage() {
                     setSupplierStateCode(
                       event.target.value
                         .replace(/\D/g, "")
-                        .slice(0, 2)
+                        .slice(0, 2),
                     )
                   }
-                  placeholder="37"
                 />
               </label>
 
@@ -1499,7 +1055,66 @@ export default function PurchasesPage() {
                   onChange={(event) =>
                     setPlaceOfSupply(event.target.value)
                   }
-                  placeholder="Place of supply"
+                />
+              </label>
+            </div>
+
+            <div className="ncsSupplierBalanceStrip">
+              <div>
+                <span>Previous Supplier Due</span>
+                <strong>
+                  {formatCurrency(previousSupplierBalance)}
+                </strong>
+              </div>
+
+              <div>
+                <span>Current Purchase Due</span>
+                <strong>
+                  {formatCurrency(currentPurchaseDue)}
+                </strong>
+              </div>
+
+              <div>
+                <span>Total Outstanding</span>
+                <strong>
+                  {formatCurrency(closingSupplierBalance)}
+                </strong>
+              </div>
+            </div>
+
+            <div className="ncsInvoiceGrid">
+              <label>
+                <span>Supplier Invoice No.</span>
+                <input
+                  value={supplierInvoiceNumber}
+                  onChange={(event) =>
+                    setSupplierInvoiceNumber(
+                      event.target.value,
+                    )
+                  }
+                  placeholder="Optional"
+                />
+              </label>
+
+              <label>
+                <span>Purchase Date *</span>
+                <input
+                  type="date"
+                  value={purchaseDate}
+                  onChange={(event) =>
+                    setPurchaseDate(event.target.value)
+                  }
+                />
+              </label>
+
+              <label>
+                <span>Credit Due Date</span>
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(event) =>
+                    setDueDate(event.target.value)
+                  }
                 />
               </label>
 
@@ -1509,7 +1124,7 @@ export default function PurchasesPage() {
                   value={taxType}
                   onChange={(event) =>
                     setTaxType(
-                      event.target.value as TaxType
+                      event.target.value as TaxType,
                     )
                   }
                 >
@@ -1519,94 +1134,67 @@ export default function PurchasesPage() {
                   <option value="inter_state">
                     Inter-state (IGST)
                   </option>
-                  <option value="non_gst">
-                    Non-GST
-                  </option>
+                  <option value="non_gst">Non-GST</option>
                 </select>
               </label>
-
-              <label>
-                <span>Supplier Invoice No.</span>
-                <input
-                  value={supplierInvoiceNumber}
-                  onChange={(event) =>
-                    setSupplierInvoiceNumber(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Optional"
-                />
-              </label>
-
-              <label>
-                <span>Purchase Date</span>
-                <input
-                  type="date"
-                  value={purchaseDate}
-                  onChange={(event) =>
-                    setPurchaseDate(event.target.value)
-                  }
-                />
-              </label>
             </div>
-          </div>
+          </article>
 
-          <div className="ncsPurchaseCard">
-            <div className="ncsPurchaseCardTitle">
+          <article className="ncsCard">
+            <header className="ncsCardHeader">
               <div>
-                <span>PRODUCT SEARCH</span>
-                <h2>Add Stock Items</h2>
+                <span>STEP 2</span>
+                <h2>Add Purchase Items</h2>
+                <p>
+                  Existing barcode/product search చేయండి లేదా
+                  new item rowలో details enter చేయండి.
+                </p>
               </div>
 
-              <div className="ncsPurchaseTitleActions">
-                <b>{products.length} Products</b>
+              <button
+                type="button"
+                className="ncsPrimarySmall"
+                onClick={addBlankItem}
+              >
+                + Add New Item Row
+              </button>
+            </header>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowNewProductForm(true)
-                  }
-                >
-                  + Add New Product
-                </button>
-              </div>
-            </div>
+            <div className="ncsProductSearchWrap">
+              <label>
+                <span>Find Existing Product / Barcode</span>
+                <input
+                  value={productSearch}
+                  onFocus={() => setShowProductResults(true)}
+                  onChange={(event) => {
+                    setProductSearch(event.target.value);
+                    setShowProductResults(true);
+                  }}
+                  placeholder="Search name, barcode, SKU, size or colour"
+                />
+              </label>
 
-            <div className="ncsPurchaseSearch">
-              <span>⌕</span>
-              <input
-                value={searchQuery}
-                onChange={(event) =>
-                  setSearchQuery(event.target.value)
-                }
-                placeholder="Search name, barcode, SKU, size or colour..."
-              />
-            </div>
-
-            {loadError && (
-              <div className="ncsPurchaseError">
-                {loadError}
-              </div>
-            )}
-
-            <div className="ncsPurchaseProductGrid">
-              {loading ? (
-                <p>Loading products...</p>
-              ) : (
-                filteredProducts
-                  .slice(0, 20)
-                  .map((product) => (
-                    <article
-                      key={product.key}
-                      className="ncsPurchaseProduct"
-                    >
+              {showProductResults && (
+                <div className="ncsDropdown ncsProductDropdown">
+                  {loading ? (
+                    <div className="ncsDropdownMessage">
+                      Loading products...
+                    </div>
+                  ) : filteredProducts.length === 0 ? (
+                    <div className="ncsDropdownMessage">
+                      No existing product found. Use “Add New
+                      Item Row”.
+                    </div>
+                  ) : (
+                    filteredProducts.map((product) => (
                       <button
+                        key={product.key}
                         type="button"
-                        className="ncsPurchaseProductMain"
-                        onClick={() => addProduct(product)}
-                        aria-label={`Add ${product.name} to purchase`}
+                        onClick={() =>
+                          addExistingProduct(product)
+                        }
                       >
-                        <div>
+                        <div className="ncsProductThumb">
                           {product.imageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -1618,357 +1206,545 @@ export default function PurchasesPage() {
                           )}
                         </div>
 
-                        <section>
-                          <small>{product.category}</small>
+                        <div>
                           <strong>{product.name}</strong>
-                          <p>
-                            {[product.size, product.color]
+                          <span>
+                            {[
+                              product.size,
+                              product.color,
+                              product.barcode || product.sku,
+                            ]
                               .filter(Boolean)
                               .join(" • ") || "Standard Product"}
-                          </p>
-                          <em>Stock: {product.stock}</em>
-                          <b>
-                            {product.barcode ||
-                              product.sku ||
-                              "Barcode ready"}
-                          </b>
-                        </section>
+                          </span>
+                          <small>
+                            Current stock: {product.stock}
+                          </small>
+                        </div>
                       </button>
-
-                      <div className="ncsPurchaseProductActions">
-                        <button
-                          type="button"
-                          className="ncsPurchaseEditButton"
-                          onClick={() => {
-                            window.location.href =
-                              `/admin/products/edit/${product.productId}`;
-                          }}
-                          title="Edit product details, photo and online settings"
-                        >
-                          ✎ Edit
-                        </button>
-
-                        <button
-                          type="button"
-                          className="ncsPurchaseAddButton"
-                          onClick={() => addProduct(product)}
-                          title="Add this item to purchase"
-                        >
-                          + Add
-                        </button>
-                      </div>
-                    </article>
-                  ))
+                    ))
+                  )}
+                </div>
               )}
             </div>
-          </div>
 
-          <div className="ncsPurchaseCard">
-            <div className="ncsPurchaseCardTitle">
-              <div>
-                <span>PURCHASE ITEMS</span>
-                <h2>Stock & Price Entry</h2>
-              </div>
+            <div className="ncsPurchaseRows">
+              {items.map((item, index) => {
+                const lineTax =
+                  taxType === "non_gst"
+                    ? 0
+                    : (item.purchasePrice *
+                        item.quantity *
+                        item.taxPercent) /
+                      100;
 
-              <b>{items.length} Item(s)</b>
-            </div>
+                const lineCess =
+                  taxType === "non_gst"
+                    ? 0
+                    : (item.purchasePrice *
+                        item.quantity *
+                        item.cessPercent) /
+                      100;
 
-            {items.length === 0 ? (
-              <div className="ncsPurchaseEmpty">
-                <div>📦</div>
-                <h3>No purchase items</h3>
-                <p>Select products from above.</p>
-              </div>
-            ) : (
-              <div className="ncsPurchaseItems">
-                {items.map((item) => (
-                  <article key={item.key}>
-                    <header>
-                      <div>
-                        <h3>{item.name}</h3>
-                        <p>
-                          {[item.size, item.color]
-                            .filter(Boolean)
-                            .join(" • ") ||
-                            item.category}
-                        </p>
-                        <small>
-                          Barcode:{" "}
-                          {item.barcode || "Auto generated"}
-                        </small>
+                const lineTotal =
+                  item.purchasePrice * item.quantity +
+                  lineTax +
+                  lineCess;
+
+                return (
+                  <article className="ncsPurchaseRowCard" key={item.rowId}>
+                    <header className="ncsPurchaseRowHeader">
+                      <div className="ncsPurchaseRowTitle">
+                        <span>{index + 1}</span>
+                        <div>
+                          <strong>
+                            {item.productName.trim() ||
+                              `Product ${index + 1}`}
+                          </strong>
+                          <small>
+                            {item.productId
+                              ? `Existing product • Current stock ${item.currentStock}`
+                              : "New product / new design"}
+                          </small>
+                        </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          removeItem(item.key)
-                        }
-                      >
-                        ×
-                      </button>
+                      <div className="ncsPurchaseRowActions">
+                        <button
+                          type="button"
+                          onClick={() => duplicateItem(item)}
+                        >
+                          ⧉ Duplicate
+                        </button>
+
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() => removeItem(item.rowId)}
+                        >
+                          × Remove
+                        </button>
+                      </div>
                     </header>
 
-                    <div className="ncsPurchaseItemFields">
-                      <label>
-                        <span>Quantity</span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={(event) =>
-                            updateItem(
-                              item.key,
-                              "quantity",
-                              toNumber(event.target.value)
-                            )
-                          }
-                        />
-                      </label>
+                    <div className="ncsPurchaseRowGrid">
+                      <section className="ncsPurchaseRowSection">
+                        <h3>Product</h3>
 
-                      <label>
-                        <span>Purchase Price</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.purchasePrice}
-                          onChange={(event) =>
-                            updateItem(
-                              item.key,
-                              "purchasePrice",
-                              toNumber(event.target.value)
-                            )
-                          }
-                        />
-                      </label>
-
-                      {item.sellOnline && (
-                        <label>
-                          <span>Online Selling Price</span>
+                        <label className="wide">
+                          <span>Product Name *</span>
                           <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={item.sellingPrice || ""}
+                            value={item.productName}
                             onChange={(event) =>
                               updateItem(
-                                item.key,
-                                "sellingPrice",
-                                toNumber(event.target.value)
+                                item.rowId,
+                                "productName",
+                                event.target.value,
                               )
                             }
-                            placeholder="Required for online"
+                            placeholder="Example: Men Cotton Shirt"
                           />
                         </label>
-                      )}
 
-                      <label>
-                        <span>MRP *</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.purchaseMrp}
-                          onChange={(event) =>
-                            updateItem(
-                              item.key,
-                              "purchaseMrp",
-                              toNumber(event.target.value)
-                            )
-                          }
-                        />
-                      </label>
-
-                      <label>
-                        <span>Tax %</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={
-                            taxType === "non_gst"
-                              ? 0
-                              : item.purchaseTaxPercent
-                          }
-                          disabled={taxType === "non_gst"}
-                          onChange={(event) =>
-                            updateItem(
-                              item.key,
-                              "purchaseTaxPercent",
-                              toNumber(event.target.value)
-                            )
-                          }
-                        />
-                      </label>
-
-                      <label>
-                        <span>
-                          Online Qty After Purchase
-                        </span>
-                        <input
-                          type="number"
-                          min="0"
-                          max={
-                            item.stock + item.quantity
-                          }
-                          value={
-                            item.sellOnline
-                              ? item.onlineStockLimit
-                              : 0
-                          }
-                          disabled={!item.sellOnline}
-                          onChange={(event) =>
-                            updateItem(
-                              item.key,
-                              "onlineStockLimit",
-                              Math.min(
-                                item.stock +
-                                  item.quantity,
-                                Math.max(
-                                  0,
-                                  Math.floor(
-                                    toNumber(
-                                      event.target.value
-                                    )
-                                  )
+                        <div className="ncsPurchaseInnerGrid three">
+                          <label>
+                            <span>Category *</span>
+                            <input
+                              value={item.category}
+                              onChange={(event) =>
+                                updateItem(
+                                  item.rowId,
+                                  "category",
+                                  event.target.value,
                                 )
-                              )
-                            )
-                          }
-                        />
-                      </label>
+                              }
+                              placeholder="Men"
+                            />
+                          </label>
 
-                      <label className="ncsPurchaseOnlineToggle">
-                        <input
-                          type="checkbox"
-                          checked={item.sellOnline}
-                          onChange={(event) =>
-                            setItems((current) =>
-                              current.map(
-                                (currentItem) =>
-                                  currentItem.key ===
-                                  item.key
-                                    ? {
-                                        ...currentItem,
-                                        sellOnline:
-                                          event.target
-                                            .checked,
-                                        onlineStockLimit:
-                                          event.target
-                                            .checked
-                                            ? Math.min(
-                                                currentItem
-                                                  .onlineStockLimit,
-                                                currentItem
-                                                  .stock +
-                                                  currentItem
-                                                    .quantity
-                                              )
-                                            : 0,
-                                      }
-                                    : currentItem
-                              )
-                            )
-                          }
-                        />
+                          <label>
+                            <span>Subcategory</span>
+                            <input
+                              value={item.subcategory}
+                              onChange={(event) =>
+                                updateItem(
+                                  item.rowId,
+                                  "subcategory",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="Shirts"
+                            />
+                          </label>
 
-                        <span>Sell Online</span>
-                      </label>
+                          <label>
+                            <span>Brand</span>
+                            <input
+                              value={item.brand}
+                              onChange={(event) =>
+                                updateItem(
+                                  item.rowId,
+                                  "brand",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="NEW CITY STYLE"
+                            />
+                          </label>
+                        </div>
 
-                      <div className="ncsPurchaseLineTotal">
-                        <span>Line Total</span>
-                        <strong>
-                          {formatCurrency(
-                            item.purchasePrice *
-                              item.quantity *
-                              (1 +
-                                item.purchaseTaxPercent /
-                                  100)
+                        <div className="ncsPurchaseInnerGrid two">
+                          <label>
+                            <span>Barcode</span>
+                            <input
+                              value={item.barcode}
+                              onChange={(event) =>
+                                updateItem(
+                                  item.rowId,
+                                  "barcode",
+                                  event.target.value.trim(),
+                                )
+                              }
+                              placeholder="Leave blank for auto"
+                            />
+                          </label>
+
+                          <label>
+                            <span>SKU</span>
+                            <input
+                              value={item.sku}
+                              onChange={(event) =>
+                                updateItem(
+                                  item.rowId,
+                                  "sku",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="Optional"
+                            />
+                          </label>
+                        </div>
+                      </section>
+
+                      <section className="ncsPurchaseRowSection">
+                        <h3>Variant & Stock</h3>
+
+                        <div className="ncsPurchaseInnerGrid two">
+                          <label>
+                            <span>Size</span>
+                            <input
+                              value={item.size}
+                              onChange={(event) =>
+                                updateItem(
+                                  item.rowId,
+                                  "size",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="M / L / XL"
+                            />
+                          </label>
+
+                          <label>
+                            <span>Colour</span>
+                            <input
+                              value={item.color}
+                              onChange={(event) =>
+                                updateItem(
+                                  item.rowId,
+                                  "color",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="Blue"
+                            />
+                          </label>
+                        </div>
+
+                        <div className="ncsPurchaseInnerGrid three">
+                          <label>
+                            <span>Quantity *</span>
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.quantity}
+                              onChange={(event) => {
+                                const quantity = Math.max(
+                                  1,
+                                  Math.floor(
+                                    toNumber(event.target.value, 1),
+                                  ),
+                                );
+
+                                updateItem(
+                                  item.rowId,
+                                  "quantity",
+                                  quantity,
+                                );
+
+                                if (item.onlineQuantity > quantity) {
+                                  updateItem(
+                                    item.rowId,
+                                    "onlineQuantity",
+                                    quantity,
+                                  );
+                                }
+                              }}
+                            />
+                          </label>
+
+                          <label>
+                            <span>Purchase Price</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.purchasePrice || ""}
+                              onChange={(event) =>
+                                updateItem(
+                                  item.rowId,
+                                  "purchasePrice",
+                                  Math.max(
+                                    0,
+                                    toNumber(event.target.value),
+                                  ),
+                                )
+                              }
+                              placeholder="0.00"
+                            />
+                          </label>
+
+                          <label>
+                            <span>MRP *</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.mrp || ""}
+                              onChange={(event) =>
+                                updateItem(
+                                  item.rowId,
+                                  "mrp",
+                                  Math.max(
+                                    0,
+                                    toNumber(event.target.value),
+                                  ),
+                                )
+                              }
+                              placeholder="MRP"
+                            />
+                          </label>
+                        </div>
+
+                        <div className="ncsPurchaseInnerGrid two">
+                          <label>
+                            <span>GST %</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              disabled={taxType === "non_gst"}
+                              value={
+                                taxType === "non_gst"
+                                  ? 0
+                                  : item.taxPercent
+                              }
+                              onChange={(event) =>
+                                updateItem(
+                                  item.rowId,
+                                  "taxPercent",
+                                  Math.max(
+                                    0,
+                                    toNumber(event.target.value),
+                                  ),
+                                )
+                              }
+                            />
+                          </label>
+
+                          <label>
+                            <span>Cess %</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              disabled={taxType === "non_gst"}
+                              value={
+                                taxType === "non_gst"
+                                  ? 0
+                                  : item.cessPercent
+                              }
+                              onChange={(event) =>
+                                updateItem(
+                                  item.rowId,
+                                  "cessPercent",
+                                  Math.max(
+                                    0,
+                                    toNumber(event.target.value),
+                                  ),
+                                )
+                              }
+                            />
+                          </label>
+                        </div>
+
+                        {item.productId &&
+                          !item.variantId &&
+                          (item.size || item.color) && (
+                            <div className="ncsNewVariantMessage">
+                              New size/colour variant will be created under
+                              this product.
+                            </div>
                           )}
-                        </strong>
-                      </div>
+                      </section>
+
+                      <section className="ncsPurchaseRowSection ncsOnlineSection">
+                        <div className="ncsOnlineHeader">
+                          <h3>Online Sale</h3>
+
+                          <label className="ncsToggle">
+                            <input
+                              type="checkbox"
+                              checked={item.sellOnline}
+                              onChange={(event) => {
+                                const checked =
+                                  event.target.checked;
+
+                                updateItem(
+                                  item.rowId,
+                                  "sellOnline",
+                                  checked,
+                                );
+
+                                updateItem(
+                                  item.rowId,
+                                  "onlineQuantity",
+                                  checked
+                                    ? Math.min(
+                                        Math.max(
+                                          1,
+                                          item.onlineQuantity,
+                                        ),
+                                        item.quantity,
+                                      )
+                                    : 0,
+                                );
+                              }}
+                            />
+                            <span>Sell Online</span>
+                          </label>
+                        </div>
+
+                        {item.sellOnline ? (
+                          <div className="ncsPurchaseInnerGrid two">
+                            <label>
+                              <span>Online Quantity</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max={item.quantity}
+                                value={item.onlineQuantity || ""}
+                                onChange={(event) =>
+                                  updateItem(
+                                    item.rowId,
+                                    "onlineQuantity",
+                                    Math.min(
+                                      item.quantity,
+                                      Math.max(
+                                        0,
+                                        Math.floor(
+                                          toNumber(event.target.value),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                }
+                              />
+                            </label>
+
+                            <label>
+                              <span>Online Selling Price</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.onlineSellingPrice || ""}
+                                onChange={(event) =>
+                                  updateItem(
+                                    item.rowId,
+                                    "onlineSellingPrice",
+                                    Math.max(
+                                      0,
+                                      toNumber(event.target.value),
+                                    ),
+                                  )
+                                }
+                                placeholder="Required"
+                              />
+                            </label>
+                          </div>
+                        ) : (
+                          <div className="ncsOfflineNote">
+                            Local POS only. Selling price is not saved.
+                            Barcode scan will use MRP during billing.
+                          </div>
+                        )}
+
+                        <div className="ncsPurchaseRowTotal">
+                          <span>Line Total</span>
+                          <strong>{formatCurrency(lineTotal)}</strong>
+                        </div>
+                      </section>
                     </div>
+
+                    <button
+                      type="button"
+                      className="ncsAddNextRowButton"
+                      onClick={addBlankItem}
+                    >
+                      + Add Next Product Row
+                    </button>
                   </article>
-                ))}
-              </div>
-            )}
-          </div>
+                );
+              })}
+            </div>
+
+            <div className="ncsItemHelp">
+              <strong>How matching works:</strong> Barcode match
+              అయితే existing stock increase అవుతుంది. Existing
+              productకు కొత్త size/colour enter చేస్తే duplicate
+              product కాకుండా new variant create అవుతుంది.
+            </div>
+          </article>
         </section>
 
-        <aside className="ncsPurchaseSummary">
-          <div className="ncsPurchaseSummaryHeader">
-            <span>PURCHASE SUMMARY</span>
-            <h2>Stock Receipt</h2>
-          </div>
+        <aside className="ncsSummary">
+          <header>
+            <span>STEP 3</span>
+            <h2>Payment & Summary</h2>
+          </header>
 
-          <div className="ncsPurchaseSummaryBody">
-            <label>
-              <span>Discount</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={discountAmount || ""}
-                onChange={(event) =>
-                  setDiscountAmount(
-                    Math.max(
-                      0,
-                      toNumber(event.target.value)
+          <div className="ncsSummaryBody">
+            <div className="ncsChargeGrid">
+              <label>
+                <span>Discount</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={discountAmount || ""}
+                  onChange={(event) =>
+                    setDiscountAmount(
+                      Math.max(
+                        0,
+                        toNumber(event.target.value),
+                      ),
                     )
-                  )
-                }
-              />
-            </label>
+                  }
+                />
+              </label>
 
-            <label>
-              <span>Transport Charge</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={transportCharge || ""}
-                onChange={(event) =>
-                  setTransportCharge(
-                    Math.max(
-                      0,
-                      toNumber(event.target.value)
+              <label>
+                <span>Transport</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={transportCharge || ""}
+                  onChange={(event) =>
+                    setTransportCharge(
+                      Math.max(
+                        0,
+                        toNumber(event.target.value),
+                      ),
                     )
-                  )
-                }
-              />
-            </label>
+                  }
+                />
+              </label>
 
-            <label>
-              <span>Other Charge</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={otherCharge || ""}
-                onChange={(event) =>
-                  setOtherCharge(
-                    Math.max(
-                      0,
-                      toNumber(event.target.value)
+              <label>
+                <span>Other Charge</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={otherCharge || ""}
+                  onChange={(event) =>
+                    setOtherCharge(
+                      Math.max(
+                        0,
+                        toNumber(event.target.value),
+                      ),
                     )
-                  )
-                }
-              />
-            </label>
+                  }
+                />
+              </label>
+            </div>
 
-            <div className="ncsPurchaseTotals">
+            <div className="ncsTotals">
               <p>
                 <span>Subtotal</span>
-                <strong>
-                  {formatCurrency(subtotal)}
-                </strong>
-              </p>
-
-              <p>
-                <span>Taxable Amount</span>
-                <strong>
-                  {formatCurrency(subtotal)}
-                </strong>
+                <strong>{formatCurrency(subtotal)}</strong>
               </p>
 
               {taxType === "intra_state" && (
@@ -1979,7 +1755,6 @@ export default function PurchasesPage() {
                       {formatCurrency(cgstAmount)}
                     </strong>
                   </p>
-
                   <p>
                     <span>SGST</span>
                     <strong>
@@ -1998,20 +1773,9 @@ export default function PurchasesPage() {
                 </p>
               )}
 
-              {taxType === "non_gst" && (
-                <p>
-                  <span>GST</span>
-                  <strong>
-                    {formatCurrency(0)}
-                  </strong>
-                </p>
-              )}
-
               <p>
-                <span>Total GST</span>
-                <strong>
-                  {formatCurrency(taxAmount)}
-                </strong>
+                <span>Cess</span>
+                <strong>{formatCurrency(cessAmount)}</strong>
               </p>
 
               <p>
@@ -2021,758 +1785,234 @@ export default function PurchasesPage() {
                 </strong>
               </p>
 
-              <p className="ncsPurchaseGrandTotal">
-                <span>Total Amount</span>
+              <p>
+                <span>Extra Charges</span>
                 <strong>
-                  {formatCurrency(totalAmount)}
+                  {formatCurrency(
+                    transportCharge + otherCharge,
+                  )}
+                </strong>
+              </p>
+
+              <p className="ncsGrandTotal">
+                <span>Purchase Total</span>
+                <strong>{formatCurrency(totalAmount)}</strong>
+              </p>
+            </div>
+
+            <div className="ncsPaymentsHeader">
+              <div>
+                <span>PAYMENT BREAKDOWN</span>
+                <strong>
+                  Cash + UPI + Bank + Credit supported
+                </strong>
+              </div>
+
+              <button
+                type="button"
+                onClick={addPaymentRow}
+              >
+                + Add Payment
+              </button>
+            </div>
+
+            <div className="ncsPayments">
+              {payments.map((payment) => (
+                <article key={payment.id}>
+                  <select
+                    value={payment.method}
+                    onChange={(event) =>
+                      updatePayment(
+                        payment.id,
+                        "method",
+                        event.target
+                          .value as PaymentMethod,
+                      )
+                    }
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI</option>
+                    <option value="card">Card</option>
+                    <option value="bank_transfer">
+                      Bank Transfer
+                    </option>
+                    <option value="other">Other</option>
+                  </select>
+
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={payment.amount || ""}
+                    onChange={(event) =>
+                      updatePayment(
+                        payment.id,
+                        "amount",
+                        Math.max(
+                          0,
+                          toNumber(event.target.value),
+                        ),
+                      )
+                    }
+                    placeholder="Amount"
+                  />
+
+                  <input
+                    value={payment.reference}
+                    onChange={(event) =>
+                      updatePayment(
+                        payment.id,
+                        "reference",
+                        event.target.value,
+                      )
+                    }
+                    placeholder="Reference optional"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      removePaymentRow(payment.id)
+                    }
+                  >
+                    ×
+                  </button>
+                </article>
+              ))}
+            </div>
+
+            <div className="ncsPaymentSummary">
+              <p>
+                <span>Paid Now</span>
+                <strong>{formatCurrency(safePaid)}</strong>
+              </p>
+              <p>
+                <span>Current Purchase Due</span>
+                <strong>
+                  {formatCurrency(currentPurchaseDue)}
+                </strong>
+              </p>
+              <p>
+                <span>Previous Supplier Due</span>
+                <strong>
+                  {formatCurrency(previousSupplierBalance)}
+                </strong>
+              </p>
+              <p className="ncsOutstanding">
+                <span>Total Supplier Outstanding</span>
+                <strong>
+                  {formatCurrency(closingSupplierBalance)}
                 </strong>
               </p>
             </div>
 
-            <label>
-              <span>Paid Amount</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={paidAmount || ""}
-                onChange={(event) =>
-                  setPaidAmount(
-                    Math.max(
-                      0,
-                      toNumber(event.target.value)
-                    )
-                  )
-                }
-              />
-            </label>
-
-            <div className="ncsPurchaseDue">
-              <span>Supplier Due</span>
-              <strong>
-                {formatCurrency(dueAmount)}
-              </strong>
-            </div>
-
-            <span className="ncsPurchasePaymentLabel">
-              Payment Method
-            </span>
-
-            <div className="ncsPurchasePaymentGrid">
-              {(
-                [
-                  ["cash", "Cash"],
-                  ["upi", "UPI"],
-                  ["card", "Card"],
-                  ["bank_transfer", "Bank"],
-                  ["credit", "Credit"],
-                  ["other", "Other"],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() =>
-                    setPaymentMethod(value)
-                  }
-                  className={
-                    paymentMethod === value
-                      ? "active"
-                      : ""
-                  }
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <label>
+            <label className="ncsNotes">
               <span>Notes</span>
               <textarea
                 value={notes}
                 onChange={(event) =>
                   setNotes(event.target.value)
                 }
-                placeholder="Optional purchase notes"
+                placeholder="Purchase, transport or credit notes"
               />
             </label>
 
             <button
               type="submit"
-              className="ncsPurchaseComplete"
-              disabled={saving || items.length === 0}
+              className="ncsCompleteButton"
+              disabled={
+                saving ||
+                items.filter((item) =>
+                  item.productName.trim(),
+                ).length === 0
+              }
             >
               <span>{saving ? "…" : "✓"}</span>
               <div>
                 <strong>
                   {saving
-                    ? "Updating Stock..."
+                    ? "Saving Purchase..."
                     : "Complete Purchase"}
                 </strong>
-                <small>
-                  {formatCurrency(totalAmount)}
-                </small>
+                <small>{formatCurrency(totalAmount)}</small>
               </div>
               <b>→</b>
             </button>
+
+            <small className="ncsSafetyNote">
+              Stock, online quantity, purchase history and
+              supplier balance save together in one database
+              transaction.
+            </small>
           </div>
         </aside>
       </form>
 
-      {showNewProductForm && (
-        <div className="ncsPurchaseModalOverlay">
-          <form
-            className="ncsNewProductModal"
-            onSubmit={createNewProductPurchase}
-          >
-            <header>
-              <div>
-                <span>NEW SHOP STOCK</span>
-                <h2>Create New Product</h2>
-                <p>
-                  Product, barcode and stock will be created
-                  together.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setShowNewProductForm(false)
-                }
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </header>
-
-            <div className="ncsNewProductFormGrid">
-              <label className="ncsNewProductWide">
-                <span>Product Name *</span>
-                <input
-                  value={newProductName}
-                  onChange={(event) =>
-                    setNewProductName(event.target.value)
-                  }
-                  placeholder="Example: Men Cotton Shirt"
-                  autoFocus
-                />
-              </label>
-
-              <label>
-                <span>Category *</span>
-                <input
-                  value={newProductCategory}
-                  onChange={(event) =>
-                    setNewProductCategory(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Men / Women / Kids"
-                />
-              </label>
-
-              <label>
-                <span>Subcategory</span>
-                <input
-                  value={newProductSubcategory}
-                  onChange={(event) =>
-                    setNewProductSubcategory(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Shirts / Jeans / Sarees"
-                />
-              </label>
-
-              <label>
-                <span>Brand</span>
-                <input
-                  value={newProductBrand}
-                  onChange={(event) =>
-                    setNewProductBrand(
-                      event.target.value
-                    )
-                  }
-                />
-              </label>
-
-              <label>
-                <span>Size</span>
-                <input
-                  value={newProductSize}
-                  onChange={(event) =>
-                    setNewProductSize(event.target.value)
-                  }
-                  placeholder="M / L / XL"
-                />
-              </label>
-
-              <label>
-                <span>Colour</span>
-                <input
-                  value={newProductColor}
-                  onChange={(event) =>
-                    setNewProductColor(event.target.value)
-                  }
-                  placeholder="Blue"
-                />
-              </label>
-
-              <div className="ncsNewProductWide ncsDesignModeBox">
-                <span>Stock Design Type *</span>
-                <div className="ncsDesignModeButtons">
-                  <button
-                    type="button"
-                    className={newProductDesignMode === "same_design" ? "active" : ""}
-                    onClick={() => setNewProductDesignMode("same_design")}
-                  >
-                    Same Design
-                    <small>One barcode, multiple quantity</small>
-                  </button>
-
-                  <button
-                    type="button"
-                    className={newProductDesignMode === "different_designs" ? "active" : ""}
-                    onClick={() => setNewProductDesignMode("different_designs")}
-                  >
-                    Different Designs
-                    <small>One barcode for every piece</small>
-                  </button>
-                </div>
-                <small className="ncsDesignModeHelp">
-                  Colour is ignored for barcode logic. Different Designs select చేస్తే quantity ఎంత ఉంటే అంత separate products మరియు separate barcodes వస్తాయి.
-                </small>
-              </div>
-
-              <label>
-                <span>Quantity *</span>
-                <input
-                  type="number"
-                  min="1"
-                  value={newProductQuantity}
-                  onChange={(event) =>
-                    setNewProductQuantity(
-                      Math.max(
-                        1,
-                        Math.floor(
-                          toNumber(event.target.value, 1)
-                        )
-                      )
-                    )
-                  }
-                />
-              </label>
-
-              <label>
-                <span>Purchase Price</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={newProductPurchasePrice || ""}
-                  onChange={(event) =>
-                    setNewProductPurchasePrice(
-                      Math.max(
-                        0,
-                        toNumber(event.target.value)
-                      )
-                    )
-                  }
-                />
-              </label>
-
-              {newProductSellOnline && (
-                <label>
-                  <span>Online Selling Price *</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={newProductSellingPrice || ""}
-                    onChange={(event) =>
-                      setNewProductSellingPrice(
-                        Math.max(
-                          0,
-                          toNumber(event.target.value)
-                        )
-                      )
-                    }
-                    placeholder="Required only for online sale"
-                  />
-                </label>
-              )}
-
-              <label>
-                <span>MRP</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={newProductMrp || ""}
-                  onChange={(event) =>
-                    setNewProductMrp(
-                      Math.max(
-                        0,
-                        toNumber(event.target.value)
-                      )
-                    )
-                  }
-                />
-              </label>
-
-              <label>
-                <span>HSN Code</span>
-                <input
-                  value={newProductHsn}
-                  onChange={(event) =>
-                    setNewProductHsn(
-                      event.target.value
-                        .replace(/\D/g, "")
-                        .slice(0, 8)
-                    )
-                  }
-                  placeholder="Optional"
-                />
-              </label>
-
-              <label>
-                <span>GST %</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={
-                    taxType === "non_gst"
-                      ? 0
-                      : newProductTaxPercent
-                  }
-                  disabled={taxType === "non_gst"}
-                  onChange={(event) =>
-                    setNewProductTaxPercent(
-                      Math.max(
-                        0,
-                        toNumber(event.target.value)
-                      )
-                    )
-                  }
-                />
-              </label>
-
-              <label>
-                <span>Cess %</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={
-                    taxType === "non_gst"
-                      ? 0
-                      : newProductCessPercent
-                  }
-                  disabled={taxType === "non_gst"}
-                  onChange={(event) =>
-                    setNewProductCessPercent(
-                      Math.max(
-                        0,
-                        toNumber(event.target.value)
-                      )
-                    )
-                  }
-                />
-              </label>
-
-              <label className="ncsNewProductToggle">
-                <input
-                  type="checkbox"
-                  checked={newProductSellOnline}
-                  onChange={(event) => {
-                    const checked =
-                      event.target.checked;
-
-                    setNewProductSellOnline(checked);
-                    setNewProductOnlineQuantity(
-                      checked
-                        ? Math.min(
-                            newProductQuantity,
-                            Math.max(
-                              1,
-                              newProductOnlineQuantity
-                            )
-                          )
-                        : 0
-                    );
-                  }}
-                />
-
-                <div>
-                  <strong>Sell Online</strong>
-                  <span>
-                    OFF = POS/shop only, ON = website/app
-                  </span>
-                </div>
-              </label>
-
-              <label className="ncsNewProductWide">
-                <span>
-                  Online Quantity
-                </span>
-                <input
-                  type="number"
-                  min="0"
-                  max={newProductQuantity}
-                  value={
-                    newProductSellOnline
-                      ? newProductOnlineQuantity
-                      : 0
-                  }
-                  disabled={!newProductSellOnline}
-                  onChange={(event) =>
-                    setNewProductOnlineQuantity(
-                      Math.min(
-                        newProductQuantity,
-                        Math.max(
-                          0,
-                          Math.floor(
-                            toNumber(
-                              event.target.value
-                            )
-                          )
-                        )
-                      )
-                    )
-                  }
-                />
-                <small>
-                  Total {newProductQuantity}లో onlineలో
-                  అమ్మాల్సిన quantity మాత్రమే పెట్టండి.
-                </small>
-              </label>
-            </div>
-
-            <div className="ncsLocalPriceNote">
-              <strong>Local POS Price:</strong>
-              Barcode scan చేసినప్పుడు MRP వస్తుంది. Billingలో
-              discount ఇచ్చి final price నిర్ణయించవచ్చు.
-              Online Selling Price మాత్రం Sell Online ON చేసినప్పుడు
-              మాత్రమే అవసరం.
-            </div>
-
-            <div className="ncsNewProductSummary">
-              <div>
-                <span>Stock Value</span>
-                <strong>
-                  {formatCurrency(
-                    newProductPurchasePrice *
-                      newProductQuantity
-                  )}
-                </strong>
-              </div>
-
-              <div>
-                <span>Visibility</span>
-                <strong>
-                  {newProductSellOnline
-                    ? `POS + Online (${newProductOnlineQuantity})`
-                    : "POS / Shop Only"}
-                </strong>
-              </div>
-
-              <div>
-                <span>Barcode</span>
-                <strong>
-                  {newProductDesignMode === "different_designs"
-                    ? `${newProductQuantity} Separate Codes`
-                    : "One Auto Barcode"}
-                </strong>
-              </div>
-            </div>
-
-            <footer>
-              <button
-                type="button"
-                onClick={() =>
-                  setShowNewProductForm(false)
-                }
-              >
-                Cancel
-              </button>
-
-              <button
-                type="submit"
-                disabled={creatingNewProduct}
-              >
-                {creatingNewProduct
-                  ? "Creating Product..."
-                  : "Create Product & Add Stock"}
-              </button>
-            </footer>
-          </form>
-        </div>
-      )}
-
-      {newProductResult && (
-        <div className="ncsPurchaseModalOverlay">
-          <section className="ncsNewProductSuccess">
-            <div>✓</div>
-            <span>PRODUCT CREATED</span>
-            <h2>
-              {generatedProductResults.length > 1
-                ? `${generatedProductResults.length} Different Products Created`
-                : newProductResult.product_name}
-            </h2>
-            <p>
-              {generatedProductResults.length > 1
-                ? "Each design has stock 1 and its own barcode."
-                : "Product, stock and purchase entry were saved successfully."}
-            </p>
-
-            <section className="ncsGeneratedBarcodeCard">
-              <span>Generated Barcode</span>
-
-              <div className="ncsGeneratedBarcodePreview">
-                <svg ref={barcodeSvgRef} />
-              </div>
-
-              <strong>
-                {newProductResult.barcode ||
-                  "Barcode generated"}
-              </strong>
-            </section>
-
-            {generatedProductResults.length > 1 && (
-              <div className="ncsGeneratedBarcodeList">
-                {generatedProductResults.map((result) => (
-                  <article key={`${result.product_id}-${result.sequence}`}>
-                    <span>Design {String(result.sequence).padStart(2, "0")}</span>
-                    <strong>{result.barcode || result.product_barcode || "Generated"}</strong>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (result.product_id) {
-                          window.location.href = `/admin/products/edit/${result.product_id}`;
-                        }
-                      }}
-                    >
-                      Edit / Upload Photo
-                    </button>
-                  </article>
-                ))}
-              </div>
-            )}
-
-            <small>
-              {newProductResult.sell_online
-                ? `Available in POS and online quantity ${newProductOnlineQuantity}.`
-                : "Available in POS/shop only."}
-            </small>
-
-            <div className="ncsBarcodePrintSettings">
-              <label>
-                <span>Number of Labels</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="500"
-                  value={barcodePrintQuantity}
-                  onChange={(event) =>
-                    setBarcodePrintQuantity(
-                      Math.max(
-                        1,
-                        Math.min(
-                          500,
-                          Math.floor(
-                            toNumber(
-                              event.target.value,
-                              1
-                            )
-                          )
-                        )
-                      )
-                    )
-                  }
-                />
-              </label>
-
-              <label>
-                <span>Label Size</span>
-                <select
-                  value={barcodeLabelSize}
-                  onChange={(event) =>
-                    setBarcodeLabelSize(
-                      event.target.value
-                    )
-                  }
-                >
-                  <option value="38x25">
-                    38 × 25 mm
-                  </option>
-                  <option value="50x25">
-                    50 × 25 mm
-                  </option>
-                  <option value="50x30">
-                    50 × 30 mm
-                  </option>
-                  <option value="60x40">
-                    60 × 40 mm
-                  </option>
-                </select>
-              </label>
-
-              <label className="ncsBarcodePrintCheck">
-                <input
-                  type="checkbox"
-                  checked={showPriceOnBarcode}
-                  onChange={(event) =>
-                    setShowPriceOnBarcode(
-                      event.target.checked
-                    )
-                  }
-                />
-                <span>Show Selling Price</span>
-              </label>
-
-              <label className="ncsBarcodePrintCheck">
-                <input
-                  type="checkbox"
-                  checked={showMrpOnBarcode}
-                  onChange={(event) =>
-                    setShowMrpOnBarcode(
-                      event.target.checked
-                    )
-                  }
-                />
-                <span>Show MRP</span>
-              </label>
-            </div>
-
-            <div className="ncsNewProductSuccessActions">
-              <button
-                type="button"
-                onClick={
-                  generatedProductResults.length > 1
-                    ? printAllGeneratedBarcodes
-                    : printGeneratedBarcode
-                }
-              >
-                {generatedProductResults.length > 1
-                  ? "🖨 Print All Separate Barcodes"
-                  : "🖨 Print Labels"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setNewProductResult(null)
-                }
-              >
-                Done
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-
       {successPurchase && (
-        <div className="ncsPurchaseModalOverlay">
-          <section className="ncsPurchaseSuccessModal">
-            <div>✓</div>
+        <div className="ncsModalOverlay">
+          <section className="ncsSuccessModal">
+            <div className="ncsSuccessIcon">✓</div>
             <span>PURCHASE COMPLETED</span>
-            <h2>
-              {successPurchase.purchase_number}
-            </h2>
+            <h2>{successPurchase.purchase_number}</h2>
             <p>
-              Stock and supplier balance updated
-              successfully.
+              Stock, supplier ledger and online availability
+              were updated successfully.
             </p>
 
-            <section>
-              <p>
+            <div className="ncsSuccessGrid">
+              <div>
                 <span>Total</span>
                 <strong>
                   {formatCurrency(
-                    toNumber(
-                      successPurchase.total_amount
-                    )
+                    toNumber(successPurchase.total_amount),
                   )}
                 </strong>
-              </p>
+              </div>
 
-              <p>
-                <span>Taxable</span>
-                <strong>
-                  {formatCurrency(
-                    toNumber(
-                      successPurchase.taxable_amount
-                    )
-                  )}
-                </strong>
-              </p>
-
-              <p>
-                <span>CGST</span>
-                <strong>
-                  {formatCurrency(
-                    toNumber(
-                      successPurchase.cgst_amount
-                    )
-                  )}
-                </strong>
-              </p>
-
-              <p>
-                <span>SGST</span>
-                <strong>
-                  {formatCurrency(
-                    toNumber(
-                      successPurchase.sgst_amount
-                    )
-                  )}
-                </strong>
-              </p>
-
-              <p>
-                <span>IGST</span>
-                <strong>
-                  {formatCurrency(
-                    toNumber(
-                      successPurchase.igst_amount
-                    )
-                  )}
-                </strong>
-              </p>
-
-              <p>
+              <div>
                 <span>Paid</span>
                 <strong>
                   {formatCurrency(
-                    toNumber(
-                      successPurchase.paid_amount
-                    )
+                    toNumber(successPurchase.paid_amount),
                   )}
                 </strong>
-              </p>
+              </div>
 
-              <p>
-                <span>Due</span>
+              <div>
+                <span>Current Due</span>
+                <strong>
+                  {formatCurrency(
+                    toNumber(successPurchase.due_amount),
+                  )}
+                </strong>
+              </div>
+
+              <div>
+                <span>Total Outstanding</span>
                 <strong>
                   {formatCurrency(
                     toNumber(
-                      successPurchase.due_amount
-                    )
+                      successPurchase.closing_supplier_balance,
+                    ),
                   )}
                 </strong>
-              </p>
-            </section>
+              </div>
+            </div>
 
-            <button
-              type="button"
-              onClick={() =>
-                setSuccessPurchase(null)
-              }
-            >
-              New Purchase
-            </button>
+            <div className="ncsSuccessActions">
+              <button
+                type="button"
+                onClick={() =>
+                  setSuccessPurchase(null)
+                }
+              >
+                New Purchase
+              </button>
+
+              <a href="/admin/purchase-history">
+                View Purchase History
+              </a>
+            </div>
           </section>
         </div>
       )}
@@ -2784,85 +2024,94 @@ export default function PurchasesPage() {
 
         .ncsPurchasePage {
           min-height: 100vh;
-          padding: 26px;
+          padding: 24px;
           background:
             radial-gradient(
-              circle at 10% 0%,
-              rgba(212, 175, 55, 0.12),
-              transparent 26%
+              circle at 8% 0%,
+              rgba(212, 175, 55, 0.13),
+              transparent 25%
             ),
             ${IVORY};
           color: ${CHARCOAL};
-          font-family:
-            Poppins, Inter, Arial, sans-serif;
+          font-family: Poppins, Inter, Arial, sans-serif;
         }
 
-        .ncsPurchaseHeader {
+        .ncsHero {
           display: flex;
           align-items: flex-end;
           justify-content: space-between;
           gap: 20px;
-          margin-bottom: 20px;
+          margin-bottom: 18px;
           padding: 22px 24px;
-          border: 1px solid
-            rgba(212, 175, 55, 0.35);
+          border: 1px solid rgba(212, 175, 55, 0.38);
           border-radius: 22px;
           background:
             radial-gradient(
-              circle at 88% 0%,
-              rgba(212, 175, 55, 0.23),
+              circle at 90% 0%,
+              rgba(212, 175, 55, 0.25),
               transparent 32%
             ),
-            linear-gradient(
-              135deg,
-              ${DEEP_BLUE},
-              ${ROYAL_BLUE}
-            );
+            linear-gradient(135deg, ${DEEP_BLUE}, ${ROYAL_BLUE});
           color: #ffffff;
-          box-shadow: 0 18px 45px
-            rgba(3, 21, 63, 0.18);
+          box-shadow: 0 18px 45px rgba(3, 21, 63, 0.18);
         }
 
-        .ncsPurchaseHeader span {
+        .ncsHero > div > span,
+        .ncsCardHeader span,
+        .ncsSummary > header span,
+        .ncsPaymentsHeader span,
+        .ncsSuccessModal > span {
           color: ${GOLD};
-          font-size: 10px;
-          font-weight: 900;
-          letter-spacing: 1.5px;
+          font-size: 9px;
+          font-weight: 950;
+          letter-spacing: 1.2px;
         }
 
-        .ncsPurchaseHeader h1 {
+        .ncsHero h1 {
           margin: 5px 0 0;
-          color: #ffffff;
           font-size: 32px;
           font-weight: 950;
         }
 
-        .ncsPurchaseHeader p {
-          margin: 6px 0 0;
-          color: rgba(255, 255, 255, 0.68);
+        .ncsHero p {
+          max-width: 760px;
+          margin: 7px 0 0;
+          color: rgba(255, 255, 255, 0.72);
           font-size: 12px;
-          font-weight: 600;
+          line-height: 1.6;
         }
 
-        .ncsPurchaseHeader button {
-          min-height: 44px;
-          padding: 0 15px;
+        .ncsHeroActions {
+          display: flex;
+          gap: 9px;
+        }
+
+        .ncsHeroActions button,
+        .ncsHeroActions a {
+          min-height: 43px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 14px;
           border: 1px solid ${GOLD};
-          border-radius: 12px;
+          border-radius: 11px;
           background: ${GOLD};
           color: ${ROYAL_BLUE};
-          font-family: inherit;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 900;
+          text-decoration: none;
           cursor: pointer;
+        }
+
+        .ncsHeroActions a {
+          background: transparent;
+          color: #ffffff;
         }
 
         .ncsPurchaseLayout {
           display: grid;
-          grid-template-columns:
-            minmax(0, 1fr)
-            minmax(340px, 390px);
-          gap: 20px;
+          grid-template-columns: minmax(0, 1fr) minmax(340px, 390px);
+          gap: 18px;
           align-items: start;
         }
 
@@ -2872,1426 +2121,896 @@ export default function PurchasesPage() {
           gap: 16px;
         }
 
-        .ncsPurchaseCard {
-          position: relative;
-          overflow: hidden;
-          padding: 18px;
-          border: 1px solid rgba(212, 175, 55, 0.2);
+        .ncsCard,
+        .ncsSummary {
+          border: 1px solid rgba(10, 46, 115, 0.1);
           border-radius: 20px;
-          background:
-            linear-gradient(
-              180deg,
-              rgba(255, 255, 255, 1),
-              rgba(248, 250, 253, 0.99)
-            );
-          box-shadow:
-            0 12px 32px rgba(3, 21, 63, 0.08),
-            inset 0 1px 0 rgba(255, 255, 255, 0.95);
-          transition:
-            border-color 0.22s ease,
-            box-shadow 0.22s ease;
+          background: #ffffff;
+          box-shadow: 0 12px 32px rgba(3, 21, 63, 0.08);
         }
 
-        .ncsPurchaseCard:hover {
-          border-color: rgba(212, 175, 55, 0.38);
-          box-shadow: 0 15px 36px rgba(3, 21, 63, 0.11);
+        .ncsCard {
+          padding: 18px;
         }
 
-        .ncsPurchaseCardTitle {
+        .ncsCardHeader {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: space-between;
-          gap: 12px;
+          gap: 14px;
+          margin-bottom: 15px;
+        }
+
+        .ncsCardHeader h2,
+        .ncsSummary h2 {
+          margin: 4px 0 0;
+          color: ${ROYAL_BLUE};
+          font-size: 19px;
+        }
+
+        .ncsCardHeader p {
+          margin: 5px 0 0;
+          color: #7d8797;
+          font-size: 10px;
+        }
+
+        .ncsPrimarySmall,
+        .ncsSecondaryButton {
+          min-height: 38px;
+          padding: 0 12px;
+          border: 1px solid ${GOLD};
+          border-radius: 9px;
+          background: ${ROYAL_BLUE};
+          color: #ffffff;
+          font-size: 9px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .ncsSecondaryButton {
+          background: white;
+          color: ${ROYAL_BLUE};
+        }
+
+        label {
+          min-width: 0;
+        }
+
+        label > span,
+        .ncsChargeGrid span,
+        .ncsNotes span {
+          display: block;
+          margin-bottom: 6px;
+          color: #667085;
+          font-size: 9px;
+          font-weight: 850;
+        }
+
+        input,
+        select,
+        textarea {
+          width: 100%;
+          min-height: 42px;
+          padding: 0 10px;
+          border: 1px solid #dbe1e9;
+          border-radius: 10px;
+          outline: none;
+          background: #ffffff;
+          color: #344054;
+          font: inherit;
+          font-size: 10px;
+          font-weight: 650;
+        }
+
+        textarea {
+          min-height: 82px;
+          padding: 10px;
+          resize: vertical;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+          border-color: ${GOLD};
+          box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.12);
+        }
+
+        .ncsSupplierSearchWrap,
+        .ncsProductSearchWrap {
+          position: relative;
           margin-bottom: 14px;
         }
 
-        .ncsPurchaseCardTitle span {
-          display: block;
-          color: ${GOLD};
-          font-size: 9px;
-          font-weight: 950;
-          letter-spacing: 1px;
-        }
-
-        .ncsPurchaseCardTitle h2 {
-          margin: 3px 0 0;
-          color: ${DEEP_BLUE};
-          font-size: 19px;
-          font-weight: 950;
-        }
-
-        .ncsPurchaseCardTitle > b {
-          padding: 7px 10px;
-          border-radius: 20px;
-          background: #eef2f9;
-          color: ${ROYAL_BLUE};
-          font-size: 9px;
-        }
-
-        .ncsPurchaseTitleActions {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .ncsPurchaseTitleActions > b {
-          min-height: 36px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0 12px;
-          border: 1px solid rgba(212, 175, 55, 0.22);
-          border-radius: 20px;
-          background: linear-gradient(135deg, #eef3ff, #ffffff);
-          color: ${ROYAL_BLUE};
-          font-size: 9px;
-          font-weight: 900;
-          white-space: nowrap;
-        }
-
-        .ncsPurchaseTitleActions > button {
-          min-height: 38px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0 14px;
-          border: 1px solid rgba(212, 175, 55, 0.82);
-          border-radius: 10px;
-          background: linear-gradient(135deg, ${DEEP_BLUE}, ${ROYAL_BLUE});
-          color: #ffffff;
-          font-family: inherit;
-          font-size: 9px;
-          font-weight: 900;
-          white-space: nowrap;
-          cursor: pointer;
-          box-shadow: 0 9px 20px rgba(3, 21, 63, 0.16);
-          transition:
-            transform 0.18s ease,
-            box-shadow 0.18s ease,
-            filter 0.18s ease;
-        }
-
-        .ncsPurchaseTitleActions > button:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 12px 24px rgba(3, 21, 63, 0.22);
-          filter: brightness(1.05);
-        }
-
-        .ncsPurchaseTitleActions > button {
-          min-height: 35px;
-          padding: 0 11px;
-          border: 1px solid ${GOLD};
-          border-radius: 10px;
-          background: ${ROYAL_BLUE};
-          color: #ffffff;
-          font-family: inherit;
-          font-size: 9px;
-          font-weight: 900;
-          cursor: pointer;
-        }
-
-        .ncsPurchaseFormGrid {
-          display: grid;
-          grid-template-columns: repeat(
-            2,
-            minmax(0, 1fr)
-          );
-          gap: 11px;
-        }
-
-        .ncsPurchaseFormGrid label,
-        .ncsPurchaseSummaryBody label,
-        .ncsPurchaseItemFields label {
-          display: grid;
-          gap: 5px;
-        }
-
-        .ncsPurchaseFormGrid label > span,
-        .ncsPurchaseSummaryBody label > span,
-        .ncsPurchaseItemFields label > span {
-          color: #68717e;
-          font-size: 9px;
-          font-weight: 800;
-        }
-
-        .ncsPurchaseFormGrid input,
-        .ncsPurchaseFormGrid select,
-        .ncsPurchaseSummaryBody input,
-        .ncsPurchaseSummaryBody textarea,
-        .ncsPurchaseItemFields input {
-          width: 100%;
-          min-width: 0;
-          min-height: 41px;
-          padding: 0 10px;
-          border: 1px solid #dfe4eb;
-          border-radius: 10px;
-          outline: none;
-          background: #ffffff;
-          color: ${CHARCOAL};
-          font-family: inherit;
-          font-size: 10px;
-          font-weight: 700;
-        }
-
-        .ncsPurchaseFormGrid input:focus,
-        .ncsPurchaseFormGrid select:focus,
-        .ncsPurchaseSummaryBody input:focus,
-        .ncsPurchaseSummaryBody textarea:focus,
-        .ncsPurchaseItemFields input:focus {
-          border-color: ${GOLD};
-          box-shadow: 0 0 0 3px
-            rgba(212, 175, 55, 0.12);
-        }
-
-        .ncsPurchaseSearch {
-          display: flex;
-          align-items: center;
-          min-height: 50px;
-          padding: 0 13px;
-          border: 1px solid #dfe4eb;
-          border-radius: 13px;
-          background: #fafbfe;
-        }
-
-        .ncsPurchaseSearch span {
-          margin-right: 9px;
-          color: ${ROYAL_BLUE};
-          font-size: 22px;
-        }
-
-        .ncsPurchaseSearch input {
-          width: 100%;
-          border: 0;
-          outline: none;
-          background: transparent;
-          font-family: inherit;
-          font-size: 11px;
-          font-weight: 700;
-        }
-
-        .ncsPurchaseProductGrid {
-          max-height: 440px;
-          display: grid;
-          grid-template-columns: repeat(
-            auto-fill,
-            minmax(290px, 1fr)
-          );
-          gap: 12px;
-          margin-top: 13px;
-          padding: 2px;
+        .ncsDropdown {
+          position: absolute;
+          z-index: 40;
+          top: calc(100% + 5px);
+          left: 0;
+          right: 0;
+          max-height: 310px;
           overflow-y: auto;
+          border: 1px solid #dfe4eb;
+          border-radius: 12px;
+          background: white;
+          box-shadow: 0 18px 38px rgba(3, 21, 63, 0.18);
         }
 
-        .ncsPurchaseProduct {
+        .ncsDropdown button {
+          width: 100%;
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 10px;
-          border: 1px solid #e5e8ee;
-          border-radius: 14px;
-          background: #ffffff;
+          padding: 11px;
+          border: 0;
+          border-bottom: 1px solid #eef1f5;
+          background: white;
           text-align: left;
           cursor: pointer;
         }
 
-        .ncsPurchaseProduct:hover {
-          border-color: ${GOLD};
+        .ncsDropdown button:hover {
+          background: #f7f9fc;
         }
 
-        .ncsPurchaseProduct > div {
-          width: 58px;
-          height: 65px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
+        .ncsDropdown strong,
+        .ncsDropdown span,
+        .ncsDropdown small {
+          display: block;
+        }
+
+        .ncsDropdown strong {
+          color: ${ROYAL_BLUE};
+          font-size: 10px;
+        }
+
+        .ncsDropdown span,
+        .ncsDropdown small {
+          margin-top: 3px;
+          color: #8a93a0;
+          font-size: 8px;
+        }
+
+        .ncsDropdownMessage {
+          padding: 14px;
+          color: #667085;
+          font-size: 10px;
+        }
+
+        .ncsProductThumb {
+          width: 44px;
+          height: 44px;
+          flex: 0 0 44px;
           overflow: hidden;
-          border-radius: 10px;
+          display: grid;
+          place-items: center;
+          border-radius: 9px;
           background: ${ROYAL_BLUE};
           color: ${GOLD};
-          font-size: 10px;
-          font-weight: 950;
+          font-size: 9px;
+          font-weight: 900;
         }
 
-        .ncsPurchaseProduct img {
+        .ncsProductThumb img {
           width: 100%;
           height: 100%;
           object-fit: cover;
         }
 
-        .ncsPurchaseProduct section {
-          min-width: 0;
-          flex: 1;
+        .ncsSupplierGrid,
+        .ncsInvoiceGrid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px;
         }
 
-        .ncsPurchaseProduct small,
-        .ncsPurchaseProduct strong,
-        .ncsPurchaseProduct p,
-        .ncsPurchaseProduct em,
-        .ncsPurchaseProduct section > b {
+        .ncsInvoiceGrid {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          margin-top: 12px;
+        }
+
+        .ncsSupplierBalanceStrip {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 9px;
+          margin-top: 12px;
+        }
+
+        .ncsSupplierBalanceStrip > div {
+          padding: 12px;
+          border: 1px solid rgba(212, 175, 55, 0.22);
+          border-radius: 12px;
+          background: linear-gradient(135deg, #f9fbff, #fffaf0);
+        }
+
+        .ncsSupplierBalanceStrip span,
+        .ncsSupplierBalanceStrip strong {
           display: block;
         }
 
-        .ncsPurchaseProduct small {
-          color: ${GOLD};
-          font-size: 8px;
-          font-weight: 900;
-        }
-
-        .ncsPurchaseProduct strong {
-          margin-top: 3px;
-          color: ${DEEP_BLUE};
-          font-size: 10px;
-          line-height: 1.4;
-        }
-
-        .ncsPurchaseProduct p,
-        .ncsPurchaseProduct em,
-        .ncsPurchaseProduct section > b {
-          margin: 3px 0 0;
-          color: #858c98;
-          font-size: 8px;
-          font-style: normal;
-          font-weight: 650;
-        }
-
-        .ncsPurchaseProduct section > b {
-          color: ${ROYAL_BLUE};
-        }
-
-        .ncsPurchaseProduct > i {
-          width: 30px;
-          height: 30px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          border-radius: 9px;
-          background: ${GOLD};
-          color: ${ROYAL_BLUE};
-          font-size: 18px;
-          font-style: normal;
-          font-weight: 950;
-        }
-
-        .ncsPurchaseProduct {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) 86px;
-          align-items: stretch;
-          gap: 10px;
-          min-height: 96px;
-          padding: 10px;
-          border-color: rgba(10, 46, 115, 0.12);
-          background:
-            linear-gradient(
-              180deg,
-              rgba(255, 255, 255, 1),
-              rgba(247, 249, 253, 0.98)
-            );
-          box-shadow: 0 7px 18px rgba(3, 21, 63, 0.06);
-          text-align: left;
-          cursor: default;
-          transition:
-            transform 0.2s ease,
-            box-shadow 0.2s ease,
-            border-color 0.2s ease;
-        }
-
-        .ncsPurchaseProduct:hover {
-          transform: translateY(-2px);
-          border-color: rgba(212, 175, 55, 0.52);
-          box-shadow: 0 12px 26px rgba(3, 21, 63, 0.11);
-        }
-
-        .ncsPurchaseProductMain {
-          min-width: 0;
-          width: 100%;
-          display: flex;
-          align-items: center;
-          gap: 11px;
-          padding: 2px;
-          border: 0;
-          border-radius: 10px;
-          background: transparent;
-          text-align: left;
-          cursor: pointer;
-        }
-
-        .ncsPurchaseProductMain > div {
-          width: 58px;
-          height: 65px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          overflow: hidden;
-          border-radius: 10px;
-          background: ${ROYAL_BLUE};
-          color: ${GOLD};
-          font-size: 10px;
-          font-weight: 950;
-        }
-
-        .ncsPurchaseProductMain section {
-          min-width: 0;
-          flex: 1;
-        }
-
-        .ncsPurchaseProductActions {
-          position: relative;
-          z-index: 5;
-          width: 86px;
-          min-width: 86px;
-          display: grid;
-          grid-template-rows: 1fr 1fr;
-          align-content: stretch;
-          gap: 8px;
-        }
-
-        .ncsPurchaseProductActions button {
-          width: 100%;
-          min-width: 0;
-          min-height: 36px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0 8px;
-          border-radius: 9px;
-          font-family: inherit;
-          font-size: 9px;
-          font-weight: 900;
-          line-height: 1;
-          white-space: nowrap;
-          cursor: pointer;
-          overflow: hidden;
-          transition:
-            transform 0.18s ease,
-            box-shadow 0.18s ease,
-            filter 0.18s ease;
-        }
-
-        .ncsPurchaseEditButton {
-          border: 1px solid rgba(10, 46, 115, 0.26);
-          background: linear-gradient(180deg, #ffffff, #eef3ff);
-          color: ${ROYAL_BLUE};
-        }
-
-        .ncsPurchaseEditButton:hover {
-          transform: translateY(-1px);
-          border-color: rgba(212, 175, 55, 0.62);
-          background: linear-gradient(135deg, ${DEEP_BLUE}, ${ROYAL_BLUE});
-          color: #ffffff;
-          box-shadow: 0 8px 18px rgba(3, 21, 63, 0.18);
-        }
-
-        .ncsPurchaseAddButton {
-          border: 1px solid rgba(212, 175, 55, 0.92);
-          background: linear-gradient(135deg, ${GOLD}, #f0d267);
-          color: ${DEEP_BLUE};
-          box-shadow: 0 7px 16px rgba(212, 175, 55, 0.18);
-        }
-
-        .ncsPurchaseAddButton:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 10px 20px rgba(212, 175, 55, 0.25);
-          filter: brightness(1.03);
-        }
-
-        .ncsPurchaseItems {
-          display: grid;
-          gap: 10px;
-        }
-
-        .ncsPurchaseItems article {
-          padding: 14px;
-          border: 1px solid rgba(10, 46, 115, 0.12);
-          border-radius: 15px;
-          background: linear-gradient(180deg, #ffffff, #f7f9fd);
-          box-shadow: 0 7px 18px rgba(3, 21, 63, 0.05);
-        }
-
-        .ncsPurchaseItems article header {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 12px;
-        }
-
-        .ncsPurchaseItems h3 {
-          margin: 0;
-          color: ${DEEP_BLUE};
-          font-size: 12px;
-          font-weight: 900;
-        }
-
-        .ncsPurchaseItems header p,
-        .ncsPurchaseItems header small {
-          margin: 3px 0 0;
-          color: #858c98;
-          font-size: 8px;
-          font-weight: 650;
-        }
-
-        .ncsPurchaseItems header button {
-          width: 30px;
-          height: 30px;
-          border: 0;
-          border-radius: 9px;
-          background: #fff0f0;
-          color: #b63b3b;
-          font-size: 18px;
-          cursor: pointer;
-        }
-
-        .ncsPurchaseItemFields {
-          display: grid;
-          grid-template-columns: repeat(
-            8,
-            minmax(90px, 1fr)
-          );
-          gap: 8px;
-          margin-top: 11px;
-        }
-
-        .ncsPurchaseOnlineToggle {
-          display: flex !important;
-          align-items: center;
-          justify-content: center;
-          gap: 7px !important;
-          min-height: 41px;
-          align-self: end;
-          padding: 8px;
-          border: 1px solid #dfe4eb;
-          border-radius: 10px;
-          background: #ffffff;
-          cursor: pointer;
-        }
-
-        .ncsPurchaseOnlineToggle input {
-          width: 17px;
-          min-height: 17px;
-          accent-color: ${ROYAL_BLUE};
-        }
-
-        .ncsPurchaseOnlineToggle span {
-          color: ${DEEP_BLUE} !important;
-          font-size: 8px !important;
-          font-weight: 850 !important;
-        }
-
-        .ncsPurchaseLineTotal {
-          display: grid;
-          align-content: center;
-          padding: 8px;
-          border-radius: 10px;
-          background: ${ROYAL_BLUE};
-          color: #ffffff;
-        }
-
-        .ncsPurchaseLineTotal span {
-          color: ${GOLD};
+        .ncsSupplierBalanceStrip span {
+          color: #8a93a0;
           font-size: 8px;
           font-weight: 800;
         }
 
-        .ncsPurchaseLineTotal strong {
-          margin-top: 3px;
-          font-size: 10px;
+        .ncsSupplierBalanceStrip strong {
+          margin-top: 5px;
+          color: ${ROYAL_BLUE};
+          font-size: 15px;
         }
 
-        .ncsPurchaseEmpty {
-          min-height: 180px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          border: 1px dashed #dfe4eb;
-          border-radius: 15px;
-          background: #fafbfe;
-          text-align: center;
+        .ncsPurchaseRows {
+          display: grid;
+          gap: 14px;
         }
 
-        .ncsPurchaseEmpty div {
-          font-size: 28px;
-        }
-
-        .ncsPurchaseEmpty h3 {
-          margin: 8px 0 2px;
-          color: ${DEEP_BLUE};
-          font-size: 13px;
-        }
-
-        .ncsPurchaseEmpty p {
-          margin: 0;
-          color: #8d94a0;
-          font-size: 9px;
-        }
-
-        .ncsPurchaseSummary {
-          position: sticky;
-          top: 18px;
+        .ncsPurchaseRowCard {
           overflow: hidden;
-          border: 1px solid
-            rgba(10, 46, 115, 0.12);
-          border-radius: 20px;
-          background: #ffffff;
-          box-shadow: 0 18px 48px
-            rgba(3, 21, 63, 0.13);
-        }
-
-        .ncsPurchaseSummaryHeader {
-          padding: 18px;
-          background:
-            radial-gradient(
-              circle at 85% 0%,
-              rgba(212, 175, 55, 0.2),
-              transparent 30%
-            ),
-            linear-gradient(
-              135deg,
-              ${DEEP_BLUE},
-              ${ROYAL_BLUE}
-            );
-        }
-
-        .ncsPurchaseSummaryHeader span {
-          color: ${GOLD};
-          font-size: 9px;
-          font-weight: 900;
-          letter-spacing: 1px;
-        }
-
-        .ncsPurchaseSummaryHeader h2 {
-          margin: 4px 0 0;
-          color: #ffffff;
-          font-size: 20px;
-          font-weight: 950;
-        }
-
-        .ncsPurchaseSummaryBody {
-          display: grid;
-          gap: 11px;
-          padding: 16px;
-        }
-
-        .ncsPurchaseSummaryBody textarea {
-          min-height: 76px;
-          padding-top: 10px;
-          resize: vertical;
-        }
-
-        .ncsPurchaseTotals {
-          padding: 12px;
-          border-radius: 13px;
-          background: #f7f9fc;
-        }
-
-        .ncsPurchaseTotals p {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          margin: 0;
-          padding: 4px 0;
-          color: #6e7683;
-          font-size: 9px;
-          font-weight: 700;
-        }
-
-        .ncsPurchaseTotals strong {
-          color: ${DEEP_BLUE};
-          font-size: 10px;
-        }
-
-        .ncsPurchaseGrandTotal {
-          margin-top: 7px !important;
-          padding-top: 10px !important;
-          border-top: 1px dashed #d5dbe4;
-        }
-
-        .ncsPurchaseGrandTotal span {
-          color: ${DEEP_BLUE};
-          font-size: 12px;
-          font-weight: 950;
-        }
-
-        .ncsPurchaseGrandTotal strong {
-          color: ${ROYAL_BLUE};
-          font-size: 18px;
-        }
-
-        .ncsPurchaseDue {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 11px;
-          border-radius: 11px;
-          background: #fff4e8;
-          color: #9d5c13;
-          font-size: 10px;
-          font-weight: 900;
-        }
-
-        .ncsPurchasePaymentLabel {
-          color: ${DEEP_BLUE};
-          font-size: 9px;
-          font-weight: 900;
-        }
-
-        .ncsPurchasePaymentGrid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 7px;
-        }
-
-        .ncsPurchasePaymentGrid button {
-          min-height: 38px;
           border: 1px solid #dfe4eb;
-          border-radius: 9px;
+          border-radius: 16px;
           background: #ffffff;
-          color: #66707d;
-          font-family: inherit;
-          font-size: 8px;
-          font-weight: 850;
-          cursor: pointer;
+          box-shadow: 0 8px 22px rgba(3, 21, 63, 0.06);
         }
 
-        .ncsPurchasePaymentGrid button.active {
-          border-color: ${GOLD};
-          background: rgba(212, 175, 55, 0.13);
-          color: ${ROYAL_BLUE};
-        }
-
-        .ncsPurchaseComplete {
-          min-height: 59px;
+        .ncsPurchaseRowHeader {
           display: flex;
           align-items: center;
-          gap: 11px;
-          padding: 8px 13px;
-          border: 1px solid ${GOLD};
-          border-radius: 13px;
-          background: linear-gradient(
-            135deg,
-            ${ROYAL_BLUE},
-            #174da4
-          );
-          color: #ffffff;
-          font-family: inherit;
-          cursor: pointer;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 12px 14px;
+          border-bottom: 1px solid #e8ecf2;
+          background: linear-gradient(135deg, #f7f9fc, #fffaf0);
         }
 
-        .ncsPurchaseComplete:disabled {
-          cursor: not-allowed;
-          opacity: 0.55;
-        }
-
-        .ncsPurchaseComplete > span {
-          width: 34px;
-          height: 34px;
+        .ncsPurchaseRowTitle {
           display: flex;
           align-items: center;
-          justify-content: center;
-          border-radius: 10px;
-          background: ${GOLD};
-          color: ${ROYAL_BLUE};
-          font-size: 17px;
-          font-weight: 950;
+          gap: 10px;
         }
 
-        .ncsPurchaseComplete > div {
-          min-width: 0;
-          flex: 1;
-          text-align: left;
-        }
-
-        .ncsPurchaseComplete strong,
-        .ncsPurchaseComplete small {
-          display: block;
-        }
-
-        .ncsPurchaseComplete strong {
+        .ncsPurchaseRowTitle > span {
+          display: grid;
+          width: 30px;
+          height: 30px;
+          flex: 0 0 30px;
+          place-items: center;
+          border-radius: 50%;
+          background: ${ROYAL_BLUE};
+          color: ${GOLD};
           font-size: 11px;
           font-weight: 950;
         }
 
-        .ncsPurchaseComplete small {
+        .ncsPurchaseRowTitle strong,
+        .ncsPurchaseRowTitle small {
+          display: block;
+        }
+
+        .ncsPurchaseRowTitle strong {
+          color: ${ROYAL_BLUE};
+          font-size: 12px;
+        }
+
+        .ncsPurchaseRowTitle small {
           margin-top: 3px;
-          color: ${GOLD};
+          color: #8a93a0;
+          font-size: 8px;
+        }
+
+        .ncsPurchaseRowActions {
+          display: flex;
+          gap: 7px;
+        }
+
+        .ncsPurchaseRowActions button {
+          min-height: 34px;
+          padding: 0 10px;
+          border: 1px solid #d0d5dd;
+          border-radius: 8px;
+          background: white;
+          color: ${ROYAL_BLUE};
+          font-size: 8px;
+          font-weight: 850;
+          cursor: pointer;
+        }
+
+        .ncsPurchaseRowActions .danger {
+          border-color: #f3b7b2;
+          background: #fff6f5;
+          color: #b42318;
+        }
+
+        .ncsPurchaseRowGrid {
+          display: grid;
+          grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(280px, 0.9fr);
+          gap: 12px;
+          padding: 14px;
+        }
+
+        .ncsPurchaseRowSection {
+          min-width: 0;
+          padding: 12px;
+          border: 1px solid #edf0f4;
+          border-radius: 12px;
+          background: #fbfcfe;
+        }
+
+        .ncsPurchaseRowSection h3 {
+          margin: 0 0 10px;
+          color: ${ROYAL_BLUE};
           font-size: 10px;
+          font-weight: 900;
+        }
+
+        .ncsPurchaseRowSection label {
+          display: block;
+          margin-bottom: 8px;
+        }
+
+        .ncsPurchaseRowSection input {
+          min-height: 38px;
+          font-size: 9px;
+        }
+
+        .ncsPurchaseInnerGrid {
+          display: grid;
+          gap: 7px;
+        }
+
+        .ncsPurchaseInnerGrid.two {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .ncsPurchaseInnerGrid.three {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .ncsNewVariantMessage,
+        .ncsOfflineNote {
+          margin-top: 6px;
+          padding: 9px 10px;
+          border-radius: 9px;
+          font-size: 8px;
+          line-height: 1.45;
+        }
+
+        .ncsNewVariantMessage {
+          border: 1px solid #fedf89;
+          background: #fffaeb;
+          color: #b54708;
+        }
+
+        .ncsOfflineNote {
+          border: 1px solid #b8d8ff;
+          background: #eff7ff;
+          color: #175cd3;
+        }
+
+        .ncsOnlineSection {
+          background: linear-gradient(180deg, #f9fbff, #fffaf0);
+        }
+
+        .ncsOnlineHeader {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-bottom: 8px;
+        }
+
+        .ncsOnlineHeader h3 {
+          margin: 0;
+        }
+
+        .ncsToggle {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin: 0;
+        }
+
+        .ncsToggle input {
+          width: 16px;
+          height: 16px;
+          min-height: auto;
+          margin: 0;
+        }
+
+        .ncsToggle span {
+          margin: 0;
+          color: ${ROYAL_BLUE};
+          font-size: 8px;
           font-weight: 850;
         }
 
-        .ncsPurchaseComplete > b {
-          font-size: 18px;
-        }
-
-        .ncsPurchaseNotice {
-          position: fixed;
-          z-index: 500;
-          top: 20px;
-          right: 20px;
-          max-width: min(
-            380px,
-            calc(100vw - 40px)
-          );
+        .ncsPurchaseRowTotal {
           display: flex;
           align-items: center;
+          justify-content: space-between;
           gap: 10px;
-          padding: 13px 15px;
-          border-radius: 13px;
-          background: #ffffff;
-          box-shadow: 0 18px 48px
-            rgba(3, 21, 63, 0.2);
-        }
-
-        .ncsPurchaseNotice > span {
-          width: 30px;
-          height: 30px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 9px;
-          font-weight: 950;
-        }
-
-        .ncsPurchaseNotice p {
-          margin: 0;
-          font-size: 10px;
-          font-weight: 750;
-        }
-
-        .ncsPurchaseNotice-success > span {
-          background: #e9f8ef;
-          color: #158348;
-        }
-
-        .ncsPurchaseNotice-error > span {
-          background: #fff0f0;
-          color: #b43d3d;
-        }
-
-        .ncsPurchaseError {
           margin-top: 10px;
-          padding: 10px;
+          padding: 10px 11px;
           border-radius: 10px;
-          background: #fff0f0;
-          color: #a33a3a;
-          font-size: 9px;
-          font-weight: 750;
+          background: ${ROYAL_BLUE};
+          color: white;
         }
 
-        .ncsPurchaseModalOverlay {
-          position: fixed;
-          z-index: 700;
-          inset: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 20px;
-          background: rgba(3, 21, 63, 0.65);
-          backdrop-filter: blur(7px);
+        .ncsPurchaseRowTotal span {
+          font-size: 8px;
+          font-weight: 800;
         }
 
-        .ncsPurchaseSuccessModal {
-          width: min(420px, 100%);
-          padding: 26px;
-          border: 1px solid ${GOLD};
-          border-radius: 22px;
-          background: #ffffff;
-          text-align: center;
-          box-shadow: 0 30px 80px
-            rgba(0, 0, 0, 0.28);
-        }
-
-        .ncsPurchaseSuccessModal > div {
-          width: 58px;
-          height: 58px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin: 0 auto 12px;
-          border-radius: 18px;
-          background: ${GOLD};
-          color: ${ROYAL_BLUE};
-          font-size: 25px;
-          font-weight: 950;
-        }
-
-        .ncsPurchaseSuccessModal > span {
+        .ncsPurchaseRowTotal strong {
           color: ${GOLD};
+          font-size: 14px;
+        }
+
+        .ncsAddNextRowButton {
+          width: calc(100% - 28px);
+          min-height: 38px;
+          margin: 0 14px 14px;
+          border: 1px dashed ${GOLD};
+          border-radius: 10px;
+          background: #fffdf6;
+          color: ${ROYAL_BLUE};
           font-size: 9px;
-          font-weight: 950;
-          letter-spacing: 1px;
+          font-weight: 900;
+          cursor: pointer;
         }
 
-        .ncsPurchaseSuccessModal h2 {
-          margin: 5px 0;
-          color: ${DEEP_BLUE};
-          font-size: 22px;
-          font-weight: 950;
+        .ncsItemHelp {
+          margin-top: 11px;
+          padding: 11px 12px;
+          border: 1px solid #b8d8ff;
+          border-radius: 11px;
+          background: #eff7ff;
+          color: #174d89;
+          font-size: 9px;
+          line-height: 1.55;
         }
 
-        .ncsPurchaseSuccessModal > p {
-          margin: 0;
-          color: #7c8490;
-          font-size: 10px;
-          font-weight: 650;
+        .ncsSummary {
+          position: sticky;
+          top: 18px;
+          overflow: hidden;
         }
 
-        .ncsPurchaseSuccessModal section {
-          margin: 16px 0;
+        .ncsSummary > header {
+          padding: 18px;
+          background: linear-gradient(135deg, ${DEEP_BLUE}, ${ROYAL_BLUE});
+          color: #ffffff;
+        }
+
+        .ncsSummary > header h2 {
+          color: #ffffff;
+        }
+
+        .ncsSummaryBody {
+          padding: 16px;
+        }
+
+        .ncsChargeGrid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+        }
+
+        .ncsTotals {
+          margin-top: 13px;
           padding: 12px;
           border-radius: 12px;
           background: #f7f9fc;
         }
 
-        .ncsPurchaseSuccessModal section p {
+        .ncsTotals p,
+        .ncsPaymentSummary p {
           display: flex;
+          align-items: center;
           justify-content: space-between;
+          gap: 10px;
           margin: 0;
-          padding: 4px 0;
-          color: #6d7683;
+          padding: 7px 0;
+          border-bottom: 1px solid #e7ebf0;
+          color: #667085;
           font-size: 9px;
-          font-weight: 700;
         }
 
-        .ncsPurchaseSuccessModal section strong {
-          color: ${ROYAL_BLUE};
+        .ncsTotals strong,
+        .ncsPaymentSummary strong {
+          color: #344054;
         }
 
-        .ncsPurchaseSuccessModal button {
-          width: 100%;
-          min-height: 45px;
-          border: 1px solid ${GOLD};
-          border-radius: 11px;
-          background: ${ROYAL_BLUE};
-          color: #ffffff;
-          font-family: inherit;
-          font-size: 10px;
+        .ncsGrandTotal {
+          margin-top: 5px !important;
+          padding-top: 10px !important;
+          color: ${ROYAL_BLUE} !important;
+          font-size: 12px !important;
           font-weight: 900;
-          cursor: pointer;
         }
 
-        .ncsNewProductModal {
-          width: min(820px, 100%);
-          max-height: 92vh;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-          border: 1px solid ${GOLD};
-          border-radius: 22px;
-          background: #ffffff;
-          box-shadow: 0 30px 90px rgba(0, 0, 0, 0.3);
+        .ncsGrandTotal strong {
+          color: ${ROYAL_BLUE};
+          font-size: 16px;
         }
 
-        .ncsNewProductModal > header {
+        .ncsPaymentsHeader {
           display: flex;
-          align-items: flex-start;
+          align-items: center;
           justify-content: space-between;
-          gap: 15px;
-          padding: 18px 20px;
-          background:
-            radial-gradient(
-              circle at 86% 0%,
-              rgba(212, 175, 55, 0.22),
-              transparent 32%
-            ),
-            linear-gradient(
-              135deg,
-              ${DEEP_BLUE},
-              ${ROYAL_BLUE}
-            );
-          color: #ffffff;
+          gap: 10px;
+          margin-top: 15px;
         }
 
-        .ncsNewProductModal > header span {
-          color: ${GOLD};
-          font-size: 9px;
-          font-weight: 950;
-          letter-spacing: 1px;
-        }
-
-        .ncsNewProductModal > header h2 {
-          margin: 4px 0 0;
-          color: #ffffff;
-          font-size: 21px;
-          font-weight: 950;
-        }
-
-        .ncsNewProductModal > header p {
-          margin: 4px 0 0;
-          color: rgba(255, 255, 255, 0.64);
-          font-size: 9px;
-          font-weight: 650;
-        }
-
-        .ncsNewProductModal > header button {
-          width: 39px;
-          height: 39px;
-          flex-shrink: 0;
-          border: 1px solid rgba(255, 255, 255, 0.2);
-          border-radius: 11px;
-          background: rgba(255, 255, 255, 0.08);
-          color: #ffffff;
-          font-size: 20px;
-          cursor: pointer;
-        }
-
-        .ncsNewProductFormGrid {
-          display: grid;
-          grid-template-columns: repeat(
-            2,
-            minmax(0, 1fr)
-          );
-          gap: 11px;
-          padding: 18px 20px;
-          overflow-y: auto;
-        }
-
-        .ncsNewProductFormGrid label {
-          display: grid;
-          gap: 5px;
-        }
-
-        .ncsNewProductFormGrid label > span {
-          color: #69717e;
-          font-size: 9px;
-          font-weight: 800;
-        }
-
-        .ncsNewProductFormGrid input {
-          width: 100%;
-          min-width: 0;
-          min-height: 41px;
-          padding: 0 10px;
-          border: 1px solid #dfe4eb;
-          border-radius: 10px;
-          outline: none;
-          background: #ffffff;
-          color: ${CHARCOAL};
-          font-family: inherit;
-          font-size: 10px;
-          font-weight: 700;
-        }
-
-        .ncsNewProductFormGrid input:focus {
-          border-color: ${GOLD};
-          box-shadow: 0 0 0 3px
-            rgba(212, 175, 55, 0.12);
-        }
-
-        .ncsNewProductWide {
-          grid-column: 1 / -1;
-        }
-
-        .ncsNewProductWide > small {
-          color: #858d99;
-          font-size: 8px;
-          font-weight: 650;
-        }
-
-        .ncsNewProductToggle {
-          grid-column: 1 / -1;
-          display: flex !important;
-          align-items: center;
-          gap: 11px !important;
-          padding: 12px;
-          border: 1px solid #dfe4eb;
-          border-radius: 12px;
-          background: #fafbfe;
-          cursor: pointer;
-        }
-
-        .ncsNewProductToggle input {
-          width: 20px;
-          min-height: 20px;
-          flex-shrink: 0;
-          accent-color: ${ROYAL_BLUE};
-        }
-
-        .ncsNewProductToggle strong,
-        .ncsNewProductToggle span {
+        .ncsPaymentsHeader strong {
           display: block;
-        }
-
-        .ncsNewProductToggle strong {
-          color: ${DEEP_BLUE};
-          font-size: 10px;
-          font-weight: 900;
-        }
-
-        .ncsNewProductToggle span {
           margin-top: 3px;
-          color: #858d99;
+          color: #667085;
           font-size: 8px;
-          font-weight: 650;
         }
 
-        .ncsLocalPriceNote {
-          margin: 0 20px 13px;
-          padding: 11px 12px;
-          border: 1px solid rgba(212, 175, 55, 0.45);
-          border-radius: 11px;
-          background: #fffaf0;
-          color: #64551f;
-          font-size: 9px;
-          font-weight: 650;
-          line-height: 1.55;
-        }
-
-        .ncsLocalPriceNote strong {
-          color: #0A2E73;
-        }
-
-        .ncsNewProductSummary {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 9px;
-          margin: 0 20px 15px;
-          padding: 12px;
-          border-radius: 13px;
-          background: #f6f8fc;
-        }
-
-        .ncsNewProductSummary div {
-          min-width: 0;
-        }
-
-        .ncsNewProductSummary span,
-        .ncsNewProductSummary strong {
-          display: block;
-        }
-
-        .ncsNewProductSummary span {
-          color: #8a919c;
-          font-size: 8px;
-          font-weight: 750;
-        }
-
-        .ncsNewProductSummary strong {
-          margin-top: 3px;
-          overflow: hidden;
-          color: ${ROYAL_BLUE};
-          font-size: 10px;
-          font-weight: 900;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .ncsNewProductModal > footer {
-          display: grid;
-          grid-template-columns: 1fr 1.5fr;
-          gap: 9px;
-          padding: 14px 20px 18px;
-          border-top: 1px solid #edf0f4;
-          background: #fbfcff;
-        }
-
-        .ncsNewProductModal > footer button {
-          min-height: 45px;
-          border-radius: 11px;
-          font-family: inherit;
-          font-size: 10px;
-          font-weight: 900;
-          cursor: pointer;
-        }
-
-        .ncsNewProductModal > footer button:first-child {
-          border: 1px solid #dfe4eb;
-          background: #ffffff;
-          color: ${ROYAL_BLUE};
-        }
-
-        .ncsNewProductModal > footer button:last-child {
+        .ncsPaymentsHeader button {
+          min-height: 32px;
+          padding: 0 9px;
           border: 1px solid ${GOLD};
+          border-radius: 8px;
           background: ${ROYAL_BLUE};
-          color: #ffffff;
+          color: white;
+          font-size: 8px;
+          font-weight: 850;
+          cursor: pointer;
         }
 
-        .ncsNewProductModal > footer button:disabled {
-          cursor: wait;
-          opacity: 0.6;
+        .ncsPayments {
+          display: grid;
+          gap: 7px;
+          margin-top: 9px;
         }
 
-        .ncsNewProductSuccess {
-          width: min(430px, 100%);
-          padding: 27px;
-          border: 1px solid ${GOLD};
-          border-radius: 22px;
-          background: #ffffff;
-          text-align: center;
-          box-shadow: 0 30px 85px rgba(0, 0, 0, 0.3);
+        .ncsPayments article {
+          display: grid;
+          grid-template-columns: 100px 90px minmax(0, 1fr) 31px;
+          gap: 6px;
         }
 
-        .ncsNewProductSuccess > div {
-          width: 59px;
-          height: 59px;
-          display: flex;
+        .ncsPayments input,
+        .ncsPayments select {
+          min-height: 36px;
+          font-size: 8px;
+        }
+
+        .ncsPayments article button {
+          width: 31px;
+          height: 36px;
+          border: 1px solid #f3b7b2;
+          border-radius: 8px;
+          background: #fff6f5;
+          color: #b42318;
+          cursor: pointer;
+        }
+
+        .ncsPaymentSummary {
+          margin-top: 12px;
+          padding: 11px;
+          border: 1px solid rgba(212, 175, 55, 0.25);
+          border-radius: 12px;
+          background: #fffaf0;
+        }
+
+        .ncsOutstanding {
+          color: ${ROYAL_BLUE} !important;
+          font-size: 11px !important;
+          font-weight: 900;
+        }
+
+        .ncsOutstanding strong {
+          color: #b42318;
+          font-size: 14px;
+        }
+
+        .ncsNotes {
+          display: block;
+          margin-top: 13px;
+        }
+
+        .ncsCompleteButton {
+          width: 100%;
+          min-height: 60px;
+          display: grid;
+          grid-template-columns: 32px 1fr 20px;
           align-items: center;
-          justify-content: center;
-          margin: 0 auto 12px;
-          border-radius: 18px;
+          gap: 9px;
+          margin-top: 14px;
+          padding: 10px 13px;
+          border: 1px solid ${GOLD};
+          border-radius: 13px;
+          background: linear-gradient(135deg, ${ROYAL_BLUE}, ${DEEP_BLUE});
+          color: white;
+          cursor: pointer;
+        }
+
+        .ncsCompleteButton:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .ncsCompleteButton > span {
+          display: grid;
+          width: 30px;
+          height: 30px;
+          place-items: center;
+          border-radius: 50%;
           background: ${GOLD};
           color: ${ROYAL_BLUE};
-          font-size: 25px;
           font-weight: 950;
         }
 
-        .ncsNewProductSuccess > span {
-          color: ${GOLD};
-          font-size: 9px;
-          font-weight: 950;
-          letter-spacing: 1px;
-        }
-
-        .ncsNewProductSuccess h2 {
-          margin: 5px 0;
-          color: ${DEEP_BLUE};
-          font-size: 20px;
-          font-weight: 950;
-        }
-
-        .ncsNewProductSuccess > p {
-          margin: 0;
-          color: #7d8591;
-          font-size: 10px;
-          font-weight: 650;
-        }
-
-        .ncsNewProductSuccess > section {
-          margin: 17px 0 10px;
-          padding: 14px;
-          border: 1px dashed ${GOLD};
-          border-radius: 13px;
-          background: #fffdf5;
-        }
-
-        .ncsNewProductSuccess > section span,
-        .ncsNewProductSuccess > section strong {
-          display: block;
-        }
-
-        .ncsNewProductSuccess > section span {
-          color: #8b7a42;
-          font-size: 8px;
-          font-weight: 800;
-        }
-
-        .ncsNewProductSuccess > section strong {
-          margin-top: 5px;
-          color: ${ROYAL_BLUE};
-          font-size: 18px;
-          font-weight: 950;
-          letter-spacing: 1px;
-        }
-
-        .ncsGeneratedBarcodePreview {
-          margin-top: 10px;
-          padding: 8px;
-          overflow-x: auto;
-          border-radius: 10px;
-          background: #ffffff;
-        }
-
-        .ncsGeneratedBarcodePreview svg {
-          width: 100%;
-          min-width: 240px;
-          height: auto;
-          display: block;
-        }
-
-        .ncsBarcodePrintSettings {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 9px;
-          margin-top: 15px;
-          padding: 12px;
-          border: 1px solid #e4e8ef;
-          border-radius: 13px;
-          background: #f8f9fc;
+        .ncsCompleteButton div {
           text-align: left;
         }
 
-        .ncsBarcodePrintSettings label {
-          display: grid;
-          gap: 5px;
+        .ncsCompleteButton strong,
+        .ncsCompleteButton small {
+          display: block;
         }
 
-        .ncsBarcodePrintSettings label > span {
-          color: #6f7784;
-          font-size: 8px;
-          font-weight: 800;
+        .ncsCompleteButton strong {
+          font-size: 11px;
         }
 
-        .ncsBarcodePrintSettings input,
-        .ncsBarcodePrintSettings select {
-          width: 100%;
-          min-height: 38px;
-          padding: 0 9px;
-          border: 1px solid #dfe4eb;
-          border-radius: 9px;
-          outline: none;
-          background: #ffffff;
-          color: ${DEEP_BLUE};
-          font-family: inherit;
+        .ncsCompleteButton small {
+          margin-top: 2px;
+          color: ${GOLD};
           font-size: 9px;
-          font-weight: 800;
         }
 
-        .ncsBarcodePrintCheck {
-          display: flex !important;
-          align-items: center;
-          gap: 8px !important;
-          padding: 9px;
-          border: 1px solid #e3e7ed;
-          border-radius: 9px;
-          background: #ffffff;
-          cursor: pointer;
+        .ncsSafetyNote {
+          display: block;
+          margin-top: 8px;
+          color: #8a93a0;
+          font-size: 7px;
+          line-height: 1.5;
+          text-align: center;
         }
 
-        .ncsBarcodePrintCheck input {
-          width: 17px;
-          min-height: 17px;
-          flex-shrink: 0;
-          accent-color: ${ROYAL_BLUE};
+        .ncsNotice {
+          position: fixed;
+          z-index: 1000;
+          top: 18px;
+          right: 18px;
+          width: min(390px, calc(100vw - 36px));
+          display: flex;
+          gap: 10px;
+          padding: 13px 14px;
+          border-radius: 12px;
+          box-shadow: 0 18px 38px rgba(3, 21, 63, 0.2);
         }
 
-        .ncsBarcodePrintCheck span {
-          color: ${DEEP_BLUE} !important;
-          font-size: 8px !important;
-          font-weight: 850 !important;
-        }
-
-        .ncsNewProductSuccessActions {
+        .ncsNotice span {
           display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 8px;
-          margin-top: 16px;
-        }
-
-        .ncsNewProductSuccessActions button {
-          width: 100%;
-          min-height: 45px;
-          border-radius: 11px;
-          font-family: inherit;
-          font-size: 10px;
+          width: 24px;
+          height: 24px;
+          flex: 0 0 24px;
+          place-items: center;
+          border-radius: 50%;
           font-weight: 900;
-          cursor: pointer;
         }
 
-        .ncsNewProductSuccessActions button:first-child {
-          border: 1px solid ${GOLD};
-          background: #fffaf0;
+        .ncsNotice p {
+          margin: 2px 0 0;
+          font-size: 10px;
+          font-weight: 750;
+        }
+
+        .ncsNotice-success {
+          border: 1px solid #a6f4c5;
+          background: #ecfdf3;
+          color: #067647;
+        }
+
+        .ncsNotice-error,
+        .ncsLoadError {
+          border: 1px solid #fecdca;
+          background: #fef3f2;
+          color: #b42318;
+        }
+
+        .ncsNotice-info {
+          border: 1px solid #b8d8ff;
+          background: #eff7ff;
+          color: #175cd3;
+        }
+
+        .ncsLoadError {
+          margin-bottom: 12px;
+          padding: 12px 14px;
+          border-radius: 10px;
+          font-size: 10px;
+        }
+
+        .ncsModalOverlay {
+          position: fixed;
+          z-index: 1200;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+          background: rgba(3, 21, 63, 0.72);
+        }
+
+        .ncsSuccessModal {
+          width: min(560px, 100%);
+          padding: 25px;
+          border: 1px solid rgba(212, 175, 55, 0.5);
+          border-radius: 22px;
+          background: white;
+          text-align: center;
+          box-shadow: 0 28px 70px rgba(3, 21, 63, 0.3);
+        }
+
+        .ncsSuccessIcon {
+          width: 62px;
+          height: 62px;
+          display: grid;
+          place-items: center;
+          margin: 0 auto 12px;
+          border-radius: 50%;
+          background: ${ROYAL_BLUE};
+          color: ${GOLD};
+          font-size: 28px;
+          font-weight: 950;
+        }
+
+        .ncsSuccessModal h2 {
+          margin: 7px 0 0;
           color: ${ROYAL_BLUE};
         }
 
-        .ncsNewProductSuccessActions button:last-child {
-          border: 1px solid ${GOLD};
-          background: ${ROYAL_BLUE};
-          color: #ffffff;
+        .ncsSuccessModal p {
+          color: #667085;
+          font-size: 10px;
         }
 
-        .ncsNewProductSuccess > small {
+        .ncsSuccessGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 9px;
+          margin-top: 16px;
+        }
+
+        .ncsSuccessGrid > div {
+          padding: 12px;
+          border-radius: 11px;
+          background: #f7f9fc;
+        }
+
+        .ncsSuccessGrid span,
+        .ncsSuccessGrid strong {
           display: block;
-          color: #7f8793;
-          font-size: 9px;
-          font-weight: 700;
         }
 
+        .ncsSuccessGrid span {
+          color: #8a93a0;
+          font-size: 8px;
+        }
 
+        .ncsSuccessGrid strong {
+          margin-top: 5px;
+          color: ${ROYAL_BLUE};
+          font-size: 14px;
+        }
 
-        .ncsDesignModeBox { display: grid; gap: 8px; padding: 13px; border: 1px solid rgba(10, 46, 115, 0.15); border-radius: 13px; background: #f8faff; }
-        .ncsDesignModeBox > span { color: #68717e; font-size: 9px; font-weight: 900; }
-        .ncsDesignModeButtons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
-        .ncsDesignModeButtons button { min-height: 60px; display: grid; gap: 4px; align-content: center; padding: 9px 12px; border: 1px solid #d9dfeb; border-radius: 11px; background: #fff; color: ${CHARCOAL}; font-family: inherit; font-size: 10px; font-weight: 950; text-align: left; cursor: pointer; pointer-events: auto; }
-        .ncsDesignModeButtons button small { color: #7d8796; font-size: 8px; font-weight: 700; }
-        .ncsDesignModeButtons button.active { border-color: ${GOLD}; background: ${ROYAL_BLUE}; color: #fff; box-shadow: 0 8px 20px rgba(10, 46, 115, 0.16); }
-        .ncsDesignModeButtons button.active small { color: rgba(255,255,255,.72); }
-        .ncsDesignModeHelp { color: #68717e; font-size: 8px; line-height: 1.55; }
-        .ncsGeneratedBarcodeList { width: 100%; max-height: 260px; display: grid; gap: 8px; margin-top: 12px; overflow-y: auto; text-align: left; }
-        .ncsGeneratedBarcodeList article { display: grid; grid-template-columns: 90px minmax(0,1fr) auto; align-items: center; gap: 9px; padding: 10px; border: 1px solid #e3e8f2; border-radius: 10px; background: #f8faff; }
-        .ncsGeneratedBarcodeList article span { color: #68717e; font-size: 9px; font-weight: 800; }
-        .ncsGeneratedBarcodeList article strong { color: ${ROYAL_BLUE}; font-size: 11px; word-break: break-all; }
-        .ncsGeneratedBarcodeList article button { min-height: 34px; padding: 0 10px; border: 1px solid ${GOLD}; border-radius: 8px; background: ${GOLD}; color: ${ROYAL_BLUE}; font-family: inherit; font-size: 8px; font-weight: 900; cursor: pointer; }
-        .ncsPurchasePage button { position: relative; z-index: 2; pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
-        .ncsPurchaseProductActions { position: relative; z-index: 5; }
+        .ncsSuccessActions {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 9px;
+          margin-top: 17px;
+        }
 
-        @media (max-width: 1050px) {
+        .ncsSuccessActions button,
+        .ncsSuccessActions a {
+          min-height: 42px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid ${GOLD};
+          border-radius: 10px;
+          background: ${ROYAL_BLUE};
+          color: white;
+          font-size: 9px;
+          font-weight: 850;
+          text-decoration: none;
+          cursor: pointer;
+        }
+
+        .ncsSuccessActions a {
+          background: white;
+          color: ${ROYAL_BLUE};
+        }
+
+        @media (max-width: 1450px) {
           .ncsPurchaseLayout {
             grid-template-columns: 1fr;
           }
 
-          .ncsPurchaseSummary {
+          .ncsSummary {
             position: static;
-          }
-
-          .ncsPurchaseItemFields {
-            grid-template-columns: repeat(
-              3,
-              minmax(0, 1fr)
-            );
           }
         }
 
-        @media (max-width: 700px) {
+        @media (max-width: 1080px) {
+          .ncsPurchaseRowGrid {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .ncsOnlineSection {
+            grid-column: 1 / -1;
+          }
+        }
+
+        @media (max-width: 820px) {
           .ncsPurchasePage {
-            padding: 12px;
+            padding: 14px 9px 36px;
           }
 
-          .ncsPurchaseHeader {
-            align-items: stretch;
-            flex-direction: column;
-          }
-
-          .ncsPurchaseHeader h1 {
-            font-size: 26px;
-          }
-
-          .ncsPurchaseFormGrid,
-          .ncsPurchaseItemFields {
-            grid-template-columns: 1fr;
-          }
-
-          .ncsPurchaseProductGrid {
-            grid-template-columns: 1fr;
-          }
-
-          .ncsPurchaseProduct {
-            grid-template-columns: minmax(0, 1fr) 82px;
-          }
-
-          .ncsPurchaseProductActions {
-            width: 82px;
-            min-width: 82px;
-          }
-
-          .ncsPurchaseCardTitle {
+          .ncsHero {
             align-items: flex-start;
             flex-direction: column;
           }
 
-          .ncsPurchaseTitleActions {
+          .ncsHeroActions {
             width: 100%;
-            justify-content: space-between;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
           }
 
-          .ncsNewProductFormGrid,
-          .ncsNewProductSummary {
+          .ncsSupplierGrid,
+          .ncsInvoiceGrid,
+          .ncsSupplierBalanceStrip {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 560px) {
+          .ncsPurchaseRowHeader {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .ncsPurchaseRowActions {
+            width: 100%;
+          }
+
+          .ncsPurchaseRowActions button {
+            flex: 1;
+          }
+
+          .ncsPurchaseRowGrid,
+          .ncsPurchaseInnerGrid.two,
+          .ncsPurchaseInnerGrid.three {
             grid-template-columns: 1fr;
           }
 
-          .ncsNewProductWide,
-          .ncsNewProductToggle {
-            grid-column: auto;
-          }
-
-          .ncsNewProductModal > footer {
+          .ncsHeroActions,
+          .ncsSupplierGrid,
+          .ncsInvoiceGrid,
+          .ncsSupplierBalanceStrip,
+          .ncsChargeGrid,
+          .ncsSuccessGrid,
+          .ncsSuccessActions {
             grid-template-columns: 1fr;
           }
 
-          .ncsBarcodePrintSettings,
-          .ncsNewProductSuccessActions {
-            grid-template-columns: 1fr;
+          .ncsCardHeader {
+            flex-direction: column;
+          }
+
+          .ncsCardHeader button {
+            width: 100%;
+          }
+
+          .ncsPayments article {
+            grid-template-columns: 1fr 1fr;
           }
         }
       `}</style>

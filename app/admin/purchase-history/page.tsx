@@ -36,6 +36,16 @@ type PurchaseRow = {
   sgst_amount?: number | string | null;
   igst_amount?: number | string | null;
   cess_amount?: number | string | null;
+  due_date?: string | null;
+  payment_reference?: string | null;
+  payment_breakdown?: unknown;
+  previous_supplier_balance?: number | string | null;
+  closing_supplier_balance?: number | string | null;
+  returned_amount?: number | string | null;
+  return_status?: string | null;
+  cancelled_at?: string | null;
+  cancellation_reason?: string | null;
+  deleted_at?: string | null;
 };
 
 type PurchaseItemRow = {
@@ -68,6 +78,9 @@ type PurchaseItemRow = {
   igst_amount?: number | string | null;
   cess_percent?: number | string | null;
   cess_amount?: number | string | null;
+  online_quantity?: number | string | null;
+  returned_quantity?: number | string | null;
+  item_status?: string | null;
 };
 
 type StatusFilter = "all" | "paid" | "partial" | "unpaid" | "due";
@@ -113,6 +126,18 @@ function getPaymentStatus(purchase: PurchaseRow) {
   const paid = toNumber(purchase.paid_amount);
   const stored = normalize(purchase.payment_status);
 
+  if (stored === "partially_paid" || stored === "partially paid") {
+    return "partial";
+  }
+
+  if (stored === "credit" || stored === "due") {
+    return "unpaid";
+  }
+
+  if (stored === "cancelled") {
+    return "cancelled";
+  }
+
   if (stored) return stored;
   if (due <= 0 && total > 0) return "paid";
   if (paid > 0 && due > 0) return "partial";
@@ -137,6 +162,12 @@ export default function PurchaseHistoryPage() {
     useState<PurchaseRow | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [paymentDate, setPaymentDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [paymentNotes, setPaymentNotes] = useState("");
   const [savingPayment, setSavingPayment] = useState(false);
 
   const loadData = useCallback(async (showRefresh = false) => {
@@ -164,7 +195,9 @@ export default function PurchaseHistoryPage() {
 
       if (itemError) throw itemError;
 
-      const purchaseRows = (purchaseData || []) as unknown as PurchaseRow[];
+      const purchaseRows = (
+        (purchaseData || []) as unknown as PurchaseRow[]
+      ).filter((purchase) => !purchase.deleted_at);
       const itemRows = (itemData || []) as unknown as PurchaseItemRow[];
 
       const grouped: Record<string, PurchaseItemRow[]> = {};
@@ -283,9 +316,8 @@ export default function PurchaseHistoryPage() {
   }, [purchases]);
 
   async function recordDuePayment() {
-    if (!selectedPurchase) return;
+    if (!selectedPurchase || !selectedPurchase.supplier_id) return;
 
-    const currentPaid = toNumber(selectedPurchase.paid_amount);
     const currentDue = toNumber(selectedPurchase.due_amount);
     const amount = Math.max(0, Math.min(paymentAmount, currentDue));
 
@@ -298,50 +330,35 @@ export default function PurchaseHistoryPage() {
     setSavingPayment(true);
 
     try {
-      const nextPaid = currentPaid + amount;
-      const nextDue = Math.max(0, currentDue - amount);
-      const nextStatus = nextDue <= 0 ? "paid" : "partial";
-
-      const { error } = await supabase
-        .from("purchases")
-        .update({
-          paid_amount: nextPaid,
-          due_amount: nextDue,
-          payment_status: nextStatus,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", selectedPurchase.id);
+      const { data, error } = await supabase.rpc(
+        "ncs_record_supplier_payment_v2",
+        {
+          p_supplier_id: selectedPurchase.supplier_id,
+          p_amount: amount,
+          p_payment_method: paymentMethod,
+          p_payment_reference: paymentReference.trim() || null,
+          p_payment_date: paymentDate,
+          p_notes: paymentNotes.trim() || null,
+          p_purchase_id: selectedPurchase.id,
+        },
+      );
 
       if (error) throw error;
 
-      if (selectedPurchase.supplier_id) {
-        const { data: supplierData } = await supabase
-          .from("suppliers")
-          .select(
-            "id,total_paid_amount,current_balance,total_purchase_amount",
-          )
-          .eq("id", selectedPurchase.supplier_id)
-          .maybeSingle();
-
-        if (supplierData) {
-          const supplierPaid = toNumber(supplierData.total_paid_amount) + amount;
-          const supplierPurchase = toNumber(supplierData.total_purchase_amount);
-          const supplierBalance = Math.max(0, supplierPurchase - supplierPaid);
-
-          await supabase
-            .from("suppliers")
-            .update({
-              total_paid_amount: supplierPaid,
-              current_balance: supplierBalance,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", selectedPurchase.supplier_id);
-        }
-      }
+      const result = (data || {}) as {
+        message?: string;
+      };
 
       setShowPaymentModal(false);
+      setSelectedPurchase(null);
       setPaymentAmount(0);
-      setNotice("Supplier due payment updated successfully.");
+      setPaymentMethod("cash");
+      setPaymentReference("");
+      setPaymentDate(new Date().toISOString().slice(0, 10));
+      setPaymentNotes("");
+      setNotice(
+        result.message || "Supplier due payment updated successfully.",
+      );
       window.setTimeout(() => setNotice(""), 3500);
       await loadData(true);
     } catch (error) {
@@ -360,6 +377,10 @@ export default function PurchaseHistoryPage() {
   function openPaymentModal(purchase: PurchaseRow) {
     setSelectedPurchase(purchase);
     setPaymentAmount(toNumber(purchase.due_amount));
+    setPaymentMethod("cash");
+    setPaymentReference("");
+    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setPaymentNotes("");
     setShowPaymentModal(true);
   }
 
@@ -373,17 +394,16 @@ export default function PurchaseHistoryPage() {
             <td>${index + 1}</td>
             <td>
               <strong>${item.product_name || "Product"}</strong>
-              ${
-                item.size || item.color
-                  ? `<div>${[item.size, item.color]
-                      .filter(Boolean)
-                      .join(" • ")}</div>`
-                  : ""
-              }
-              ${item.barcode ? `<small>${item.barcode}</small>` : ""}
+              <small>
+                ${[item.size, item.color].filter(Boolean).join(" • ") || "Standard Product"}
+              </small>
+              <small>
+                Barcode: ${item.barcode || "—"} • SKU: ${item.sku || "—"}
+              </small>
             </td>
             <td>${toNumber(item.quantity)}</td>
             <td>${formatCurrency(toNumber(item.purchase_price))}</td>
+            <td>${toNumber(item.tax_percent)}%</td>
             <td>${formatCurrency(toNumber(item.tax_amount))}</td>
             <td>${formatCurrency(toNumber(item.line_total))}</td>
           </tr>
@@ -391,7 +411,7 @@ export default function PurchaseHistoryPage() {
       )
       .join("");
 
-    const printWindow = window.open("", "_blank", "width=900,height=800");
+    const printWindow = window.open("", "_blank", "width=1000,height=900");
 
     if (!printWindow) {
       setNotice("Allow browser pop-ups to print purchase bills.");
@@ -403,147 +423,296 @@ export default function PurchaseHistoryPage() {
       <!doctype html>
       <html>
         <head>
+          <meta charset="utf-8" />
           <title>${purchase.purchase_number || "Purchase Bill"}</title>
           <style>
+            @page { size: A4; margin: 12mm; }
             * { box-sizing: border-box; }
             body {
               margin: 0;
-              padding: 24px;
-              color: #222;
+              color: #202020;
               font-family: Arial, sans-serif;
+              background: #fff;
             }
-            .header {
+            .invoice {
+              min-height: 270mm;
               display: flex;
-              justify-content: space-between;
-              gap: 20px;
-              padding-bottom: 18px;
-              border-bottom: 2px solid #0A2E73;
+              flex-direction: column;
             }
-            h1 {
+            .brandHeader {
+              display: grid;
+              grid-template-columns: 1fr auto;
+              gap: 24px;
+              padding: 22px 24px;
+              border-radius: 16px;
+              background: linear-gradient(135deg, #03153F, #0A2E73);
+              color: #fff;
+            }
+            .storeName {
               margin: 0;
-              color: #0A2E73;
-              font-size: 26px;
-            }
-            .brand {
-              color: #D4AF37;
+              color: #fff;
+              font-size: 34px;
               font-weight: 900;
-              letter-spacing: 1px;
+              letter-spacing: 1.2px;
+            }
+            .tagline {
+              margin: 4px 0 12px;
+              color: #D4AF37;
+              font-size: 15px;
+              font-weight: 800;
+            }
+            .storeDetails {
+              margin: 0;
+              color: rgba(255,255,255,.88);
+              font-size: 12px;
+              line-height: 1.65;
+            }
+            .billBadge {
+              min-width: 230px;
+              padding: 16px;
+              border: 1px solid rgba(212,175,55,.75);
+              border-radius: 12px;
+              background: rgba(255,255,255,.08);
+            }
+            .billBadge span,
+            .billBadge strong {
+              display: block;
+            }
+            .billBadge span {
+              color: #D4AF37;
+              font-size: 10px;
+              font-weight: 800;
+              text-transform: uppercase;
+            }
+            .billBadge strong {
+              margin-top: 5px;
+              font-size: 16px;
+            }
+            .billBadge p {
+              margin: 8px 0 0;
+              font-size: 11px;
             }
             .details {
               display: grid;
               grid-template-columns: 1fr 1fr;
-              gap: 14px;
-              margin-top: 18px;
+              gap: 12px;
+              margin-top: 16px;
             }
             .box {
               padding: 14px;
-              border: 1px solid #ddd;
-              border-radius: 10px;
+              border: 1px solid #dfe4eb;
+              border-radius: 11px;
+              background: #fafbfc;
+            }
+            .box h3 {
+              margin: 0 0 8px;
+              color: #0A2E73;
+              font-size: 12px;
+              text-transform: uppercase;
             }
             .box p {
-              margin: 5px 0;
-              font-size: 13px;
+              margin: 4px 0;
+              font-size: 11px;
+              line-height: 1.45;
             }
             table {
               width: 100%;
-              margin-top: 18px;
+              margin-top: 16px;
               border-collapse: collapse;
             }
             th, td {
-              padding: 9px;
-              border: 1px solid #ddd;
-              font-size: 12px;
+              padding: 9px 8px;
+              border: 1px solid #dfe4eb;
               text-align: left;
               vertical-align: top;
+              font-size: 10px;
             }
             th {
-              background: #f4f6fb;
+              background: #0A2E73;
+              color: #fff;
+              font-size: 9px;
+              text-transform: uppercase;
+            }
+            td small {
+              display: block;
+              margin-top: 3px;
+              color: #7b8491;
+            }
+            .taxSummary {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 8px;
+              margin-top: 14px;
+            }
+            .taxSummary div {
+              padding: 10px;
+              border: 1px solid #dfe4eb;
+              border-radius: 9px;
+              background: #fafbfc;
+            }
+            .taxSummary span,
+            .taxSummary strong {
+              display: block;
+            }
+            .taxSummary span {
+              color: #7b8491;
+              font-size: 8px;
+              font-weight: 800;
+              text-transform: uppercase;
+            }
+            .taxSummary strong {
+              margin-top: 4px;
               color: #0A2E73;
+              font-size: 11px;
             }
             .totals {
-              width: 340px;
+              width: 370px;
               margin: 18px 0 0 auto;
+              padding: 14px;
+              border: 1px solid #dfe4eb;
+              border-radius: 12px;
+              background: #fafbfc;
             }
             .totals p {
               display: flex;
               justify-content: space-between;
+              gap: 18px;
               margin: 0;
-              padding: 8px 0;
-              border-bottom: 1px solid #eee;
+              padding: 7px 0;
+              border-bottom: 1px solid #e9edf2;
+              font-size: 11px;
             }
             .grand {
-              color: #0A2E73;
-              font-size: 16px;
+              margin-top: 6px !important;
+              padding: 12px !important;
+              border-radius: 9px;
+              background: #0A2E73;
+              color: #fff;
+              font-size: 16px !important;
               font-weight: 900;
             }
+            .due {
+              color: #B42318;
+              font-weight: 900;
+            }
+            .notes {
+              margin-top: 14px;
+              padding: 12px;
+              border: 1px solid #dfe4eb;
+              border-radius: 10px;
+              background: #fafbfc;
+              font-size: 10px;
+              line-height: 1.5;
+            }
+            .footer {
+              margin-top: auto;
+              padding-top: 22px;
+              text-align: center;
+            }
+            .footerMessage {
+              padding: 14px;
+              border-top: 2px solid #D4AF37;
+              color: #0A2E73;
+              font-size: 13px;
+              font-weight: 800;
+            }
+            .footer small {
+              display: block;
+              margin-top: 6px;
+              color: #6f7782;
+              font-size: 10px;
+            }
             @media print {
-              button { display: none; }
+              body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
             }
           </style>
         </head>
         <body>
-          <div class="header">
-            <div>
-              <div class="brand">NEW CITY STYLE</div>
-              <h1>Purchase Bill</h1>
-            </div>
-            <div>
-              <strong>${purchase.purchase_number || "—"}</strong><br/>
-              <span>${formatDate(purchase.purchase_date)}</span>
-            </div>
-          </div>
+          <div class="invoice">
+            <header class="brandHeader">
+              <div>
+                <h1 class="storeName">NEW CITY STYLE</h1>
+                <p class="tagline">Style for Every Family</p>
+                <p class="storeDetails">
+                  Main Road, Sarubujjili<br/>
+                  Srikakulam, Andhra Pradesh - 532458<br/>
+                  Mobile: 9010014001<br/>
+                  Email: badri.nsv@gmail.com
+                </p>
+              </div>
 
-          <div class="details">
-            <div class="box">
-              <strong>Supplier</strong>
-              <p>${purchase.supplier_name || "Not provided"}</p>
-              <p>${purchase.supplier_phone || ""}</p>
-              <p>${purchase.supplier_gstin || ""}</p>
-            </div>
-            <div class="box">
-              <strong>Purchase Details</strong>
-              <p>Invoice: ${purchase.supplier_invoice_number || "—"}</p>
-              <p>Payment: ${purchase.payment_method || "—"}</p>
-              <p>Status: ${getPaymentStatus(purchase)}</p>
-            </div>
-          </div>
+              <div class="billBadge">
+                <span>Purchase Bill</span>
+                <strong>${purchase.purchase_number || "—"}</strong>
+                <p>${formatDate(purchase.purchase_date)}</p>
+              </div>
+            </header>
 
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Product</th>
-                <th>Qty</th>
-                <th>Purchase Price</th>
-                <th>Tax</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>${itemRows}</tbody>
-          </table>
+            <section class="details">
+              <div class="box">
+                <h3>Supplier Details</h3>
+                <p><strong>${purchase.supplier_name || "Not provided"}</strong></p>
+                <p>Mobile: ${purchase.supplier_phone || "—"}</p>
+                <p>GSTIN: ${purchase.supplier_gstin || "—"}</p>
+                <p>State: ${purchase.supplier_state || "—"}</p>
+              </div>
 
-          <div class="totals">
-            <p><span>Subtotal</span><strong>${formatCurrency(
-              toNumber(purchase.subtotal),
-            )}</strong></p>
-            <p><span>Tax</span><strong>${formatCurrency(
-              toNumber(purchase.tax_amount),
-            )}</strong></p>
-            <p><span>Discount</span><strong>− ${formatCurrency(
-              toNumber(purchase.discount_amount),
-            )}</strong></p>
-            <p><span>Transport</span><strong>${formatCurrency(
-              toNumber(purchase.transport_charge),
-            )}</strong></p>
-            <p class="grand"><span>Total</span><strong>${formatCurrency(
-              toNumber(purchase.total_amount),
-            )}</strong></p>
-            <p><span>Paid</span><strong>${formatCurrency(
-              toNumber(purchase.paid_amount),
-            )}</strong></p>
-            <p><span>Due</span><strong>${formatCurrency(
-              toNumber(purchase.due_amount),
-            )}</strong></p>
+              <div class="box">
+                <h3>Purchase Details</h3>
+                <p>Supplier Invoice: ${purchase.supplier_invoice_number || "—"}</p>
+                <p>Payment Method: ${purchase.payment_method || "—"}</p>
+                <p>Payment Status: ${getPaymentStatus(purchase)}</p>
+                <p>Tax Type: ${purchase.tax_type || "—"}</p>
+                <p>Credit Due Date: ${formatDate(purchase.due_date)}</p>
+              </div>
+            </section>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Product / Variant</th>
+                  <th>Qty</th>
+                  <th>Purchase Price</th>
+                  <th>GST</th>
+                  <th>Tax</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>${itemRows}</tbody>
+            </table>
+
+            <section class="taxSummary">
+              <div><span>CGST</span><strong>${formatCurrency(toNumber(purchase.cgst_amount))}</strong></div>
+              <div><span>SGST</span><strong>${formatCurrency(toNumber(purchase.sgst_amount))}</strong></div>
+              <div><span>IGST</span><strong>${formatCurrency(toNumber(purchase.igst_amount))}</strong></div>
+              <div><span>Cess</span><strong>${formatCurrency(toNumber(purchase.cess_amount))}</strong></div>
+            </section>
+
+            <section class="totals">
+              <p><span>Subtotal</span><strong>${formatCurrency(toNumber(purchase.subtotal))}</strong></p>
+              <p><span>Tax</span><strong>${formatCurrency(toNumber(purchase.tax_amount))}</strong></p>
+              <p><span>Discount</span><strong>-${formatCurrency(toNumber(purchase.discount_amount))}</strong></p>
+              <p><span>Transport</span><strong>${formatCurrency(toNumber(purchase.transport_charge))}</strong></p>
+              <p><span>Other Charge</span><strong>${formatCurrency(toNumber(purchase.other_charge))}</strong></p>
+              <p class="grand"><span>Total</span><strong>${formatCurrency(toNumber(purchase.total_amount))}</strong></p>
+              <p><span>Paid</span><strong>${formatCurrency(toNumber(purchase.paid_amount))}</strong></p>
+              <p class="due"><span>Due</span><strong>${formatCurrency(toNumber(purchase.due_amount))}</strong></p>
+            </section>
+
+            ${
+              purchase.notes
+                ? `<div class="notes"><strong>Notes:</strong><br/>${purchase.notes}</div>`
+                : ""
+            }
+
+            <footer class="footer">
+              <div class="footerMessage">
+                Thank you for your continued support and partnership.
+                Together, we grow with trust and quality.
+              </div>
+              <small>NEW CITY STYLE — Style for Every Family</small>
+            </footer>
           </div>
 
           <script>
@@ -779,60 +948,215 @@ export default function PurchaseHistoryPage() {
               type="button"
               className="closeButton"
               onClick={() => setSelectedPurchase(null)}
+              aria-label="Close purchase details"
             >
-              ×
+              ✕
             </button>
 
             <span>PURCHASE DETAILS</span>
             <h2>{selectedPurchase.purchase_number}</h2>
+            <p className="modalSubtitle">
+              Complete supplier invoice, payment, GST and stock details.
+            </p>
 
-            <div className="detailsGrid">
+            <div className="detailsGrid detailsGridWide">
               <p>
                 <span>Supplier</span>
                 <strong>{selectedPurchase.supplier_name || "—"}</strong>
               </p>
               <p>
-                <span>Date</span>
+                <span>Mobile</span>
+                <strong>{selectedPurchase.supplier_phone || "—"}</strong>
+              </p>
+              <p>
+                <span>GSTIN</span>
+                <strong>{selectedPurchase.supplier_gstin || "—"}</strong>
+              </p>
+              <p>
+                <span>Supplier Invoice</span>
+                <strong>
+                  {selectedPurchase.supplier_invoice_number || "—"}
+                </strong>
+              </p>
+              <p>
+                <span>Purchase Date</span>
                 <strong>{formatDate(selectedPurchase.purchase_date)}</strong>
               </p>
               <p>
+                <span>Credit Due Date</span>
+                <strong>{formatDate(selectedPurchase.due_date)}</strong>
+              </p>
+              <p>
+                <span>State / Supply</span>
+                <strong>
+                  {[
+                    selectedPurchase.supplier_state,
+                    selectedPurchase.place_of_supply,
+                  ]
+                    .filter(Boolean)
+                    .join(" • ") || "—"}
+                </strong>
+              </p>
+              <p>
+                <span>Tax Type</span>
+                <strong>{selectedPurchase.tax_type || "—"}</strong>
+              </p>
+              <p>
+                <span>Payment Method</span>
+                <strong>{selectedPurchase.payment_method || "—"}</strong>
+              </p>
+              <p>
+                <span>Payment Reference</span>
+                <strong>{selectedPurchase.payment_reference || "—"}</strong>
+              </p>
+              <p>
+                <span>Payment Status</span>
+                <strong>{getPaymentStatus(selectedPurchase)}</strong>
+              </p>
+              <p>
+                <span>Return Status</span>
+                <strong>{selectedPurchase.return_status || "none"}</strong>
+              </p>
+            </div>
+
+            <div className="detailsItems">
+              {(itemsByPurchase[selectedPurchase.id] || []).map((item) => (
+                <article key={item.id} className="detailsItemFull">
+                  <div className="detailsItemName">
+                    <strong>{item.product_name || "Product"}</strong>
+                    <span>
+                      {[item.size, item.color].filter(Boolean).join(" • ") ||
+                        "Standard Product"}
+                    </span>
+                    <span>
+                      Barcode: {item.barcode || "—"} • SKU: {item.sku || "—"}
+                    </span>
+                    <span>
+                      Status: {item.item_status || "active"} • Returned:{" "}
+                      {toNumber(item.returned_quantity)}
+                    </span>
+                  </div>
+
+                  <div className="detailsItemNumbers">
+                    <p>
+                      <span>Qty</span>
+                      <strong>{toNumber(item.quantity)}</strong>
+                    </p>
+                    <p>
+                      <span>Purchase</span>
+                      <strong>
+                        {formatCurrency(toNumber(item.purchase_price))}
+                      </strong>
+                    </p>
+                    <p>
+                      <span>MRP</span>
+                      <strong>{formatCurrency(toNumber(item.mrp))}</strong>
+                    </p>
+                    <p>
+                      <span>GST</span>
+                      <strong>{toNumber(item.tax_percent)}%</strong>
+                    </p>
+                    <p>
+                      <span>Online Qty</span>
+                      <strong>{toNumber(item.online_quantity)}</strong>
+                    </p>
+                    <p>
+                      <span>Line Total</span>
+                      <strong>{formatCurrency(toNumber(item.line_total))}</strong>
+                    </p>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <div className="purchaseTotalsDetailed">
+              <p>
+                <span>Subtotal</span>
+                <strong>
+                  {formatCurrency(toNumber(selectedPurchase.subtotal))}
+                </strong>
+              </p>
+              <p>
+                <span>CGST</span>
+                <strong>
+                  {formatCurrency(toNumber(selectedPurchase.cgst_amount))}
+                </strong>
+              </p>
+              <p>
+                <span>SGST</span>
+                <strong>
+                  {formatCurrency(toNumber(selectedPurchase.sgst_amount))}
+                </strong>
+              </p>
+              <p>
+                <span>IGST</span>
+                <strong>
+                  {formatCurrency(toNumber(selectedPurchase.igst_amount))}
+                </strong>
+              </p>
+              <p>
+                <span>Cess</span>
+                <strong>
+                  {formatCurrency(toNumber(selectedPurchase.cess_amount))}
+                </strong>
+              </p>
+              <p>
+                <span>Discount</span>
+                <strong>
+                  − {formatCurrency(toNumber(selectedPurchase.discount_amount))}
+                </strong>
+              </p>
+              <p>
+                <span>Transport + Other</span>
+                <strong>
+                  {formatCurrency(
+                    toNumber(selectedPurchase.transport_charge) +
+                      toNumber(selectedPurchase.other_charge),
+                  )}
+                </strong>
+              </p>
+              <p className="detailGrand">
                 <span>Total</span>
                 <strong>
                   {formatCurrency(toNumber(selectedPurchase.total_amount))}
                 </strong>
               </p>
               <p>
-                <span>Due</span>
+                <span>Paid</span>
+                <strong>
+                  {formatCurrency(toNumber(selectedPurchase.paid_amount))}
+                </strong>
+              </p>
+              <p>
+                <span>Current Due</span>
                 <strong>
                   {formatCurrency(toNumber(selectedPurchase.due_amount))}
                 </strong>
               </p>
+              <p>
+                <span>Previous Supplier Due</span>
+                <strong>
+                  {formatCurrency(
+                    toNumber(selectedPurchase.previous_supplier_balance),
+                  )}
+                </strong>
+              </p>
+              <p className="detailOutstanding">
+                <span>Total Outstanding</span>
+                <strong>
+                  {formatCurrency(
+                    toNumber(selectedPurchase.closing_supplier_balance),
+                  )}
+                </strong>
+              </p>
             </div>
 
-            <div className="detailsItems">
-              {(itemsByPurchase[selectedPurchase.id] || []).map((item) => (
-                <article key={item.id}>
-                  <div>
-                    <strong>{item.product_name || "Product"}</strong>
-                    <span>
-                      {[item.size, item.color].filter(Boolean).join(" • ") ||
-                        "Standard Product"}
-                    </span>
-                    {item.barcode && <span>{item.barcode}</span>}
-                  </div>
-
-                  <div>
-                    <strong>
-                      {toNumber(item.quantity)} ×{" "}
-                      {formatCurrency(toNumber(item.purchase_price))}
-                    </strong>
-                    <span>
-                      {formatCurrency(toNumber(item.line_total))}
-                    </span>
-                  </div>
-                </article>
-              ))}
-            </div>
+            {selectedPurchase.notes && (
+              <div className="purchaseNotesFull">
+                <span>Notes</span>
+                <p>{selectedPurchase.notes}</p>
+              </div>
+            )}
 
             <div className="modalActions">
               <button
@@ -842,14 +1166,23 @@ export default function PurchaseHistoryPage() {
                 Print Purchase Bill
               </button>
 
-              {toNumber(selectedPurchase.due_amount) > 0 && (
-                <button
-                  type="button"
-                  onClick={() => openPaymentModal(selectedPurchase)}
-                >
-                  Record Due Payment
-                </button>
-              )}
+              {toNumber(selectedPurchase.due_amount) > 0 &&
+                selectedPurchase.supplier_id && (
+                  <button
+                    type="button"
+                    onClick={() => openPaymentModal(selectedPurchase)}
+                  >
+                    Record Due Payment
+                  </button>
+                )}
+
+              <button
+                type="button"
+                className="closeTextButton"
+                onClick={() => setSelectedPurchase(null)}
+              >
+                ✕ Close
+              </button>
             </div>
           </section>
         </div>
@@ -878,19 +1211,70 @@ export default function PurchaseHistoryPage() {
               </strong>
             </p>
 
+            <div className="paymentFormGrid">
+              <label>
+                <span>Payment Amount</span>
+                <input
+                  type="number"
+                  min="0"
+                  max={toNumber(selectedPurchase.due_amount)}
+                  step="0.01"
+                  value={paymentAmount || ""}
+                  onChange={(event) =>
+                    setPaymentAmount(
+                      Math.max(0, toNumber(event.target.value)),
+                    )
+                  }
+                />
+              </label>
+
+              <label>
+                <span>Payment Method</span>
+                <select
+                  value={paymentMethod}
+                  onChange={(event) =>
+                    setPaymentMethod(event.target.value)
+                  }
+                >
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="card">Card</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Payment Date</span>
+                <input
+                  type="date"
+                  value={paymentDate}
+                  onChange={(event) =>
+                    setPaymentDate(event.target.value)
+                  }
+                />
+              </label>
+
+              <label>
+                <span>Reference</span>
+                <input
+                  value={paymentReference}
+                  onChange={(event) =>
+                    setPaymentReference(event.target.value)
+                  }
+                  placeholder="UPI / bank reference"
+                />
+              </label>
+            </div>
+
             <label>
-              <span>Payment Amount</span>
-              <input
-                type="number"
-                min="0"
-                max={toNumber(selectedPurchase.due_amount)}
-                step="0.01"
-                value={paymentAmount || ""}
+              <span>Payment Notes</span>
+              <textarea
+                value={paymentNotes}
                 onChange={(event) =>
-                  setPaymentAmount(
-                    Math.max(0, toNumber(event.target.value)),
-                  )
+                  setPaymentNotes(event.target.value)
                 }
+                placeholder="Optional"
               />
             </label>
 
@@ -1431,15 +1815,164 @@ export default function PurchaseHistoryPage() {
 
         .closeButton {
           position: absolute;
+          z-index: 2;
           top: 12px;
           right: 12px;
-          width: 34px;
-          height: 34px;
-          border: 1px solid #d0d5dd;
-          border-radius: 9px;
-          background: white;
-          font-size: 20px;
+          width: 40px;
+          height: 40px;
+          display: grid;
+          place-items: center;
+          padding: 0;
+          border: 1px solid ${GOLD};
+          border-radius: 50%;
+          background: ${ROYAL_BLUE};
+          color: #ffffff;
+          font-size: 17px;
+          font-weight: 950;
+          line-height: 1;
           cursor: pointer;
+          box-shadow: 0 8px 18px rgba(3, 21, 63, 0.22);
+        }
+
+        .modalSubtitle {
+          margin: 5px 0 0;
+          color: #667085;
+          font-size: 10px;
+        }
+
+        .detailsGridWide {
+          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        }
+
+        .detailsItemFull {
+          display: grid !important;
+          grid-template-columns: minmax(220px, 1fr) minmax(0, 1.7fr);
+          align-items: center;
+        }
+
+        .detailsItemNumbers {
+          display: grid;
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+          gap: 6px;
+        }
+
+        .detailsItemNumbers p {
+          margin: 0;
+          padding: 8px;
+          border-radius: 8px;
+          background: #f8fafc;
+        }
+
+        .detailsItemNumbers p span,
+        .detailsItemNumbers p strong {
+          display: block;
+        }
+
+        .detailsItemNumbers p span {
+          color: #98a2b3;
+          font-size: 7px;
+          font-weight: 800;
+        }
+
+        .detailsItemNumbers p strong {
+          margin-top: 3px;
+          color: ${ROYAL_BLUE};
+          font-size: 9px;
+        }
+
+        .purchaseTotalsDetailed {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 8px;
+          margin-top: 16px;
+        }
+
+        .purchaseTotalsDetailed p {
+          margin: 0;
+          padding: 10px;
+          border-radius: 10px;
+          background: #f8fafc;
+        }
+
+        .purchaseTotalsDetailed span,
+        .purchaseTotalsDetailed strong {
+          display: block;
+        }
+
+        .purchaseTotalsDetailed span {
+          color: #98a2b3;
+          font-size: 8px;
+          font-weight: 800;
+        }
+
+        .purchaseTotalsDetailed strong {
+          margin-top: 4px;
+          color: #344054;
+          font-size: 10px;
+        }
+
+        .purchaseTotalsDetailed .detailGrand {
+          background: ${ROYAL_BLUE};
+        }
+
+        .purchaseTotalsDetailed .detailGrand span,
+        .purchaseTotalsDetailed .detailGrand strong {
+          color: #ffffff;
+        }
+
+        .purchaseTotalsDetailed .detailOutstanding {
+          border: 1px solid ${GOLD};
+          background: #fffaf0;
+        }
+
+        .purchaseTotalsDetailed .detailOutstanding strong {
+          color: #b42318;
+        }
+
+        .purchaseNotesFull {
+          margin-top: 14px;
+          padding: 12px;
+          border: 1px solid #e4e7ec;
+          border-radius: 10px;
+          background: #fbfcfe;
+        }
+
+        .purchaseNotesFull span {
+          color: ${GOLD};
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        .purchaseNotesFull p {
+          margin: 5px 0 0;
+          color: #475467;
+          font-size: 10px;
+          white-space: pre-wrap;
+        }
+
+        .modalActions .closeTextButton {
+          border-color: #f3b7b2;
+          background: #fff6f5;
+          color: #b42318;
+        }
+
+        .paymentFormGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 9px;
+          margin-top: 14px;
+        }
+
+        .paymentModal textarea {
+          width: 100%;
+          min-height: 70px;
+          margin-top: 5px;
+          padding: 10px;
+          border: 1px solid #dfe4eb;
+          border-radius: 10px;
+          resize: vertical;
+          font: inherit;
+          font-size: 10px;
         }
 
         .detailsGrid {
@@ -1608,8 +2141,18 @@ export default function PurchaseHistoryPage() {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
-          .detailsGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+          .detailsGrid,
+          .detailsGridWide,
+          .purchaseTotalsDetailed {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+
+          .detailsItemFull {
+            grid-template-columns: 1fr;
+          }
+
+          .detailsItemNumbers {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
           }
         }
 
@@ -1622,8 +2165,15 @@ export default function PurchaseHistoryPage() {
 
           .purchaseMeta,
           .itemPreview,
-          .detailsGrid {
-            grid-template-columns: 1fr;
+          .detailsGrid,
+          .detailsGridWide,
+          .purchaseTotalsDetailed,
+          .paymentFormGrid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .detailsItemNumbers {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
           }
         }
       `}</style>

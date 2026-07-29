@@ -534,30 +534,525 @@ export default function CollectionsPage() {
         </div>
 
         <style jsx global>{`
-          .collections-loading-spinner {
-            width: 58px;
-            height: 58px;
-            margin: 0 auto 18px;
-            border-radius: 50%;
-            border: 6px solid #e5e7eb;
-            border-top-color: #0a2e73;
-            animation: collections-spin 0.8s linear infinite;
+        :root {
+          --ncs-blue: #0a2e73;
+          --ncs-deep: #03153f;
+          --ncs-blue-2: #164ca8;
+          --ncs-gold: #d4af37;
+          --ncs-ivory: #f8f4ec;
+        }
+
+        * {
+          box-sizing: border-box;
+        }
+
+        .collections-premium-page {
+          position: relative;
+          overflow-x: hidden;
+          isolation: isolate;
+        }
+
+        .collections-premium-page::before,
+        .collections-premium-page::after {
+          content: "";
+          position: fixed;
+          z-index: -1;
+          border-radius: 50%;
+          pointer-events: none;
+        }
+
+        .collections-premium-page::before {
+          width: 430px;
+          height: 430px;
+          top: -150px;
+          right: -120px;
+          background: radial-gradient(
+            circle,
+            rgba(212, 175, 55, 0.18),
+            rgba(212, 175, 55, 0)
+          );
+          animation: collections-float 11s ease-in-out infinite;
+        }
+
+        .collections-premium-page::after {
+          width: 360px;
+          height: 360px;
+          left: -130px;
+          bottom: -120px;
+          background: radial-gradient(
+            circle,
+            rgba(10, 46, 115, 0.14),
+            rgba(10, 46, 115, 0)
+          );
+          animation: collections-float 13s ease-in-out infinite reverse;
+        }
+
+        .collections-premium-container {
+          position: relative;
+          z-index: 1;
+        }
+
+        .collections-premium-hero {
+          position: relative;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.42);
+          animation: collections-rise 0.7s ease both;
+        }
+
+        .collections-premium-hero::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background:
+            radial-gradient(
+              circle at 88% 8%,
+              rgba(212, 175, 55, 0.28),
+              transparent 28%
+            ),
+            linear-gradient(
+              120deg,
+              transparent 0%,
+              rgba(255, 255, 255, 0.07) 44%,
+              transparent 62%
+            );
+          transform: translateX(-120%);
+          animation: collections-hero-shine 6s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .collections-premium-hero::after {
+          content: "COLLECTIONS";
+          position: absolute;
+          right: 28px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: rgba(212, 175, 55, 0.08);
+          font-size: clamp(50px, 7vw, 105px);
+          font-weight: 950;
+          letter-spacing: 5px;
+          pointer-events: none;
+        }
+
+        .collections-summary-grid {
+          display: grid;
+          grid-template-columns: repeat(
+            auto-fit,
+            minmax(210px, 1fr)
+          );
+          gap: 16px;
+          margin-bottom: 25px;
+        }
+
+        .collections-premium-summary-card {
+          position: relative;
+          min-height: 150px;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.34) !important;
+          background:
+            radial-gradient(
+              circle at 86% 12%,
+              rgba(212, 175, 55, 0.22),
+              transparent 33%
+            ),
+            linear-gradient(
+              135deg,
+              rgba(10, 46, 115, 0.99),
+              rgba(3, 21, 63, 0.98)
+            ) !important;
+          box-shadow:
+            0 15px 35px rgba(3, 21, 63, 0.18),
+            inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+          animation: collections-card-enter 0.55s ease both;
+          transition:
+            transform 0.24s ease,
+            border-color 0.24s ease,
+            box-shadow 0.24s ease;
+        }
+
+        .collections-premium-summary-card:nth-child(2) {
+          animation-delay: 0.08s;
+        }
+
+        .collections-premium-summary-card:nth-child(3) {
+          animation-delay: 0.16s;
+        }
+
+        .collections-premium-summary-card:nth-child(4) {
+          animation-delay: 0.24s;
+        }
+
+        .collections-premium-summary-card::after {
+          content: "";
+          position: absolute;
+          top: -175%;
+          left: -38%;
+          width: 42%;
+          height: 450%;
+          transform: rotate(23deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.13),
+            transparent
+          );
+          animation: collections-card-shine 5.4s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .collections-premium-summary-card:hover {
+          transform: translateY(-5px) scale(1.01);
+          border-color: rgba(212, 175, 55, 0.62) !important;
+          box-shadow:
+            0 22px 42px rgba(3, 21, 63, 0.26),
+            0 0 0 1px rgba(212, 175, 55, 0.1) !important;
+        }
+
+        .collections-premium-summary-card p {
+          color: rgba(212, 175, 55, 0.95) !important;
+          font-size: 12px !important;
+          font-weight: 900 !important;
+          letter-spacing: 0.4px;
+          text-transform: uppercase;
+        }
+
+        .collections-premium-summary-card h2 {
+          color: #ffffff !important;
+          font-size: 32px !important;
+        }
+
+        .collections-page-layout {
+          display: grid;
+          grid-template-columns: 440px minmax(0, 1fr);
+          gap: 24px;
+          align-items: start;
+        }
+
+        .collections-premium-panel,
+        .collections-premium-save-panel,
+        .collections-premium-list-panel {
+          position: relative;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.26) !important;
+          background:
+            linear-gradient(
+              180deg,
+              rgba(255, 255, 255, 0.99),
+              rgba(255, 253, 248, 0.98)
+            ) !important;
+          box-shadow:
+            0 14px 35px rgba(3, 21, 63, 0.09),
+            inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+          animation: collections-rise 0.65s ease both;
+        }
+
+        .collections-premium-panel::before,
+        .collections-premium-save-panel::before,
+        .collections-premium-list-panel::before {
+          content: "";
+          position: absolute;
+          inset: 0 0 auto 0;
+          height: 3px;
+          background: linear-gradient(
+            90deg,
+            var(--ncs-blue),
+            var(--ncs-gold),
+            var(--ncs-blue)
+          );
+          background-size: 200% 100%;
+          animation: collections-gold-flow 4s linear infinite;
+        }
+
+        .collections-list-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 15px;
+          flex-wrap: wrap;
+          margin-bottom: 22px;
+        }
+
+        .collections-toolbar {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        .collections-toolbar input,
+        .collections-toolbar select,
+        form input,
+        form textarea {
+          transition:
+            border-color 0.2s ease,
+            box-shadow 0.2s ease,
+            transform 0.2s ease;
+        }
+
+        .collections-toolbar input:focus,
+        .collections-toolbar select:focus,
+        form input:focus,
+        form textarea:focus {
+          border-color: var(--ncs-gold) !important;
+          box-shadow:
+            0 0 0 4px rgba(212, 175, 55, 0.13),
+            0 8px 20px rgba(10, 46, 115, 0.08);
+          transform: translateY(-1px);
+        }
+
+        .collections-card-grid {
+          display: grid;
+          grid-template-columns: repeat(
+            auto-fit,
+            minmax(320px, 1fr)
+          );
+          gap: 18px;
+        }
+
+        .collections-premium-card {
+          position: relative;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.24) !important;
+          box-shadow: 0 10px 26px rgba(3, 21, 63, 0.1) !important;
+          animation: collections-card-enter 0.52s ease both;
+          transition:
+            transform 0.24s ease,
+            box-shadow 0.24s ease,
+            border-color 0.24s ease;
+        }
+
+        .collections-premium-card:hover {
+          transform: translateY(-7px);
+          border-color: rgba(212, 175, 55, 0.58) !important;
+          box-shadow:
+            0 20px 38px rgba(3, 21, 63, 0.19),
+            0 0 0 1px rgba(212, 175, 55, 0.1) !important;
+        }
+
+        .collections-premium-card img {
+          transition: transform 0.45s ease;
+        }
+
+        .collections-premium-card:hover img {
+          transform: scale(1.045);
+        }
+
+        .collections-premium-upload-area {
+          position: relative;
+          overflow: hidden;
+          border-color: rgba(212, 175, 55, 0.85) !important;
+          background:
+            radial-gradient(
+              circle at 50% 0%,
+              rgba(212, 175, 55, 0.13),
+              transparent 46%
+            ),
+            linear-gradient(180deg, #fffdf8, #fffaf0) !important;
+          transition:
+            transform 0.22s ease,
+            box-shadow 0.22s ease,
+            border-color 0.22s ease;
+        }
+
+        .collections-premium-upload-area:hover {
+          transform: translateY(-3px);
+          border-color: var(--ncs-gold) !important;
+          box-shadow: 0 14px 30px rgba(212, 175, 55, 0.16);
+        }
+
+        .collections-premium-primary-button,
+        .collections-premium-secondary-button,
+        .collections-premium-refresh-button,
+        .collections-premium-edit-button,
+        .collections-premium-toggle-button,
+        .collections-premium-delete-button {
+          transition:
+            transform 0.2s ease,
+            box-shadow 0.2s ease,
+            filter 0.2s ease;
+        }
+
+        .collections-premium-primary-button:hover,
+        .collections-premium-secondary-button:hover,
+        .collections-premium-refresh-button:hover,
+        .collections-premium-edit-button:hover,
+        .collections-premium-toggle-button:hover,
+        .collections-premium-delete-button:hover {
+          transform: translateY(-2px);
+          filter: brightness(1.04);
+          box-shadow: 0 10px 22px rgba(3, 21, 63, 0.16);
+        }
+
+        .collections-premium-primary-button {
+          position: relative;
+          overflow: hidden;
+          background: linear-gradient(
+            135deg,
+            var(--ncs-blue),
+            var(--ncs-deep)
+          ) !important;
+          border: 1px solid rgba(212, 175, 55, 0.42) !important;
+        }
+
+        .collections-premium-primary-button::after {
+          content: "";
+          position: absolute;
+          top: -125%;
+          left: -32%;
+          width: 30%;
+          height: 350%;
+          transform: rotate(22deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.32),
+            transparent
+          );
+          animation: collections-button-shine 4.2s ease-in-out infinite;
+        }
+
+        .collections-premium-refresh-button {
+          background: linear-gradient(
+            135deg,
+            var(--ncs-gold),
+            #b99525
+          ) !important;
+          color: var(--ncs-deep) !important;
+          box-shadow: 0 8px 18px rgba(212, 175, 55, 0.24);
+        }
+
+        @keyframes collections-rise {
+          from {
+            opacity: 0;
+            transform: translateY(18px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes collections-card-enter {
+          from {
+            opacity: 0;
+            transform: translateY(14px) scale(0.985);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes collections-card-shine {
+          0%,
+          62% {
+            left: -40%;
+            opacity: 0;
+          }
+          70% {
+            opacity: 0.8;
+          }
+          100% {
+            left: 128%;
+            opacity: 0;
+          }
+        }
+
+        @keyframes collections-hero-shine {
+          0%,
+          64% {
+            transform: translateX(-120%);
+          }
+          100% {
+            transform: translateX(120%);
+          }
+        }
+
+        @keyframes collections-gold-flow {
+          to {
+            background-position: 200% 0;
+          }
+        }
+
+        @keyframes collections-button-shine {
+          0%,
+          68% {
+            left: -35%;
+            opacity: 0;
+          }
+          76% {
+            opacity: 0.7;
+          }
+          100% {
+            left: 120%;
+            opacity: 0;
+          }
+        }
+
+        @keyframes collections-float {
+          0%,
+          100% {
+            transform: translate3d(0, 0, 0);
+          }
+          50% {
+            transform: translate3d(0, 18px, 0);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .collections-premium-page *,
+          .collections-premium-page::before,
+          .collections-premium-page::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            scroll-behavior: auto !important;
+          }
+        }
+
+        @media (max-width: 1100px) {
+          .collections-page-layout {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 600px) {
+          .collections-toolbar {
+            width: 100%;
           }
 
-          @keyframes collections-spin {
-            to {
-              transform: rotate(360deg);
-            }
+          .collections-toolbar input,
+          .collections-toolbar select,
+          .collections-toolbar button {
+            width: 100% !important;
           }
-        `}</style>
+
+          .collections-card-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .collections-premium-hero::after {
+            right: 10px;
+            font-size: 44px;
+          }
+
+          .collections-premium-save-panel {
+            display: grid !important;
+            grid-template-columns: 1fr;
+          }
+
+          .collections-premium-primary-button,
+          .collections-premium-secondary-button {
+            width: 100%;
+          }
+        }
+      `}</style>
       </main>
     );
   }
 
   return (
-    <main style={mainStyle}>
-      <div style={containerStyle}>
-        <section style={heroStyle}>
+    <main className="collections-premium-page" style={mainStyle}>
+      <div className="collections-premium-container" style={containerStyle}>
+        <section className="collections-premium-hero" style={heroStyle}>
           <p style={heroLabelStyle}>NEW CITY STYLE</p>
 
           <h1 style={heroTitleStyle}>
@@ -666,7 +1161,7 @@ export default function CollectionsPage() {
               title="Collection Image"
               subtitle="Upload the main image displayed on the collection card."
             >
-              <label style={uploadAreaStyle}>
+              <label className="collections-premium-upload-area" style={uploadAreaStyle}>
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/jpg,image/webp"
@@ -724,7 +1219,7 @@ export default function CollectionsPage() {
               title="Banner Image"
               subtitle="Upload the wide banner displayed on the collection page."
             >
-              <label style={uploadAreaStyle}>
+              <label className="collections-premium-upload-area" style={uploadAreaStyle}>
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/jpg,image/webp"
@@ -790,11 +1285,12 @@ export default function CollectionsPage() {
               />
             </SettingsPanel>
 
-            <section style={savePanelStyle}>
+            <section className="collections-premium-save-panel" style={savePanelStyle}>
               {editingId !== null ? (
                 <button
                   type="button"
                   onClick={resetForm}
+                  className="collections-premium-secondary-button"
                   style={secondaryButtonStyle}
                 >
                   Cancel Editing
@@ -803,6 +1299,7 @@ export default function CollectionsPage() {
                 <button
                   type="button"
                   onClick={resetForm}
+                  className="collections-premium-secondary-button"
                   style={secondaryButtonStyle}
                 >
                   Clear Form
@@ -816,6 +1313,7 @@ export default function CollectionsPage() {
                   uploadingCollectionImage ||
                   uploadingBannerImage
                 }
+                className="collections-premium-primary-button"
                 style={{
                   ...primaryButtonStyle,
                   opacity:
@@ -841,7 +1339,7 @@ export default function CollectionsPage() {
             </section>
           </form>
 
-          <section style={collectionsListPanelStyle}>
+          <section className="collections-premium-list-panel" style={collectionsListPanelStyle}>
             <div className="collections-list-header">
               <div>
                 <h2 style={listTitleStyle}>
@@ -884,6 +1382,7 @@ export default function CollectionsPage() {
                 <button
                   type="button"
                   onClick={loadCollections}
+                  className="collections-premium-refresh-button"
                   style={refreshButtonStyle}
                 >
                   Refresh
@@ -900,6 +1399,7 @@ export default function CollectionsPage() {
                 {filteredCollections.map((collection) => (
                   <article
                     key={collection.id}
+                    className="collections-premium-card"
                     style={collectionCardStyle}
                   >
                     <div style={collectionBannerStyle}>
@@ -997,6 +1497,7 @@ export default function CollectionsPage() {
                       <div style={cardActionsGridStyle}>
                         <button
                           type="button"
+                          className="collections-premium-edit-button"
                           onClick={() =>
                             startEditing(collection)
                           }
@@ -1007,6 +1508,7 @@ export default function CollectionsPage() {
 
                         <button
                           type="button"
+                          className="collections-premium-toggle-button"
                           onClick={() =>
                             toggleCollection(collection)
                           }
@@ -1025,6 +1527,7 @@ export default function CollectionsPage() {
 
                       <button
                         type="button"
+                        className="collections-premium-delete-button"
                         onClick={() =>
                           deleteCollection(collection)
                         }
@@ -1120,7 +1623,7 @@ function SettingsPanel({
   children: ReactNode;
 }) {
   return (
-    <section style={settingsPanelStyle}>
+    <section className="collections-premium-panel" style={settingsPanelStyle}>
       <div
         style={{
           marginBottom: "21px",
@@ -1168,7 +1671,7 @@ function SummaryCard({
   positive?: boolean;
 }) {
   return (
-    <div style={summaryCardStyle}>
+    <div className="collections-premium-summary-card" style={summaryCardStyle}>
       <div
         style={{
           fontSize: "29px",
@@ -1335,7 +1838,8 @@ const loadingPageStyle: CSSProperties = {
 
 const mainStyle: CSSProperties = {
   minHeight: "100vh",
-  background: "#F8F4EC",
+  background:
+    "radial-gradient(circle at 8% 0%, rgba(212,175,55,0.14), transparent 28%), linear-gradient(180deg, #F8F4EC 0%, #FFFFFF 100%)",
   padding: "30px 20px 80px",
 };
 
@@ -1346,12 +1850,12 @@ const containerStyle: CSSProperties = {
 
 const heroStyle: CSSProperties = {
   background:
-    "linear-gradient(135deg, #071A43 0%, #0A2E73 55%, #164CA8 100%)",
+    "linear-gradient(135deg, #03153F 0%, #0A2E73 58%, #164CA8 100%)",
   borderRadius: "24px",
-  padding: "32px",
+  padding: "34px",
   color: "#FFFFFF",
   marginBottom: "25px",
-  boxShadow: "0 15px 40px rgba(10,46,115,0.25)",
+  boxShadow: "0 20px 48px rgba(3,21,63,0.24)",
 };
 
 const heroLabelStyle: CSSProperties = {
@@ -1482,11 +1986,11 @@ const removeImageButtonStyle: CSSProperties = {
 };
 
 const summaryCardStyle: CSSProperties = {
-  background: "#FFFFFF",
-  borderRadius: "16px",
+  background: "#0A2E73",
+  borderRadius: "18px",
   padding: "20px",
-  boxShadow: "0 7px 22px rgba(0,0,0,0.07)",
-  border: "1px solid rgba(212,175,55,0.22)",
+  boxShadow: "0 12px 28px rgba(3,21,63,0.16)",
+  border: "1px solid rgba(212,175,55,0.28)",
 };
 
 const summaryTitleStyle: CSSProperties = {
@@ -1571,11 +2075,11 @@ const emptyStateStyle: CSSProperties = {
 };
 
 const collectionCardStyle: CSSProperties = {
-  border: "1px solid #E5E7EB",
-  borderRadius: "17px",
+  border: "1px solid rgba(212,175,55,0.24)",
+  borderRadius: "18px",
   overflow: "hidden",
   background: "#FFFFFF",
-  boxShadow: "0 6px 20px rgba(0,0,0,0.06)",
+  boxShadow: "0 10px 26px rgba(3,21,63,0.10)",
 };
 
 const collectionBannerStyle: CSSProperties = {

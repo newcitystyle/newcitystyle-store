@@ -420,30 +420,605 @@ export default function CategoriesPage() {
         </div>
 
         <style jsx global>{`
-          .categories-loading-spinner {
-            width: 58px;
-            height: 58px;
-            margin: 0 auto 18px;
-            border-radius: 50%;
-            border: 6px solid #e5e7eb;
-            border-top-color: #0a2e73;
-            animation: categories-spin 0.8s linear infinite;
+        :root {
+          --ncs-blue: #0a2e73;
+          --ncs-deep: #03153f;
+          --ncs-blue-2: #164ca8;
+          --ncs-gold: #d4af37;
+          --ncs-gold-soft: #f3dc83;
+          --ncs-ivory: #f8f4ec;
+          --ncs-charcoal: #2c2c2c;
+        }
+
+        * {
+          box-sizing: border-box;
+        }
+
+        .categories-premium-page {
+          position: relative;
+          overflow-x: hidden;
+          isolation: isolate;
+        }
+
+        .categories-premium-page::before,
+        .categories-premium-page::after {
+          content: "";
+          position: fixed;
+          z-index: -1;
+          border-radius: 50%;
+          pointer-events: none;
+          filter: blur(4px);
+        }
+
+        .categories-premium-page::before {
+          width: 420px;
+          height: 420px;
+          top: -130px;
+          right: -120px;
+          background: radial-gradient(
+            circle,
+            rgba(212, 175, 55, 0.18),
+            rgba(212, 175, 55, 0)
+          );
+          animation: categories-float-orb 10s ease-in-out infinite;
+        }
+
+        .categories-premium-page::after {
+          width: 360px;
+          height: 360px;
+          left: -130px;
+          bottom: -120px;
+          background: radial-gradient(
+            circle,
+            rgba(10, 46, 115, 0.14),
+            rgba(10, 46, 115, 0)
+          );
+          animation: categories-float-orb 12s ease-in-out infinite reverse;
+        }
+
+        .categories-premium-container {
+          position: relative;
+          z-index: 1;
+        }
+
+        .categories-premium-hero {
+          position: relative;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.42);
+          animation: categories-rise-in 0.7s ease both;
+        }
+
+        .categories-premium-hero::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background:
+            radial-gradient(
+              circle at 86% 10%,
+              rgba(212, 175, 55, 0.28),
+              transparent 28%
+            ),
+            linear-gradient(
+              120deg,
+              transparent 0%,
+              rgba(255, 255, 255, 0.07) 45%,
+              transparent 62%
+            );
+          transform: translateX(-120%);
+          animation: categories-hero-shine 6s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .categories-premium-hero::after {
+          content: "NCS";
+          position: absolute;
+          right: 30px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: rgba(212, 175, 55, 0.09);
+          font-size: clamp(70px, 10vw, 150px);
+          font-weight: 950;
+          letter-spacing: 7px;
+          pointer-events: none;
+        }
+
+        .categories-summary-grid {
+          display: grid;
+          grid-template-columns: repeat(
+            auto-fit,
+            minmax(210px, 1fr)
+          );
+          gap: 16px;
+          margin-bottom: 25px;
+        }
+
+        .categories-premium-summary-card {
+          position: relative;
+          overflow: hidden;
+          min-height: 150px;
+          border: 1px solid rgba(212, 175, 55, 0.34) !important;
+          background:
+            radial-gradient(
+              circle at 85% 10%,
+              rgba(212, 175, 55, 0.22),
+              transparent 32%
+            ),
+            linear-gradient(
+              135deg,
+              rgba(10, 46, 115, 0.99),
+              rgba(3, 21, 63, 0.98)
+            ) !important;
+          box-shadow:
+            0 15px 35px rgba(3, 21, 63, 0.18),
+            inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+          animation: categories-card-enter 0.55s ease both;
+          transition:
+            transform 0.24s ease,
+            border-color 0.24s ease,
+            box-shadow 0.24s ease;
+        }
+
+        .categories-premium-summary-card:nth-child(2) {
+          animation-delay: 0.08s;
+        }
+
+        .categories-premium-summary-card:nth-child(3) {
+          animation-delay: 0.16s;
+        }
+
+        .categories-premium-summary-card:nth-child(4) {
+          animation-delay: 0.24s;
+        }
+
+        .categories-premium-summary-card::after {
+          content: "";
+          position: absolute;
+          top: -170%;
+          left: -35%;
+          width: 40%;
+          height: 440%;
+          transform: rotate(23deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.13),
+            transparent
+          );
+          animation: categories-card-shine 5.5s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .categories-premium-summary-card:hover {
+          transform: translateY(-5px) scale(1.01);
+          border-color: rgba(212, 175, 55, 0.62) !important;
+          box-shadow:
+            0 22px 42px rgba(3, 21, 63, 0.26),
+            0 0 0 1px rgba(212, 175, 55, 0.1) !important;
+        }
+
+        .categories-premium-summary-card p {
+          color: rgba(212, 175, 55, 0.95) !important;
+          font-size: 12px !important;
+          font-weight: 900 !important;
+          letter-spacing: 0.4px;
+          text-transform: uppercase;
+        }
+
+        .categories-premium-summary-card h2 {
+          color: #ffffff !important;
+          font-size: 32px !important;
+        }
+
+        .categories-page-layout {
+          display: grid;
+          grid-template-columns: 430px minmax(0, 1fr);
+          gap: 24px;
+          align-items: start;
+        }
+
+        .categories-premium-panel,
+        .categories-premium-list-panel,
+        .categories-save-panel {
+          position: relative;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.26) !important;
+          background:
+            linear-gradient(
+              180deg,
+              rgba(255, 255, 255, 0.98),
+              rgba(255, 253, 248, 0.98)
+            ) !important;
+          box-shadow:
+            0 14px 35px rgba(3, 21, 63, 0.09),
+            inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+          animation: categories-rise-in 0.65s ease both;
+        }
+
+        .categories-premium-panel::before,
+        .categories-premium-list-panel::before,
+        .categories-save-panel::before {
+          content: "";
+          position: absolute;
+          inset: 0 0 auto 0;
+          height: 3px;
+          background: linear-gradient(
+            90deg,
+            var(--ncs-blue),
+            var(--ncs-gold),
+            var(--ncs-blue)
+          );
+          background-size: 200% 100%;
+          animation: categories-gold-flow 4s linear infinite;
+        }
+
+        .categories-list-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 15px;
+          flex-wrap: wrap;
+          margin-bottom: 22px;
+        }
+
+        .categories-toolbar {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        .categories-toolbar input,
+        .categories-toolbar select,
+        form input {
+          transition:
+            border-color 0.2s ease,
+            box-shadow 0.2s ease,
+            transform 0.2s ease;
+        }
+
+        .categories-toolbar input:focus,
+        .categories-toolbar select:focus,
+        form input:focus {
+          border-color: var(--ncs-gold) !important;
+          box-shadow:
+            0 0 0 4px rgba(212, 175, 55, 0.13),
+            0 8px 20px rgba(10, 46, 115, 0.08);
+          transform: translateY(-1px);
+        }
+
+        .categories-card-grid {
+          display: grid;
+          grid-template-columns: repeat(
+            auto-fit,
+            minmax(270px, 1fr)
+          );
+          gap: 18px;
+        }
+
+        .categories-premium-category-card {
+          position: relative;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.24) !important;
+          box-shadow: 0 10px 26px rgba(3, 21, 63, 0.1) !important;
+          transition:
+            transform 0.24s ease,
+            box-shadow 0.24s ease,
+            border-color 0.24s ease;
+          animation: categories-card-enter 0.52s ease both;
+        }
+
+        .categories-premium-category-card:hover {
+          transform: translateY(-7px);
+          border-color: rgba(212, 175, 55, 0.58) !important;
+          box-shadow:
+            0 20px 38px rgba(3, 21, 63, 0.19),
+            0 0 0 1px rgba(212, 175, 55, 0.1) !important;
+        }
+
+        .categories-premium-category-card img {
+          transition: transform 0.45s ease;
+        }
+
+        .categories-premium-category-card:hover img {
+          transform: scale(1.045);
+        }
+
+        .categories-premium-upload-area {
+          position: relative;
+          overflow: hidden;
+          border-color: rgba(212, 175, 55, 0.85) !important;
+          background:
+            radial-gradient(
+              circle at 50% 0%,
+              rgba(212, 175, 55, 0.13),
+              transparent 45%
+            ),
+            linear-gradient(180deg, #fffdf8, #fffaf0) !important;
+          transition:
+            transform 0.22s ease,
+            box-shadow 0.22s ease,
+            border-color 0.22s ease;
+        }
+
+        .categories-premium-upload-area::after {
+          content: "";
+          position: absolute;
+          inset: -2px;
+          border-radius: inherit;
+          border: 1px solid transparent;
+          background: linear-gradient(
+              120deg,
+              transparent,
+              rgba(212, 175, 55, 0.55),
+              transparent
+            )
+            border-box;
+          mask:
+            linear-gradient(#000 0 0) padding-box,
+            linear-gradient(#000 0 0);
+          mask-composite: exclude;
+          animation: categories-upload-glow 3.8s linear infinite;
+          pointer-events: none;
+        }
+
+        .categories-premium-upload-area:hover {
+          transform: translateY(-3px);
+          border-color: var(--ncs-gold) !important;
+          box-shadow: 0 14px 30px rgba(212, 175, 55, 0.16);
+        }
+
+        .categories-edit-banner {
+          position: sticky;
+          top: 12px;
+          z-index: 20;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          padding: 18px 20px;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.6);
+          border-radius: 16px;
+          background:
+            radial-gradient(
+              circle at 92% 0%,
+              rgba(212, 175, 55, 0.28),
+              transparent 38%
+            ),
+            linear-gradient(135deg, #03153f 0%, #0a2e73 100%);
+          box-shadow: 0 15px 35px rgba(10, 46, 115, 0.28);
+          animation: categories-pulse-banner 2.8s ease-in-out infinite;
+        }
+
+        .categories-form-action-button,
+        .categories-top-update-button,
+        .categories-premium-refresh-button,
+        .categories-premium-edit-button,
+        .categories-premium-toggle-button,
+        .categories-premium-delete-button {
+          min-width: 150px;
+          min-height: 48px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          white-space: nowrap;
+          transition:
+            transform 0.2s ease,
+            box-shadow 0.2s ease,
+            filter 0.2s ease;
+        }
+
+        .categories-form-action-button:hover,
+        .categories-top-update-button:hover,
+        .categories-premium-refresh-button:hover,
+        .categories-premium-edit-button:hover,
+        .categories-premium-toggle-button:hover,
+        .categories-premium-delete-button:hover {
+          transform: translateY(-2px);
+          filter: brightness(1.04);
+          box-shadow: 0 10px 22px rgba(3, 21, 63, 0.16);
+        }
+
+        .categories-primary-action-button {
+          flex: 1 1 190px;
+          position: relative;
+          overflow: hidden;
+          background: linear-gradient(
+            135deg,
+            var(--ncs-blue),
+            var(--ncs-deep)
+          ) !important;
+          border: 1px solid rgba(212, 175, 55, 0.42) !important;
+        }
+
+        .categories-primary-action-button::after {
+          content: "";
+          position: absolute;
+          top: -120%;
+          left: -30%;
+          width: 28%;
+          height: 340%;
+          transform: rotate(22deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.32),
+            transparent
+          );
+          animation: categories-button-shine 4s ease-in-out infinite;
+        }
+
+        .categories-premium-refresh-button {
+          background: linear-gradient(
+            135deg,
+            var(--ncs-gold),
+            #b99525
+          ) !important;
+          color: var(--ncs-deep) !important;
+          box-shadow: 0 8px 18px rgba(212, 175, 55, 0.24);
+        }
+
+        @keyframes categories-rise-in {
+          from {
+            opacity: 0;
+            transform: translateY(18px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes categories-card-enter {
+          from {
+            opacity: 0;
+            transform: translateY(14px) scale(0.985);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes categories-card-shine {
+          0%,
+          62% {
+            left: -40%;
+            opacity: 0;
+          }
+          70% {
+            opacity: 0.8;
+          }
+          100% {
+            left: 128%;
+            opacity: 0;
+          }
+        }
+
+        @keyframes categories-hero-shine {
+          0%,
+          64% {
+            transform: translateX(-120%);
+          }
+          100% {
+            transform: translateX(120%);
+          }
+        }
+
+        @keyframes categories-gold-flow {
+          to {
+            background-position: 200% 0;
+          }
+        }
+
+        @keyframes categories-upload-glow {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        @keyframes categories-button-shine {
+          0%,
+          68% {
+            left: -35%;
+            opacity: 0;
+          }
+          76% {
+            opacity: 0.7;
+          }
+          100% {
+            left: 120%;
+            opacity: 0;
+          }
+        }
+
+        @keyframes categories-pulse-banner {
+          0%,
+          100% {
+            box-shadow: 0 15px 35px rgba(10, 46, 115, 0.28);
+          }
+          50% {
+            box-shadow:
+              0 18px 42px rgba(10, 46, 115, 0.34),
+              0 0 0 1px rgba(212, 175, 55, 0.2);
+          }
+        }
+
+        @keyframes categories-float-orb {
+          0%,
+          100% {
+            transform: translate3d(0, 0, 0);
+          }
+          50% {
+            transform: translate3d(0, 18px, 0);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .categories-premium-page *,
+          .categories-premium-page::before,
+          .categories-premium-page::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            scroll-behavior: auto !important;
+          }
+        }
+
+        @media (max-width: 1100px) {
+          .categories-page-layout {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 600px) {
+          .categories-edit-banner {
+            position: sticky;
+            top: 8px;
+            flex-direction: column;
+            align-items: stretch;
+            padding: 16px;
           }
 
-          @keyframes categories-spin {
-            to {
-              transform: rotate(360deg);
-            }
+          .categories-top-update-button,
+          .categories-form-action-button {
+            width: 100% !important;
+            min-width: 0;
           }
-        `}</style>
+
+          .categories-save-panel {
+            display: grid !important;
+            grid-template-columns: 1fr;
+            width: 100%;
+          }
+
+          .categories-toolbar {
+            width: 100%;
+          }
+
+          .categories-toolbar input,
+          .categories-toolbar select,
+          .categories-toolbar button {
+            width: 100% !important;
+          }
+
+          .categories-card-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .categories-premium-hero::after {
+            right: 10px;
+            font-size: 70px;
+          }
+        }
+      `}</style>
       </main>
     );
   }
 
   return (
-    <main style={mainStyle}>
-      <div style={containerStyle}>
-        <section style={heroStyle}>
+    <main className="categories-premium-page" style={mainStyle}>
+      <div className="categories-premium-container" style={containerStyle}>
+        <section className="categories-premium-hero" style={heroStyle}>
           <p style={heroLabelStyle}>NEW CITY STYLE</p>
 
           <h1 style={heroTitleStyle}>
@@ -560,7 +1135,7 @@ export default function CategoriesPage() {
               title="Category Image"
               subtitle="Upload the image displayed on the category card."
             >
-              <label style={uploadAreaStyle}>
+              <label className="categories-premium-upload-area" style={uploadAreaStyle}>
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/jpg,image/webp"
@@ -697,7 +1272,7 @@ export default function CategoriesPage() {
             </section>
           </form>
 
-          <section style={categoriesPanelStyle}>
+          <section className="categories-premium-list-panel" style={categoriesPanelStyle}>
             <div className="categories-list-header">
               <div>
                 <h2 style={listTitleStyle}>
@@ -740,6 +1315,7 @@ export default function CategoriesPage() {
                 <button
                   type="button"
                   onClick={loadCategories}
+                  className="categories-premium-refresh-button"
                   style={refreshButtonStyle}
                 >
                   Refresh
@@ -756,6 +1332,7 @@ export default function CategoriesPage() {
                 {filteredCategories.map((category) => (
                   <article
                     key={category.id}
+                    className="categories-premium-category-card"
                     style={categoryCardStyle}
                   >
                     <div style={categoryImageContainerStyle}>
@@ -807,6 +1384,7 @@ export default function CategoriesPage() {
                       <div style={categoryActionsStyle}>
                         <button
                           type="button"
+                          className="categories-premium-edit-button"
                           onClick={() =>
                             startEditing(category)
                           }
@@ -817,6 +1395,7 @@ export default function CategoriesPage() {
 
                         <button
                           type="button"
+                          className="categories-premium-toggle-button"
                           onClick={() =>
                             toggleCategory(category)
                           }
@@ -835,6 +1414,7 @@ export default function CategoriesPage() {
 
                       <button
                         type="button"
+                        className="categories-premium-delete-button"
                         onClick={() =>
                           deleteCategory(category)
                         }
@@ -978,7 +1558,7 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <section style={panelStyle}>
+    <section className="categories-premium-panel" style={panelStyle}>
       <div
         style={{
           marginBottom: "21px",
@@ -1024,7 +1604,7 @@ function SummaryCard({
   positive?: boolean;
 }) {
   return (
-    <div style={summaryCardStyle}>
+    <div className="categories-premium-summary-card" style={summaryCardStyle}>
       <div
         style={{
           fontSize: "29px",
@@ -1136,7 +1716,8 @@ const loadingPageStyle: CSSProperties = {
 
 const mainStyle: CSSProperties = {
   minHeight: "100vh",
-  background: "#F8F4EC",
+  background:
+    "radial-gradient(circle at 8% 0%, rgba(212,175,55,0.14), transparent 28%), linear-gradient(180deg, #F8F4EC 0%, #FFFFFF 100%)",
   padding: "30px 20px 80px",
 };
 
@@ -1147,12 +1728,12 @@ const containerStyle: CSSProperties = {
 
 const heroStyle: CSSProperties = {
   background:
-    "linear-gradient(135deg, #071A43 0%, #0A2E73 55%, #164CA8 100%)",
+    "linear-gradient(135deg, #03153F 0%, #0A2E73 58%, #164CA8 100%)",
   borderRadius: "24px",
-  padding: "32px",
+  padding: "34px",
   color: "#FFFFFF",
   marginBottom: "25px",
-  boxShadow: "0 15px 40px rgba(10,46,115,0.25)",
+  boxShadow: "0 20px 48px rgba(3,21,63,0.24)",
 };
 
 const heroLabelStyle: CSSProperties = {
@@ -1291,11 +1872,11 @@ const removeImageButtonStyle: CSSProperties = {
 };
 
 const summaryCardStyle: CSSProperties = {
-  background: "#FFFFFF",
-  borderRadius: "16px",
+  background: "#0A2E73",
+  borderRadius: "18px",
   padding: "20px",
-  boxShadow: "0 7px 22px rgba(0,0,0,0.07)",
-  border: "1px solid rgba(212,175,55,0.22)",
+  boxShadow: "0 12px 28px rgba(3,21,63,0.16)",
+  border: "1px solid rgba(212,175,55,0.28)",
 };
 
 const summaryTitleStyle: CSSProperties = {
@@ -1415,11 +1996,11 @@ const emptyStateStyle: CSSProperties = {
 };
 
 const categoryCardStyle: CSSProperties = {
-  border: "1px solid #E5E7EB",
-  borderRadius: "17px",
+  border: "1px solid rgba(212,175,55,0.24)",
+  borderRadius: "18px",
   overflow: "hidden",
   background: "#FFFFFF",
-  boxShadow: "0 6px 20px rgba(0,0,0,0.06)",
+  boxShadow: "0 10px 26px rgba(3,21,63,0.10)",
 };
 
 const categoryImageContainerStyle: CSSProperties = {
