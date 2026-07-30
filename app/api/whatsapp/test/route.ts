@@ -20,6 +20,12 @@ type MetaErrorResponse = {
     error_subcode?: number;
     type?: string;
     fbtrace_id?: string;
+    error_user_title?: string;
+    error_user_msg?: string;
+    error_data?: {
+      messaging_product?: string;
+      details?: string;
+    };
   };
 };
 
@@ -202,6 +208,15 @@ export async function POST(request: NextRequest) {
           metaErrorSubcode: metaError?.error_subcode || null,
           metaErrorType: metaError?.type || null,
           fbtraceId: metaError?.fbtrace_id || null,
+          errorUserTitle:
+            metaError?.error_user_title || null,
+          errorUserMessage:
+            metaError?.error_user_msg || null,
+          errorDetails:
+            metaError?.error_data?.details || null,
+          messagingProduct:
+            metaError?.error_data?.messaging_product || null,
+          fullMetaError: metaData,
         },
         { status: metaResponse.status }
       );
