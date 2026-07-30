@@ -262,12 +262,14 @@ export default function ReviewsPage() {
       }}
     >
       <div
+        className="reviews-page-shell"
         style={{
           maxWidth: "1350px",
           margin: "0 auto",
         }}
       >
         <section
+          className="reviews-hero"
           style={{
             background:
               "linear-gradient(135deg, #0A2E73 0%, #164CA8 100%)",
@@ -309,6 +311,7 @@ export default function ReviewsPage() {
         </section>
 
         <section
+          className="reviews-summary-grid"
           style={{
             display: "grid",
             gridTemplateColumns:
@@ -356,6 +359,7 @@ export default function ReviewsPage() {
           }}
         >
           <section
+            className="reviews-form-panel"
             style={{
               background: "#FFFFFF",
               borderRadius: "18px",
@@ -465,6 +469,7 @@ export default function ReviewsPage() {
               </label>
 
               <button
+                className="reviews-primary-button"
                 type="submit"
                 disabled={saving}
                 style={{
@@ -489,6 +494,7 @@ export default function ReviewsPage() {
 
               {editingId !== null && (
                 <button
+                  className="reviews-secondary-button"
                   type="button"
                   onClick={resetForm}
                   style={{
@@ -510,6 +516,7 @@ export default function ReviewsPage() {
           </section>
 
           <section
+            className="reviews-list-panel"
             style={{
               background: "#FFFFFF",
               borderRadius: "18px",
@@ -584,6 +591,7 @@ export default function ReviewsPage() {
                 </select>
 
                 <button
+                  className="reviews-refresh-button"
                   type="button"
                   onClick={loadReviews}
                   style={{
@@ -614,6 +622,7 @@ export default function ReviewsPage() {
               >
                 {filteredReviews.map((review) => (
                   <article
+                    className="review-card"
                     key={review.id}
                     style={{
                       border: "1px solid #E5E7EB",
@@ -801,6 +810,189 @@ export default function ReviewsPage() {
       </div>
 
       <style jsx global>{`
+        @keyframes reviews-fade-up {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 24px, 0);
+          }
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        @keyframes reviews-float {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-7px);
+          }
+        }
+
+        @keyframes reviews-shimmer {
+          0% {
+            transform: translateX(-140%) skewX(-18deg);
+          }
+          55%, 100% {
+            transform: translateX(240%) skewX(-18deg);
+          }
+        }
+
+        @keyframes reviews-star-glow {
+          0%, 100% {
+            filter: drop-shadow(0 0 0 rgba(245,158,11,0));
+          }
+          50% {
+            filter: drop-shadow(0 0 8px rgba(245,158,11,.35));
+          }
+        }
+
+        .reviews-page-shell {
+          animation: reviews-fade-up .65s ease both;
+        }
+
+        .reviews-hero {
+          position: relative;
+          overflow: hidden;
+          isolation: isolate;
+          animation: reviews-fade-up .72s ease both;
+        }
+
+        .reviews-hero::after {
+          content: "";
+          position: absolute;
+          inset: -45% auto -45% -35%;
+          width: 32%;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255,255,255,.18),
+            transparent
+          );
+          transform: translateX(-140%) skewX(-18deg);
+          animation: reviews-shimmer 5.8s ease-in-out infinite;
+          pointer-events: none;
+          z-index: -1;
+        }
+
+        .reviews-summary-grid > * {
+          opacity: 0;
+          animation: reviews-fade-up .55s ease forwards;
+        }
+
+        .reviews-summary-grid > *:nth-child(1) { animation-delay: .08s; }
+        .reviews-summary-grid > *:nth-child(2) { animation-delay: .15s; }
+        .reviews-summary-grid > *:nth-child(3) { animation-delay: .22s; }
+        .reviews-summary-grid > *:nth-child(4) { animation-delay: .29s; }
+
+        .reviews-summary-card,
+        .reviews-form-panel,
+        .reviews-list-panel,
+        .review-card {
+          transition:
+            transform .28s ease,
+            box-shadow .28s ease,
+            border-color .28s ease,
+            background-color .28s ease;
+        }
+
+        .reviews-summary-card:hover {
+          transform: translateY(-7px);
+          box-shadow: 0 18px 38px rgba(10,46,115,.14) !important;
+          border-color: rgba(212,175,55,.55) !important;
+        }
+
+        .reviews-summary-card > div:first-child {
+          display: inline-block;
+          animation: reviews-float 3.2s ease-in-out infinite;
+        }
+
+        .reviews-form-panel,
+        .reviews-list-panel {
+          animation: reviews-fade-up .62s ease both;
+        }
+
+        .reviews-form-panel:hover,
+        .reviews-list-panel:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 18px 42px rgba(10,46,115,.11) !important;
+          border-color: rgba(212,175,55,.48) !important;
+        }
+
+        .review-card {
+          animation: reviews-fade-up .5s ease both;
+        }
+
+        .review-card:hover {
+          transform: translateY(-5px);
+          box-shadow: 0 16px 34px rgba(10,46,115,.12) !important;
+          border-color: rgba(212,175,55,.55) !important;
+        }
+
+        .review-card div[style*="color: #F59E0B"] {
+          animation: reviews-star-glow 2.8s ease-in-out infinite;
+        }
+
+        .reviews-primary-button,
+        .reviews-secondary-button,
+        .reviews-refresh-button,
+        .review-card button {
+          transition:
+            transform .2s ease,
+            box-shadow .2s ease,
+            filter .2s ease;
+        }
+
+        .reviews-primary-button:hover:not(:disabled),
+        .reviews-refresh-button:hover,
+        .review-card button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 22px rgba(10,46,115,.18);
+          filter: brightness(1.04);
+        }
+
+        .reviews-secondary-button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 18px rgba(0,0,0,.08);
+        }
+
+        .reviews-primary-button:active:not(:disabled),
+        .reviews-secondary-button:active,
+        .reviews-refresh-button:active,
+        .review-card button:active {
+          transform: translateY(0) scale(.98);
+        }
+
+        input,
+        textarea,
+        select,
+        button {
+          transition:
+            border-color .2s ease,
+            box-shadow .2s ease,
+            transform .2s ease,
+            background-color .2s ease;
+        }
+
+        input:focus,
+        textarea:focus,
+        select:focus {
+          border-color: #0A2E73 !important;
+          box-shadow: 0 0 0 4px rgba(10,46,115,.10);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          *,
+          *::before,
+          *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+          }
+        }
+
         @media (max-width: 980px) {
           .reviews-layout {
             grid-template-columns: 1fr !important;
@@ -872,6 +1064,7 @@ function SummaryCard({
 }) {
   return (
     <div
+      className="reviews-summary-card"
       style={{
         background: "#FFFFFF",
         borderRadius: "16px",

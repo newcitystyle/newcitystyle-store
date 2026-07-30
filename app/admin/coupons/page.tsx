@@ -369,12 +369,14 @@ export default function CouponsPage() {
       }}
     >
       <div
+        className="coupons-page-shell"
         style={{
           maxWidth: "1400px",
           margin: "0 auto",
         }}
       >
         <section
+          className="coupons-hero"
           style={{
             background:
               "linear-gradient(135deg, #0A2E73 0%, #164CA8 100%)",
@@ -417,6 +419,7 @@ export default function CouponsPage() {
         </section>
 
         <section
+          className="coupons-summary-grid"
           style={{
             display: "grid",
             gridTemplateColumns:
@@ -466,6 +469,7 @@ export default function CouponsPage() {
           }}
         >
           <section
+            className="coupons-form-panel"
             style={{
               background: "#FFFFFF",
               borderRadius: "18px",
@@ -698,6 +702,7 @@ export default function CouponsPage() {
               </label>
 
               <button
+                className="coupons-primary-button"
                 type="submit"
                 disabled={saving}
                 style={{
@@ -722,6 +727,7 @@ export default function CouponsPage() {
 
               {editingId !== null && (
                 <button
+                  className="coupons-secondary-button"
                   type="button"
                   onClick={resetForm}
                   style={{
@@ -743,6 +749,7 @@ export default function CouponsPage() {
           </section>
 
           <section
+            className="coupons-list-panel"
             style={{
               background: "#FFFFFF",
               borderRadius: "18px",
@@ -819,6 +826,7 @@ export default function CouponsPage() {
                 </select>
 
                 <button
+                  className="coupons-refresh-button"
                   type="button"
                   onClick={loadCoupons}
                   style={{
@@ -856,6 +864,7 @@ export default function CouponsPage() {
 
                   return (
                     <article
+                      className="coupon-card"
                       key={coupon.id}
                       style={{
                         border: "1px solid #E5E7EB",
@@ -1064,6 +1073,212 @@ export default function CouponsPage() {
       </div>
 
       <style jsx global>{`
+        @keyframes coupons-fade-up {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 24px, 0);
+          }
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        @keyframes coupons-float {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-7px);
+          }
+        }
+
+        @keyframes coupons-shimmer {
+          0% {
+            transform: translateX(-140%) skewX(-18deg);
+          }
+          55%, 100% {
+            transform: translateX(240%) skewX(-18deg);
+          }
+        }
+
+        @keyframes coupon-ticket-glow {
+          0%, 100% {
+            box-shadow: 0 0 0 rgba(212,175,55,0);
+          }
+          50% {
+            box-shadow: 0 0 24px rgba(212,175,55,.18);
+          }
+        }
+
+        .coupons-page-shell {
+          animation: coupons-fade-up .65s ease both;
+        }
+
+        .coupons-hero {
+          position: relative;
+          overflow: hidden;
+          isolation: isolate;
+          animation: coupons-fade-up .72s ease both;
+        }
+
+        .coupons-hero::after {
+          content: "";
+          position: absolute;
+          inset: -45% auto -45% -35%;
+          width: 32%;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255,255,255,.18),
+            transparent
+          );
+          transform: translateX(-140%) skewX(-18deg);
+          animation: coupons-shimmer 5.8s ease-in-out infinite;
+          pointer-events: none;
+          z-index: -1;
+        }
+
+        .coupons-summary-grid > * {
+          opacity: 0;
+          animation: coupons-fade-up .55s ease forwards;
+        }
+
+        .coupons-summary-grid > *:nth-child(1) { animation-delay: .08s; }
+        .coupons-summary-grid > *:nth-child(2) { animation-delay: .14s; }
+        .coupons-summary-grid > *:nth-child(3) { animation-delay: .20s; }
+        .coupons-summary-grid > *:nth-child(4) { animation-delay: .26s; }
+        .coupons-summary-grid > *:nth-child(5) { animation-delay: .32s; }
+
+        .coupons-summary-card,
+        .coupons-form-panel,
+        .coupons-list-panel,
+        .coupon-card {
+          transition:
+            transform .28s ease,
+            box-shadow .28s ease,
+            border-color .28s ease,
+            background-color .28s ease;
+        }
+
+        .coupons-summary-card:hover {
+          transform: translateY(-7px);
+          box-shadow: 0 18px 38px rgba(10,46,115,.14) !important;
+          border-color: rgba(212,175,55,.55) !important;
+        }
+
+        .coupons-summary-card > div:first-child {
+          display: inline-block;
+          animation: coupons-float 3.2s ease-in-out infinite;
+        }
+
+        .coupons-form-panel,
+        .coupons-list-panel {
+          animation: coupons-fade-up .62s ease both;
+        }
+
+        .coupons-form-panel:hover,
+        .coupons-list-panel:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 18px 42px rgba(10,46,115,.11) !important;
+          border-color: rgba(212,175,55,.48) !important;
+        }
+
+        .coupon-card {
+          animation:
+            coupons-fade-up .5s ease both,
+            coupon-ticket-glow 4s ease-in-out infinite;
+        }
+
+        .coupon-card:hover {
+          transform: translateY(-6px) scale(1.01);
+          box-shadow: 0 18px 38px rgba(10,46,115,.14) !important;
+          border-color: rgba(212,175,55,.6) !important;
+        }
+
+        .coupon-card > div:first-child {
+          position: relative;
+          overflow: hidden;
+        }
+
+        .coupon-card > div:first-child::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            120deg,
+            transparent 25%,
+            rgba(255,255,255,.10) 45%,
+            transparent 65%
+          );
+          transform: translateX(-120%);
+          transition: transform .55s ease;
+          pointer-events: none;
+        }
+
+        .coupon-card:hover > div:first-child::after {
+          transform: translateX(120%);
+        }
+
+        .coupons-primary-button,
+        .coupons-secondary-button,
+        .coupons-refresh-button,
+        .coupon-card button {
+          transition:
+            transform .2s ease,
+            box-shadow .2s ease,
+            filter .2s ease;
+        }
+
+        .coupons-primary-button:hover:not(:disabled),
+        .coupons-refresh-button:hover,
+        .coupon-card button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 22px rgba(10,46,115,.18);
+          filter: brightness(1.04);
+        }
+
+        .coupons-secondary-button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 18px rgba(0,0,0,.08);
+        }
+
+        .coupons-primary-button:active:not(:disabled),
+        .coupons-secondary-button:active,
+        .coupons-refresh-button:active,
+        .coupon-card button:active {
+          transform: translateY(0) scale(.98);
+        }
+
+        input,
+        textarea,
+        select,
+        button {
+          transition:
+            border-color .2s ease,
+            box-shadow .2s ease,
+            transform .2s ease,
+            background-color .2s ease;
+        }
+
+        input:focus,
+        textarea:focus,
+        select:focus {
+          border-color: #0A2E73 !important;
+          box-shadow: 0 0 0 4px rgba(10,46,115,.10);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          *,
+          *::before,
+          *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+          }
+        }
+
         @media (max-width: 1000px) {
           .coupons-layout {
             grid-template-columns: 1fr !important;
@@ -1141,6 +1356,7 @@ function SummaryCard({
 }) {
   return (
     <div
+      className="coupons-summary-card"
       style={{
         background: "#FFFFFF",
         borderRadius: "16px",

@@ -795,12 +795,211 @@ ${branding.store_email ? `<div class="line">Email: ${escapeHtml(branding.store_e
         .error { margin-top: 16px; padding: 13px 15px; border-radius: 14px; background: #fff0f0; border: 1px solid #f0caca; color: #9a2525; font-size: 13px; }
         .skeleton { animation: pulse 1.2s infinite; background: linear-gradient(90deg,#eef0f5,#f8f9fb,#eef0f5); background-size: 200% 100%; }
         @keyframes pulse { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+        @keyframes marketing-fade-up {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 24px, 0);
+          }
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        @keyframes marketing-float {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-7px);
+          }
+        }
+
+        @keyframes marketing-shimmer {
+          0% {
+            transform: translateX(-140%) skewX(-18deg);
+          }
+          55%, 100% {
+            transform: translateX(240%) skewX(-18deg);
+          }
+        }
+
+        @keyframes marketing-pulse-ring {
+          0% {
+            box-shadow: 0 0 0 0 rgba(212,175,55,.28);
+          }
+          70% {
+            box-shadow: 0 0 0 10px rgba(212,175,55,0);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(212,175,55,0);
+          }
+        }
+
+        .marketing-page-shell {
+          animation: marketing-fade-up .65s ease both;
+        }
+
+        .marketing-hero {
+          isolation: isolate;
+          animation: marketing-fade-up .72s ease both;
+        }
+
+        .marketing-hero::marker {
+          display: none;
+        }
+
+        .marketing-hero .hero-logo,
+        .marketing-hero .hero-logo-fallback {
+          animation: marketing-float 3.4s ease-in-out infinite;
+        }
+
+        .marketing-hero::before {
+          animation: marketing-float 6s ease-in-out infinite;
+        }
+
+        .marketing-hero .eyebrow {
+          position: relative;
+          overflow: hidden;
+        }
+
+        .marketing-hero .eyebrow::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255,255,255,.35),
+            transparent
+          );
+          transform: translateX(-140%) skewX(-18deg);
+          animation: marketing-shimmer 5.5s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .stats > * {
+          opacity: 0;
+          animation: marketing-fade-up .5s ease forwards;
+        }
+
+        .stats > *:nth-child(1) { animation-delay: .08s; }
+        .stats > *:nth-child(2) { animation-delay: .14s; }
+        .stats > *:nth-child(3) { animation-delay: .20s; }
+        .stats > *:nth-child(4) { animation-delay: .26s; }
+
+        .marketing-tool-grid > * {
+          opacity: 0;
+          animation: marketing-fade-up .55s ease forwards;
+        }
+
+        .marketing-tool-grid > *:nth-child(1) { animation-delay: .04s; }
+        .marketing-tool-grid > *:nth-child(2) { animation-delay: .08s; }
+        .marketing-tool-grid > *:nth-child(3) { animation-delay: .12s; }
+        .marketing-tool-grid > *:nth-child(4) { animation-delay: .16s; }
+        .marketing-tool-grid > *:nth-child(5) { animation-delay: .20s; }
+        .marketing-tool-grid > *:nth-child(6) { animation-delay: .24s; }
+        .marketing-tool-grid > *:nth-child(7) { animation-delay: .28s; }
+        .marketing-tool-grid > *:nth-child(8) { animation-delay: .32s; }
+
+        .tool-card,
+        .panel,
+        .social-card,
+        .stat,
+        .product-preview,
+        .qr-preview {
+          transition:
+            transform .28s ease,
+            box-shadow .28s ease,
+            border-color .28s ease,
+            background-color .28s ease;
+        }
+
+        .tool-card:hover {
+          transform: translateY(-7px);
+          box-shadow: 0 20px 42px rgba(10,46,115,.14);
+          border-color: rgba(212,175,55,.52);
+        }
+
+        .tool-card:hover .tool-icon {
+          transform: rotate(-4deg) scale(1.06);
+          animation: marketing-pulse-ring 2.2s ease-out infinite;
+        }
+
+        .tool-icon {
+          transition: transform .25s ease, box-shadow .25s ease;
+        }
+
+        .panel:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 20px 44px rgba(10,46,115,.11);
+          border-color: rgba(212,175,55,.45);
+        }
+
+        .stat:hover {
+          transform: translateY(-4px);
+          background: rgba(255,255,255,.13);
+        }
+
+        .social-card:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 14px 28px rgba(10,46,115,.12);
+          border-color: rgba(212,175,55,.5);
+        }
+
+        .product-preview:hover,
+        .qr-preview:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 14px 28px rgba(10,46,115,.10);
+        }
+
+        .button {
+          transition:
+            transform .2s ease,
+            box-shadow .2s ease,
+            filter .2s ease,
+            opacity .2s ease;
+        }
+
+        .button:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 24px rgba(10,46,115,.18);
+          filter: brightness(1.04);
+        }
+
+        .button:active:not(:disabled) {
+          transform: translateY(0) scale(.98);
+        }
+
+        .input {
+          transition:
+            border-color .2s ease,
+            box-shadow .2s ease,
+            transform .2s ease;
+        }
+
+        .input:focus {
+          transform: translateY(-1px);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          *,
+          *::before,
+          *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+          }
+        }
+
         @media (min-width: 680px) { .marketing-shell { padding: 24px 22px 80px; } .tool-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .hero { padding: 30px; } .stats { grid-template-columns: repeat(4,minmax(0,1fr)); } }
         @media (min-width: 980px) { .hero-grid { grid-template-columns: minmax(0,1.3fr) minmax(430px,.7fr); align-items: end; } .tool-grid { grid-template-columns: repeat(4,minmax(0,1fr)); } .panel-grid.two { grid-template-columns: minmax(0,1.15fr) minmax(340px,.85fr); } .panel-grid.three { grid-template-columns: repeat(3,minmax(0,1fr)); } .social-grid { grid-template-columns: repeat(4,minmax(0,1fr)); } }
       `}</style>
 
-      <div className="marketing-shell">
-        <section className="hero">
+      <div className="marketing-shell marketing-page-shell">
+        <section className="hero marketing-hero">
           <div className="hero-grid">
             <div>
               <div className="hero-brand">
@@ -878,7 +1077,7 @@ ${branding.store_email ? `<div class="line">Email: ${escapeHtml(branding.store_e
             </div>
           </div>
 
-          <div className="tool-grid">
+          <div className="tool-grid marketing-tool-grid">
             <ToolCard
               icon="share"
               title="Share Website Link"
@@ -997,7 +1196,7 @@ ${branding.store_email ? `<div class="line">Email: ${escapeHtml(branding.store_e
             </div>
           </div>
 
-          <div className="panel-grid two">
+          <div className="panel-grid two marketing-panel-grid">
             <div className="panel">
               <h3>Select a Product</h3>
               <div className="panel-sub">

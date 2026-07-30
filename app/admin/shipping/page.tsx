@@ -552,12 +552,14 @@ export default function ShippingSettingsPage() {
       }}
     >
       <div
+        className="shipping-page-shell"
         style={{
           maxWidth: "1400px",
           margin: "0 auto",
         }}
       >
         <section
+          className="shipping-hero premium-shine"
           style={{
             background:
               "linear-gradient(135deg, #071A43 0%, #0A2E73 55%, #164CA8 100%)",
@@ -619,6 +621,7 @@ export default function ShippingSettingsPage() {
         </section>
 
         <section
+          className="shipping-summary-grid"
           style={{
             display: "grid",
             gridTemplateColumns:
@@ -691,6 +694,7 @@ export default function ShippingSettingsPage() {
           }}
         >
           <form
+            className="shipping-form-stack"
             onSubmit={
               saveShippingSettings
             }
@@ -1249,6 +1253,7 @@ export default function ShippingSettingsPage() {
               }}
             >
               <button
+                className="shipping-secondary-button"
                 type="button"
                 onClick={
                   resetForm
@@ -1274,6 +1279,7 @@ export default function ShippingSettingsPage() {
               </button>
 
               <button
+                className="shipping-primary-button"
                 type="submit"
                 disabled={
                   saving
@@ -1311,6 +1317,7 @@ export default function ShippingSettingsPage() {
           </form>
 
           <aside
+            className="shipping-preview-stack"
             style={{
               position:
                 "sticky",
@@ -1550,6 +1557,183 @@ export default function ShippingSettingsPage() {
       </div>
 
       <style jsx global>{`
+        @keyframes shipping-fade-up {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 24px, 0);
+          }
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        @keyframes shipping-float {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-7px);
+          }
+        }
+
+        @keyframes shipping-shimmer {
+          0% {
+            transform: translateX(-130%) skewX(-18deg);
+          }
+          55%, 100% {
+            transform: translateX(230%) skewX(-18deg);
+          }
+        }
+
+        @keyframes shipping-pulse-ring {
+          0% {
+            box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.25);
+          }
+          70% {
+            box-shadow: 0 0 0 10px rgba(22, 163, 74, 0);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(22, 163, 74, 0);
+          }
+        }
+
+        .shipping-page-shell {
+          animation: shipping-fade-up 0.65s ease both;
+        }
+
+        .shipping-hero {
+          position: relative;
+          overflow: hidden;
+          isolation: isolate;
+          animation: shipping-fade-up 0.7s ease both;
+        }
+
+        .shipping-hero::after {
+          content: "";
+          position: absolute;
+          inset: -45% auto -45% -35%;
+          width: 32%;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255,255,255,.18),
+            transparent
+          );
+          transform: translateX(-130%) skewX(-18deg);
+          animation: shipping-shimmer 5.5s ease-in-out infinite;
+          pointer-events: none;
+          z-index: -1;
+        }
+
+        .shipping-summary-grid > * {
+          opacity: 0;
+          animation: shipping-fade-up 0.55s ease forwards;
+        }
+
+        .shipping-summary-grid > *:nth-child(1) { animation-delay: .08s; }
+        .shipping-summary-grid > *:nth-child(2) { animation-delay: .14s; }
+        .shipping-summary-grid > *:nth-child(3) { animation-delay: .20s; }
+        .shipping-summary-grid > *:nth-child(4) { animation-delay: .26s; }
+        .shipping-summary-grid > *:nth-child(5) { animation-delay: .32s; }
+
+        .shipping-summary-card,
+        .shipping-settings-panel,
+        .shipping-preview-stack > section {
+          transition:
+            transform .28s ease,
+            box-shadow .28s ease,
+            border-color .28s ease;
+        }
+
+        .shipping-summary-card:hover {
+          transform: translateY(-7px);
+          box-shadow: 0 18px 38px rgba(10,46,115,.14) !important;
+          border-color: rgba(212,175,55,.55) !important;
+        }
+
+        .shipping-summary-card > div:first-child {
+          display: inline-block;
+          animation: shipping-float 3.2s ease-in-out infinite;
+        }
+
+        .shipping-settings-panel {
+          animation: shipping-fade-up .6s ease both;
+        }
+
+        .shipping-settings-panel:hover,
+        .shipping-preview-stack > section:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 18px 42px rgba(10,46,115,.11) !important;
+          border-color: rgba(212,175,55,.48) !important;
+        }
+
+        .shipping-toggle-card {
+          transition:
+            transform .24s ease,
+            background .24s ease,
+            border-color .24s ease;
+        }
+
+        .shipping-toggle-card:hover {
+          transform: translateX(4px);
+        }
+
+        .shipping-toggle-card.is-enabled button {
+          animation: shipping-pulse-ring 2.5s ease-out infinite;
+        }
+
+        .shipping-primary-button,
+        .shipping-secondary-button {
+          transition:
+            transform .2s ease,
+            box-shadow .2s ease,
+            filter .2s ease;
+        }
+
+        .shipping-primary-button:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 24px rgba(10,46,115,.28);
+          filter: brightness(1.06);
+        }
+
+        .shipping-secondary-button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 9px 20px rgba(0,0,0,.09);
+        }
+
+        .shipping-primary-button:active:not(:disabled),
+        .shipping-secondary-button:active {
+          transform: translateY(0) scale(.98);
+        }
+
+        input,
+        textarea,
+        button {
+          transition:
+            border-color .2s ease,
+            box-shadow .2s ease,
+            transform .2s ease,
+            background-color .2s ease;
+        }
+
+        input:focus,
+        textarea:focus {
+          border-color: #0A2E73 !important;
+          box-shadow: 0 0 0 4px rgba(10,46,115,.10);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          *,
+          *::before,
+          *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            scroll-behavior: auto !important;
+            transition-duration: 0.01ms !important;
+          }
+        }
+
         @media (max-width: 1050px) {
           .shipping-layout {
             grid-template-columns: 1fr !important;
@@ -1616,6 +1800,7 @@ function SettingsPanel({
 }) {
   return (
     <section
+      className="shipping-settings-panel"
       style={{
         background: "#FFFFFF",
         borderRadius: "18px",
@@ -1701,6 +1886,7 @@ function ShippingToggle({
 }) {
   return (
     <div
+      className={`shipping-toggle-card ${enabled ? "is-enabled" : ""}`}
       style={{
         display: "flex",
         justifyContent:
@@ -1825,6 +2011,7 @@ function SummaryCard({
 }) {
   return (
     <div
+      className="shipping-summary-card"
       style={{
         background: "#FFFFFF",
         borderRadius: "16px",

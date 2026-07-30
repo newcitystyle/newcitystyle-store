@@ -746,9 +746,10 @@ export default function BrandingPage() {
   const uploading = uploadingLogo || uploadingMobileLogo || uploadingFavicon;
 
   return (
-    <main style={mainStyle}>
-      <div style={containerStyle}>
+    <main className="branding-page-root" style={mainStyle}>
+      <div className="branding-page-shell" style={containerStyle}>
         <section
+          className="branding-hero"
           style={{
             ...heroStyle,
             background: `linear-gradient(135deg, ${form.primaryColor} 0%, #164CA8 100%)`,
@@ -1257,6 +1258,7 @@ export default function BrandingPage() {
 
             <section style={savePanelStyle}>
               <button
+                className="branding-secondary-button"
                 type="button"
                 onClick={resetBranding}
                 style={secondaryButtonStyle}
@@ -1265,6 +1267,7 @@ export default function BrandingPage() {
               </button>
 
               <button
+                className="branding-primary-button"
                 type="submit"
                 disabled={saving || uploading}
                 style={{
@@ -1290,7 +1293,7 @@ export default function BrandingPage() {
           </form>
 
           <aside className="branding-preview-sidebar">
-            <section style={previewPanelStyle}>
+            <section className="branding-preview-panel" style={previewPanelStyle}>
               <div
                 style={{
                   ...brandPreviewHeaderStyle,
@@ -1401,7 +1404,7 @@ export default function BrandingPage() {
               </div>
             </section>
 
-            <section style={previewPanelStyle}>
+            <section className="branding-preview-panel" style={previewPanelStyle}>
               <h3 style={sideTitleStyle}>
                 Browser Preview
               </h3>
@@ -1462,7 +1465,7 @@ export default function BrandingPage() {
               </div>
             </section>
 
-            <section style={previewPanelStyle}>
+            <section className="branding-preview-panel" style={previewPanelStyle}>
               <h3 style={sideTitleStyle}>
                 Branding Status
               </h3>
@@ -1504,7 +1507,7 @@ export default function BrandingPage() {
               />
             </section>
 
-            <section style={previewPanelStyle}>
+            <section className="branding-preview-panel" style={previewPanelStyle}>
               <h3 style={sideTitleStyle}>
                 Current Brand Palette
               </h3>
@@ -1561,6 +1564,215 @@ export default function BrandingPage() {
       </div>
 
       <style jsx global>{`
+        @keyframes branding-fade-up {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 24px, 0);
+          }
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        @keyframes branding-float {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-7px);
+          }
+        }
+
+        @keyframes branding-shimmer {
+          0% {
+            transform: translateX(-140%) skewX(-18deg);
+          }
+          55%, 100% {
+            transform: translateX(240%) skewX(-18deg);
+          }
+        }
+
+        @keyframes branding-pulse-ring {
+          0% {
+            box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.22);
+          }
+          70% {
+            box-shadow: 0 0 0 10px rgba(22, 163, 74, 0);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(22, 163, 74, 0);
+          }
+        }
+
+        .branding-page-shell {
+          animation: branding-fade-up .65s ease both;
+        }
+
+        .branding-hero {
+          position: relative;
+          overflow: hidden;
+          isolation: isolate;
+          animation: branding-fade-up .72s ease both;
+        }
+
+        .branding-hero::after {
+          content: "";
+          position: absolute;
+          inset: -45% auto -45% -35%;
+          width: 32%;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255,255,255,.18),
+            transparent
+          );
+          transform: translateX(-140%) skewX(-18deg);
+          animation: branding-shimmer 5.8s ease-in-out infinite;
+          pointer-events: none;
+          z-index: -1;
+        }
+
+        .branding-summary-grid > * {
+          opacity: 0;
+          animation: branding-fade-up .55s ease forwards;
+        }
+
+        .branding-summary-grid > *:nth-child(1) { animation-delay: .06s; }
+        .branding-summary-grid > *:nth-child(2) { animation-delay: .12s; }
+        .branding-summary-grid > *:nth-child(3) { animation-delay: .18s; }
+        .branding-summary-grid > *:nth-child(4) { animation-delay: .24s; }
+        .branding-summary-grid > *:nth-child(5) { animation-delay: .30s; }
+        .branding-summary-grid > *:nth-child(6) { animation-delay: .36s; }
+
+        .branding-summary-card,
+        .branding-panel,
+        .branding-preview-panel,
+        .branding-uploaded-asset,
+        .branding-toggle-row {
+          transition:
+            transform .28s ease,
+            box-shadow .28s ease,
+            border-color .28s ease,
+            background-color .28s ease;
+        }
+
+        .branding-summary-card:hover {
+          transform: translateY(-7px);
+          box-shadow: 0 18px 38px rgba(10,46,115,.14) !important;
+          border-color: rgba(212,175,55,.55) !important;
+        }
+
+        .branding-summary-card > div:first-child {
+          display: inline-block;
+          animation: branding-float 3.2s ease-in-out infinite;
+        }
+
+        .branding-panel,
+        .branding-preview-panel {
+          animation: branding-fade-up .6s ease both;
+        }
+
+        .branding-panel:hover,
+        .branding-preview-panel:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 18px 42px rgba(10,46,115,.11) !important;
+          border-color: rgba(212,175,55,.48) !important;
+        }
+
+        .branding-uploaded-asset:hover {
+          transform: translateX(4px);
+          border-color: rgba(10,46,115,.35) !important;
+          box-shadow: 0 10px 24px rgba(10,46,115,.08);
+        }
+
+        .branding-toggle-row:hover {
+          transform: translateX(4px);
+          border-color: rgba(10,46,115,.28) !important;
+        }
+
+        .branding-toggle-row.is-enabled input {
+          animation: branding-pulse-ring 2.5s ease-out infinite;
+        }
+
+        .branding-top-save-bar,
+        .branding-sticky-save-button,
+        .branding-mobile-save-button,
+        .branding-primary-button,
+        .branding-secondary-button,
+        .branding-remove-button {
+          transition:
+            transform .2s ease,
+            box-shadow .2s ease,
+            filter .2s ease;
+        }
+
+        .branding-sticky-save-button:hover:not(:disabled),
+        .branding-mobile-save-button:hover:not(:disabled),
+        .branding-primary-button:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 24px rgba(10,46,115,.28);
+          filter: brightness(1.05);
+        }
+
+        .branding-secondary-button:hover,
+        .branding-remove-button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 9px 20px rgba(0,0,0,.09);
+        }
+
+        .branding-sticky-save-button:active:not(:disabled),
+        .branding-mobile-save-button:active:not(:disabled),
+        .branding-primary-button:active:not(:disabled),
+        .branding-secondary-button:active,
+        .branding-remove-button:active {
+          transform: translateY(0) scale(.98);
+        }
+
+        input,
+        textarea,
+        select,
+        button {
+          transition:
+            border-color .2s ease,
+            box-shadow .2s ease,
+            transform .2s ease,
+            background-color .2s ease;
+        }
+
+        input:focus,
+        textarea:focus,
+        select:focus {
+          border-color: #0A2E73 !important;
+          box-shadow: 0 0 0 4px rgba(10,46,115,.10);
+        }
+
+        label[style*="2px dashed"] {
+          transition:
+            transform .25s ease,
+            box-shadow .25s ease,
+            border-color .25s ease,
+            background-color .25s ease;
+        }
+
+        label[style*="2px dashed"]:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 14px 30px rgba(10,46,115,.10);
+          border-color: #0A2E73 !important;
+          background: #FFFFFF !important;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          *,
+          *::before,
+          *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+          }
+        }
+
         .branding-top-save-bar {
           position: sticky;
           top: 12px;
@@ -1796,7 +2008,7 @@ function ToggleRow({
   onChange: (value: boolean) => void;
 }) {
   return (
-    <label style={toggleRowStyle}>
+    <label className={`branding-toggle-row ${checked ? "is-enabled" : ""}`} style={toggleRowStyle}>
       <span style={{ color: "#0A2E73", fontWeight: 800 }}>{label}</span>
       <input
         type="checkbox"
@@ -1818,7 +2030,7 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <section style={panelStyle}>
+    <section className="branding-panel" style={panelStyle}>
       <div style={{ marginBottom: "21px" }}>
         <h2 style={panelTitleStyle}>{title}</h2>
 
@@ -1858,7 +2070,7 @@ function SummaryCard({
   positive?: boolean;
 }) {
   return (
-    <div style={summaryCardStyle}>
+    <div className="branding-summary-card" style={summaryCardStyle}>
       <div style={{ fontSize: "29px" }}>{icon}</div>
 
       <p style={summaryTitleStyle}>{title}</p>
@@ -1887,7 +2099,7 @@ function UploadedAsset({
   size: "large" | "small";
 }) {
   return (
-    <div style={uploadedAssetStyle}>
+    <div className="branding-uploaded-asset" style={uploadedAssetStyle}>
       <img
         src={imageUrl}
         alt={title}
@@ -1917,6 +2129,7 @@ function UploadedAsset({
       </div>
 
       <button
+        className="branding-remove-button"
         type="button"
         onClick={onRemove}
         style={removeButtonStyle}
