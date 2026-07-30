@@ -33,7 +33,7 @@ type MetaMessageResponse = {
   }>;
 };
 
-const INVOICE_TEMPLATE_NAME = "new_city_style_invoice_pdf";
+const INVOICE_TEMPLATE_NAME = "new_city_style_invoice_document";
 const INVOICE_TEMPLATE_LANGUAGE = "en";
 
 function normalizePhone(value: string) {
