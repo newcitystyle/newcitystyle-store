@@ -2181,6 +2181,63 @@ if (!variantsError) {
       .join("\n");
   }
 
+  async function sendBillConfirmationViaWhatsApp(
+    sale: CompletedSale
+  ) {
+    const digits = sale.customerPhone.replace(/\D/g, "");
+    const recipientPhone =
+      digits.length === 10
+        ? `91${digits}`
+        : digits;
+
+    if (
+      recipientPhone.length < 10 ||
+      recipientPhone.length > 15
+    ) {
+      throw new Error(
+        "A valid customer mobile number is required for WhatsApp confirmation."
+      );
+    }
+
+    const response = await fetch(
+      "/api/whatsapp/test",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: recipientPhone,
+          customerName:
+            sale.customerName.trim() ||
+            "Customer",
+          billNumber: sale.invoiceNumber,
+          billAmount: sale.totalAmount,
+          paidAmount: sale.paidAmount,
+          dueAmount: sale.dueAmount,
+          paymentMethod:
+            sale.paymentMethod.toUpperCase(),
+        }),
+      }
+    );
+
+    const result = (await response.json()) as {
+      success?: boolean;
+      message?: string;
+      error?: string;
+      whatsappMessageId?: string | null;
+    };
+
+    if (!response.ok || result.success !== true) {
+      throw new Error(
+        result.error ||
+          "WhatsApp bill confirmation could not be sent."
+      );
+    }
+
+    return result;
+  }
+
   function shareCompletedSaleOnWhatsApp(sale: CompletedSale) {
     const digits = sale.customerPhone.replace(/\D/g, "");
     const phone =
@@ -3098,6 +3155,26 @@ if (!variantsError) {
 
       setCompletedSale(saleSnapshot);
 
+      let whatsappSyncWarning = "";
+
+      if (saleSnapshot.customerPhone.trim()) {
+        try {
+          await sendBillConfirmationViaWhatsApp(
+            saleSnapshot
+          );
+        } catch (whatsappError) {
+          console.error(
+            "Sale completed, but automatic WhatsApp confirmation failed:",
+            whatsappError
+          );
+
+          whatsappSyncWarning =
+            whatsappError instanceof Error
+              ? whatsappError.message
+              : "Automatic WhatsApp confirmation failed.";
+        }
+      }
+
       setCartItems([]);
       setBillDiscountPercent(0);
       setRoundOffAmount(0);
@@ -3118,19 +3195,25 @@ if (!variantsError) {
         loadPosOverview(),
       ]);
 
+      const completionWarnings = [
+        customerSyncWarning
+          ? `Customer warning: ${customerSyncWarning}`
+          : "",
+        rewardSyncWarning
+          ? `Reward warning: ${rewardSyncWarning}`
+          : "",
+        whatsappSyncWarning
+          ? `WhatsApp warning: ${whatsappSyncWarning}`
+          : "",
+      ].filter(Boolean);
+
       showNotice(
-        customerSyncWarning || rewardSyncWarning
-          ? `${invoiceNumber} completed. ${
-              customerSyncWarning
-                ? `Customer warning: ${customerSyncWarning}`
-                : ""
-            } ${
-              rewardSyncWarning
-                ? `Reward warning: ${rewardSyncWarning}`
-                : ""
-            }`
-          : `${invoiceNumber} completed successfully.`,
-        customerSyncWarning || rewardSyncWarning
+        completionWarnings.length > 0
+          ? `${invoiceNumber} completed. ${completionWarnings.join(" ")}`
+          : saleSnapshot.customerPhone.trim()
+            ? `${invoiceNumber} completed and WhatsApp confirmation sent.`
+            : `${invoiceNumber} completed successfully.`,
+        completionWarnings.length > 0
           ? "info"
           : "success"
       );
