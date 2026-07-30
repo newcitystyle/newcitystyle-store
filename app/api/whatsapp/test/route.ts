@@ -157,9 +157,9 @@ export async function POST(request: NextRequest) {
           to: recipientPhoneNumber,
           type: "template",
           template: {
-            name: "new_city_style_bill_confirmation",
+            name: "new_city_style_bill_cc",
             language: {
-              code: "en_US",
+              code: "en",
             },
             components: [
               {
@@ -244,7 +244,7 @@ export async function GET() {
       success: true,
       message:
         "NEW CITY STYLE WhatsApp bill confirmation API is ready.",
-      templateName: "new_city_style_bill_confirmation",
+      templateName: "new_city_style_bill_cc",
       exampleBody: {
         to: "919876543210",
         customerName: "Badri",

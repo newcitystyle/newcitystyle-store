@@ -1,0 +1,9 @@
+{
+  "to": "919010014001",
+  "customerName": "Badri",
+  "billNumber": "NCS-1001",
+  "billAmount": 2500,
+  "paidAmount": 2000,
+  "dueAmount": 500,
+  "paymentMethod": "Cash"
+}
