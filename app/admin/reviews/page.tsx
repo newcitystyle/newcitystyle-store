@@ -474,9 +474,9 @@ export default function ReviewsPage() {
                 disabled={saving}
                 style={{
                   width: "100%",
-                  background: "#0A2E73",
+                  background: "linear-gradient(135deg, #03153F, #0A2E73)",
                   color: "#FFFFFF",
-                  border: "none",
+                  border: "1px solid rgba(212,175,55,0.85)",
                   padding: "14px",
                   borderRadius: "10px",
                   cursor: saving ? "not-allowed" : "pointer",
@@ -595,9 +595,9 @@ export default function ReviewsPage() {
                   type="button"
                   onClick={loadReviews}
                   style={{
-                    background: "#D4AF37",
-                    color: "#FFFFFF",
-                    border: "none",
+                    background: "linear-gradient(135deg, #D4AF37, #F0D267)",
+                    color: "#03153F",
+                    border: "1px solid rgba(10,46,115,0.18)",
                     padding: "11px 17px",
                     borderRadius: "9px",
                     cursor: "pointer",
@@ -751,9 +751,9 @@ export default function ReviewsPage() {
                         type="button"
                         onClick={() => startEditing(review)}
                         style={{
-                          background: "#0A2E73",
+                          background: "linear-gradient(135deg, #03153F, #0A2E73)",
                           color: "#FFFFFF",
-                          border: "none",
+                          border: "1px solid rgba(212,175,55,0.75)",
                           padding: "10px",
                           borderRadius: "8px",
                           cursor: "pointer",
@@ -810,128 +810,196 @@ export default function ReviewsPage() {
       </div>
 
       <style jsx global>{`
-        @keyframes reviews-fade-up {
-          from {
-            opacity: 0;
-            transform: translate3d(0, 24px, 0);
-          }
-          to {
-            opacity: 1;
-            transform: translate3d(0, 0, 0);
-          }
-        }
-
-        @keyframes reviews-float {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-7px);
-          }
-        }
-
-        @keyframes reviews-shimmer {
-          0% {
-            transform: translateX(-140%) skewX(-18deg);
-          }
-          55%, 100% {
-            transform: translateX(240%) skewX(-18deg);
-          }
-        }
-
-        @keyframes reviews-star-glow {
-          0%, 100% {
-            filter: drop-shadow(0 0 0 rgba(245,158,11,0));
-          }
-          50% {
-            filter: drop-shadow(0 0 8px rgba(245,158,11,.35));
-          }
-        }
-
         .reviews-page-shell {
-          animation: reviews-fade-up .65s ease both;
+          animation: reviewsPageRise 0.5s ease both;
         }
 
         .reviews-hero {
           position: relative;
           overflow: hidden;
           isolation: isolate;
-          animation: reviews-fade-up .72s ease both;
+          animation: reviewsPageRise 0.55s ease both;
         }
 
         .reviews-hero::after {
           content: "";
           position: absolute;
-          inset: -45% auto -45% -35%;
-          width: 32%;
+          top: -140%;
+          left: -35%;
+          width: 36%;
+          height: 370%;
+          transform: rotate(22deg);
           background: linear-gradient(
             90deg,
             transparent,
-            rgba(255,255,255,.18),
+            rgba(255,255,255,.14),
             transparent
           );
-          transform: translateX(-140%) skewX(-18deg);
-          animation: reviews-shimmer 5.8s ease-in-out infinite;
+          animation: reviewHeroShine 5.3s ease-in-out infinite;
           pointer-events: none;
-          z-index: -1;
         }
 
         .reviews-summary-grid > * {
           opacity: 0;
-          animation: reviews-fade-up .55s ease forwards;
+          animation: reviewStatRise 0.45s ease forwards;
         }
 
-        .reviews-summary-grid > *:nth-child(1) { animation-delay: .08s; }
-        .reviews-summary-grid > *:nth-child(2) { animation-delay: .15s; }
-        .reviews-summary-grid > *:nth-child(3) { animation-delay: .22s; }
-        .reviews-summary-grid > *:nth-child(4) { animation-delay: .29s; }
+        .reviews-summary-grid > *:nth-child(1) { animation-delay: .05s; }
+        .reviews-summary-grid > *:nth-child(2) { animation-delay: .10s; }
+        .reviews-summary-grid > *:nth-child(3) { animation-delay: .15s; }
+        .reviews-summary-grid > *:nth-child(4) { animation-delay: .20s; }
 
-        .reviews-summary-card,
+        .review-summary-card {
+          position: relative;
+          isolation: isolate;
+          min-height: 140px;
+          overflow: hidden;
+          padding: 20px;
+          border: 1px solid rgba(212,175,55,.22);
+          border-radius: 18px;
+          background: linear-gradient(
+            135deg,
+            rgba(10,46,115,.99),
+            rgba(3,21,63,.98)
+          );
+          box-shadow:
+            0 12px 28px rgba(3,21,63,.16),
+            inset 0 1px 0 rgba(255,255,255,.06);
+          transition:
+            transform .22s ease,
+            box-shadow .22s ease,
+            border-color .22s ease;
+        }
+
+        .review-summary-card:nth-child(2) {
+          background: linear-gradient(
+            135deg,
+            rgba(10,46,115,.99),
+            rgba(22,46,102,.98),
+            rgba(103,79,16,.90)
+          );
+        }
+
+        .review-summary-card:nth-child(3) {
+          background: linear-gradient(
+            135deg,
+            rgba(5,25,74,.99),
+            rgba(8,37,96,.98)
+          );
+        }
+
+        .review-summary-card:nth-child(4) {
+          background: linear-gradient(
+            135deg,
+            rgba(18,35,82,.99),
+            rgba(119,75,12,.92)
+          );
+        }
+
+        .review-summary-card::before {
+          content: "";
+          position: absolute;
+          z-index: -1;
+          top: -40%;
+          right: -15%;
+          width: 125px;
+          height: 125px;
+          border-radius: 50%;
+          background: radial-gradient(
+            circle,
+            rgba(212,175,55,.34),
+            rgba(212,175,55,0)
+          );
+        }
+
+        .review-summary-card::after {
+          content: "";
+          position: absolute;
+          top: -145%;
+          left: -36%;
+          width: 42%;
+          height: 370%;
+          transform: rotate(22deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255,255,255,.14),
+            transparent
+          );
+          animation: reviewStatShine 5.2s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .review-summary-card:hover {
+          transform: translateY(-3px) scale(1.004);
+          border-color: rgba(212,175,55,.42);
+          box-shadow:
+            0 16px 32px rgba(3,21,63,.22),
+            0 0 0 1px rgba(212,175,55,.10);
+        }
+
+        .review-summary-icon {
+          position: relative;
+          z-index: 2;
+          color: #D4AF37;
+          font-size: 30px;
+          filter: drop-shadow(0 4px 10px rgba(0,0,0,.18));
+        }
+
+        .review-summary-card p {
+          position: relative;
+          z-index: 2;
+          margin: 10px 0 5px;
+          color: rgba(212,175,55,.94);
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: .45px;
+          text-transform: uppercase;
+        }
+
+        .review-summary-card h2 {
+          position: relative;
+          z-index: 2;
+          margin: 0;
+          color: #FFFFFF;
+          font-size: 29px;
+          font-weight: 950;
+          letter-spacing: -.5px;
+          text-shadow: 0 2px 10px rgba(0,0,0,.15);
+        }
+
+        .review-summary-card:nth-child(4) h2 {
+          color: #F6D676;
+        }
+
         .reviews-form-panel,
         .reviews-list-panel,
         .review-card {
           transition:
-            transform .28s ease,
-            box-shadow .28s ease,
-            border-color .28s ease,
-            background-color .28s ease;
-        }
-
-        .reviews-summary-card:hover {
-          transform: translateY(-7px);
-          box-shadow: 0 18px 38px rgba(10,46,115,.14) !important;
-          border-color: rgba(212,175,55,.55) !important;
-        }
-
-        .reviews-summary-card > div:first-child {
-          display: inline-block;
-          animation: reviews-float 3.2s ease-in-out infinite;
-        }
-
-        .reviews-form-panel,
-        .reviews-list-panel {
-          animation: reviews-fade-up .62s ease both;
+            transform .22s ease,
+            box-shadow .22s ease,
+            border-color .22s ease;
         }
 
         .reviews-form-panel:hover,
         .reviews-list-panel:hover {
-          transform: translateY(-3px);
-          box-shadow: 0 18px 42px rgba(10,46,115,.11) !important;
-          border-color: rgba(212,175,55,.48) !important;
+          transform: translateY(-2px);
+          border-color: rgba(212,175,55,.38) !important;
+          box-shadow: 0 14px 32px rgba(3,21,63,.10) !important;
         }
 
         .review-card {
-          animation: reviews-fade-up .5s ease both;
+          animation: reviewCardRise .42s ease both;
         }
 
         .review-card:hover {
-          transform: translateY(-5px);
-          box-shadow: 0 16px 34px rgba(10,46,115,.12) !important;
-          border-color: rgba(212,175,55,.55) !important;
+          transform: translateY(-3px);
+          border-color: rgba(212,175,55,.48) !important;
+          box-shadow: 0 16px 34px rgba(3,21,63,.13) !important;
         }
 
         .review-card div[style*="color: #F59E0B"] {
-          animation: reviews-star-glow 2.8s ease-in-out infinite;
+          animation: reviewStarGlow 2.8s ease-in-out infinite;
         }
 
         .reviews-primary-button,
@@ -939,40 +1007,25 @@ export default function ReviewsPage() {
         .reviews-refresh-button,
         .review-card button {
           transition:
-            transform .2s ease,
-            box-shadow .2s ease,
-            filter .2s ease;
+            transform .18s ease,
+            box-shadow .18s ease,
+            filter .18s ease;
         }
 
         .reviews-primary-button:hover:not(:disabled),
         .reviews-refresh-button:hover,
         .review-card button:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 10px 22px rgba(10,46,115,.18);
+          transform: translateY(-1px);
           filter: brightness(1.04);
-        }
-
-        .reviews-secondary-button:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 8px 18px rgba(0,0,0,.08);
-        }
-
-        .reviews-primary-button:active:not(:disabled),
-        .reviews-secondary-button:active,
-        .reviews-refresh-button:active,
-        .review-card button:active {
-          transform: translateY(0) scale(.98);
         }
 
         input,
         textarea,
-        select,
-        button {
+        select {
           transition:
-            border-color .2s ease,
-            box-shadow .2s ease,
-            transform .2s ease,
-            background-color .2s ease;
+            border-color .18s ease,
+            box-shadow .18s ease,
+            transform .18s ease;
         }
 
         input:focus,
@@ -982,14 +1035,83 @@ export default function ReviewsPage() {
           box-shadow: 0 0 0 4px rgba(10,46,115,.10);
         }
 
+        @keyframes reviewsPageRise {
+          from {
+            opacity: 0;
+            transform: translateY(14px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes reviewStatRise {
+          from {
+            opacity: 0;
+            transform: translateY(14px) scale(.985);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes reviewCardRise {
+          from {
+            opacity: 0;
+            transform: translateY(12px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes reviewStatShine {
+          0%, 62% {
+            left: -42%;
+            opacity: 0;
+          }
+          68% {
+            opacity: .7;
+          }
+          100% {
+            left: 126%;
+            opacity: 0;
+          }
+        }
+
+        @keyframes reviewHeroShine {
+          0%, 62% {
+            left: -40%;
+            opacity: 0;
+          }
+          68% {
+            opacity: .6;
+          }
+          100% {
+            left: 125%;
+            opacity: 0;
+          }
+        }
+
+        @keyframes reviewStarGlow {
+          0%, 100% {
+            filter: drop-shadow(0 0 0 rgba(245,158,11,0));
+          }
+          50% {
+            filter: drop-shadow(0 0 8px rgba(245,158,11,.35));
+          }
+        }
+
         @media (prefers-reduced-motion: reduce) {
           *,
           *::before,
           *::after {
-            animation-duration: 0.01ms !important;
+            animation-duration: .01ms !important;
             animation-iteration-count: 1 !important;
-            transition-duration: 0.01ms !important;
-            scroll-behavior: auto !important;
+            transition-duration: .01ms !important;
           }
         }
 
@@ -1063,36 +1185,10 @@ function SummaryCard({
   value: string | number;
 }) {
   return (
-    <div
-      className="reviews-summary-card"
-      style={{
-        background: "#FFFFFF",
-        borderRadius: "16px",
-        padding: "20px",
-        boxShadow: "0 7px 22px rgba(0,0,0,0.07)",
-        border: "1px solid rgba(212,175,55,0.22)",
-      }}
-    >
-      <div style={{ fontSize: "29px" }}>{icon}</div>
-
-      <p
-        style={{
-          color: "#666",
-          margin: "9px 0 5px",
-        }}
-      >
-        {title}
-      </p>
-
-      <h2
-        style={{
-          color: "#0A2E73",
-          margin: 0,
-          fontSize: "29px",
-        }}
-      >
-        {value}
-      </h2>
+    <div className="review-summary-card">
+      <div className="review-summary-icon">{icon}</div>
+      <p>{title}</p>
+      <h2>{value}</h2>
     </div>
   );
 }

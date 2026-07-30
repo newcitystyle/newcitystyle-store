@@ -707,9 +707,9 @@ export default function CouponsPage() {
                 disabled={saving}
                 style={{
                   width: "100%",
-                  background: "#0A2E73",
+                  background: "linear-gradient(135deg, #03153F, #0A2E73)",
                   color: "#FFFFFF",
-                  border: "none",
+                  border: "1px solid rgba(212,175,55,0.85)",
                   padding: "14px",
                   borderRadius: "10px",
                   cursor: saving ? "not-allowed" : "pointer",
@@ -830,9 +830,9 @@ export default function CouponsPage() {
                   type="button"
                   onClick={loadCoupons}
                   style={{
-                    background: "#D4AF37",
-                    color: "#FFFFFF",
-                    border: "none",
+                    background: "linear-gradient(135deg, #D4AF37, #F0D267)",
+                    color: "#03153F",
+                    border: "1px solid rgba(10,46,115,0.18)",
                     padding: "11px 17px",
                     borderRadius: "9px",
                     cursor: "pointer",
@@ -1073,127 +1073,153 @@ export default function CouponsPage() {
       </div>
 
       <style jsx global>{`
-        @keyframes coupons-fade-up {
-          from {
-            opacity: 0;
-            transform: translate3d(0, 24px, 0);
-          }
-          to {
-            opacity: 1;
-            transform: translate3d(0, 0, 0);
-          }
-        }
-
-        @keyframes coupons-float {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-7px);
-          }
-        }
-
-        @keyframes coupons-shimmer {
-          0% {
-            transform: translateX(-140%) skewX(-18deg);
-          }
-          55%, 100% {
-            transform: translateX(240%) skewX(-18deg);
-          }
-        }
-
-        @keyframes coupon-ticket-glow {
-          0%, 100% {
-            box-shadow: 0 0 0 rgba(212,175,55,0);
-          }
-          50% {
-            box-shadow: 0 0 24px rgba(212,175,55,.18);
-          }
-        }
-
         .coupons-page-shell {
-          animation: coupons-fade-up .65s ease both;
+          animation: couponsPageRise 0.5s ease both;
         }
 
         .coupons-hero {
           position: relative;
           overflow: hidden;
           isolation: isolate;
-          animation: coupons-fade-up .72s ease both;
+          animation: couponsPageRise 0.55s ease both;
         }
 
         .coupons-hero::after {
           content: "";
           position: absolute;
-          inset: -45% auto -45% -35%;
-          width: 32%;
-          background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(255,255,255,.18),
-            transparent
-          );
-          transform: translateX(-140%) skewX(-18deg);
-          animation: coupons-shimmer 5.8s ease-in-out infinite;
+          top: -140%;
+          left: -35%;
+          width: 36%;
+          height: 370%;
+          transform: rotate(22deg);
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,.14), transparent);
+          animation: couponHeroShine 5.3s ease-in-out infinite;
           pointer-events: none;
-          z-index: -1;
         }
 
         .coupons-summary-grid > * {
           opacity: 0;
-          animation: coupons-fade-up .55s ease forwards;
+          animation: couponStatRise 0.45s ease forwards;
         }
 
-        .coupons-summary-grid > *:nth-child(1) { animation-delay: .08s; }
-        .coupons-summary-grid > *:nth-child(2) { animation-delay: .14s; }
-        .coupons-summary-grid > *:nth-child(3) { animation-delay: .20s; }
-        .coupons-summary-grid > *:nth-child(4) { animation-delay: .26s; }
-        .coupons-summary-grid > *:nth-child(5) { animation-delay: .32s; }
+        .coupons-summary-grid > *:nth-child(1) { animation-delay: .05s; }
+        .coupons-summary-grid > *:nth-child(2) { animation-delay: .10s; }
+        .coupons-summary-grid > *:nth-child(3) { animation-delay: .15s; }
+        .coupons-summary-grid > *:nth-child(4) { animation-delay: .20s; }
+        .coupons-summary-grid > *:nth-child(5) { animation-delay: .25s; }
 
-        .coupons-summary-card,
+        .coupon-summary-card {
+          position: relative;
+          isolation: isolate;
+          min-height: 140px;
+          overflow: hidden;
+          padding: 20px;
+          border: 1px solid rgba(212,175,55,.22);
+          border-radius: 18px;
+          background: linear-gradient(135deg, rgba(10,46,115,.99), rgba(3,21,63,.98));
+          box-shadow: 0 12px 28px rgba(3,21,63,.16), inset 0 1px 0 rgba(255,255,255,.06);
+          transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
+        }
+
+        .coupon-summary-card:nth-child(2),
+        .coupon-summary-card:nth-child(5) {
+          background: linear-gradient(135deg, rgba(10,46,115,.99), rgba(22,46,102,.98), rgba(103,79,16,.9));
+        }
+
+        .coupon-summary-card:nth-child(3) {
+          background: linear-gradient(135deg, rgba(5,25,74,.99), rgba(8,37,96,.98));
+        }
+
+        .coupon-summary-card:nth-child(4) {
+          background: linear-gradient(135deg, rgba(18,35,82,.99), rgba(119,75,12,.92));
+        }
+
+        .coupon-summary-card::before {
+          content: "";
+          position: absolute;
+          z-index: -1;
+          top: -40%;
+          right: -15%;
+          width: 125px;
+          height: 125px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(212,175,55,.34), rgba(212,175,55,0));
+        }
+
+        .coupon-summary-card::after {
+          content: "";
+          position: absolute;
+          top: -145%;
+          left: -36%;
+          width: 42%;
+          height: 370%;
+          transform: rotate(22deg);
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,.14), transparent);
+          animation: couponStatShine 5.2s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .coupon-summary-card:hover {
+          transform: translateY(-3px) scale(1.004);
+          border-color: rgba(212,175,55,.42);
+          box-shadow: 0 16px 32px rgba(3,21,63,.22), 0 0 0 1px rgba(212,175,55,.1);
+        }
+
+        .coupon-summary-icon {
+          position: relative;
+          z-index: 2;
+          color: #D4AF37;
+          font-size: 30px;
+          filter: drop-shadow(0 4px 10px rgba(0,0,0,.18));
+        }
+
+        .coupon-summary-card p {
+          position: relative;
+          z-index: 2;
+          margin: 10px 0 5px;
+          color: rgba(212,175,55,.94);
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: .45px;
+          text-transform: uppercase;
+        }
+
+        .coupon-summary-card h2 {
+          position: relative;
+          z-index: 2;
+          margin: 0;
+          color: #fff;
+          font-size: 29px;
+          font-weight: 950;
+          letter-spacing: -.5px;
+          text-shadow: 0 2px 10px rgba(0,0,0,.15);
+        }
+
+        .coupon-summary-card:nth-child(5) h2 {
+          color: #F6D676;
+        }
+
         .coupons-form-panel,
         .coupons-list-panel,
         .coupon-card {
-          transition:
-            transform .28s ease,
-            box-shadow .28s ease,
-            border-color .28s ease,
-            background-color .28s ease;
-        }
-
-        .coupons-summary-card:hover {
-          transform: translateY(-7px);
-          box-shadow: 0 18px 38px rgba(10,46,115,.14) !important;
-          border-color: rgba(212,175,55,.55) !important;
-        }
-
-        .coupons-summary-card > div:first-child {
-          display: inline-block;
-          animation: coupons-float 3.2s ease-in-out infinite;
-        }
-
-        .coupons-form-panel,
-        .coupons-list-panel {
-          animation: coupons-fade-up .62s ease both;
+          transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
         }
 
         .coupons-form-panel:hover,
         .coupons-list-panel:hover {
-          transform: translateY(-3px);
-          box-shadow: 0 18px 42px rgba(10,46,115,.11) !important;
-          border-color: rgba(212,175,55,.48) !important;
+          transform: translateY(-2px);
+          border-color: rgba(212,175,55,.38) !important;
+          box-shadow: 0 14px 32px rgba(3,21,63,.10) !important;
         }
 
         .coupon-card {
-          animation:
-            coupons-fade-up .5s ease both,
-            coupon-ticket-glow 4s ease-in-out infinite;
+          animation: couponCardRise .42s ease both;
         }
 
         .coupon-card:hover {
-          transform: translateY(-6px) scale(1.01);
-          box-shadow: 0 18px 38px rgba(10,46,115,.14) !important;
-          border-color: rgba(212,175,55,.6) !important;
+          transform: translateY(-3px);
+          border-color: rgba(212,175,55,.48) !important;
+          box-shadow: 0 16px 34px rgba(3,21,63,.13) !important;
         }
 
         .coupon-card > div:first-child {
@@ -1204,78 +1230,75 @@ export default function CouponsPage() {
         .coupon-card > div:first-child::after {
           content: "";
           position: absolute;
-          inset: 0;
-          background: linear-gradient(
-            120deg,
-            transparent 25%,
-            rgba(255,255,255,.10) 45%,
-            transparent 65%
-          );
-          transform: translateX(-120%);
-          transition: transform .55s ease;
+          top: -140%;
+          left: -40%;
+          width: 38%;
+          height: 360%;
+          transform: rotate(22deg);
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,.13), transparent);
+          transition: left .7s ease;
           pointer-events: none;
         }
 
         .coupon-card:hover > div:first-child::after {
-          transform: translateX(120%);
+          left: 125%;
         }
 
         .coupons-primary-button,
         .coupons-secondary-button,
         .coupons-refresh-button,
         .coupon-card button {
-          transition:
-            transform .2s ease,
-            box-shadow .2s ease,
-            filter .2s ease;
+          transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
         }
 
         .coupons-primary-button:hover:not(:disabled),
         .coupons-refresh-button:hover,
         .coupon-card button:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 10px 22px rgba(10,46,115,.18);
+          transform: translateY(-1px);
           filter: brightness(1.04);
         }
 
-        .coupons-secondary-button:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 8px 18px rgba(0,0,0,.08);
+        input, textarea, select {
+          transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
         }
 
-        .coupons-primary-button:active:not(:disabled),
-        .coupons-secondary-button:active,
-        .coupons-refresh-button:active,
-        .coupon-card button:active {
-          transform: translateY(0) scale(.98);
-        }
-
-        input,
-        textarea,
-        select,
-        button {
-          transition:
-            border-color .2s ease,
-            box-shadow .2s ease,
-            transform .2s ease,
-            background-color .2s ease;
-        }
-
-        input:focus,
-        textarea:focus,
-        select:focus {
+        input:focus, textarea:focus, select:focus {
           border-color: #0A2E73 !important;
           box-shadow: 0 0 0 4px rgba(10,46,115,.10);
         }
 
+        @keyframes couponsPageRise {
+          from { opacity: 0; transform: translateY(14px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes couponStatRise {
+          from { opacity: 0; transform: translateY(14px) scale(.985); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        @keyframes couponCardRise {
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes couponStatShine {
+          0%, 62% { left: -42%; opacity: 0; }
+          68% { opacity: .7; }
+          100% { left: 126%; opacity: 0; }
+        }
+
+        @keyframes couponHeroShine {
+          0%, 62% { left: -40%; opacity: 0; }
+          68% { opacity: .6; }
+          100% { left: 125%; opacity: 0; }
+        }
+
         @media (prefers-reduced-motion: reduce) {
-          *,
-          *::before,
-          *::after {
-            animation-duration: 0.01ms !important;
+          *, *::before, *::after {
+            animation-duration: .01ms !important;
             animation-iteration-count: 1 !important;
-            transition-duration: 0.01ms !important;
-            scroll-behavior: auto !important;
+            transition-duration: .01ms !important;
           }
         }
 
@@ -1355,36 +1378,10 @@ function SummaryCard({
   value: string | number;
 }) {
   return (
-    <div
-      className="coupons-summary-card"
-      style={{
-        background: "#FFFFFF",
-        borderRadius: "16px",
-        padding: "20px",
-        boxShadow: "0 7px 22px rgba(0,0,0,0.07)",
-        border: "1px solid rgba(212,175,55,0.22)",
-      }}
-    >
-      <div style={{ fontSize: "29px" }}>{icon}</div>
-
-      <p
-        style={{
-          color: "#666",
-          margin: "9px 0 5px",
-        }}
-      >
-        {title}
-      </p>
-
-      <h2
-        style={{
-          color: "#0A2E73",
-          margin: 0,
-          fontSize: "29px",
-        }}
-      >
-        {value}
-      </h2>
+    <div className="coupon-summary-card">
+      <div className="coupon-summary-icon">{icon}</div>
+      <p>{title}</p>
+      <h2>{value}</h2>
     </div>
   );
 }

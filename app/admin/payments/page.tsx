@@ -635,9 +635,10 @@ export default function PaymentSettingsPage() {
                     onClick={testQrImage}
                     disabled={testingImage}
                     style={{
-                      border: "none",
-                      background: "#D4AF37",
-                      color: "#FFFFFF",
+                      
+                      background: "linear-gradient(135deg, #D4AF37, #F0D267)",
+                      color: "#03153F",
+                      border: "1px solid rgba(10,46,115,0.18)",
                       borderRadius: "9px",
                       padding: "0 17px",
                       fontWeight: 800,
@@ -765,9 +766,9 @@ export default function PaymentSettingsPage() {
                 type="submit"
                 disabled={saving}
                 style={{
-                  background: "#0A2E73",
+                  background: "linear-gradient(135deg, #03153F, #0A2E73)",
                   color: "#FFFFFF",
-                  border: "none",
+                  border: "1px solid rgba(212,175,55,0.85)",
                   padding: "14px 25px",
                   borderRadius: "10px",
                   cursor: saving
@@ -1061,6 +1062,146 @@ export default function PaymentSettingsPage() {
           animation: payment-shimmer 5.8s ease-in-out infinite;
           pointer-events: none;
           z-index: -1;
+        }
+
+
+        .payment-premium-summary-card {
+          position: relative;
+          isolation: isolate;
+          min-height: 140px;
+          overflow: hidden;
+          padding: 20px;
+          border: 1px solid rgba(212, 175, 55, 0.22);
+          border-radius: 18px;
+          background: linear-gradient(
+            135deg,
+            rgba(10, 46, 115, 0.99),
+            rgba(3, 21, 63, 0.98)
+          );
+          box-shadow:
+            0 12px 28px rgba(3, 21, 63, 0.16),
+            inset 0 1px 0 rgba(255, 255, 255, 0.06);
+          transition:
+            transform 0.22s ease,
+            box-shadow 0.22s ease,
+            border-color 0.22s ease;
+        }
+
+        .payment-premium-summary-card:nth-child(2) {
+          background: linear-gradient(
+            135deg,
+            rgba(10, 46, 115, 0.99),
+            rgba(22, 46, 102, 0.98),
+            rgba(103, 79, 16, 0.9)
+          );
+        }
+
+        .payment-premium-summary-card:nth-child(3) {
+          background: linear-gradient(
+            135deg,
+            rgba(5, 25, 74, 0.99),
+            rgba(8, 37, 96, 0.98)
+          );
+        }
+
+        .payment-premium-summary-card:nth-child(4) {
+          background: linear-gradient(
+            135deg,
+            rgba(18, 35, 82, 0.99),
+            rgba(119, 75, 12, 0.92)
+          );
+        }
+
+        .payment-premium-summary-card::before {
+          content: "";
+          position: absolute;
+          z-index: -1;
+          top: -40%;
+          right: -15%;
+          width: 125px;
+          height: 125px;
+          border-radius: 50%;
+          background: radial-gradient(
+            circle,
+            rgba(212, 175, 55, 0.34),
+            rgba(212, 175, 55, 0)
+          );
+        }
+
+        .payment-premium-summary-card::after {
+          content: "";
+          position: absolute;
+          top: -145%;
+          left: -36%;
+          width: 42%;
+          height: 370%;
+          transform: rotate(22deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.14),
+            transparent
+          );
+          animation: paymentPremiumStatShine 5.2s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .payment-premium-summary-card:hover {
+          transform: translateY(-3px) scale(1.004);
+          border-color: rgba(212, 175, 55, 0.42);
+          box-shadow:
+            0 16px 32px rgba(3, 21, 63, 0.22),
+            0 0 0 1px rgba(212, 175, 55, 0.1);
+        }
+
+        .payment-premium-summary-icon {
+          position: relative;
+          z-index: 2;
+          color: #D4AF37;
+          font-size: 30px;
+          filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.18));
+        }
+
+        .payment-premium-summary-card p {
+          position: relative;
+          z-index: 2;
+          margin: 10px 0 5px;
+          color: rgba(212, 175, 55, 0.94);
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 0.45px;
+          text-transform: uppercase;
+        }
+
+        .payment-premium-summary-card h2 {
+          position: relative;
+          z-index: 2;
+          margin: 0;
+          color: #FFFFFF;
+          font-size: 25px;
+          font-weight: 950;
+          letter-spacing: -0.45px;
+          overflow-wrap: anywhere;
+          text-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+        }
+
+        .payment-premium-summary-card h2.is-positive,
+        .payment-premium-summary-card:nth-child(4) h2 {
+          color: #F6D676;
+        }
+
+        @keyframes paymentPremiumStatShine {
+          0%, 62% {
+            left: -42%;
+            opacity: 0;
+          }
+          68% {
+            opacity: 0.7;
+          }
+          100% {
+            left: 126%;
+            opacity: 0;
+          }
         }
 
         .payment-summary-grid > * {
@@ -1437,36 +1578,10 @@ function SummaryCard({
   positive?: boolean;
 }) {
   return (
-    <div
-      className="payment-summary-card"
-      style={{
-        background: "#FFFFFF",
-        borderRadius: "16px",
-        padding: "20px",
-        boxShadow: "0 7px 22px rgba(0,0,0,0.07)",
-        border: "1px solid rgba(212,175,55,0.22)",
-      }}
-    >
-      <div style={{ fontSize: "29px" }}>{icon}</div>
-
-      <p
-        style={{
-          color: "#666",
-          margin: "9px 0 5px",
-        }}
-      >
-        {title}
-      </p>
-
-      <h2
-        style={{
-          color: positive ? "#16A34A" : "#0A2E73",
-          margin: 0,
-          fontSize: "25px",
-        }}
-      >
-        {value}
-      </h2>
+    <div className="payment-premium-summary-card">
+      <div className="payment-premium-summary-icon">{icon}</div>
+      <p>{title}</p>
+      <h2 className={positive ? "is-positive" : ""}>{value}</h2>
     </div>
   );
 }

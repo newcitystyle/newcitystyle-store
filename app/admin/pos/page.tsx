@@ -2181,7 +2181,7 @@ if (!variantsError) {
       .join("\n");
   }
 
-  async function sendBillConfirmationViaWhatsApp(
+  async function sendInvoicePdfViaWhatsApp(
     sale: CompletedSale
   ) {
     const digits = sale.customerPhone.replace(/\D/g, "");
@@ -2195,43 +2195,68 @@ if (!variantsError) {
       recipientPhone.length > 15
     ) {
       throw new Error(
-        "A valid customer mobile number is required for WhatsApp confirmation."
+        "A valid customer mobile number is required for WhatsApp PDF invoice."
       );
     }
 
+    const pdf = generateCustomerInvoicePdf(sale);
+    const fileName = `${safePdfFileName(sale.invoiceNumber)}.pdf`;
+    const pdfBlob = pdf.output("blob");
+
+    const formData = new FormData();
+    formData.append(
+      "pdf",
+      new File([pdfBlob], fileName, {
+        type: "application/pdf",
+      }),
+    );
+    formData.append("to", recipientPhone);
+    formData.append(
+      "customerName",
+      sale.customerName.trim() || "Customer",
+    );
+    formData.append("billNumber", sale.invoiceNumber);
+    formData.append(
+      "billAmount",
+      sale.totalAmount.toFixed(2),
+    );
+    formData.append(
+      "paidAmount",
+      sale.paidAmount.toFixed(2),
+    );
+    formData.append(
+      "dueAmount",
+      sale.dueAmount.toFixed(2),
+    );
+    formData.append(
+      "paymentMethod",
+      sale.paymentMethod.toUpperCase(),
+    );
+    formData.append("fileName", fileName);
+
     const response = await fetch(
-      "/api/whatsapp/test",
+      "/api/whatsapp/invoice",
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          to: recipientPhone,
-          customerName:
-            sale.customerName.trim() ||
-            "Customer",
-          billNumber: sale.invoiceNumber,
-          billAmount: sale.totalAmount,
-          paidAmount: sale.paidAmount,
-          dueAmount: sale.dueAmount,
-          paymentMethod:
-            sale.paymentMethod.toUpperCase(),
-        }),
-      }
+        body: formData,
+      },
     );
 
     const result = (await response.json()) as {
       success?: boolean;
       message?: string;
       error?: string;
+      stage?: string;
       whatsappMessageId?: string | null;
     };
 
     if (!response.ok || result.success !== true) {
+      const stageMessage = result.stage
+        ? ` (${result.stage})`
+        : "";
+
       throw new Error(
-        result.error ||
-          "WhatsApp bill confirmation could not be sent."
+        `${result.error || "WhatsApp PDF invoice could not be sent."}${stageMessage}`,
       );
     }
 
@@ -3159,19 +3184,19 @@ if (!variantsError) {
 
       if (saleSnapshot.customerPhone.trim()) {
         try {
-          await sendBillConfirmationViaWhatsApp(
+          await sendInvoicePdfViaWhatsApp(
             saleSnapshot
           );
         } catch (whatsappError) {
           console.error(
-            "Sale completed, but automatic WhatsApp confirmation failed:",
+            "Sale completed, but automatic WhatsApp PDF invoice failed:",
             whatsappError
           );
 
           whatsappSyncWarning =
             whatsappError instanceof Error
               ? whatsappError.message
-              : "Automatic WhatsApp confirmation failed.";
+              : "Automatic WhatsApp PDF invoice failed.";
         }
       }
 
@@ -3211,7 +3236,7 @@ if (!variantsError) {
         completionWarnings.length > 0
           ? `${invoiceNumber} completed. ${completionWarnings.join(" ")}`
           : saleSnapshot.customerPhone.trim()
-            ? `${invoiceNumber} completed and WhatsApp confirmation sent.`
+            ? `${invoiceNumber} completed and WhatsApp PDF invoice sent.`
             : `${invoiceNumber} completed successfully.`,
         completionWarnings.length > 0
           ? "info"
