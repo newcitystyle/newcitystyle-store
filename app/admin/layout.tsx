@@ -46,6 +46,11 @@ const menuItems = [
     icon: "📚",
   },
   {
+    label: "Suppliers",
+    href: "/admin/suppliers",
+    icon: "🏭",
+  },
+  {
     label: "Barcodes & Stock",
     href: "/admin/barcodes",
     icon: "▥",

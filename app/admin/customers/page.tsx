@@ -21,6 +21,10 @@ type Customer = {
   total_orders: number;
   total_spent: number;
   is_blocked: boolean;
+  whatsapp_opt_in: boolean;
+  marketing_tags: string[] | null;
+  last_marketing_message_at: string | null;
+  marketing_consent_at: string | null;
   created_at: string;
 };
 
@@ -35,6 +39,8 @@ type CustomerForm = {
   totalOrders: string;
   totalSpent: string;
   isBlocked: boolean;
+  whatsappOptIn: boolean;
+  marketingTags: string;
 };
 
 const emptyForm: CustomerForm = {
@@ -48,6 +54,8 @@ const emptyForm: CustomerForm = {
   totalOrders: "0",
   totalSpent: "0",
   isBlocked: false,
+  whatsappOptIn: false,
+  marketingTags: "",
 };
 
 export default function CustomersPage() {
@@ -59,6 +67,13 @@ export default function CustomersPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [selectedCustomerIds, setSelectedCustomerIds] =
+    useState<number[]>([]);
+  const [marketingFilter, setMarketingFilter] =
+    useState("All");
+  const [offerMessage, setOfferMessage] = useState(
+    "NEW CITY STYLE special offer is now available. Visit our store for the latest family fashion collection."
+  );
 
   useEffect(() => {
     loadCustomers();
@@ -103,6 +118,8 @@ export default function CustomersPage() {
       totalOrders: String(customer.total_orders || 0),
       totalSpent: String(customer.total_spent || 0),
       isBlocked: customer.is_blocked,
+      whatsappOptIn: customer.whatsapp_opt_in === true,
+      marketingTags: (customer.marketing_tags || []).join(", "),
     });
 
     window.scrollTo({
@@ -149,6 +166,14 @@ export default function CustomersPage() {
       total_orders: Number(form.totalOrders || 0),
       total_spent: Number(form.totalSpent || 0),
       is_blocked: form.isBlocked,
+      whatsapp_opt_in: form.whatsappOptIn,
+      marketing_tags: form.marketingTags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+      marketing_consent_at: form.whatsappOptIn
+        ? new Date().toISOString()
+        : null,
     };
 
     if (editingId !== null) {
@@ -280,9 +305,18 @@ export default function CustomersPage() {
         (statusFilter === "High Value" &&
           Number(customer.total_spent || 0) >= 10000);
 
-      return matchesSearch && matchesStatus;
+      const matchesMarketing =
+        marketingFilter === "All" ||
+        (marketingFilter === "Opted In" &&
+          customer.whatsapp_opt_in === true) ||
+        (marketingFilter === "Not Opted In" &&
+          customer.whatsapp_opt_in !== true) ||
+        (marketingFilter === "Has Phone" &&
+          Boolean(customer.phone));
+
+      return matchesSearch && matchesStatus && matchesMarketing;
     });
-  }, [customers, search, statusFilter]);
+  }, [customers, search, statusFilter, marketingFilter]);
 
   const activeCustomers = customers.filter(
     (customer) => !customer.is_blocked
@@ -307,6 +341,116 @@ export default function CustomersPage() {
     (customer) =>
       Number(customer.total_spent || 0) >= 10000
   ).length;
+
+  const optedInCustomers = customers.filter(
+    (customer) =>
+      customer.whatsapp_opt_in === true &&
+      Boolean(customer.phone) &&
+      !customer.is_blocked
+  ).length;
+
+  const selectedCustomers = filteredCustomers.filter(
+    (customer) =>
+      selectedCustomerIds.includes(customer.id)
+  );
+
+  function toggleCustomerSelection(customerId: number) {
+    setSelectedCustomerIds((current) =>
+      current.includes(customerId)
+        ? current.filter((id) => id !== customerId)
+        : [...current, customerId]
+    );
+  }
+
+  function selectAllVisibleOptedIn() {
+    setSelectedCustomerIds(
+      filteredCustomers
+        .filter(
+          (customer) =>
+            customer.whatsapp_opt_in === true &&
+            Boolean(customer.phone) &&
+            !customer.is_blocked
+        )
+        .map((customer) => customer.id)
+    );
+  }
+
+  function clearMarketingSelection() {
+    setSelectedCustomerIds([]);
+  }
+
+  async function openOfferForCustomer(customer: Customer) {
+    const digits = (customer.phone || "").replace(/\D/g, "");
+    const phone = digits.length === 10 ? `91${digits}` : digits;
+
+    if (!customer.whatsapp_opt_in) {
+      alert("This customer has not agreed to receive WhatsApp offers.");
+      return;
+    }
+
+    if (phone.length < 10) {
+      alert("This customer does not have a valid mobile number.");
+      return;
+    }
+
+    const personalisedMessage = [
+      `Hello ${customer.full_name},`,
+      "",
+      offerMessage.trim(),
+      "",
+      "NEW CITY STYLE",
+      "Style for Every Family",
+    ].join("\n");
+
+    window.open(
+      `https://wa.me/${phone}?text=${encodeURIComponent(
+        personalisedMessage
+      )}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+
+    const sentAt = new Date().toISOString();
+
+    const { error } = await supabase
+      .from("customers")
+      .update({
+        last_marketing_message_at: sentAt,
+      })
+      .eq("id", customer.id);
+
+    if (!error) {
+      setCustomers((current) =>
+        current.map((item) =>
+          item.id === customer.id
+            ? {
+                ...item,
+                last_marketing_message_at: sentAt,
+              }
+            : item
+        )
+      );
+    }
+  }
+
+  function openNextSelectedOffer() {
+    const nextCustomer = selectedCustomers.find(
+      (customer) =>
+        customer.whatsapp_opt_in === true &&
+        Boolean(customer.phone) &&
+        !customer.is_blocked
+    );
+
+    if (!nextCustomer) {
+      alert("Select at least one opted-in customer with a mobile number.");
+      return;
+    }
+
+    void openOfferForCustomer(nextCustomer);
+    setSelectedCustomerIds((current) =>
+      current.filter((id) => id !== nextCustomer.id)
+    );
+  }
 
   return (
     <main
@@ -408,6 +552,12 @@ export default function CustomersPage() {
             icon="👑"
             title="High Value Customers"
             value={highValueCustomers}
+          />
+
+          <SummaryCard
+            icon="💬"
+            title="WhatsApp Opt-ins"
+            value={optedInCustomers}
           />
         </section>
 
@@ -599,6 +749,60 @@ export default function CustomersPage() {
                 </FormField>
               </div>
 
+              <FormField label="Marketing Tags">
+                <input
+                  value={form.marketingTags}
+                  placeholder="VIP, Men, Women, Kids, Sarees"
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      marketingTags: event.target.value,
+                    }))
+                  }
+                  style={inputStyle}
+                />
+              </FormField>
+
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "10px",
+                  color: "#166534",
+                  fontWeight: 700,
+                  marginBottom: "16px",
+                  cursor: "pointer",
+                  padding: "12px",
+                  border: "1px solid #BBF7D0",
+                  borderRadius: "10px",
+                  background: "#F0FDF4",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={form.whatsappOptIn}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      whatsappOptIn: event.target.checked,
+                    }))
+                  }
+                />
+                <span>
+                  Customer agreed to receive WhatsApp offers
+                  <small
+                    style={{
+                      display: "block",
+                      marginTop: "4px",
+                      color: "#4B5563",
+                      fontWeight: 500,
+                    }}
+                  >
+                    Enable only after asking the customer.
+                  </small>
+                </span>
+              </label>
+
               <label
                 style={{
                   display: "flex",
@@ -684,6 +888,100 @@ export default function CustomersPage() {
             }}
           >
             <div
+              className="customer-marketing-panel"
+              style={{
+                marginBottom: "22px",
+                padding: "18px",
+                border: "1px solid rgba(212,175,55,0.38)",
+                borderRadius: "15px",
+                background:
+                  "linear-gradient(135deg,#FFF9E8,#FFFFFF)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: "14px",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 5px",
+                      color: "#B28A10",
+                      fontWeight: 900,
+                      fontSize: "12px",
+                    }}
+                  >
+                    CUSTOMER MARKETING
+                  </p>
+                  <h3 style={{ margin: 0, color: "#0A2E73" }}>
+                    WhatsApp Offer List
+                  </h3>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={selectAllVisibleOptedIn}
+                    className="marketing-secondary-button"
+                  >
+                    Select Eligible
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearMarketingSelection}
+                    className="marketing-secondary-button"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openNextSelectedOffer}
+                    className="marketing-primary-button"
+                  >
+                    Open Next WhatsApp ({selectedCustomerIds.length})
+                  </button>
+                </div>
+              </div>
+
+              <textarea
+                value={offerMessage}
+                onChange={(event) =>
+                  setOfferMessage(event.target.value)
+                }
+                placeholder="Write the offer message..."
+                style={{
+                  ...inputStyle,
+                  minHeight: "95px",
+                  marginTop: "14px",
+                  resize: "vertical",
+                }}
+              />
+
+              <p
+                style={{
+                  margin: "9px 0 0",
+                  color: "#6B7280",
+                  fontSize: "12px",
+                  lineHeight: 1.5,
+                }}
+              >
+                Messages open one customer at a time in WhatsApp.
+                Only customers with recorded consent should be selected.
+              </p>
+            </div>
+
+            <div
               style={{
                 display: "flex",
                 justifyContent: "space-between",
@@ -750,6 +1048,22 @@ export default function CustomersPage() {
                   </option>
                 </select>
 
+                <select
+                  value={marketingFilter}
+                  onChange={(event) =>
+                    setMarketingFilter(event.target.value)
+                  }
+                  style={{
+                    ...inputStyle,
+                    width: "170px",
+                  }}
+                >
+                  <option value="All">All Consent</option>
+                  <option value="Opted In">WhatsApp Opted In</option>
+                  <option value="Not Opted In">Not Opted In</option>
+                  <option value="Has Phone">Has Mobile</option>
+                </select>
+
                 <button
                   type="button"
                   onClick={loadCustomers}
@@ -804,6 +1118,38 @@ export default function CustomersPage() {
                         "0 8px 24px rgba(3,21,63,0.07)",
                     }}
                   >
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        marginBottom: "12px",
+                        color: customer.whatsapp_opt_in
+                          ? "#166534"
+                          : "#9CA3AF",
+                        fontSize: "12px",
+                        fontWeight: 800,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedCustomerIds.includes(
+                          customer.id
+                        )}
+                        disabled={
+                          !customer.whatsapp_opt_in ||
+                          !customer.phone ||
+                          customer.is_blocked
+                        }
+                        onChange={() =>
+                          toggleCustomerSelection(customer.id)
+                        }
+                      />
+                      {customer.whatsapp_opt_in
+                        ? "WhatsApp offers allowed"
+                        : "No WhatsApp consent"}
+                    </label>
+
                     <div
                       style={{
                         display: "flex",
@@ -983,6 +1329,49 @@ export default function CustomersPage() {
                       </div>
                     )}
 
+                    {(customer.marketing_tags || []).length > 0 && (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: "6px",
+                          marginTop: "12px",
+                        }}
+                      >
+                        {(customer.marketing_tags || []).map((tag) => (
+                          <span
+                            key={tag}
+                            style={{
+                              padding: "5px 8px",
+                              borderRadius: "999px",
+                              background: "#EEF2FF",
+                              color: "#3730A3",
+                              fontSize: "11px",
+                              fontWeight: 800,
+                            }}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {customer.last_marketing_message_at && (
+                      <p
+                        style={{
+                          margin: "10px 0 0",
+                          color: "#166534",
+                          fontSize: "11px",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Last offer opened:{" "}
+                        {new Date(
+                          customer.last_marketing_message_at
+                        ).toLocaleString("en-IN")}
+                      </p>
+                    )}
+
                     <p
                       style={{
                         color: "#888",
@@ -1046,6 +1435,46 @@ export default function CustomersPage() {
                           : "Block"}
                       </button>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void openOfferForCustomer(customer)
+                      }
+                      disabled={
+                        !customer.whatsapp_opt_in ||
+                        !customer.phone ||
+                        customer.is_blocked
+                      }
+                      style={{
+                        width: "100%",
+                        marginTop: "9px",
+                        background:
+                          customer.whatsapp_opt_in &&
+                          customer.phone &&
+                          !customer.is_blocked
+                            ? "#16A34A"
+                            : "#E5E7EB",
+                        color:
+                          customer.whatsapp_opt_in &&
+                          customer.phone &&
+                          !customer.is_blocked
+                            ? "#FFFFFF"
+                            : "#9CA3AF",
+                        border: "none",
+                        padding: "10px",
+                        borderRadius: "8px",
+                        cursor:
+                          customer.whatsapp_opt_in &&
+                          customer.phone &&
+                          !customer.is_blocked
+                            ? "pointer"
+                            : "not-allowed",
+                        fontWeight: 800,
+                      }}
+                    >
+                      Send WhatsApp Offer
+                    </button>
 
                     <button
                       type="button"
@@ -1191,6 +1620,27 @@ export default function CustomersPage() {
 
         .customer-summary-card:nth-child(5) h2 {
           color: #F6D676;
+        }
+
+        .marketing-primary-button,
+        .marketing-secondary-button {
+          min-height: 40px;
+          padding: 0 13px;
+          border-radius: 9px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .marketing-primary-button {
+          border: 1px solid #D4AF37;
+          background: #0A2E73;
+          color: #FFFFFF;
+        }
+
+        .marketing-secondary-button {
+          border: 1px solid #D1D5DB;
+          background: #FFFFFF;
+          color: #0A2E73;
         }
 
         .customer-card {

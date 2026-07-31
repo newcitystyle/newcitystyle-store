@@ -144,6 +144,7 @@ type CustomerRewardLookup = {
   total_reward_points_redeemed?: number | string | null;
   total_orders?: number | string | null;
   total_spent?: number | string | null;
+  whatsapp_opt_in?: boolean | null;
 };
 
 type RewardApplyResult = {
@@ -339,6 +340,8 @@ export default function PosPage() {
 
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [customerWhatsAppOptIn, setCustomerWhatsAppOptIn] =
+    useState(false);
 
   const [rewardCustomerId, setRewardCustomerId] =
     useState<number | null>(null);
@@ -800,6 +803,9 @@ if (!variantsError) {
         );
         setRewardPointsToUse(0);
         setRewardCustomerFound(true);
+        setCustomerWhatsAppOptIn(
+          customer.whatsapp_opt_in === true
+        );
 
         if (customer.full_name?.trim()) {
           setCustomerName(customer.full_name.trim());
@@ -1258,6 +1264,7 @@ if (!variantsError) {
     setRoundOffAmount(0);
     setCustomerName("");
     setCustomerPhone("");
+    setCustomerWhatsAppOptIn(false);
     setRewardCustomerId(null);
     setAvailableRewardPoints(0);
     setRewardPointsToUse(0);
@@ -1314,6 +1321,7 @@ if (!variantsError) {
     setRoundOffAmount(0);
     setCustomerName("");
     setCustomerPhone("");
+    setCustomerWhatsAppOptIn(false);
     setRewardCustomerId(null);
     setAvailableRewardPoints(0);
     setRewardPointsToUse(0);
@@ -1500,6 +1508,9 @@ if (!variantsError) {
             total_spent:
               toNumber(existingCustomer.total_spent) + saleAmount,
             is_blocked: false,
+            whatsapp_opt_in: customerWhatsAppOptIn,
+            marketing_consent_at:
+              customerWhatsAppOptIn ? now : null,
             updated_at: now,
           })
           .eq("id", existingCustomer.id)
@@ -1527,6 +1538,9 @@ if (!variantsError) {
           total_orders: 1,
           total_spent: saleAmount,
           is_blocked: false,
+          whatsapp_opt_in: customerWhatsAppOptIn,
+          marketing_consent_at:
+            customerWhatsAppOptIn ? now : null,
           created_at: now,
           updated_at: now,
         })
@@ -3588,17 +3602,21 @@ if (!variantsError) {
 
                         <h3>{product.name}</h3>
 
+                        <div className="ncsPosBrandLine">
+                          Brand: {product.brand || "NEW CITY STYLE"}
+                        </div>
+
                         {(product.size ||
                           product.color) && (
                           <div className="ncsPosVariantChips">
                             {product.size && (
-                              <span>
-                                Size: {product.size}
+                              <span className="ncsPosSizeChip">
+                                SIZE {product.size}
                               </span>
                             )}
 
                             {product.color && (
-                              <span>
+                              <span className="ncsPosColorChip">
                                 {product.color}
                               </span>
                             )}
@@ -3787,6 +3805,21 @@ if (!variantsError) {
                 </span>
               )}
             </div>
+
+            <label className="ncsPosMarketingConsent">
+              <input
+                type="checkbox"
+                checked={customerWhatsAppOptIn}
+                onChange={(event) =>
+                  setCustomerWhatsAppOptIn(
+                    event.target.checked
+                  )
+                }
+              />
+              <span>
+                Customer agreed to receive WhatsApp offers
+              </span>
+            </label>
           </div>
 
           <div className="ncsPosCartItems">
@@ -5370,32 +5403,63 @@ if (!variantsError) {
         }
 
         .ncsPosProductInfo h3 {
-          min-height: 32px;
+          min-height: 30px;
           display: -webkit-box;
-          margin: 4px 0 6px;
+          margin: 4px 0 2px;
           overflow: hidden;
           color: ${DEEP_BLUE};
-          font-size: 10px;
-          font-weight: 900;
-          line-height: 1.42;
+          font-size: 11px;
+          font-weight: 950;
+          line-height: 1.35;
           -webkit-box-orient: vertical;
           -webkit-line-clamp: 2;
+        }
+
+        .ncsPosBrandLine {
+          min-height: 18px;
+          margin: 0 0 8px;
+          overflow: hidden;
+          color: #5c677d;
+          font-size: 9px;
+          font-weight: 850;
+          line-height: 1.4;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         .ncsPosVariantChips {
           display: flex;
           flex-wrap: wrap;
-          gap: 4px;
-          margin-bottom: 6px;
+          align-items: center;
+          gap: 6px;
+          min-height: 31px;
+          margin-bottom: 8px;
         }
 
         .ncsPosVariantChips span {
-          padding: 3px 5px;
-          border-radius: 5px;
+          min-height: 28px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 6px 10px;
+          border-radius: 8px;
+          font-size: 10px;
+          font-weight: 950;
+          line-height: 1;
+          letter-spacing: 0.2px;
+        }
+
+        .ncsPosVariantChips .ncsPosSizeChip {
+          border: 1px solid rgba(212, 175, 55, 0.72);
+          background: linear-gradient(135deg, #fff8dc, #f8e9a8);
+          color: ${ROYAL_BLUE};
+          box-shadow: 0 4px 10px rgba(212, 175, 55, 0.16);
+        }
+
+        .ncsPosVariantChips .ncsPosColorChip {
+          border: 1px solid rgba(10, 46, 115, 0.18);
           background: #eef2f9;
-          color: #586375;
-          font-size: 6.5px;
-          font-weight: 850;
+          color: #3f4b63;
         }
 
         .ncsPosProductBottom {
@@ -5526,6 +5590,27 @@ if (!variantsError) {
 
         .ncsPosCloseMobileCart {
           display: none;
+        }
+
+        .ncsPosMarketingConsent {
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          margin: 10px 0 0;
+          padding: 10px;
+          border: 1px solid #BBF7D0;
+          border-radius: 10px;
+          background: #F0FDF4;
+          color: #166534;
+          font-size: 9px;
+          font-weight: 800;
+          line-height: 1.45;
+          cursor: pointer;
+        }
+
+        .ncsPosMarketingConsent input {
+          margin-top: 1px;
+          accent-color: #16A34A;
         }
 
         .ncsPosCustomerCard {
@@ -7229,7 +7314,21 @@ if (!variantsError) {
           }
 
           .ncsPosProductInfo h3 {
+            font-size: 12px;
+          }
+
+          .ncsPosBrandLine {
+            font-size: 10px;
+          }
+
+          .ncsPosVariantChips span {
+            min-height: 30px;
+            padding: 7px 11px;
             font-size: 11px;
+          }
+
+          .ncsPosVariantChips .ncsPosSizeChip {
+            font-size: 12px;
           }
 
           .ncsPosCatalogueTop {

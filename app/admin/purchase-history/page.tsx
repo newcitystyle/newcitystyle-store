@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { supabase } from "@/lib/supabase";
 
 type PurchaseRow = {
@@ -83,8 +89,40 @@ type PurchaseItemRow = {
   item_status?: string | null;
 };
 
+type PurchaseItemEditForm = {
+  productName: string;
+  size: string;
+  color: string;
+  sku: string;
+  barcode: string;
+  quantity: string;
+  purchasePrice: string;
+  sellingPrice: string;
+  mrp: string;
+  taxPercent: string;
+  cessPercent: string;
+  hsnCode: string;
+  onlineQuantity: string;
+};
+
 type StatusFilter = "all" | "paid" | "partial" | "unpaid" | "due";
 type DateFilter = "all" | "today" | "7days" | "30days";
+
+type PurchaseEditForm = {
+  supplierName: string;
+  supplierPhone: string;
+  supplierInvoiceNumber: string;
+  purchaseDate: string;
+  dueDate: string;
+  supplierGstin: string;
+  supplierState: string;
+  supplierStateCode: string;
+  placeOfSupply: string;
+  taxType: string;
+  paymentMethod: string;
+  paymentReference: string;
+  notes: string;
+};
 
 const ROYAL_BLUE = "#0A2E73";
 const DEEP_BLUE = "#03153F";
@@ -169,6 +207,56 @@ export default function PurchaseHistoryPage() {
   );
   const [paymentNotes, setPaymentNotes] = useState("");
   const [savingPayment, setSavingPayment] = useState(false);
+
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingPurchase, setEditingPurchase] =
+    useState<PurchaseRow | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [showItemEditModal, setShowItemEditModal] =
+    useState(false);
+  const [editingItem, setEditingItem] =
+    useState<PurchaseItemRow | null>(null);
+  const [savingItemEdit, setSavingItemEdit] =
+    useState(false);
+  const [showDeleteModal, setShowDeleteModal] =
+    useState(false);
+  const [deletingPurchase, setDeletingPurchase] =
+    useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] =
+    useState("");
+  const [deletionReason, setDeletionReason] =
+    useState("");
+  const [itemEditForm, setItemEditForm] =
+    useState<PurchaseItemEditForm>({
+      productName: "",
+      size: "",
+      color: "",
+      sku: "",
+      barcode: "",
+      quantity: "1",
+      purchasePrice: "0",
+      sellingPrice: "0",
+      mrp: "0",
+      taxPercent: "0",
+      cessPercent: "0",
+      hsnCode: "",
+      onlineQuantity: "0",
+    });
+  const [editForm, setEditForm] = useState<PurchaseEditForm>({
+    supplierName: "",
+    supplierPhone: "",
+    supplierInvoiceNumber: "",
+    purchaseDate: "",
+    dueDate: "",
+    supplierGstin: "",
+    supplierState: "",
+    supplierStateCode: "",
+    placeOfSupply: "",
+    taxType: "intra_state",
+    paymentMethod: "credit",
+    paymentReference: "",
+    notes: "",
+  });
 
   const loadData = useCallback(async (showRefresh = false) => {
     if (showRefresh) {
@@ -382,6 +470,313 @@ export default function PurchaseHistoryPage() {
     setPaymentDate(new Date().toISOString().slice(0, 10));
     setPaymentNotes("");
     setShowPaymentModal(true);
+  }
+
+  function openDeletePurchaseModal() {
+    setDeleteConfirmation("");
+    setDeletionReason("");
+    setShowDeleteModal(true);
+  }
+
+  async function deletePurchaseSafely(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!selectedPurchase || deletingPurchase) return;
+
+    if (deleteConfirmation.trim().toUpperCase() !== "DELETE") {
+      setNotice("Type DELETE exactly to confirm.");
+      window.setTimeout(() => setNotice(""), 3000);
+      return;
+    }
+
+    if (deletionReason.trim().length < 3) {
+      setNotice("Please enter a deletion reason.");
+      window.setTimeout(() => setNotice(""), 3000);
+      return;
+    }
+
+    setDeletingPurchase(true);
+
+    try {
+      const { error } = await supabase.rpc(
+        "ncs_delete_purchase_v2",
+        {
+          p_purchase_id: selectedPurchase.id,
+          p_deletion_reason: deletionReason.trim(),
+        },
+      );
+
+      if (error) throw error;
+
+      setShowDeleteModal(false);
+      setSelectedPurchase(null);
+      setDeleteConfirmation("");
+      setDeletionReason("");
+      setNotice(
+        "Purchase deleted and stock reversed successfully.",
+      );
+      window.setTimeout(() => setNotice(""), 4000);
+      await loadData(true);
+    } catch (error) {
+      console.error("Purchase delete error:", error);
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete purchase.",
+      );
+      window.setTimeout(() => setNotice(""), 6000);
+    } finally {
+      setDeletingPurchase(false);
+    }
+  }
+
+  function openItemEditModal(item: PurchaseItemRow) {
+    setEditingItem(item);
+    setItemEditForm({
+      productName: item.product_name || "",
+      size: item.size || "",
+      color: item.color || "",
+      sku: item.sku || "",
+      barcode: item.barcode || "",
+      quantity: String(toNumber(item.quantity) || 1),
+      purchasePrice: String(toNumber(item.purchase_price)),
+      sellingPrice: String(toNumber(item.selling_price)),
+      mrp: String(toNumber(item.mrp)),
+      taxPercent: String(toNumber(item.tax_percent)),
+      cessPercent: String(toNumber(item.cess_percent)),
+      hsnCode: item.hsn_code || "",
+      onlineQuantity: String(toNumber(item.online_quantity)),
+    });
+    setShowItemEditModal(true);
+  }
+
+  function updateItemEditField<
+    K extends keyof PurchaseItemEditForm,
+  >(field: K, value: PurchaseItemEditForm[K]) {
+    setItemEditForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  async function savePurchaseItemEdit(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (
+      !selectedPurchase ||
+      !editingItem ||
+      savingItemEdit
+    ) {
+      return;
+    }
+
+    const quantity = Math.max(
+      0,
+      Math.trunc(toNumber(itemEditForm.quantity)),
+    );
+    const onlineQuantity = Math.max(
+      0,
+      Math.trunc(toNumber(itemEditForm.onlineQuantity)),
+    );
+
+    if (!itemEditForm.productName.trim()) {
+      setNotice("Product name is required.");
+      return;
+    }
+
+    if (quantity <= 0) {
+      setNotice("Quantity must be greater than zero.");
+      return;
+    }
+
+    if (onlineQuantity > quantity) {
+      setNotice(
+        "Online quantity cannot be greater than total quantity.",
+      );
+      return;
+    }
+
+    setSavingItemEdit(true);
+
+    try {
+      const { error } = await supabase.rpc(
+        "ncs_edit_purchase_item_v2",
+        {
+          p_purchase_id: selectedPurchase.id,
+          p_item_id: editingItem.id,
+          p_product_name:
+            itemEditForm.productName.trim(),
+          p_size: itemEditForm.size.trim() || null,
+          p_color: itemEditForm.color.trim() || null,
+          p_sku: itemEditForm.sku.trim() || null,
+          p_barcode:
+            itemEditForm.barcode.trim() || null,
+          p_quantity: quantity,
+          p_purchase_price: Math.max(
+            0,
+            toNumber(itemEditForm.purchasePrice),
+          ),
+          p_selling_price: Math.max(
+            0,
+            toNumber(itemEditForm.sellingPrice),
+          ),
+          p_mrp: Math.max(
+            0,
+            toNumber(itemEditForm.mrp),
+          ),
+          p_tax_percent: Math.max(
+            0,
+            toNumber(itemEditForm.taxPercent),
+          ),
+          p_cess_percent: Math.max(
+            0,
+            toNumber(itemEditForm.cessPercent),
+          ),
+          p_hsn_code:
+            itemEditForm.hsnCode.trim() || null,
+          p_online_quantity: onlineQuantity,
+        },
+      );
+
+      if (error) throw error;
+
+      setShowItemEditModal(false);
+      setEditingItem(null);
+      setSelectedPurchase(null);
+      setNotice("Purchase item updated successfully.");
+      window.setTimeout(() => setNotice(""), 3500);
+      await loadData(true);
+    } catch (error) {
+      console.error("Purchase item edit error:", error);
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to update purchase item.",
+      );
+      window.setTimeout(() => setNotice(""), 4500);
+    } finally {
+      setSavingItemEdit(false);
+    }
+  }
+
+  function openEditModal(purchase: PurchaseRow) {
+    setEditingPurchase(purchase);
+    setEditForm({
+      supplierName: purchase.supplier_name || "",
+      supplierPhone: purchase.supplier_phone || "",
+      supplierInvoiceNumber:
+        purchase.supplier_invoice_number || "",
+      purchaseDate:
+        purchase.purchase_date?.slice(0, 10) ||
+        purchase.created_at?.slice(0, 10) ||
+        new Date().toISOString().slice(0, 10),
+      dueDate: purchase.due_date?.slice(0, 10) || "",
+      supplierGstin: purchase.supplier_gstin || "",
+      supplierState:
+        purchase.supplier_state || "Andhra Pradesh",
+      supplierStateCode:
+        purchase.supplier_state_code || "37",
+      placeOfSupply:
+        purchase.place_of_supply ||
+        purchase.supplier_state ||
+        "Andhra Pradesh",
+      taxType: purchase.tax_type || "intra_state",
+      paymentMethod: purchase.payment_method || "credit",
+      paymentReference:
+        purchase.payment_reference || "",
+      notes: purchase.notes || "",
+    });
+    setShowEditModal(true);
+  }
+
+  function closeEditModal() {
+    if (savingEdit) return;
+    setShowEditModal(false);
+    setEditingPurchase(null);
+  }
+
+  function updateEditField<K extends keyof PurchaseEditForm>(
+    field: K,
+    value: PurchaseEditForm[K],
+  ) {
+    setEditForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  async function savePurchaseEdit(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!editingPurchase || savingEdit) return;
+
+    if (!editForm.supplierName.trim()) {
+      setNotice("Supplier name is required.");
+      window.setTimeout(() => setNotice(""), 3000);
+      return;
+    }
+
+    if (!editForm.purchaseDate) {
+      setNotice("Purchase date is required.");
+      window.setTimeout(() => setNotice(""), 3000);
+      return;
+    }
+
+    setSavingEdit(true);
+
+    try {
+      const { error } = await supabase
+        .from("purchases")
+        .update({
+          supplier_name: editForm.supplierName.trim(),
+          supplier_phone:
+            editForm.supplierPhone.trim() || null,
+          supplier_invoice_number:
+            editForm.supplierInvoiceNumber.trim() || null,
+          purchase_date: editForm.purchaseDate,
+          due_date: editForm.dueDate || null,
+          supplier_gstin:
+            editForm.supplierGstin.trim() || null,
+          supplier_state:
+            editForm.supplierState.trim() || null,
+          supplier_state_code:
+            editForm.supplierStateCode.trim() || null,
+          place_of_supply:
+            editForm.placeOfSupply.trim() || null,
+          tax_type: editForm.taxType,
+          payment_method: editForm.paymentMethod,
+          payment_reference:
+            editForm.paymentReference.trim() || null,
+          notes: editForm.notes.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editingPurchase.id);
+
+      if (error) throw error;
+
+      setShowEditModal(false);
+      setEditingPurchase(null);
+      setSelectedPurchase(null);
+      setNotice("Purchase details updated successfully.");
+      window.setTimeout(() => setNotice(""), 3500);
+      await loadData(true);
+    } catch (error) {
+      console.error("Purchase edit error:", error);
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to update purchase details.",
+      );
+      window.setTimeout(() => setNotice(""), 3500);
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   function printPurchase(purchase: PurchaseRow) {
@@ -912,6 +1307,14 @@ export default function PurchaseHistoryPage() {
                   <footer>
                     <button
                       type="button"
+                      className="editButton"
+                      onClick={() => openEditModal(purchase)}
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => setSelectedPurchase(purchase)}
                     >
                       View Details
@@ -1037,6 +1440,14 @@ export default function PurchaseHistoryPage() {
                     </span>
                   </div>
 
+                  <button
+                    type="button"
+                    className="editItemButton"
+                    onClick={() => openItemEditModal(item)}
+                  >
+                    Edit Item
+                  </button>
+
                   <div className="detailsItemNumbers">
                     <p>
                       <span>Qty</span>
@@ -1161,6 +1572,14 @@ export default function PurchaseHistoryPage() {
             <div className="modalActions">
               <button
                 type="button"
+                className="editButton"
+                onClick={() => openEditModal(selectedPurchase)}
+              >
+                Edit Purchase Details
+              </button>
+
+              <button
+                type="button"
                 onClick={() => printPurchase(selectedPurchase)}
               >
                 Print Purchase Bill
@@ -1178,6 +1597,14 @@ export default function PurchaseHistoryPage() {
 
               <button
                 type="button"
+                className="deletePurchaseButton"
+                onClick={openDeletePurchaseModal}
+              >
+                Delete Purchase
+              </button>
+
+              <button
+                type="button"
                 className="closeTextButton"
                 onClick={() => setSelectedPurchase(null)}
               >
@@ -1185,6 +1612,453 @@ export default function PurchaseHistoryPage() {
               </button>
             </div>
           </section>
+        </div>
+      )}
+
+      {showDeleteModal && selectedPurchase && (
+        <div className="modalOverlay">
+          <form
+            className="deletePurchaseModal"
+            onSubmit={deletePurchaseSafely}
+          >
+            <button
+              type="button"
+              className="closeButton"
+              onClick={() => {
+                if (!deletingPurchase) {
+                  setShowDeleteModal(false);
+                }
+              }}
+              aria-label="Close delete purchase dialog"
+            >
+              ✕
+            </button>
+
+            <span>DELETE PURCHASE</span>
+            <h2>{selectedPurchase.purchase_number}</h2>
+
+            <div className="deleteWarningBox">
+              <strong>
+                This action reverses stock and supplier balance.
+              </strong>
+              <p>
+                Deletion is blocked when supplier payments,
+                returns, or insufficient current stock are
+                detected.
+              </p>
+            </div>
+
+            <label className="deleteField">
+              <span>Deletion Reason *</span>
+              <textarea
+                value={deletionReason}
+                onChange={(event) =>
+                  setDeletionReason(event.target.value)
+                }
+                placeholder="Example: Test purchase entered by mistake"
+              />
+            </label>
+
+            <label className="deleteField">
+              <span>Type DELETE to confirm *</span>
+              <input
+                value={deleteConfirmation}
+                onChange={(event) =>
+                  setDeleteConfirmation(event.target.value)
+                }
+                placeholder="DELETE"
+                autoComplete="off"
+              />
+            </label>
+
+            <div className="editModalActions">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deletingPurchase}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                className="confirmDeleteButton"
+                disabled={
+                  deletingPurchase ||
+                  deleteConfirmation.trim().toUpperCase() !==
+                    "DELETE" ||
+                  deletionReason.trim().length < 3
+                }
+              >
+                {deletingPurchase
+                  ? "Deleting..."
+                  : "Delete & Reverse Stock"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {showItemEditModal &&
+        editingItem &&
+        selectedPurchase && (
+          <div className="modalOverlay">
+            <form
+              className="itemEditModal"
+              onSubmit={savePurchaseItemEdit}
+            >
+              <button
+                type="button"
+                className="closeButton"
+                onClick={() => {
+                  if (!savingItemEdit) {
+                    setShowItemEditModal(false);
+                    setEditingItem(null);
+                  }
+                }}
+                aria-label="Close item edit form"
+              >
+                ✕
+              </button>
+
+              <span>EDIT PURCHASE ITEM</span>
+              <h2>{editingItem.product_name || "Product"}</h2>
+
+              <p className="editSafetyNote">
+                Quantity changes update only the stock difference.
+                Purchase totals, tax, supplier due and ledger
+                balance are recalculated automatically.
+              </p>
+
+              <div className="editPurchaseGrid">
+                {[
+                  ["Product Name", "productName", "text"],
+                  ["Size", "size", "text"],
+                  ["Colour", "color", "text"],
+                  ["SKU", "sku", "text"],
+                  ["Barcode", "barcode", "text"],
+                  ["Quantity", "quantity", "number"],
+                  ["Purchase Price", "purchasePrice", "number"],
+                  ["Selling Price", "sellingPrice", "number"],
+                  ["MRP", "mrp", "number"],
+                  ["GST %", "taxPercent", "number"],
+                  ["Cess %", "cessPercent", "number"],
+                  ["HSN Code", "hsnCode", "text"],
+                  ["Online Quantity", "onlineQuantity", "number"],
+                ].map(([label, field, type]) => (
+                  <label key={field}>
+                    <span>{label}</span>
+                    <input
+                      type={type}
+                      min={type === "number" ? "0" : undefined}
+                      step={
+                        [
+                          "purchasePrice",
+                          "sellingPrice",
+                          "mrp",
+                          "taxPercent",
+                          "cessPercent",
+                        ].includes(field)
+                          ? "0.01"
+                          : type === "number"
+                            ? "1"
+                            : undefined
+                      }
+                      value={
+                        itemEditForm[
+                          field as keyof PurchaseItemEditForm
+                        ]
+                      }
+                      onChange={(event) =>
+                        updateItemEditField(
+                          field as keyof PurchaseItemEditForm,
+                          event.target.value,
+                        )
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="editModalActions">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!savingItemEdit) {
+                      setShowItemEditModal(false);
+                      setEditingItem(null);
+                    }
+                  }}
+                  disabled={savingItemEdit}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="saveEditButton"
+                  disabled={savingItemEdit}
+                >
+                  {savingItemEdit
+                    ? "Updating Item..."
+                    : "Update Item & Stock"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+      {showEditModal && editingPurchase && (
+        <div className="modalOverlay">
+          <form
+            className="editPurchaseModal"
+            onSubmit={savePurchaseEdit}
+          >
+            <button
+              type="button"
+              className="closeButton"
+              onClick={closeEditModal}
+              aria-label="Close purchase edit form"
+            >
+              ✕
+            </button>
+
+            <span>EDIT PURCHASE</span>
+            <h2>
+              {editingPurchase.purchase_number ||
+                "Purchase Details"}
+            </h2>
+
+            <p className="editSafetyNote">
+              Supplier, invoice, date, GST, payment reference
+              and notes can be corrected here. Product quantity,
+              stock and financial totals are protected to avoid
+              stock mismatch.
+            </p>
+
+            <div className="editPurchaseGrid">
+              <label>
+                <span>Supplier Name *</span>
+                <input
+                  value={editForm.supplierName}
+                  onChange={(event) =>
+                    updateEditField(
+                      "supplierName",
+                      event.target.value,
+                    )
+                  }
+                />
+              </label>
+
+              <label>
+                <span>Supplier Mobile</span>
+                <input
+                  value={editForm.supplierPhone}
+                  onChange={(event) =>
+                    updateEditField(
+                      "supplierPhone",
+                      event.target.value.replace(
+                        /[^0-9+]/g,
+                        "",
+                      ),
+                    )
+                  }
+                  placeholder="Optional"
+                />
+              </label>
+
+              <label>
+                <span>Supplier Invoice No.</span>
+                <input
+                  value={editForm.supplierInvoiceNumber}
+                  onChange={(event) =>
+                    updateEditField(
+                      "supplierInvoiceNumber",
+                      event.target.value,
+                    )
+                  }
+                  placeholder="Optional"
+                />
+              </label>
+
+              <label>
+                <span>Purchase Date *</span>
+                <input
+                  type="date"
+                  value={editForm.purchaseDate}
+                  onChange={(event) =>
+                    updateEditField(
+                      "purchaseDate",
+                      event.target.value,
+                    )
+                  }
+                />
+              </label>
+
+              <label>
+                <span>Credit Due Date</span>
+                <input
+                  type="date"
+                  value={editForm.dueDate}
+                  onChange={(event) =>
+                    updateEditField(
+                      "dueDate",
+                      event.target.value,
+                    )
+                  }
+                />
+              </label>
+
+              <label>
+                <span>GSTIN</span>
+                <input
+                  value={editForm.supplierGstin}
+                  onChange={(event) =>
+                    updateEditField(
+                      "supplierGstin",
+                      event.target.value
+                        .toUpperCase()
+                        .replace(/[^A-Z0-9]/g, "")
+                        .slice(0, 15),
+                    )
+                  }
+                  placeholder="Optional"
+                />
+              </label>
+
+              <label>
+                <span>Supplier State</span>
+                <input
+                  value={editForm.supplierState}
+                  onChange={(event) =>
+                    updateEditField(
+                      "supplierState",
+                      event.target.value,
+                    )
+                  }
+                />
+              </label>
+
+              <label>
+                <span>State Code</span>
+                <input
+                  value={editForm.supplierStateCode}
+                  onChange={(event) =>
+                    updateEditField(
+                      "supplierStateCode",
+                      event.target.value
+                        .replace(/\D/g, "")
+                        .slice(0, 2),
+                    )
+                  }
+                />
+              </label>
+
+              <label>
+                <span>Place of Supply</span>
+                <input
+                  value={editForm.placeOfSupply}
+                  onChange={(event) =>
+                    updateEditField(
+                      "placeOfSupply",
+                      event.target.value,
+                    )
+                  }
+                />
+              </label>
+
+              <label>
+                <span>Tax Type</span>
+                <select
+                  value={editForm.taxType}
+                  onChange={(event) =>
+                    updateEditField(
+                      "taxType",
+                      event.target.value,
+                    )
+                  }
+                >
+                  <option value="intra_state">
+                    Intra-state (CGST + SGST)
+                  </option>
+                  <option value="inter_state">
+                    Inter-state (IGST)
+                  </option>
+                  <option value="non_gst">Non-GST</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Payment Method</span>
+                <select
+                  value={editForm.paymentMethod}
+                  onChange={(event) =>
+                    updateEditField(
+                      "paymentMethod",
+                      event.target.value,
+                    )
+                  }
+                >
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="card">Card</option>
+                  <option value="bank_transfer">
+                    Bank Transfer
+                  </option>
+                  <option value="credit">Credit</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Payment Reference</span>
+                <input
+                  value={editForm.paymentReference}
+                  onChange={(event) =>
+                    updateEditField(
+                      "paymentReference",
+                      event.target.value,
+                    )
+                  }
+                  placeholder="UPI / bank reference"
+                />
+              </label>
+            </div>
+
+            <label className="editNotesField">
+              <span>Notes</span>
+              <textarea
+                value={editForm.notes}
+                onChange={(event) =>
+                  updateEditField(
+                    "notes",
+                    event.target.value,
+                  )
+                }
+                placeholder="Purchase notes"
+              />
+            </label>
+
+            <div className="editModalActions">
+              <button
+                type="button"
+                onClick={closeEditModal}
+                disabled={savingEdit}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                className="saveEditButton"
+                disabled={savingEdit}
+              >
+                {savingEdit
+                  ? "Updating..."
+                  : "Update Purchase"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
@@ -1744,6 +2618,13 @@ export default function PurchaseHistoryPage() {
           color: white;
         }
 
+        .purchaseCard footer .editButton,
+        .modalActions .editButton {
+          border-color: ${GOLD};
+          background: #fffaf0;
+          color: ${ROYAL_BLUE};
+        }
+
         .loadingState,
         .emptyState {
           min-height: 360px;
@@ -1783,7 +2664,10 @@ export default function PurchaseHistoryPage() {
         }
 
         .detailsModal,
-        .paymentModal {
+        .paymentModal,
+        .editPurchaseModal,
+        .itemEditModal,
+        .deletePurchaseModal {
           position: relative;
           width: min(760px, 100%);
           max-height: 90vh;
@@ -1799,8 +2683,20 @@ export default function PurchaseHistoryPage() {
           width: min(440px, 100%);
         }
 
+        .editPurchaseModal,
+        .itemEditModal {
+          width: min(880px, 100%);
+        }
+
+        .deletePurchaseModal {
+          width: min(520px, 100%);
+        }
+
         .detailsModal > span,
-        .paymentModal > span {
+        .paymentModal > span,
+        .editPurchaseModal > span,
+        .itemEditModal > span,
+        .deletePurchaseModal > span {
           color: ${GOLD};
           font-size: 10px;
           font-weight: 900;
@@ -1808,7 +2704,10 @@ export default function PurchaseHistoryPage() {
         }
 
         .detailsModal h2,
-        .paymentModal h2 {
+        .paymentModal h2,
+        .editPurchaseModal h2,
+        .itemEditModal h2,
+        .deletePurchaseModal h2 {
           margin: 7px 0 0;
           color: ${ROYAL_BLUE};
         }
@@ -1878,6 +2777,26 @@ export default function PurchaseHistoryPage() {
           margin-top: 3px;
           color: ${ROYAL_BLUE};
           font-size: 9px;
+        }
+
+        .editItemButton {
+          align-self: center;
+          min-height: 36px;
+          padding: 0 12px;
+          border: 1px solid ${GOLD};
+          border-radius: 9px;
+          background: #fffaf0;
+          color: ${ROYAL_BLUE};
+          font-size: 8px;
+          font-weight: 950;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+
+        .editItemButton:hover {
+          transform: translateY(-1px);
+          background: ${ROYAL_BLUE};
+          color: #ffffff;
         }
 
         .purchaseTotalsDetailed {
@@ -1954,6 +2873,181 @@ export default function PurchaseHistoryPage() {
           border-color: #f3b7b2;
           background: #fff6f5;
           color: #b42318;
+        }
+
+        .modalActions .deletePurchaseButton {
+          border-color: #f04438;
+          background: #fff1f0;
+          color: #b42318;
+        }
+
+        .modalActions .deletePurchaseButton:hover {
+          background: #b42318;
+          color: #ffffff;
+        }
+
+        .deleteWarningBox {
+          margin-top: 12px;
+          padding: 13px;
+          border: 1px solid #fda29b;
+          border-radius: 12px;
+          background: #fff1f0;
+          color: #912018;
+        }
+
+        .deleteWarningBox strong {
+          display: block;
+          font-size: 11px;
+          font-weight: 950;
+        }
+
+        .deleteWarningBox p {
+          margin: 6px 0 0;
+          font-size: 9px;
+          line-height: 1.55;
+        }
+
+        .deleteField {
+          display: grid;
+          gap: 6px;
+          margin-top: 13px;
+        }
+
+        .deleteField > span {
+          color: #667085;
+          font-size: 9px;
+          font-weight: 850;
+        }
+
+        .deleteField input,
+        .deleteField textarea {
+          width: 100%;
+          min-height: 44px;
+          padding: 10px;
+          border: 1px solid #d0d5dd;
+          border-radius: 10px;
+          outline: none;
+          background: #ffffff;
+          color: #344054;
+          font: inherit;
+          font-size: 10px;
+          font-weight: 700;
+        }
+
+        .deleteField textarea {
+          min-height: 86px;
+          resize: vertical;
+        }
+
+        .deleteField input:focus,
+        .deleteField textarea:focus {
+          border-color: #f04438;
+          box-shadow: 0 0 0 3px rgba(240, 68, 56, 0.12);
+        }
+
+        .editModalActions .confirmDeleteButton {
+          border-color: #b42318;
+          background: #b42318;
+          color: #ffffff;
+        }
+
+        .editSafetyNote {
+          margin: 7px 0 0;
+          padding: 11px 12px;
+          border: 1px solid #fedf89;
+          border-radius: 10px;
+          background: #fffaeb;
+          color: #8a5b00;
+          font-size: 9px;
+          line-height: 1.55;
+        }
+
+        .editPurchaseGrid {
+          display: grid;
+          grid-template-columns: repeat(
+            3,
+            minmax(0, 1fr)
+          );
+          gap: 10px;
+          margin-top: 16px;
+        }
+
+        .editPurchaseModal label,
+        .itemEditModal label {
+          display: grid;
+          gap: 6px;
+        }
+
+        .editPurchaseModal label > span,
+        .itemEditModal label > span {
+          color: #667085;
+          font-size: 9px;
+          font-weight: 850;
+        }
+
+        .editPurchaseModal input,
+        .editPurchaseModal select,
+        .editPurchaseModal textarea,
+        .itemEditModal input {
+          width: 100%;
+          min-height: 43px;
+          padding: 0 10px;
+          border: 1px solid #dfe4eb;
+          border-radius: 10px;
+          outline: none;
+          background: #ffffff;
+          color: #344054;
+          font: inherit;
+          font-size: 10px;
+          font-weight: 700;
+        }
+
+        .editPurchaseModal input:focus,
+        .editPurchaseModal select:focus,
+        .editPurchaseModal textarea:focus,
+        .itemEditModal input:focus {
+          border-color: ${GOLD};
+          box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.12);
+        }
+
+        .editNotesField {
+          margin-top: 12px;
+        }
+
+        .editPurchaseModal textarea {
+          min-height: 88px;
+          padding: 10px;
+          resize: vertical;
+        }
+
+        .editModalActions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 9px;
+          margin-top: 15px;
+        }
+
+        .editModalActions button {
+          min-height: 42px;
+          padding: 0 15px;
+          border: 1px solid #d0d5dd;
+          border-radius: 10px;
+          background: #ffffff;
+          color: ${ROYAL_BLUE};
+          font-size: 9px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .editModalActions .saveEditButton {
+          border-color: ${GOLD};
+          background: ${ROYAL_BLUE};
+          color: #ffffff;
+        }
+
+        .editModalActions button:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
         }
 
         .paymentFormGrid {
@@ -2147,6 +3241,13 @@ export default function PurchaseHistoryPage() {
             grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
           }
 
+          .editPurchaseGrid {
+            grid-template-columns: repeat(
+              2,
+              minmax(0, 1fr)
+            );
+          }
+
           .detailsItemFull {
             grid-template-columns: 1fr;
           }
@@ -2168,8 +3269,14 @@ export default function PurchaseHistoryPage() {
           .detailsGrid,
           .detailsGridWide,
           .purchaseTotalsDetailed,
-          .paymentFormGrid {
+          .paymentFormGrid,
+          .editPurchaseGrid {
             grid-template-columns: 1fr !important;
+          }
+
+          .editModalActions {
+            display: grid;
+            grid-template-columns: 1fr;
           }
 
           .detailsItemNumbers {
