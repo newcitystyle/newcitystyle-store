@@ -582,10 +582,12 @@ export default function PurchasesPage() {
     subtotal +
       taxAmount +
       cessAmount +
-      transportCharge +
       otherCharge -
       discountAmount,
   );
+
+  const totalCashOutflow =
+    totalAmount + transportCharge;
 
   const totalPaid = useMemo(
     () => payments.reduce((sum, payment) => sum + payment.amount, 0),
@@ -1509,6 +1511,14 @@ export default function PurchasesPage() {
                     item.purchaseDiscount,
                 );
 
+                const landedCostPerPiece =
+                  taxType === "non_gst"
+                    ? netPurchasePrice
+                    : netPurchasePrice *
+                      (1 +
+                        item.taxPercent / 100 +
+                        item.cessPercent / 100);
+
                 const lineDiscount =
                   item.purchaseDiscount * item.quantity;
 
@@ -1905,6 +1915,15 @@ export default function PurchasesPage() {
                           </label>
 
                           <label>
+                            <span>Landed Cost / Pc (Incl. GST)</span>
+                            <input
+                              value={landedCostPerPiece.toFixed(2)}
+                              readOnly
+                              className="ncsLandedCostInput"
+                            />
+                          </label>
+
+                          <label>
                             <span>MRP *</span>
                             <input
                               type="number"
@@ -2151,7 +2170,7 @@ export default function PurchasesPage() {
               </label>
 
               <label>
-                <span>Transport</span>
+                <span>Transport (My Expense)</span>
                 <input
                   type="number"
                   min="0"
@@ -2169,7 +2188,7 @@ export default function PurchasesPage() {
               </label>
 
               <label>
-                <span>Other Charge</span>
+                <span>Other Charge (Supplier Bill)</span>
                 <input
                   type="number"
                   min="0"
@@ -2185,6 +2204,12 @@ export default function PurchasesPage() {
                   }
                 />
               </label>
+            </div>
+
+            <div className="ncsTransportExpenseNote">
+              Transport is saved under Daily Expenses and is not
+              added to supplier bill, supplier due or outstanding.
+              Other Charge remains part of the supplier bill.
             </div>
 
             <div className="ncsTotals">
@@ -2232,17 +2257,23 @@ export default function PurchasesPage() {
               </p>
 
               <p>
-                <span>Extra Charges</span>
-                <strong>
-                  {formatCurrency(
-                    transportCharge + otherCharge,
-                  )}
-                </strong>
+                <span>Other Charge in Supplier Bill</span>
+                <strong>{formatCurrency(otherCharge)}</strong>
+              </p>
+
+              <p>
+                <span>Transport Expense</span>
+                <strong>{formatCurrency(transportCharge)}</strong>
               </p>
 
               <p className="ncsGrandTotal">
-                <span>Purchase Total</span>
+                <span>Supplier Bill Total</span>
                 <strong>{formatCurrency(totalAmount)}</strong>
+              </p>
+
+              <p className="ncsCashOutflowTotal">
+                <span>Total Cash Outflow</span>
+                <strong>{formatCurrency(totalCashOutflow)}</strong>
               </p>
             </div>
 
@@ -2981,6 +3012,37 @@ export default function PurchasesPage() {
         .ncsPricingGrid label:nth-child(4),
         .ncsPricingGrid label:nth-child(5) {
           grid-column: span 1;
+        }
+
+        .ncsLandedCostInput {
+          border: 1px solid #16A34A !important;
+          background: #F0FDF4 !important;
+          color: #166534 !important;
+          font-size: 12px !important;
+          font-weight: 950 !important;
+        }
+
+        .ncsTransportExpenseNote {
+          margin: 12px 0;
+          padding: 10px 12px;
+          border: 1px solid #BFDBFE;
+          border-radius: 10px;
+          background: #EFF6FF;
+          color: #1E3A8A;
+          font-size: 9px;
+          font-weight: 800;
+          line-height: 1.5;
+        }
+
+        .ncsCashOutflowTotal {
+          margin-top: 8px !important;
+          padding-top: 10px !important;
+          border-top: 1px dashed rgba(10, 46, 115, 0.2);
+        }
+
+        .ncsCashOutflowTotal strong {
+          color: #B42318 !important;
+          font-size: 15px !important;
         }
 
         .ncsCalculatedInput {
