@@ -34,7 +34,7 @@ type MetaMessageResponse = {
 };
 
 const INVOICE_TEMPLATE_NAME = "new_city_style_invoice_document";
-const INVOICE_TEMPLATE_LANGUAGE = "en";
+const INVOICE_TEMPLATE_LANGUAGE = "en_US";
 
 function normalizePhone(value: string) {
   let digits = String(value || "").replace(/\D/g, "");
