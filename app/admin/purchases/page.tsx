@@ -190,11 +190,30 @@ function findMatchingProductOption(
   item: PurchaseItem,
   productOptions: ProductOption[],
 ) {
+  /*
+   * Stock identity is strict:
+   * BRAND + PRODUCT NAME + SIZE + COLOUR.
+   *
+   * Barcode/SKU is checked only inside the same brand and
+   * product identity. This prevents POOMEX stock from being
+   * added to DIXCY merely because an old barcode or selected
+   * product ID remained in the row.
+   */
+  const sameBrandProduct = productOptions.filter(
+    (product) =>
+      sameIdentityValue(product.name, item.productName) &&
+      sameIdentityValue(product.brand, item.brand),
+  );
+
+  if (sameBrandProduct.length === 0) {
+    return null;
+  }
+
   const barcode = normalizeText(item.barcode);
   const sku = normalizeText(item.sku);
 
   if (barcode || sku) {
-    const codeMatch = productOptions.find((product) => {
+    const codeMatch = sameBrandProduct.find((product) => {
       return (
         (barcode &&
           normalizeText(product.barcode) === barcode) ||
@@ -207,17 +226,7 @@ function findMatchingProductOption(
     }
   }
 
-  const sameProductIdentity = productOptions.filter(
-    (product) =>
-      sameIdentityValue(product.name, item.productName) &&
-      sameIdentityValue(product.brand, item.brand),
-  );
-
-  if (sameProductIdentity.length === 0) {
-    return null;
-  }
-
-  const exactVariant = sameProductIdentity.find(
+  const exactVariant = sameBrandProduct.find(
     (product) =>
       sameIdentityValue(product.size, item.size) &&
       sameIdentityValue(product.color, item.color),
@@ -228,14 +237,17 @@ function findMatchingProductOption(
   }
 
   const sameParent =
-    sameProductIdentity.find(
+    sameBrandProduct.find(
       (product) =>
         product.productId === item.productId,
-    ) || sameProductIdentity[0];
+    ) || sameBrandProduct[0];
 
   return {
     ...sameParent,
     variantId: null,
+    barcode: "",
+    sku: "",
+    stock: 0,
   };
 }
 
@@ -884,12 +896,20 @@ export default function PurchasesPage() {
         }
 
         /*
-         * Brand belongs to the parent product. Keep the selected
-         * product/variant IDs so an edited brand updates the same
-         * catalogue item instead of creating a duplicate product.
+         * Changing the brand changes the stock identity.
+         * Never keep another brand's product ID, variant ID,
+         * barcode, SKU or stock. The RPC will match/create the
+         * correct brand-safe parent product.
          */
         if (field === "brand") {
-          return nextItem;
+          return {
+            ...nextItem,
+            productId: null,
+            variantId: null,
+            barcode: "",
+            sku: "",
+            currentStock: 0,
+          };
         }
 
         if (
@@ -1049,71 +1069,6 @@ export default function PurchasesPage() {
     setSaving(true);
 
     try {
-      const existingProductBrandEdits =
-        new Map<number, string>();
-
-      validItems.forEach((item) => {
-        if (item.productId === null) {
-          return;
-        }
-
-        const cleanBrand =
-          item.brand.trim() || "NEW CITY STYLE";
-
-        const previousBrand =
-          existingProductBrandEdits.get(
-            item.productId,
-          );
-
-        if (
-          previousBrand &&
-          normalizeText(previousBrand) !==
-            normalizeText(cleanBrand)
-        ) {
-          throw new Error(
-            `${item.productName} has two different brand values in this purchase. Use one brand for the same product.`,
-          );
-        }
-
-        existingProductBrandEdits.set(
-          item.productId,
-          cleanBrand,
-        );
-      });
-
-      for (const [
-        productId,
-        brand,
-      ] of existingProductBrandEdits) {
-        const currentProduct =
-          products.find(
-            (product) =>
-              product.productId === productId,
-          );
-
-        if (
-          currentProduct &&
-          normalizeText(currentProduct.brand) !==
-            normalizeText(brand)
-        ) {
-          const { error: brandUpdateError } =
-            await supabase
-              .from("products")
-              .update({
-                brand,
-                updated_at:
-                  new Date().toISOString(),
-              })
-              .eq("id", productId);
-
-          if (brandUpdateError) {
-            throw new Error(
-              `Unable to update brand for ${currentProduct.name}: ${brandUpdateError.message}`,
-            );
-          }
-        }
-      }
-
       const resolvedItems =
         validItems.map((item) => {
           if (
@@ -1129,6 +1084,32 @@ export default function PurchasesPage() {
             );
 
           if (!matchedProduct) {
+            const selectedProduct =
+              item.productId !== null
+                ? products.find(
+                    (product) =>
+                      product.productId === item.productId,
+                  )
+                : null;
+
+            const brandWasChanged =
+              selectedProduct != null &&
+              !sameText(
+                selectedProduct.brand,
+                item.brand,
+              );
+
+            if (brandWasChanged) {
+              return {
+                ...item,
+                productId: null,
+                variantId: null,
+                currentStock: 0,
+                barcode: item.barcode.trim(),
+                sku: item.sku.trim(),
+              };
+            }
+
             return item;
           }
 
@@ -1642,7 +1623,7 @@ export default function PurchasesPage() {
                     setProductSearch(event.target.value);
                     setShowProductResults(true);
                   }}
-                  placeholder="Search name, brand, barcode, SKU, size or colour"
+                  placeholder="Search brand, product, barcode, SKU, size or colour"
                 />
               </label>
 
