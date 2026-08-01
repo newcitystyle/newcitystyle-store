@@ -98,7 +98,6 @@ type QuickItemForm = {
   category: string;
   quantity: number;
   mrp: number;
-  sellingPrice: number;
   purchasePrice: number;
   taxPercent: number;
   saveAsProduct: boolean;
@@ -110,7 +109,6 @@ const EMPTY_QUICK_ITEM_FORM: QuickItemForm = {
   category: "Others",
   quantity: 1,
   mrp: 0,
-  sellingPrice: 0,
   purchasePrice: 0,
   taxPercent: 0,
   saveAsProduct: false,
@@ -1267,11 +1265,13 @@ if (!variantsError) {
 
     const name = quickItemForm.name.trim();
     const category = quickItemForm.category.trim() || "Others";
-    const quantity = Math.max(1, Math.floor(toNumber(quickItemForm.quantity, 1)));
-    const sellingPrice = Math.max(0, toNumber(quickItemForm.sellingPrice));
+    const quantity = Math.max(
+      1,
+      Math.floor(toNumber(quickItemForm.quantity, 1)),
+    );
     const mrp = Math.max(
-      sellingPrice,
-      toNumber(quickItemForm.mrp, sellingPrice),
+      0,
+      toNumber(quickItemForm.mrp),
     );
     const purchasePrice = Math.max(
       0,
@@ -1291,8 +1291,8 @@ if (!variantsError) {
       return;
     }
 
-    if (sellingPrice <= 0) {
-      showNotice("Enter a valid selling price.", "error");
+    if (mrp <= 0) {
+      showNotice("Enter a valid MRP.", "error");
       return;
     }
 
@@ -1309,7 +1309,9 @@ if (!variantsError) {
       category,
       subcategory: "",
       brand: "NEW CITY STYLE",
-      price: sellingPrice,
+      // Local POS starts the quick item from MRP.
+      // The cashier can apply the customer discount in the bill.
+      price: mrp,
       mrp,
       stock: Number.MAX_SAFE_INTEGER,
       sku: "",
@@ -4773,37 +4775,20 @@ if (!variantsError) {
                 </label>
 
                 <label>
-                  <span>Selling Price *</span>
+                  <span>MRP *</span>
                   <input
                     type="number"
-                    min="0"
+                    min="0.01"
                     step="0.01"
-                    value={quickItemForm.sellingPrice || ""}
-                    placeholder="0"
+                    value={quickItemForm.mrp || ""}
+                    placeholder="Product MRP"
                     onChange={(event) =>
                       setQuickItemForm((current) => ({
                         ...current,
-                        sellingPrice: Math.max(
+                        mrp: Math.max(
                           0,
                           Number(event.target.value) || 0,
                         ),
-                      }))
-                    }
-                  />
-                </label>
-
-                <label>
-                  <span>MRP (Optional)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={quickItemForm.mrp || ""}
-                    placeholder="0"
-                    onChange={(event) =>
-                      setQuickItemForm((current) => ({
-                        ...current,
-                        mrp: Math.max(0, Number(event.target.value) || 0),
                       }))
                     }
                   />

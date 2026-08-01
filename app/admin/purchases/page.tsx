@@ -172,6 +172,66 @@ function normalizeText(value: string | null | undefined) {
   return value?.trim().toLowerCase() || "";
 }
 
+function sameIdentityValue(
+  left: string | null | undefined,
+  right: string | null | undefined,
+) {
+  return normalizeText(left) === normalizeText(right);
+}
+
+function findMatchingProductOption(
+  item: PurchaseItem,
+  productOptions: ProductOption[],
+) {
+  const barcode = normalizeText(item.barcode);
+  const sku = normalizeText(item.sku);
+
+  if (barcode || sku) {
+    const codeMatch = productOptions.find((product) => {
+      return (
+        (barcode &&
+          normalizeText(product.barcode) === barcode) ||
+        (sku && normalizeText(product.sku) === sku)
+      );
+    });
+
+    if (codeMatch) {
+      return codeMatch;
+    }
+  }
+
+  const sameProductIdentity = productOptions.filter(
+    (product) =>
+      sameIdentityValue(product.name, item.productName) &&
+      sameIdentityValue(product.brand, item.brand),
+  );
+
+  if (sameProductIdentity.length === 0) {
+    return null;
+  }
+
+  const exactVariant = sameProductIdentity.find(
+    (product) =>
+      sameIdentityValue(product.size, item.size) &&
+      sameIdentityValue(product.color, item.color),
+  );
+
+  if (exactVariant) {
+    return exactVariant;
+  }
+
+  const sameParent =
+    sameProductIdentity.find(
+      (product) =>
+        product.productId === item.productId,
+    ) || sameProductIdentity[0];
+
+  return {
+    ...sameParent,
+    variantId: null,
+  };
+}
+
 function newId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random()
     .toString(36)
@@ -521,6 +581,7 @@ export default function PurchasesPage() {
           product.name,
           product.category,
           product.subcategory,
+          product.brand,
           product.size,
           product.color,
           product.sku,
@@ -700,6 +761,7 @@ export default function PurchasesPage() {
           product.name,
           product.category,
           product.subcategory,
+          product.brand,
           product.size,
           product.color,
           product.sku,
@@ -803,10 +865,7 @@ export default function PurchasesPage() {
           return nextItem;
         }
 
-        if (
-          field === "productName" ||
-          field === "brand"
-        ) {
+        if (field === "productName") {
           return {
             ...nextItem,
             productId: null,
@@ -815,6 +874,15 @@ export default function PurchasesPage() {
             sku: "",
             currentStock: 0,
           };
+        }
+
+        /*
+         * Brand belongs to the parent product. Keep the selected
+         * product/variant IDs so an edited brand updates the same
+         * catalogue item instead of creating a duplicate product.
+         */
+        if (field === "brand") {
+          return nextItem;
         }
 
         if (
@@ -974,7 +1042,107 @@ export default function PurchasesPage() {
     setSaving(true);
 
     try {
-      const rpcItems = validItems.flatMap((item) => {
+      const existingProductBrandEdits =
+        new Map<number, string>();
+
+      validItems.forEach((item) => {
+        if (item.productId === null) {
+          return;
+        }
+
+        const cleanBrand =
+          item.brand.trim() || "NEW CITY STYLE";
+
+        const previousBrand =
+          existingProductBrandEdits.get(
+            item.productId,
+          );
+
+        if (
+          previousBrand &&
+          normalizeText(previousBrand) !==
+            normalizeText(cleanBrand)
+        ) {
+          throw new Error(
+            `${item.productName} has two different brand values in this purchase. Use one brand for the same product.`,
+          );
+        }
+
+        existingProductBrandEdits.set(
+          item.productId,
+          cleanBrand,
+        );
+      });
+
+      for (const [
+        productId,
+        brand,
+      ] of existingProductBrandEdits) {
+        const currentProduct =
+          products.find(
+            (product) =>
+              product.productId === productId,
+          );
+
+        if (
+          currentProduct &&
+          normalizeText(currentProduct.brand) !==
+            normalizeText(brand)
+        ) {
+          const { error: brandUpdateError } =
+            await supabase
+              .from("products")
+              .update({
+                brand,
+                updated_at:
+                  new Date().toISOString(),
+              })
+              .eq("id", productId);
+
+          if (brandUpdateError) {
+            throw new Error(
+              `Unable to update brand for ${currentProduct.name}: ${brandUpdateError.message}`,
+            );
+          }
+        }
+      }
+
+      const resolvedItems =
+        validItems.map((item) => {
+          if (
+            item.barcodeMode === "individual"
+          ) {
+            return item;
+          }
+
+          const matchedProduct =
+            findMatchingProductOption(
+              item,
+              products,
+            );
+
+          if (!matchedProduct) {
+            return item;
+          }
+
+          return {
+            ...item,
+            productId:
+              matchedProduct.productId,
+            variantId:
+              matchedProduct.variantId,
+            currentStock:
+              matchedProduct.stock,
+            sku:
+              item.sku.trim() ||
+              matchedProduct.sku,
+            barcode:
+              item.barcode.trim() ||
+              matchedProduct.barcode,
+          };
+        });
+
+      const rpcItems = resolvedItems.flatMap((item) => {
         const quantity = Math.max(
           1,
           Math.floor(item.quantity),
@@ -1445,7 +1613,7 @@ export default function PurchasesPage() {
                     setProductSearch(event.target.value);
                     setShowProductResults(true);
                   }}
-                  placeholder="Search name, barcode, SKU, size or colour"
+                  placeholder="Search name, brand, barcode, SKU, size or colour"
                 />
               </label>
 
@@ -1485,6 +1653,7 @@ export default function PurchasesPage() {
                           <strong>{product.name}</strong>
                           <span>
                             {[
+                              product.brand,
                               product.size,
                               product.color,
                               product.barcode || product.sku,
@@ -1626,6 +1795,7 @@ export default function PurchasesPage() {
                                     <strong>{product.name}</strong>
                                     <span>
                                       {[
+                                        product.brand,
                                         product.size,
                                         product.color,
                                         product.barcode ||
@@ -1677,7 +1847,7 @@ export default function PurchasesPage() {
                           </label>
 
                           <label>
-                            <span>Brand</span>
+                            <span>Brand (Editable)</span>
                             <input
                               value={item.brand}
                               onChange={(event) =>
@@ -1689,6 +1859,11 @@ export default function PurchasesPage() {
                               }
                               placeholder="NEW CITY STYLE"
                             />
+                            <small className="ncsBrandEditHint">
+                              Existing product selected అయితే brand
+                              change చేసినప్పుడు catalogue brand కూడా
+                              update అవుతుంది.
+                            </small>
                           </label>
                         </div>
 
@@ -2135,10 +2310,12 @@ export default function PurchasesPage() {
             </div>
 
             <div className="ncsItemHelp">
-              <strong>How matching works:</strong> Barcode match
-              అయితే existing stock increase అవుతుంది. Existing
-              productకు కొత్త size/colour enter చేస్తే duplicate
-              product కాకుండా new variant create అవుతుంది.
+              <strong>How matching works:</strong> Supplier ఎవరు
+              అయినా same Brand + Product Name + Size + Colour match
+              అయితే అదే existing variant stockలో quantity add
+              అవుతుంది. Brand field edit చేస్తే అదే parent product
+              brand update అవుతుంది. కొత్త size/colour మాత్రమే ఉంటే
+              duplicate product కాకుండా కొత్త variant create అవుతుంది.
             </div>
           </article>
         </section>
@@ -2647,6 +2824,15 @@ export default function PurchasesPage() {
         .ncsSecondaryButton {
           background: white;
           color: ${ROYAL_BLUE};
+        }
+
+        .ncsBrandEditHint {
+          display: block;
+          margin-top: 5px;
+          color: #7d8797;
+          font-size: 7.5px;
+          font-weight: 700;
+          line-height: 1.4;
         }
 
         .barcodeModeField {
