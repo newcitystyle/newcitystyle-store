@@ -60,6 +60,7 @@ type PurchaseItemRow = {
   product_id?: number | null;
   variant_id?: number | null;
   product_name?: string | null;
+  brand?: string | null;
   size?: string | null;
   color?: string | null;
   sku?: string | null;
@@ -91,6 +92,7 @@ type PurchaseItemRow = {
 
 type PurchaseItemEditForm = {
   productName: string;
+  brand: string;
   size: string;
   color: string;
   sku: string;
@@ -229,6 +231,7 @@ export default function PurchaseHistoryPage() {
   const [itemEditForm, setItemEditForm] =
     useState<PurchaseItemEditForm>({
       productName: "",
+      brand: "",
       size: "",
       color: "",
       sku: "",
@@ -337,6 +340,7 @@ export default function PurchaseHistoryPage() {
           purchase.payment_method,
           ...purchaseItems.flatMap((item) => [
             item.product_name,
+            item.brand,
             item.barcode,
             item.sku,
           ]),
@@ -536,6 +540,7 @@ export default function PurchaseHistoryPage() {
     setEditingItem(item);
     setItemEditForm({
       productName: item.product_name || "",
+      brand: item.brand || "",
       size: item.size || "",
       color: item.color || "",
       sku: item.sku || "",
@@ -588,6 +593,11 @@ export default function PurchaseHistoryPage() {
       return;
     }
 
+    if (!itemEditForm.brand.trim()) {
+      setNotice("Brand is required.");
+      return;
+    }
+
     if (quantity <= 0) {
       setNotice("Quantity must be greater than zero.");
       return;
@@ -603,6 +613,21 @@ export default function PurchaseHistoryPage() {
     setSavingItemEdit(true);
 
     try {
+      const oldBrand = normalize(editingItem.brand);
+      const newBrand = normalize(itemEditForm.brand);
+
+      if (oldBrand !== newBrand) {
+        const { error: brandMoveError } = await supabase.rpc(
+          "ncs_move_purchase_item_brand_v1",
+          {
+            p_item_id: editingItem.id,
+            p_new_brand: itemEditForm.brand.trim(),
+          },
+        );
+
+        if (brandMoveError) throw brandMoveError;
+      }
+
       const { error } = await supabase.rpc(
         "ncs_edit_purchase_item_v2",
         {
@@ -789,6 +814,7 @@ export default function PurchaseHistoryPage() {
             <td>${index + 1}</td>
             <td>
               <strong>${item.product_name || "Product"}</strong>
+              <small>Brand: ${item.brand || "—"}</small>
               <small>
                 ${[item.size, item.color].filter(Boolean).join(" • ") || "Standard Product"}
               </small>
@@ -1179,7 +1205,7 @@ export default function PurchaseHistoryPage() {
             <input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search purchase no, supplier, invoice, product or barcode..."
+              placeholder="Search purchase no, supplier, brand, product or barcode..."
             />
           </div>
 
@@ -1289,6 +1315,9 @@ export default function PurchaseHistoryPage() {
                     {purchaseItems.slice(0, 4).map((item) => (
                       <div key={item.id}>
                         <strong>{item.product_name || "Product"}</strong>
+                        <span className="itemBrand">
+                          Brand: {item.brand || "—"}
+                        </span>
                         <span>
                           Qty {toNumber(item.quantity)}
                           {item.size ? ` • ${item.size}` : ""}
@@ -1427,6 +1456,9 @@ export default function PurchaseHistoryPage() {
                 <article key={item.id} className="detailsItemFull">
                   <div className="detailsItemName">
                     <strong>{item.product_name || "Product"}</strong>
+                    <span className="brandLine">
+                      Brand: {item.brand || "—"}
+                    </span>
                     <span>
                       {[item.size, item.color].filter(Boolean).join(" • ") ||
                         "Standard Product"}
@@ -1725,14 +1757,16 @@ export default function PurchaseHistoryPage() {
               <h2>{editingItem.product_name || "Product"}</h2>
 
               <p className="editSafetyNote">
-                Quantity changes update only the stock difference.
-                Purchase totals, tax, supplier due and ledger
-                balance are recalculated automatically.
+                Brand changes move this purchase quantity to a separate
+                brand-safe product and variant. Quantity changes update only
+                the stock difference. Purchase totals, tax, supplier due and
+                ledger balance are recalculated automatically.
               </p>
 
               <div className="editPurchaseGrid">
                 {[
                   ["Product Name", "productName", "text"],
+                  ["Brand", "brand", "text"],
                   ["Size", "size", "text"],
                   ["Colour", "color", "text"],
                   ["SKU", "sku", "text"],
@@ -2487,6 +2521,12 @@ export default function PurchaseHistoryPage() {
           font-size: 9px;
           font-weight: 900;
           letter-spacing: 1px;
+        }
+
+        .itemBrand,
+        .brandLine {
+          color: #0a2e73 !important;
+          font-weight: 900 !important;
         }
 
         .purchaseCard h2 {
