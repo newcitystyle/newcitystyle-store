@@ -19,10 +19,6 @@ type MetaErrorResponse = {
   };
 };
 
-type MetaUploadResponse = {
-  id?: string;
-};
-
 type MetaMessageResponse = {
   messages?: Array<{
     id?: string;
@@ -32,29 +28,6 @@ type MetaMessageResponse = {
     wa_id?: string;
   }>;
 };
-
-type MetaTemplateComponent = {
-  type?: string;
-  format?: string;
-  text?: string;
-};
-
-type MetaTemplateDetails = {
-  id?: string;
-  name?: string;
-  language?: string;
-  status?: string;
-  parameter_format?: "POSITIONAL" | "NAMED" | string;
-  components?: MetaTemplateComponent[];
-  error?: MetaErrorResponse["error"];
-};
-
-const INVOICE_TEMPLATE_NAME = "new_city_style_invoice_document";
-const INVOICE_TEMPLATE_LANGUAGE = "en_US";
-
-// Template ID visible in WhatsApp Manager.
-// It can be overridden safely from Vercel Environment Variables.
-const DEFAULT_INVOICE_TEMPLATE_ID = "1046855767891190";
 
 function normalizePhone(value: string) {
   let digits = String(value || "").replace(/\D/g, "");
@@ -70,23 +43,7 @@ function normalizePhone(value: string) {
   return digits;
 }
 
-function safeFileName(value: string) {
-  const cleaned = String(value || "")
-    .trim()
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-
-  if (!cleaned) {
-    return "new-city-style-invoice.pdf";
-  }
-
-  return cleaned.toLowerCase().endsWith(".pdf")
-    ? cleaned
-    : `${cleaned}.pdf`;
-}
-
-function safeTemplateText(
+function safeText(
   value: FormDataEntryValue | null,
   fallback: string,
 ) {
@@ -118,36 +75,22 @@ function normalizeAmount(
     return fallback;
   }
 
-  return String(parsed);
+  return parsed.toFixed(2);
 }
 
+function formatIndianMoney(value: string) {
+  const amount = Number(value);
 
-function extractNamedParameters(
-  templateText: string,
-) {
-  return Array.from(
-    templateText.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g),
-  ).map((match) => match[1]);
-}
+  if (!Number.isFinite(amount)) {
+    return `₹${value}`;
+  }
 
-function extractPositionalParameterCount(
-  templateText: string,
-) {
-  const indexes = Array.from(
-    templateText.matchAll(/\{\{\s*(\d+)\s*\}\}/g),
-  ).map((match) => Number(match[1]));
-
-  return indexes.length > 0
-    ? Math.max(...indexes)
-    : 0;
-}
-
-function normalizedParameterKey(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
 }
 
 function buildMetaError(metaData: MetaErrorResponse) {
@@ -181,10 +124,6 @@ export async function POST(request: Request) {
     const apiVersion =
       process.env.WHATSAPP_API_VERSION?.trim() || "v25.0";
 
-    const invoiceTemplateId =
-      process.env.WHATSAPP_INVOICE_TEMPLATE_ID?.trim() ||
-      DEFAULT_INVOICE_TEMPLATE_ID;
-
     if (!accessToken || !phoneNumberId) {
       return NextResponse.json(
         {
@@ -198,18 +137,16 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
 
-    const pdf = formData.get("pdf");
-
     const recipientPhone = normalizePhone(
       String(formData.get("to") || ""),
     );
 
-    const customerName = safeTemplateText(
+    const customerName = safeText(
       formData.get("customerName"),
       "Customer",
     );
 
-    const billNumber = safeTemplateText(
+    const billNumber = safeText(
       formData.get("billNumber"),
       "NCS-INVOICE",
     );
@@ -226,17 +163,10 @@ export async function POST(request: Request) {
       formData.get("dueAmount"),
     );
 
-    const paymentMethod = safeTemplateText(
+    const paymentMethod = safeText(
       formData.get("paymentMethod"),
       "Cash",
     );
-
-    const requestedFileName = safeTemplateText(
-      formData.get("fileName"),
-      `${billNumber}.pdf`,
-    );
-
-    const fileName = safeFileName(requestedFileName);
 
     if (
       recipientPhone.length < 10 ||
@@ -253,340 +183,46 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!(pdf instanceof File)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "PDF invoice file is required.",
-        },
-        { status: 400 },
-      );
-    }
-
-    if (pdf.type !== "application/pdf") {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Only PDF invoice files are accepted.",
-          receivedFileType: pdf.type,
-        },
-        { status: 400 },
-      );
-    }
-
-    if (pdf.size <= 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "The PDF invoice file is empty.",
-        },
-        { status: 400 },
-      );
-    }
-
-    /*
-     * STEP 1:
-     * Upload the generated PDF to WhatsApp media.
-     */
-
-    const uploadFormData = new FormData();
-
-    uploadFormData.append(
-      "messaging_product",
-      "whatsapp",
-    );
-
-    uploadFormData.append(
-      "file",
-      new File(
-        [await pdf.arrayBuffer()],
-        fileName,
-        {
-          type: "application/pdf",
-        },
-      ),
-    );
-
-    const uploadResponse = await fetch(
-      `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/media`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: uploadFormData,
-        cache: "no-store",
-      },
-    );
-
-    const uploadData =
-      (await uploadResponse.json()) as
-        | MetaUploadResponse
-        | MetaErrorResponse;
-
-    if (
-      !uploadResponse.ok ||
-      !("id" in uploadData) ||
-      !uploadData.id
-    ) {
-      console.error(
-        "WhatsApp media upload error:",
-        JSON.stringify(uploadData, null, 2),
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-          stage: "media_upload",
-          ...buildMetaError(
-            uploadData as MetaErrorResponse,
-          ),
-        },
-        {
-          status: uploadResponse.status || 500,
-        },
-      );
-    }
-
-    const mediaId = uploadData.id;
-
-    /*
-     * Exact approved template structure:
-     *
-     * Header:
-     * Document
-     *
-     * {{1}} Customer name
-     * {{2}} Bill number
-     * {{3}} Bill amount
-     * {{4}} Paid amount
-     * {{5}} Due amount
-     * {{6}} Payment method
-     */
-
-    /*
-     * Read the approved template directly from Meta before sending.
-     * This prevents POSITIONAL/NAMED parameter-format mismatches.
-     */
-    const templateResponse = await fetch(
-      `https://graph.facebook.com/${apiVersion}/${invoiceTemplateId}?fields=id,name,language,status,parameter_format,components`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        cache: "no-store",
-      },
-    );
-
-    const templateData =
-      (await templateResponse.json()) as MetaTemplateDetails;
-
-    if (
-      !templateResponse.ok ||
-      templateData.error
-    ) {
-      console.error(
-        "WhatsApp template details error:",
-        JSON.stringify(templateData, null, 2),
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-          stage: "template_lookup",
-          templateId: invoiceTemplateId,
-          ...buildMetaError(
-            templateData as MetaErrorResponse,
-          ),
-        },
-        {
-          status: templateResponse.status || 500,
-        },
-      );
-    }
-
-    const approvedTemplateName =
-      templateData.name?.trim() ||
-      INVOICE_TEMPLATE_NAME;
-
-    const approvedTemplateLanguage =
-      templateData.language?.trim() ||
-      INVOICE_TEMPLATE_LANGUAGE;
-
-    const bodyTemplateText =
-      templateData.components?.find(
-        (component) =>
-          component.type?.toUpperCase() === "BODY",
-      )?.text || "";
-
-    const parameterValues = [
-      customerName,
-      billNumber,
-      billAmount,
-      paidAmount,
-      dueAmount,
-      paymentMethod,
-    ];
-
-    const valueByName: Record<string, string> = {
-      customer_name: customerName,
-      customer: customerName,
-      name: customerName,
-
-      bill_number: billNumber,
-      invoice_number: billNumber,
-      bill_no: billNumber,
-      invoice_no: billNumber,
-
-      bill_amount: billAmount,
-      invoice_amount: billAmount,
-      total_amount: billAmount,
-      total: billAmount,
-
-      paid_amount: paidAmount,
-      amount_paid: paidAmount,
-      paid: paidAmount,
-
-      due_amount: dueAmount,
-      balance_due: dueAmount,
-      due: dueAmount,
-
-      payment_method: paymentMethod,
-      payment_mode: paymentMethod,
-      method: paymentMethod,
-    };
-
-    const parameterFormat =
-      templateData.parameter_format
-        ?.trim()
-        .toUpperCase() || "POSITIONAL";
-
-    let bodyParameters:
-      Array<{
-        type: "text";
-        text: string;
-        parameter_name?: string;
-      }>;
-
-    if (parameterFormat === "NAMED") {
-      const namedParameters =
-        extractNamedParameters(
-          bodyTemplateText,
-        );
-
-      if (namedParameters.length === 0) {
-        return NextResponse.json(
-          {
-            success: false,
-            stage: "template_validation",
-            error:
-              "Meta reports a NAMED template, but no named body placeholders were found.",
-            templateId: invoiceTemplateId,
-            templateName: approvedTemplateName,
-            parameterFormat,
-            bodyTemplateText,
-          },
-          { status: 500 },
-        );
-      }
-
-      bodyParameters =
-        namedParameters.map(
-          (parameterName, index) => {
-            const normalizedName =
-              normalizedParameterKey(
-                parameterName,
-              );
-
-            return {
-              type: "text" as const,
-              parameter_name:
-                parameterName,
-              text:
-                valueByName[
-                  normalizedName
-                ] ??
-                parameterValues[index] ??
-                "",
-            };
-          },
-        );
-    } else {
-      const positionalCount =
-        extractPositionalParameterCount(
-          bodyTemplateText,
-        );
-
-      const requiredCount =
-        positionalCount > 0
-          ? positionalCount
-          : parameterValues.length;
-
-      bodyParameters =
-        parameterValues
-          .slice(0, requiredCount)
-          .map((text) => ({
-            type: "text" as const,
-            text,
-          }));
-    }
+    const messageBody = [
+      `Hello ${customerName},`,
+      "",
+      "Thank you for shopping with NEW CITY STYLE.",
+      "",
+      `Bill Number: ${billNumber}`,
+      `Bill Amount: ${formatIndianMoney(billAmount)}`,
+      `Paid Amount: ${formatIndianMoney(paidAmount)}`,
+      `Due Amount: ${formatIndianMoney(dueAmount)}`,
+      `Payment Method: ${paymentMethod}`,
+      "",
+      "Style for Every Family",
+      "NEW CITY STYLE",
+      "",
+      "Thank you for your business!",
+    ].join("\n");
 
     const messagePayload = {
       messaging_product: "whatsapp",
       recipient_type: "individual",
       to: recipientPhone,
-      type: "template",
-      template: {
-        name: approvedTemplateName,
-        language: {
-          code: approvedTemplateLanguage,
-        },
-        components: [
-          {
-            type: "header",
-            parameters: [
-              {
-                type: "document",
-                document: {
-                  id: mediaId,
-                  filename: fileName,
-                },
-              },
-            ],
-          },
-          {
-            type: "body",
-            parameters: bodyParameters,
-          },
-        ],
+      type: "text",
+      text: {
+        preview_url: false,
+        body: messageBody,
       },
     };
 
     console.log(
-      "WhatsApp invoice request:",
+      "WhatsApp text bill request:",
       JSON.stringify(
         {
           to: recipientPhone,
-          templateId: invoiceTemplateId,
-          templateName: approvedTemplateName,
-          templateLanguage:
-            approvedTemplateLanguage,
-          parameterFormat,
-          bodyTemplateText,
-          mediaId,
-          fileName,
-          bodyParameters,
+          billNumber,
+          messageBody,
         },
         null,
         2,
       ),
     );
-
-    /*
-     * STEP 2:
-     * Send the approved WhatsApp template.
-     */
 
     const messageResponse = await fetch(
       `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
@@ -613,29 +249,15 @@ export async function POST(request: Request) {
       messageData.messages.length === 0
     ) {
       console.error(
-        "WhatsApp invoice message error:",
+        "WhatsApp text bill error:",
         JSON.stringify(messageData, null, 2),
       );
 
       return NextResponse.json(
         {
           success: false,
-          stage: "message_send",
-          mediaId,
-          templateId: invoiceTemplateId,
-          templateName: approvedTemplateName,
-          templateLanguage:
-            approvedTemplateLanguage,
-          parameterFormat,
-          bodyTemplateText,
-          sentParameters: {
-            customerName,
-            billNumber,
-            billAmount,
-            paidAmount,
-            dueAmount,
-            paymentMethod,
-          },
+          stage: "text_message_send",
+          sentMessage: messageBody,
           ...buildMetaError(
             messageData as MetaErrorResponse,
           ),
@@ -651,31 +273,19 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       message:
-        "NEW CITY STYLE PDF invoice sent to WhatsApp successfully.",
-      mediaId,
+        "NEW CITY STYLE bill message sent to WhatsApp successfully.",
       whatsappMessageId: firstMessage?.id || null,
       messageStatus:
         firstMessage?.message_status || "accepted",
       recipientWhatsAppId:
         messageData.contacts?.[0]?.wa_id ||
         recipientPhone,
-      templateId: invoiceTemplateId,
-      templateName: approvedTemplateName,
-      templateLanguage:
-        approvedTemplateLanguage,
-      parameterFormat,
-      sentParameters: {
-        customerName,
-        billNumber,
-        billAmount,
-        paidAmount,
-        dueAmount,
-        paymentMethod,
-      },
+      billNumber,
+      sentMessage: messageBody,
     });
   } catch (error) {
     console.error(
-      "WhatsApp invoice route error:",
+      "WhatsApp text bill route error:",
       error,
     );
 
@@ -685,7 +295,7 @@ export async function POST(request: Request) {
         error:
           error instanceof Error
             ? error.message
-            : "Unexpected WhatsApp invoice error.",
+            : "Unexpected WhatsApp bill message error.",
       },
       { status: 500 },
     );
