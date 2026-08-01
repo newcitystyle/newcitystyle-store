@@ -77,6 +77,21 @@ type CartItem = PosProduct & {
   quantity: number;
 };
 
+type PosProductGroup = {
+  groupKey: string;
+  productId: number;
+  name: string;
+  category: string;
+  subcategory: string;
+  brand: string;
+  imageUrl: string;
+  totalStock: number;
+  minPrice: number;
+  maxPrice: number;
+  variants: PosProduct[];
+};
+
+type ProductViewMode = "smart" | "brands" | "all";
 
 type QuickItemForm = {
   name: string;
@@ -195,6 +210,8 @@ const IVORY = "#F8F4EC";
 const CHARCOAL = "#2C2C2C";
 
 const HELD_BILLS_STORAGE_KEY = "ncs_pos_held_bills_v1";
+const POS_RECENT_PRODUCTS_KEY = "ncs_pos_recent_products_v1";
+const POS_POPULAR_PRODUCTS_KEY = "ncs_pos_popular_products_v1";
 
 function toNumber(
   value: number | string | null | undefined,
@@ -281,6 +298,18 @@ function normalizeText(value: string | null | undefined) {
   return value?.trim().toLowerCase() || "";
 }
 
+function getPosShortCode(product: PosProduct) {
+  if (product.variantId) {
+    return `V${product.variantId}`;
+  }
+
+  return `P${product.productId}`;
+}
+
+function getParentShortCode(productId: number) {
+  return `P${productId}`;
+}
+
 function getAvailableStock(product: PosProduct) {
   if (product.isQuickItem) {
     return Number.MAX_SAFE_INTEGER;
@@ -313,6 +342,107 @@ function createHoldNumber() {
   return `HOLD-${datePart}-${timePart}`;
 }
 
+function GroupedProductCard({
+  group,
+  expanded,
+  onToggle,
+  onAddVariant,
+}: {
+  group: PosProductGroup;
+  expanded: boolean;
+  onToggle: () => void;
+  onAddVariant: (product: PosProduct) => void;
+}) {
+  const priceLabel =
+    group.minPrice === group.maxPrice
+      ? formatCurrency(group.minPrice)
+      : `${formatCurrency(group.minPrice)} – ${formatCurrency(group.maxPrice)}`;
+
+  return (
+    <article className={`ncsPosGroupedCard ${expanded ? "open" : ""}`}>
+      <button
+        type="button"
+        className="ncsPosGroupedCardMain"
+        onClick={onToggle}
+      >
+        <div className="ncsPosGroupedImage">
+          {group.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={group.imageUrl} alt={group.name} />
+          ) : (
+            <span>NCS</span>
+          )}
+
+          <em>{group.totalStock} stock</em>
+        </div>
+
+        <div className="ncsPosGroupedInfo">
+          <small>{group.category}</small>
+          <h3>{group.name}</h3>
+          <p>{group.brand}</p>
+
+          <div>
+            <strong>{priceLabel}</strong>
+            <span>{group.variants.length} option(s)</span>
+          </div>
+
+          <code>{getParentShortCode(group.productId)}</code>
+        </div>
+
+        <b className="ncsPosGroupedToggle">
+          {expanded ? "−" : "+"}
+        </b>
+      </button>
+
+      {expanded && (
+        <div className="ncsPosVariantPanel">
+          <header>
+            <div>
+              <span>SELECT SIZE / COLOUR</span>
+              <strong>{group.name}</strong>
+            </div>
+            <small>{group.totalStock} available</small>
+          </header>
+
+          <div className="ncsPosVariantList">
+            {group.variants.map((variant) => {
+              const outOfStock = getAvailableStock(variant) <= 0;
+
+              return (
+                <button
+                  key={variant.key}
+                  type="button"
+                  className={outOfStock ? "out" : ""}
+                  disabled={outOfStock}
+                  onClick={() => onAddVariant(variant)}
+                >
+                  <div>
+                    <strong>
+                      {[variant.size, variant.color]
+                        .filter(Boolean)
+                        .join(" • ") || "Standard"}
+                    </strong>
+                    <small>
+                      {variant.barcode || variant.sku || getPosShortCode(variant)}
+                    </small>
+                  </div>
+                  <span>
+                    <b>{formatCurrency(variant.price)}</b>
+                    <small>
+                      {outOfStock ? "Out" : `${variant.stock} stock`}
+                    </small>
+                  </span>
+                  <em>{outOfStock ? "×" : "+"}</em>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
 export default function PosPage() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -333,6 +463,17 @@ export default function PosPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] =
     useState("All");
+
+  const [productViewMode, setProductViewMode] =
+    useState<ProductViewMode>("smart");
+  const [expandedBrand, setExpandedBrand] =
+    useState<string | null>(null);
+  const [expandedProductId, setExpandedProductId] =
+    useState<number | null>(null);
+  const [recentProductKeys, setRecentProductKeys] =
+    useState<string[]>([]);
+  const [popularProductCounts, setPopularProductCounts] =
+    useState<Record<string, number>>({});
 
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [billDiscountPercent, setBillDiscountPercent] = useState(0);
@@ -555,6 +696,32 @@ export default function PosPage() {
   useEffect(() => {
     loadHeldBills();
   }, [loadHeldBills]);
+
+  useEffect(() => {
+    try {
+      const recentValue = window.localStorage.getItem(
+        POS_RECENT_PRODUCTS_KEY
+      );
+      const popularValue = window.localStorage.getItem(
+        POS_POPULAR_PRODUCTS_KEY
+      );
+
+      setRecentProductKeys(
+        recentValue
+          ? (JSON.parse(recentValue) as string[])
+          : []
+      );
+      setPopularProductCounts(
+        popularValue
+          ? (JSON.parse(popularValue) as Record<string, number>)
+          : {}
+      );
+    } catch (error) {
+      console.info("Unable to load POS product history:", error);
+      setRecentProductKeys([]);
+      setPopularProductCounts({});
+    }
+  }, []);
 
   const loadProducts = useCallback(async () => {
     setLoadingProducts(true);
@@ -859,8 +1026,9 @@ if (!variantsError) {
   }, [products]);
 
   const filteredProducts = useMemo(() => {
-    const normalizedQuery =
-      normalizeText(searchQuery);
+    const queryTokens = normalizeText(searchQuery)
+      .split(/\s+/)
+      .filter(Boolean);
 
     return products.filter((product) => {
       const matchesCategory =
@@ -871,26 +1039,127 @@ if (!variantsError) {
         return false;
       }
 
-      if (!normalizedQuery) {
+      if (queryTokens.length === 0) {
         return true;
       }
 
-      const searchableText = [
-        product.name,
-        product.category,
-        product.subcategory,
-        product.brand,
-        product.sku,
-        product.barcode,
-        product.size,
-        product.color,
-      ]
-        .join(" ")
-        .toLowerCase();
+      const searchableText = normalizeText(
+        [
+          product.name,
+          product.category,
+          product.subcategory,
+          product.brand,
+          product.sku,
+          product.barcode,
+          product.size,
+          product.color,
+          getPosShortCode(product),
+          getParentShortCode(product.productId),
+        ].join(" ")
+      );
 
-      return searchableText.includes(normalizedQuery);
+      return queryTokens.every((token) =>
+        searchableText.includes(token)
+      );
     });
   }, [products, searchQuery, selectedCategory]);
+
+  const groupedProducts = useMemo<PosProductGroup[]>(() => {
+    const groupMap = new Map<number, PosProductGroup>();
+
+    filteredProducts.forEach((product) => {
+      const existing = groupMap.get(product.productId);
+
+      if (existing) {
+        existing.variants.push(product);
+        existing.totalStock += product.stock;
+        existing.minPrice = Math.min(
+          existing.minPrice,
+          product.price
+        );
+        existing.maxPrice = Math.max(
+          existing.maxPrice,
+          product.price
+        );
+        return;
+      }
+
+      groupMap.set(product.productId, {
+        groupKey: `group-${product.productId}`,
+        productId: product.productId,
+        name: product.name,
+        category: product.category,
+        subcategory: product.subcategory,
+        brand: product.brand || "NEW CITY STYLE",
+        imageUrl: product.imageUrl,
+        totalStock: product.stock,
+        minPrice: product.price,
+        maxPrice: product.price,
+        variants: [product],
+      });
+    });
+
+    return Array.from(groupMap.values()).sort((a, b) => {
+      const brandCompare = a.brand.localeCompare(b.brand);
+      return brandCompare !== 0
+        ? brandCompare
+        : a.name.localeCompare(b.name);
+    });
+  }, [filteredProducts]);
+
+  const brandGroups = useMemo(() => {
+    const brandMap = new Map<string, PosProductGroup[]>();
+
+    groupedProducts.forEach((group) => {
+      const brand = group.brand || "NEW CITY STYLE";
+      const existing = brandMap.get(brand) || [];
+      existing.push(group);
+      brandMap.set(brand, existing);
+    });
+
+    return Array.from(brandMap.entries())
+      .map(([brand, groups]) => ({
+        brand,
+        groups,
+        totalStock: groups.reduce(
+          (sum, group) => sum + group.totalStock,
+          0
+        ),
+        totalVariants: groups.reduce(
+          (sum, group) => sum + group.variants.length,
+          0
+        ),
+      }))
+      .sort((a, b) => a.brand.localeCompare(b.brand));
+  }, [groupedProducts]);
+
+  const recentProductGroups = useMemo(() => {
+    const byKey = new Map(
+      groupedProducts.map((group) => [
+        String(group.productId),
+        group,
+      ])
+    );
+
+    return recentProductKeys
+      .map((key) => byKey.get(key))
+      .filter((group): group is PosProductGroup => Boolean(group))
+      .slice(0, 6);
+  }, [groupedProducts, recentProductKeys]);
+
+  const popularProductGroups = useMemo(() => {
+    return [...groupedProducts]
+      .sort(
+        (a, b) =>
+          (popularProductCounts[String(b.productId)] || 0) -
+          (popularProductCounts[String(a.productId)] || 0)
+      )
+      .filter(
+        (group) =>
+          (popularProductCounts[String(group.productId)] || 0) > 0
+      )
+      .slice(0, 6);
+  }, [groupedProducts, popularProductCounts]);
 
   const subtotal = useMemo(
     () =>
@@ -1144,6 +1413,38 @@ if (!variantsError) {
     };
   }
 
+  function rememberSelectedProduct(product: PosProduct) {
+    const productKey = String(product.productId);
+
+    setRecentProductKeys((current) => {
+      const next = [
+        productKey,
+        ...current.filter((key) => key !== productKey),
+      ].slice(0, 12);
+
+      window.localStorage.setItem(
+        POS_RECENT_PRODUCTS_KEY,
+        JSON.stringify(next)
+      );
+
+      return next;
+    });
+
+    setPopularProductCounts((current) => {
+      const next = {
+        ...current,
+        [productKey]: (current[productKey] || 0) + 1,
+      };
+
+      window.localStorage.setItem(
+        POS_POPULAR_PRODUCTS_KEY,
+        JSON.stringify(next)
+      );
+
+      return next;
+    });
+  }
+
   function addProductToCart(product: PosProduct) {
     if (getAvailableStock(product) <= 0) {
       showNotice(
@@ -1189,6 +1490,8 @@ if (!variantsError) {
         },
       ];
     });
+
+    rememberSelectedProduct(product);
 
     showNotice(
       `${product.name} added to bill.`,
@@ -1437,6 +1740,8 @@ if (!variantsError) {
         normalizeText(product.barcode) ===
           normalizedQuery ||
         normalizeText(product.sku) ===
+          normalizedQuery ||
+        normalizeText(getPosShortCode(product)) ===
           normalizedQuery
     );
 
@@ -3480,12 +3785,12 @@ if (!variantsError) {
 
           <div className="ncsPosCatalogueTop">
             <div>
-              <h2>Products</h2>
+              <h2>Smart Product Finder</h2>
 
               <p>
                 {loadingProducts
                   ? "Loading products..."
-                  : `${filteredProducts.length} item(s) available`}
+                  : `${groupedProducts.length} style(s) • ${filteredProducts.length} variant(s)`}
               </p>
             </div>
 
@@ -3493,6 +3798,33 @@ if (!variantsError) {
               <span />
               Live Supabase Stock
             </div>
+          </div>
+
+          <div className="ncsPosFinderToolbar">
+            <button
+              type="button"
+              className={productViewMode === "smart" ? "active" : ""}
+              onClick={() => setProductViewMode("smart")}
+            >
+              ✨ Smart
+            </button>
+            <button
+              type="button"
+              className={productViewMode === "brands" ? "active" : ""}
+              onClick={() => setProductViewMode("brands")}
+            >
+              🏷 Brands
+            </button>
+            <button
+              type="button"
+              className={productViewMode === "all" ? "active" : ""}
+              onClick={() => setProductViewMode("all")}
+            >
+              ▦ All Styles
+            </button>
+            <span>
+              Search example: <strong>royal xxl black</strong> or short code <strong>V1045</strong>
+            </span>
           </div>
 
           {loadError && (
@@ -3531,134 +3863,218 @@ if (!variantsError) {
                 )
               )}
             </div>
-          ) : !loadError &&
-            filteredProducts.length === 0 ? (
+          ) : !loadError && groupedProducts.length === 0 ? (
             <div className="ncsPosEmptyState">
               <div>⌕</div>
               <h3>No products found</h3>
               <p>
-                Try another barcode, name, SKU or category.
+                Try brand, product, size, colour, barcode, SKU or short code.
               </p>
             </div>
           ) : (
-            <div className="ncsPosProductGrid">
-              {filteredProducts.map((product) => {
-                const outOfStock =
-                  getAvailableStock(product) <= 0;
+            <>
+              {productViewMode === "smart" && (
+                <div className="ncsPosSmartFinder">
+                  {recentProductGroups.length > 0 && (
+                    <section className="ncsPosSmartSection">
+                      <header>
+                        <div>
+                          <span>FAST COUNTER</span>
+                          <h3>Recently Used</h3>
+                        </div>
+                        <small>{recentProductGroups.length} styles</small>
+                      </header>
 
-                const lowStock =
-                  product.stock > 0 &&
-                  product.stock <= 5;
+                      <div className="ncsPosCompactRail">
+                        {recentProductGroups.map((group) => (
+                          <button
+                            key={`recent-${group.groupKey}`}
+                            type="button"
+                            className="ncsPosCompactProduct"
+                            onClick={() =>
+                              setExpandedProductId(
+                                expandedProductId === group.productId
+                                  ? null
+                                  : group.productId
+                              )
+                            }
+                          >
+                            <strong>{group.name}</strong>
+                            <span>{group.brand}</span>
+                            <small>
+                              {group.variants.length} option(s) • {group.totalStock} stock
+                            </small>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  )}
 
-                return (
-                  <article
-                    key={product.key}
-                    className={`ncsPosProductCard ${
-                      outOfStock
-                        ? "ncsPosProductOutOfStock"
-                        : ""
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      className="ncsPosProductCardButton"
-                      onClick={() =>
-                        addProductToCart(product)
-                      }
-                      disabled={outOfStock}
-                    >
-                      <div className="ncsPosProductImage">
-                        {product.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={product.imageUrl}
-                            alt={product.name}
-                          />
-                        ) : (
-                          <div className="ncsPosImageFallback">
-                            NCS
-                          </div>
-                        )}
+                  {popularProductGroups.length > 0 && (
+                    <section className="ncsPosSmartSection">
+                      <header>
+                        <div>
+                          <span>POPULAR</span>
+                          <h3>Frequently Sold</h3>
+                        </div>
+                        <small>Auto-ranked</small>
+                      </header>
 
-                        <span
-                          className={`ncsPosStockBadge ${
-                            outOfStock
-                              ? "ncsPosStockEmpty"
-                              : lowStock
-                                ? "ncsPosStockLow"
-                                : ""
-                          }`}
+                      <div className="ncsPosCompactRail">
+                        {popularProductGroups.map((group) => (
+                          <button
+                            key={`popular-${group.groupKey}`}
+                            type="button"
+                            className="ncsPosCompactProduct ncsPosPopularProduct"
+                            onClick={() =>
+                              setExpandedProductId(
+                                expandedProductId === group.productId
+                                  ? null
+                                  : group.productId
+                              )
+                            }
+                          >
+                            <strong>{group.name}</strong>
+                            <span>{group.brand}</span>
+                            <small>
+                              Used {popularProductCounts[String(group.productId)] || 0} time(s)
+                            </small>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  <section className="ncsPosSmartSection">
+                    <header>
+                      <div>
+                        <span>CATALOGUE</span>
+                        <h3>Products by Brand</h3>
+                      </div>
+                      <small>{brandGroups.length} brands</small>
+                    </header>
+
+                    <div className="ncsPosBrandGrid">
+                      {brandGroups.map((brandGroup) => (
+                        <button
+                          key={brandGroup.brand}
+                          type="button"
+                          className="ncsPosBrandSummary"
+                          onClick={() => {
+                            setExpandedBrand(brandGroup.brand);
+                            setProductViewMode("brands");
+                          }}
                         >
-                          {outOfStock
-                            ? "Out of Stock"
-                            : `${product.stock} in stock`}
-                        </span>
-                      </div>
-
-                      <div className="ncsPosProductInfo">
-                        <span className="ncsPosProductCategory">
-                          {product.category}
-                        </span>
-
-                        <h3>{product.name}</h3>
-
-                        <div className="ncsPosBrandLine">
-                          Brand: {product.brand || "NEW CITY STYLE"}
-                        </div>
-
-                        {(product.size ||
-                          product.color) && (
-                          <div className="ncsPosVariantChips">
-                            {product.size && (
-                              <span className="ncsPosSizeChip">
-                                SIZE {product.size}
-                              </span>
-                            )}
-
-                            {product.color && (
-                              <span className="ncsPosColorChip">
-                                {product.color}
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="ncsPosProductBottom">
-                          <div>
-                            <strong>
-                              {formatCurrency(
-                                product.price
-                              )}
-                            </strong>
-
-                            {product.mrp >
-                              product.price && (
-                              <del>
-                                {formatCurrency(
-                                  product.mrp
-                                )}
-                              </del>
-                            )}
-                          </div>
-
-                          <span className="ncsPosAddIcon">
-                            +
+                          <span className="ncsPosBrandMark">
+                            {brandGroup.brand.slice(0, 2).toUpperCase()}
                           </span>
-                        </div>
+                          <div>
+                            <strong>{brandGroup.brand}</strong>
+                            <small>
+                              {brandGroup.groups.length} styles • {brandGroup.totalVariants} variants
+                            </small>
+                          </div>
+                          <b>›</b>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+              )}
 
-                        {(product.barcode ||
-                          product.sku) && (
-                          <small>
-                            {product.barcode ||
-                              product.sku}
-                          </small>
+              {productViewMode === "brands" && (
+                <div className="ncsPosBrandAccordionList">
+                  {brandGroups.map((brandGroup) => {
+                    const isOpen = expandedBrand === brandGroup.brand;
+
+                    return (
+                      <section
+                        key={brandGroup.brand}
+                        className={`ncsPosBrandAccordion ${isOpen ? "open" : ""}`}
+                      >
+                        <button
+                          type="button"
+                          className="ncsPosBrandAccordionHeader"
+                          onClick={() =>
+                            setExpandedBrand(
+                              isOpen ? null : brandGroup.brand
+                            )
+                          }
+                        >
+                          <span className="ncsPosBrandMark">
+                            {brandGroup.brand.slice(0, 2).toUpperCase()}
+                          </span>
+                          <div>
+                            <strong>{brandGroup.brand}</strong>
+                            <small>
+                              {brandGroup.groups.length} styles • {brandGroup.totalVariants} variants • {brandGroup.totalStock} stock
+                            </small>
+                          </div>
+                          <b>{isOpen ? "−" : "+"}</b>
+                        </button>
+
+                        {isOpen && (
+                          <div className="ncsPosGroupedProductGrid">
+                            {brandGroup.groups.map((group) => (
+                              <GroupedProductCard
+                                key={group.groupKey}
+                                group={group}
+                                expanded={expandedProductId === group.productId}
+                                onToggle={() =>
+                                  setExpandedProductId(
+                                    expandedProductId === group.productId
+                                      ? null
+                                      : group.productId
+                                  )
+                                }
+                                onAddVariant={addProductToCart}
+                              />
+                            ))}
+                          </div>
                         )}
-                      </div>
-                    </button>
-                  </article>
+                      </section>
+                    );
+                  })}
+                </div>
+              )}
+
+              {productViewMode === "all" && (
+                <div className="ncsPosGroupedProductGrid">
+                  {groupedProducts.map((group) => (
+                    <GroupedProductCard
+                      key={group.groupKey}
+                      group={group}
+                      expanded={expandedProductId === group.productId}
+                      onToggle={() =>
+                        setExpandedProductId(
+                          expandedProductId === group.productId
+                            ? null
+                            : group.productId
+                        )
+                      }
+                      onAddVariant={addProductToCart}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {expandedProductId !== null && productViewMode === "smart" && (() => {
+                const selectedGroup = groupedProducts.find(
+                  (group) => group.productId === expandedProductId
                 );
-              })}
-            </div>
+
+                return selectedGroup ? (
+                  <div className="ncsPosSmartExpandedProduct">
+                    <GroupedProductCard
+                      group={selectedGroup}
+                      expanded
+                      onToggle={() => setExpandedProductId(null)}
+                      onAddVariant={addProductToCart}
+                    />
+                  </div>
+                ) : null;
+              })()}
+            </>
           )}
         </div>
 
@@ -7767,6 +8183,481 @@ if (!variantsError) {
           .ncsPosQuickCancel,
           .ncsPosQuickAdd {
             width: 100%;
+          }
+        }
+
+        .ncsPosFinderToolbar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+          margin: 0 0 16px;
+          padding: 10px;
+          border: 1px solid rgba(10, 46, 115, 0.12);
+          border-radius: 18px;
+          background: rgba(255, 255, 255, 0.84);
+          box-shadow: 0 10px 26px rgba(3, 21, 63, 0.06);
+        }
+
+        .ncsPosFinderToolbar button {
+          min-height: 38px;
+          padding: 0 14px;
+          border: 1px solid rgba(10, 46, 115, 0.14);
+          border-radius: 13px;
+          background: #fff;
+          color: #0a2e73;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .ncsPosFinderToolbar button.active {
+          border-color: #d4af37;
+          background: linear-gradient(135deg, #03153f, #0a2e73);
+          color: #fff;
+          box-shadow: 0 8px 18px rgba(10, 46, 115, 0.22);
+        }
+
+        .ncsPosFinderToolbar > span {
+          margin-left: auto;
+          color: #707887;
+          font-size: 11px;
+        }
+
+        .ncsPosFinderToolbar > span strong {
+          color: #0a2e73;
+        }
+
+        .ncsPosSmartFinder,
+        .ncsPosBrandAccordionList {
+          display: grid;
+          gap: 14px;
+        }
+
+        .ncsPosSmartSection {
+          padding: 14px;
+          border: 1px solid rgba(10, 46, 115, 0.1);
+          border-radius: 20px;
+          background: rgba(255, 255, 255, 0.78);
+          box-shadow: 0 12px 28px rgba(3, 21, 63, 0.06);
+        }
+
+        .ncsPosSmartSection > header {
+          display: flex;
+          align-items: end;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 12px;
+        }
+
+        .ncsPosSmartSection > header span {
+          color: #d4af37;
+          font-size: 9px;
+          font-weight: 1000;
+          letter-spacing: 1px;
+        }
+
+        .ncsPosSmartSection > header h3 {
+          margin: 2px 0 0;
+          color: #03153f;
+          font-size: 18px;
+        }
+
+        .ncsPosSmartSection > header small {
+          color: #707887;
+          font-weight: 800;
+        }
+
+        .ncsPosCompactRail {
+          display: grid;
+          grid-auto-flow: column;
+          grid-auto-columns: minmax(190px, 0.75fr);
+          gap: 10px;
+          overflow-x: auto;
+          padding-bottom: 4px;
+          scrollbar-width: thin;
+        }
+
+        .ncsPosCompactProduct {
+          min-height: 98px;
+          padding: 14px;
+          border: 1px solid rgba(212, 175, 55, 0.45);
+          border-radius: 17px;
+          background: linear-gradient(135deg, #03153f, #0a2e73);
+          color: #fff;
+          text-align: left;
+          cursor: pointer;
+          box-shadow: 0 9px 20px rgba(3, 21, 63, 0.18);
+        }
+
+        .ncsPosCompactProduct strong,
+        .ncsPosCompactProduct span,
+        .ncsPosCompactProduct small {
+          display: block;
+        }
+
+        .ncsPosCompactProduct span {
+          margin-top: 5px;
+          color: #f2d675;
+          font-size: 10px;
+          font-weight: 900;
+        }
+
+        .ncsPosCompactProduct small {
+          margin-top: 12px;
+          color: rgba(255,255,255,.72);
+        }
+
+        .ncsPosPopularProduct {
+          background: linear-gradient(135deg, #6f4d00, #d4af37);
+          color: #03153f;
+        }
+
+        .ncsPosPopularProduct span,
+        .ncsPosPopularProduct small {
+          color: rgba(3,21,63,.78);
+        }
+
+        .ncsPosBrandGrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+          gap: 10px;
+        }
+
+        .ncsPosBrandSummary,
+        .ncsPosBrandAccordionHeader {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 13px;
+          border: 1px solid rgba(10, 46, 115, 0.12);
+          border-radius: 17px;
+          background: linear-gradient(135deg, #fff, #f8f4ec);
+          color: #03153f;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .ncsPosBrandMark {
+          width: 44px;
+          height: 44px;
+          display: grid;
+          place-items: center;
+          flex: 0 0 auto;
+          border-radius: 14px;
+          background: linear-gradient(135deg, #03153f, #0a2e73);
+          color: #d4af37;
+          font-weight: 1000;
+        }
+
+        .ncsPosBrandSummary > div,
+        .ncsPosBrandAccordionHeader > div {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .ncsPosBrandSummary strong,
+        .ncsPosBrandSummary small,
+        .ncsPosBrandAccordionHeader strong,
+        .ncsPosBrandAccordionHeader small {
+          display: block;
+        }
+
+        .ncsPosBrandSummary small,
+        .ncsPosBrandAccordionHeader small {
+          margin-top: 3px;
+          color: #737b89;
+          font-size: 10px;
+        }
+
+        .ncsPosBrandSummary b,
+        .ncsPosBrandAccordionHeader b {
+          color: #d4af37;
+          font-size: 25px;
+        }
+
+        .ncsPosBrandAccordion {
+          overflow: hidden;
+          border: 1px solid rgba(10, 46, 115, 0.12);
+          border-radius: 20px;
+          background: rgba(255,255,255,.82);
+          box-shadow: 0 10px 28px rgba(3, 21, 63, 0.07);
+        }
+
+        .ncsPosBrandAccordion.open {
+          border-color: rgba(212, 175, 55, 0.62);
+        }
+
+        .ncsPosBrandAccordionHeader {
+          border: 0;
+          border-radius: 0;
+          padding: 16px;
+          background: linear-gradient(135deg, #03153f, #0a2e73);
+          color: #fff;
+        }
+
+        .ncsPosBrandAccordionHeader small {
+          color: rgba(255,255,255,.7);
+        }
+
+        .ncsPosGroupedProductGrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+          gap: 12px;
+          padding: 14px;
+        }
+
+        .ncsPosGroupedCard {
+          overflow: hidden;
+          border: 1px solid rgba(10, 46, 115, 0.13);
+          border-radius: 19px;
+          background: #fff;
+          box-shadow: 0 10px 24px rgba(3, 21, 63, 0.07);
+        }
+
+        .ncsPosGroupedCard.open {
+          grid-column: 1 / -1;
+          border-color: rgba(212, 175, 55, 0.72);
+        }
+
+        .ncsPosGroupedCardMain {
+          width: 100%;
+          display: grid;
+          grid-template-columns: 88px minmax(0, 1fr) auto;
+          gap: 12px;
+          align-items: center;
+          padding: 11px;
+          border: 0;
+          background: transparent;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .ncsPosGroupedImage {
+          position: relative;
+          height: 92px;
+          overflow: hidden;
+          border-radius: 14px;
+          background: linear-gradient(135deg, #03153f, #0a2e73);
+        }
+
+        .ncsPosGroupedImage img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .ncsPosGroupedImage > span {
+          height: 100%;
+          display: grid;
+          place-items: center;
+          color: #d4af37;
+          font-weight: 1000;
+          letter-spacing: 1px;
+        }
+
+        .ncsPosGroupedImage em {
+          position: absolute;
+          right: 5px;
+          top: 5px;
+          padding: 4px 6px;
+          border-radius: 8px;
+          background: #d4af37;
+          color: #03153f;
+          font-size: 8px;
+          font-style: normal;
+          font-weight: 1000;
+        }
+
+        .ncsPosGroupedInfo > small {
+          color: #d4af37;
+          font-size: 8px;
+          font-weight: 1000;
+          text-transform: uppercase;
+        }
+
+        .ncsPosGroupedInfo h3 {
+          margin: 3px 0;
+          color: #03153f;
+          font-size: 15px;
+        }
+
+        .ncsPosGroupedInfo p {
+          margin: 0;
+          color: #707887;
+          font-size: 10px;
+          font-weight: 800;
+        }
+
+        .ncsPosGroupedInfo > div {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          margin-top: 10px;
+        }
+
+        .ncsPosGroupedInfo > div strong {
+          color: #0a2e73;
+          font-size: 12px;
+        }
+
+        .ncsPosGroupedInfo > div span {
+          color: #707887;
+          font-size: 9px;
+        }
+
+        .ncsPosGroupedInfo code {
+          display: inline-block;
+          margin-top: 7px;
+          padding: 3px 6px;
+          border-radius: 7px;
+          background: rgba(10,46,115,.08);
+          color: #0a2e73;
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        .ncsPosGroupedToggle {
+          width: 34px;
+          height: 34px;
+          display: grid;
+          place-items: center;
+          border-radius: 11px;
+          background: #d4af37;
+          color: #03153f;
+          font-size: 20px;
+        }
+
+        .ncsPosVariantPanel {
+          padding: 14px;
+          border-top: 1px solid rgba(10, 46, 115, 0.1);
+          background: #f8f4ec;
+        }
+
+        .ncsPosVariantPanel > header {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 10px;
+        }
+
+        .ncsPosVariantPanel > header span,
+        .ncsPosVariantPanel > header strong {
+          display: block;
+        }
+
+        .ncsPosVariantPanel > header span {
+          color: #d4af37;
+          font-size: 8px;
+          font-weight: 1000;
+        }
+
+        .ncsPosVariantPanel > header strong {
+          margin-top: 2px;
+          color: #03153f;
+        }
+
+        .ncsPosVariantPanel > header small {
+          color: #16834a;
+          font-weight: 900;
+        }
+
+        .ncsPosVariantList {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+          gap: 8px;
+        }
+
+        .ncsPosVariantList button {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto 34px;
+          gap: 9px;
+          align-items: center;
+          padding: 10px;
+          border: 1px solid rgba(10,46,115,.13);
+          border-radius: 13px;
+          background: #fff;
+          color: #03153f;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .ncsPosVariantList button:hover {
+          border-color: #d4af37;
+          transform: translateY(-1px);
+        }
+
+        .ncsPosVariantList button.out {
+          opacity: .48;
+          cursor: not-allowed;
+        }
+
+        .ncsPosVariantList button > div strong,
+        .ncsPosVariantList button > div small,
+        .ncsPosVariantList button > span b,
+        .ncsPosVariantList button > span small {
+          display: block;
+        }
+
+        .ncsPosVariantList button > div small {
+          margin-top: 3px;
+          color: #707887;
+          font-size: 8px;
+        }
+
+        .ncsPosVariantList button > span {
+          text-align: right;
+        }
+
+        .ncsPosVariantList button > span b {
+          color: #0a2e73;
+          font-size: 10px;
+        }
+
+        .ncsPosVariantList button > span small {
+          margin-top: 3px;
+          color: #16834a;
+          font-size: 8px;
+        }
+
+        .ncsPosVariantList button > em {
+          width: 30px;
+          height: 30px;
+          display: grid;
+          place-items: center;
+          border-radius: 10px;
+          background: #d4af37;
+          color: #03153f;
+          font-style: normal;
+          font-weight: 1000;
+        }
+
+        .ncsPosSmartExpandedProduct {
+          margin-top: 14px;
+        }
+
+        @media (max-width: 720px) {
+          .ncsPosFinderToolbar > span {
+            width: 100%;
+            margin-left: 0;
+          }
+
+          .ncsPosGroupedProductGrid,
+          .ncsPosBrandGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .ncsPosGroupedCardMain {
+            grid-template-columns: 76px minmax(0, 1fr) auto;
+          }
+
+          .ncsPosGroupedImage {
+            height: 82px;
+          }
+
+          .ncsPosVariantList {
+            grid-template-columns: 1fr;
           }
         }
 
