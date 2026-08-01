@@ -19,6 +19,9 @@ type Sale = {
   paid_amount?: number | string | null;
   due_amount?: number | string | null;
   created_at?: string | null;
+  is_deleted?: boolean | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
 };
 
 type SaleItem = {
@@ -144,6 +147,7 @@ export default function SalesHistoryPage() {
   const [paymentEditOpen, setPaymentEditOpen] = useState(false);
   const [paymentEditValue, setPaymentEditValue] = useState("cash");
   const [paymentEditSaving, setPaymentEditSaving] = useState(false);
+  const [deleteSaving, setDeleteSaving] = useState(false);
 
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnType, setReturnType] = useState<ReturnType>("refund");
@@ -278,6 +282,7 @@ export default function SalesHistoryPage() {
     const { data, error } = await supabase
       .from("pos_sales")
       .select("*")
+      .eq("is_deleted", false)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -841,6 +846,73 @@ export default function SalesHistoryPage() {
     }
   }
 
+  async function deleteSelectedSale() {
+    if (!selected) return;
+
+    const invoiceNumber =
+      selected.invoice_number || "this bill";
+
+    const confirmed = window.confirm(
+      `Delete ${invoiceNumber}? This will restore stock, reverse the customer due where applicable, and remove the bill from both web and Android after sync.`
+    );
+
+    if (!confirmed) return;
+
+    const secondConfirmed = window.confirm(
+      `Final confirmation: permanently hide ${invoiceNumber} from active sales history?`
+    );
+
+    if (!secondConfirmed) return;
+
+    setDeleteSaving(true);
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "soft_delete_pos_sale",
+        {
+          p_sale_id: selected.id,
+          p_deleted_by: "WEB_ADMIN",
+        }
+      );
+
+      if (error) throw error;
+
+      const result = (data || {}) as {
+        success?: boolean;
+        already_deleted?: boolean;
+        message?: string;
+      };
+
+      if (result.success === false) {
+        throw new Error(
+          result.message || "Unable to delete the bill."
+        );
+      }
+
+      setSales((current) =>
+        current.filter((sale) => sale.id !== selected.id)
+      );
+      setSelected(null);
+      setPaymentEditOpen(false);
+      setReturnModalOpen(false);
+      setNotice(
+        result.already_deleted
+          ? `${invoiceNumber} was already deleted.`
+          : `${invoiceNumber} deleted. Stock and customer balances were safely reversed.`
+      );
+      window.setTimeout(() => setNotice(""), 5000);
+    } catch (error) {
+      console.error("Unable to delete POS bill:", error);
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete the bill."
+      );
+    } finally {
+      setDeleteSaving(false);
+    }
+  }
+
   function printInvoice(sale: SaleDetails) {
     const popup = window.open("", "_blank", "width=900,height=900");
 
@@ -1120,6 +1192,14 @@ export default function SalesHistoryPage() {
                 onClick={() => printInvoice(selected)}
               >
                 Print Invoice
+              </button>
+
+              <button
+                className="deleteAction"
+                onClick={deleteSelectedSale}
+                disabled={deleteSaving}
+              >
+                {deleteSaving ? "Deleting..." : "Delete Bill"}
               </button>
             </div>
           </section>
@@ -1721,7 +1801,7 @@ export default function SalesHistoryPage() {
         .customerGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:18px}.customerGrid>div{padding:14px;border-radius:12px;background:#f7f8fb}.customerGrid span,.customerGrid small{display:block;color:#7d8491;font-size:10px}.customerGrid strong{display:block;margin:4px 0;color:${DEEP}}
         .items{padding:0 18px}.items article{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;padding:13px 0;border-bottom:1px solid #e8ebf1}.items strong,.items small{display:block}.items small{color:#8a91a0;font-size:10px}.items span{font-size:11px}.items b{color:${BLUE}}
         .totals{margin:18px;padding:16px;border-radius:14px;background:#f8f9fc}.totals p{display:flex;justify-content:space-between;margin:8px 0}.totals .grand{padding-top:12px;border-top:2px solid ${BLUE};font-size:19px;color:${BLUE};font-weight:900}.totals .due{color:#b43232}
-        .modalActions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;padding:0 18px 18px}.modalActions button{min-height:46px;border:0;border-radius:12px;padding:12px 17px;background:${BLUE};color:#fff;font-weight:900;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,filter .2s ease}.modalActions button:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 12px 28px rgba(10,46,115,.18);filter:brightness(1.05)}.modalActions button:disabled{opacity:.45;cursor:not-allowed}.modalActions .close{background:#e9edf4;color:#2C2C2C}.modalActions .returnAction{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,${GOLD},#f3d66f);color:${DEEP};box-shadow:0 10px 24px rgba(212,175,55,.22)}.returnActionIcon{font-size:18px;animation:returnPulse 1.8s ease-in-out infinite}.modalActions .printAction{background:linear-gradient(135deg,${DEEP},${BLUE})}.modalActions .editPaymentAction{background:linear-gradient(135deg,#0f766e,#115e59);color:#fff;box-shadow:0 10px 24px rgba(15,118,110,.2)}
+        .modalActions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;padding:0 18px 18px}.modalActions button{min-height:46px;border:0;border-radius:12px;padding:12px 17px;background:${BLUE};color:#fff;font-weight:900;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,filter .2s ease}.modalActions button:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 12px 28px rgba(10,46,115,.18);filter:brightness(1.05)}.modalActions button:disabled{opacity:.45;cursor:not-allowed}.modalActions .close{background:#e9edf4;color:#2C2C2C}.modalActions .returnAction{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,${GOLD},#f3d66f);color:${DEEP};box-shadow:0 10px 24px rgba(212,175,55,.22)}.returnActionIcon{font-size:18px;animation:returnPulse 1.8s ease-in-out infinite}.modalActions .printAction{background:linear-gradient(135deg,${DEEP},${BLUE})}.modalActions .editPaymentAction{background:linear-gradient(135deg,#0f766e,#115e59);color:#fff;box-shadow:0 10px 24px rgba(15,118,110,.2)}.modalActions .deleteAction{background:linear-gradient(135deg,#b42318,#7a1510);color:#fff;box-shadow:0 10px 24px rgba(180,35,24,.22)}
         .paymentEditOverlay{position:fixed;inset:0;z-index:10040;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,21,63,.78);backdrop-filter:blur(10px)}
         .paymentEditModal{width:min(520px,100%);overflow:hidden;border:1px solid rgba(212,175,55,.34);border-radius:22px;background:#fff;box-shadow:0 30px 90px rgba(0,0,0,.34);animation:returnModalEnter .24s ease-out}
         .paymentEditModal>header{display:flex;justify-content:space-between;gap:18px;padding:22px;background:radial-gradient(circle at 88% 0%,rgba(212,175,55,.22),transparent 34%),linear-gradient(135deg,${DEEP},${BLUE});color:#fff}
