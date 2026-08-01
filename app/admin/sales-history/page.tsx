@@ -141,6 +141,9 @@ export default function SalesHistoryPage() {
   const [selected, setSelected] = useState<SaleDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [notice, setNotice] = useState("");
+  const [paymentEditOpen, setPaymentEditOpen] = useState(false);
+  const [paymentEditValue, setPaymentEditValue] = useState("cash");
+  const [paymentEditSaving, setPaymentEditSaving] = useState(false);
 
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnType, setReturnType] = useState<ReturnType>("refund");
@@ -765,6 +768,79 @@ export default function SalesHistoryPage() {
     }
   }
 
+  function openPaymentEditor() {
+    if (!selected) return;
+
+    const currentMethod = norm(selected.payment_method);
+    const safeMethod = ["cash", "upi", "card", "bank_transfer"].includes(
+      currentMethod
+    )
+      ? currentMethod
+      : "cash";
+
+    setPaymentEditValue(safeMethod);
+    setPaymentEditOpen(true);
+  }
+
+  async function savePaymentMethod() {
+    if (!selected) return;
+
+    const currentMethod = norm(selected.payment_method);
+    if (paymentEditValue === currentMethod) {
+      setNotice("Select a different payment method.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Change ${selected.invoice_number || "this sale"} payment from ${label(
+        selected.payment_method
+      )} to ${label(paymentEditValue)}?`
+    );
+
+    if (!confirmed) return;
+
+    setPaymentEditSaving(true);
+
+    try {
+      const { error } = await supabase
+        .from("pos_sales")
+        .update({ payment_method: paymentEditValue })
+        .eq("id", selected.id);
+
+      if (error) throw error;
+
+      const updatedSelected: SaleDetails = {
+        ...selected,
+        payment_method: paymentEditValue,
+      };
+
+      setSelected(updatedSelected);
+      setSales((current) =>
+        current.map((sale) =>
+          sale.id === selected.id
+            ? { ...sale, payment_method: paymentEditValue }
+            : sale
+        )
+      );
+      setPaymentEditOpen(false);
+      setNotice(
+        `${selected.invoice_number || "Sale"} payment changed to ${label(
+          paymentEditValue
+        )}. Cash & Bank Book totals will recalculate automatically.`
+      );
+      window.setTimeout(() => setNotice(""), 4500);
+    } catch (error) {
+      console.error("Unable to update payment method:", error);
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to update payment method."
+      );
+    } finally {
+      setPaymentEditSaving(false);
+    }
+  }
+
   function printInvoice(sale: SaleDetails) {
     const popup = window.open("", "_blank", "width=900,height=900");
 
@@ -1021,6 +1097,14 @@ export default function SalesHistoryPage() {
               </button>
 
               <button
+                className="editPaymentAction"
+                onClick={openPaymentEditor}
+                disabled={norm(selected.sale_status) === "cancelled"}
+              >
+                Edit Payment
+              </button>
+
+              <button
                 className="returnAction"
                 onClick={openReturnModal}
                 disabled={selected.items.every(
@@ -1038,6 +1122,92 @@ export default function SalesHistoryPage() {
                 Print Invoice
               </button>
             </div>
+          </section>
+        </div>
+      )}
+
+      {selected && paymentEditOpen && (
+        <div
+          className="paymentEditOverlay"
+          onMouseDown={() =>
+            !paymentEditSaving && setPaymentEditOpen(false)
+          }
+        >
+          <section
+            className="paymentEditModal"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header>
+              <div>
+                <span>PAYMENT CORRECTION</span>
+                <h2>Edit Payment Method</h2>
+                <p>{selected.invoice_number || "POS Invoice"}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPaymentEditOpen(false)}
+                disabled={paymentEditSaving}
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="paymentEditBody">
+              <div className="paymentCompare">
+                <div>
+                  <span>Current Method</span>
+                  <strong>{label(selected.payment_method)}</strong>
+                </div>
+                <div>
+                  <span>Sale Amount</span>
+                  <strong>{money(selected.total_amount)}</strong>
+                </div>
+              </div>
+
+              <label>
+                <span>Correct Payment Method</span>
+                <select
+                  value={paymentEditValue}
+                  onChange={(event) =>
+                    setPaymentEditValue(event.target.value)
+                  }
+                >
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="card">Card</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                </select>
+              </label>
+
+              <div className="paymentSafetyNote">
+                Only the payment method changes. Sale amount, items, stock,
+                returns, paid amount and due amount remain unchanged. Cash &
+                Bank Book summaries are calculated from POS sales and will
+                update automatically.
+              </div>
+            </div>
+
+            <footer>
+              <button
+                type="button"
+                className="paymentCancel"
+                onClick={() => setPaymentEditOpen(false)}
+                disabled={paymentEditSaving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="paymentSave"
+                onClick={savePaymentMethod}
+                disabled={
+                  paymentEditSaving ||
+                  paymentEditValue === norm(selected.payment_method)
+                }
+              >
+                {paymentEditSaving ? "Saving..." : "Save Payment Method"}
+              </button>
+            </footer>
           </section>
         </div>
       )}
@@ -1551,7 +1721,13 @@ export default function SalesHistoryPage() {
         .customerGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:18px}.customerGrid>div{padding:14px;border-radius:12px;background:#f7f8fb}.customerGrid span,.customerGrid small{display:block;color:#7d8491;font-size:10px}.customerGrid strong{display:block;margin:4px 0;color:${DEEP}}
         .items{padding:0 18px}.items article{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;padding:13px 0;border-bottom:1px solid #e8ebf1}.items strong,.items small{display:block}.items small{color:#8a91a0;font-size:10px}.items span{font-size:11px}.items b{color:${BLUE}}
         .totals{margin:18px;padding:16px;border-radius:14px;background:#f8f9fc}.totals p{display:flex;justify-content:space-between;margin:8px 0}.totals .grand{padding-top:12px;border-top:2px solid ${BLUE};font-size:19px;color:${BLUE};font-weight:900}.totals .due{color:#b43232}
-        .modalActions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;padding:0 18px 18px}.modalActions button{min-height:46px;border:0;border-radius:12px;padding:12px 17px;background:${BLUE};color:#fff;font-weight:900;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,filter .2s ease}.modalActions button:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 12px 28px rgba(10,46,115,.18);filter:brightness(1.05)}.modalActions button:disabled{opacity:.45;cursor:not-allowed}.modalActions .close{background:#e9edf4;color:#2C2C2C}.modalActions .returnAction{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,${GOLD},#f3d66f);color:${DEEP};box-shadow:0 10px 24px rgba(212,175,55,.22)}.returnActionIcon{font-size:18px;animation:returnPulse 1.8s ease-in-out infinite}.modalActions .printAction{background:linear-gradient(135deg,${DEEP},${BLUE})}
+        .modalActions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;padding:0 18px 18px}.modalActions button{min-height:46px;border:0;border-radius:12px;padding:12px 17px;background:${BLUE};color:#fff;font-weight:900;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,filter .2s ease}.modalActions button:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 12px 28px rgba(10,46,115,.18);filter:brightness(1.05)}.modalActions button:disabled{opacity:.45;cursor:not-allowed}.modalActions .close{background:#e9edf4;color:#2C2C2C}.modalActions .returnAction{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,${GOLD},#f3d66f);color:${DEEP};box-shadow:0 10px 24px rgba(212,175,55,.22)}.returnActionIcon{font-size:18px;animation:returnPulse 1.8s ease-in-out infinite}.modalActions .printAction{background:linear-gradient(135deg,${DEEP},${BLUE})}.modalActions .editPaymentAction{background:linear-gradient(135deg,#0f766e,#115e59);color:#fff;box-shadow:0 10px 24px rgba(15,118,110,.2)}
+        .paymentEditOverlay{position:fixed;inset:0;z-index:10040;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,21,63,.78);backdrop-filter:blur(10px)}
+        .paymentEditModal{width:min(520px,100%);overflow:hidden;border:1px solid rgba(212,175,55,.34);border-radius:22px;background:#fff;box-shadow:0 30px 90px rgba(0,0,0,.34);animation:returnModalEnter .24s ease-out}
+        .paymentEditModal>header{display:flex;justify-content:space-between;gap:18px;padding:22px;background:radial-gradient(circle at 88% 0%,rgba(212,175,55,.22),transparent 34%),linear-gradient(135deg,${DEEP},${BLUE});color:#fff}
+        .paymentEditModal>header span{color:${GOLD};font-size:9px;font-weight:950;letter-spacing:1.3px}.paymentEditModal>header h2{margin:5px 0 3px;font-size:25px}.paymentEditModal>header p{margin:0;color:rgba(255,255,255,.68);font-size:10px}.paymentEditModal>header button{width:40px;height:40px;border:1px solid rgba(255,255,255,.22);border-radius:11px;background:rgba(255,255,255,.08);color:#fff;font-size:23px;cursor:pointer}
+        .paymentEditBody{padding:20px}.paymentCompare{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:15px}.paymentCompare>div{padding:13px;border-radius:13px;background:#f5f7fb}.paymentCompare span{display:block;color:#7d8491;font-size:8px;font-weight:850;text-transform:uppercase}.paymentCompare strong{display:block;margin-top:5px;color:${DEEP};font-size:15px}.paymentEditBody label>span{display:block;margin-bottom:6px;color:#667085;font-size:9px;font-weight:900;text-transform:uppercase}.paymentEditBody select{width:100%;height:46px;border:1px solid #dfe4ed;border-radius:12px;background:#fff;padding:0 12px;color:${DEEP};font:inherit;font-size:12px;font-weight:800;outline:none}.paymentEditBody select:focus{border-color:${BLUE};box-shadow:0 0 0 3px rgba(10,46,115,.08)}.paymentSafetyNote{margin-top:13px;padding:12px;border:1px solid #f0d98a;border-radius:12px;background:#fff9e7;color:#715a13;font-size:9px;line-height:1.55;font-weight:700}
+        .paymentEditModal>footer{display:flex;justify-content:flex-end;gap:10px;padding:0 20px 20px}.paymentEditModal>footer button{min-height:44px;border:0;border-radius:11px;padding:0 16px;font:inherit;font-size:10px;font-weight:900;cursor:pointer}.paymentEditModal>footer button:disabled{opacity:.45;cursor:not-allowed}.paymentCancel{background:#e9edf4;color:#394150}.paymentSave{background:linear-gradient(135deg,${GOLD},#efcf68);color:${DEEP};box-shadow:0 10px 24px rgba(212,175,55,.24)}
         
         .returnOverlay{position:fixed;inset:0;z-index:10050;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,21,63,.78);backdrop-filter:blur(11px)}
         .returnModal{width:min(940px,100%);max-height:94vh;overflow:auto;border:1px solid rgba(212,175,55,.32);border-radius:26px;background:#fff;box-shadow:0 35px 100px rgba(0,0,0,.38);animation:returnModalEnter .26s ease-out}
@@ -1572,7 +1748,7 @@ export default function SalesHistoryPage() {
         .returnFooter{display:flex;justify-content:flex-end;gap:10px;padding:0 20px 20px}.returnFooter button{min-height:48px;border:0;border-radius:13px;padding:0 18px;font:inherit;font-size:11px;font-weight:900;cursor:pointer;transition:.2s ease}.returnFooter button:hover:not(:disabled){transform:translateY(-2px)}.returnFooter button:disabled{opacity:.5;cursor:not-allowed}.returnCancel{background:#e9edf4;color:#3e4653}.returnConfirm{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:190px;background:linear-gradient(135deg,${GOLD},#f0cf62);color:${DEEP};box-shadow:0 12px 28px rgba(212,175,55,.26)}.returnConfirm>span{font-size:17px}
         @keyframes returnModalEnter{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}@keyframes returnPulse{0%,100%{transform:translateX(0)}50%{transform:translateX(-3px)}}@keyframes returnGlow{0%,100%{box-shadow:0 0 0 0 rgba(212,175,55,.25)}50%{box-shadow:0 0 0 8px rgba(212,175,55,0)}}@keyframes salesStatRise{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}@keyframes salesStatShine{0%,62%{left:-42%;opacity:0}68%{opacity:.7}100%{left:126%;opacity:0}}
 @media(max-width:1100px){.stats{grid-template-columns:repeat(3,1fr)}.filters{grid-template-columns:1fr 1fr}.searchBox{grid-column:1/-1}}
-        @media(max-width:700px){.salesPage{padding:12px}.hero{align-items:flex-start}.hero h1{font-size:29px}.stats{grid-template-columns:1fr 1fr}.filters{grid-template-columns:1fr}.searchBox{grid-column:auto}.saleTop{display:block}.badges{margin-top:12px}.amounts{grid-template-columns:1fr 1fr}.customerGrid{grid-template-columns:1fr}.items article{grid-template-columns:1fr auto}.items b{grid-column:2}.returnOverlay{padding:8px}.returnModal{max-height:97vh;border-radius:20px}.returnTypeGrid{grid-template-columns:1fr}.returnItem{grid-template-columns:1fr}.returnQtyControl{justify-content:flex-start}.returnFormGrid{grid-template-columns:1fr}.returnFormGrid .fullWidth{grid-column:auto}.returnSummary{grid-template-columns:1fr}.exchangeProductGrid{grid-template-columns:1fr}.exchangeSelectedList article{grid-template-columns:1fr 1fr}.exchangeSelectedInfo{grid-column:1/-1}.exchangeLineTotal{align-self:center}.exchangeSettlement{grid-template-columns:1fr}.returnFooter{display:grid;grid-template-columns:1fr}.returnFooter button{width:100%}}
+        @media(max-width:700px){.salesPage{padding:12px}.hero{align-items:flex-start}.hero h1{font-size:29px}.stats{grid-template-columns:1fr 1fr}.filters{grid-template-columns:1fr}.searchBox{grid-column:auto}.saleTop{display:block}.badges{margin-top:12px}.amounts{grid-template-columns:1fr 1fr}.customerGrid{grid-template-columns:1fr}.items article{grid-template-columns:1fr auto}.items b{grid-column:2}.returnOverlay{padding:8px}.returnModal{max-height:97vh;border-radius:20px}.returnTypeGrid{grid-template-columns:1fr}.returnItem{grid-template-columns:1fr}.returnQtyControl{justify-content:flex-start}.returnFormGrid{grid-template-columns:1fr}.returnFormGrid .fullWidth{grid-column:auto}.returnSummary{grid-template-columns:1fr}.exchangeProductGrid{grid-template-columns:1fr}.exchangeSelectedList article{grid-template-columns:1fr 1fr}.exchangeSelectedInfo{grid-column:1/-1}.exchangeLineTotal{align-self:center}.exchangeSettlement{grid-template-columns:1fr}.returnFooter{display:grid;grid-template-columns:1fr}.returnFooter button{width:100%}.paymentCompare{grid-template-columns:1fr}.paymentEditModal>footer{display:grid;grid-template-columns:1fr}.paymentEditModal>footer button{width:100%}}
       `}</style>
     </main>
   );
