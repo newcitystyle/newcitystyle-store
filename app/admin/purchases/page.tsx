@@ -172,6 +172,13 @@ function normalizeText(value: string | null | undefined) {
   return value?.trim().toLowerCase() || "";
 }
 
+function sameText(
+  first: string | null | undefined,
+  second: string | null | undefined,
+) {
+  return normalizeText(first) === normalizeText(second);
+}
+
 function sameIdentityValue(
   left: string | null | undefined,
   right: string | null | undefined,
@@ -1125,20 +1132,42 @@ export default function PurchasesPage() {
             return item;
           }
 
+          const isExactVariantMatch =
+            matchedProduct.variantId !== null &&
+            sameText(
+              matchedProduct.size,
+              item.size,
+            ) &&
+            sameText(
+              matchedProduct.color,
+              item.color,
+            );
+
           return {
             ...item,
             productId:
               matchedProduct.productId,
             variantId:
-              matchedProduct.variantId,
+              isExactVariantMatch
+                ? matchedProduct.variantId
+                : null,
             currentStock:
-              matchedProduct.stock,
+              isExactVariantMatch
+                ? matchedProduct.stock
+                : 0,
+
+            // A new size/colour must never reuse another
+            // variant's barcode or SKU. Reuse causes HTTP 409.
             sku:
-              item.sku.trim() ||
-              matchedProduct.sku,
+              isExactVariantMatch
+                ? item.sku.trim() ||
+                  matchedProduct.sku
+                : item.sku.trim(),
             barcode:
-              item.barcode.trim() ||
-              matchedProduct.barcode,
+              isExactVariantMatch
+                ? item.barcode.trim() ||
+                  matchedProduct.barcode
+                : item.barcode.trim(),
           };
         });
 

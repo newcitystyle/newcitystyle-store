@@ -34,6 +34,7 @@ type ProductVariantInfo = {
   stock: number;
   mrp: number;
   sellingPrice: number;
+  lowStockLimit: number;
   isActive: boolean;
 };
 
@@ -74,6 +75,7 @@ export default function EditProductPage() {
   const [mrp, setMrp] = useState("");
   const [price, setPrice] = useState("");
   const [stock, setStock] = useState("");
+  const [lowStockLimit, setLowStockLimit] = useState("5");
   const [sku, setSku] = useState("");
   const [barcode, setBarcode] = useState("");
   const [sellOnline, setSellOnline] = useState(false);
@@ -150,6 +152,11 @@ export default function EditProductPage() {
         setMrp(data.mrp != null ? String(data.mrp) : "");
         setPrice(data.price != null ? String(data.price) : "");
         setStock(data.stock != null ? String(data.stock) : "");
+        setLowStockLimit(
+          data.low_stock_limit != null
+            ? String(Math.max(0, Number(data.low_stock_limit)))
+            : "5"
+        );
         setSku(data.sku || "");
         setBarcode(data.barcode || "");
         setSellOnline(Boolean(data.sell_online ?? data.is_online ?? false));
@@ -164,7 +171,7 @@ export default function EditProductPage() {
         const { data: variantData, error: variantError } = await supabase
           .from("product_variants")
           .select(
-            "id,size,color,sku,barcode,stock,mrp,selling_price,is_active"
+            "id,size,color,sku,barcode,stock,mrp,selling_price,low_stock_limit,is_active"
           )
           .eq("product_id", productId)
           .order("id", { ascending: true });
@@ -183,6 +190,7 @@ export default function EditProductPage() {
               stock: Number(variant.stock || 0),
               mrp: Number(variant.mrp || 0),
               sellingPrice: Number(variant.selling_price || 0),
+              lowStockLimit: Number(variant.low_stock_limit ?? 5),
               isActive: variant.is_active !== false,
             }))
           );
@@ -434,6 +442,15 @@ export default function EditProductPage() {
       return;
     }
 
+    if (
+      lowStockLimit === "" ||
+      !Number.isFinite(Number(lowStockLimit)) ||
+      Number(lowStockLimit) < 0
+    ) {
+      setErrorMessage("Enter a valid low stock alert limit.");
+      return;
+    }
+
     if (sellOnline && Number(onlineQuantity || 0) < 0) {
       setErrorMessage("Enter a valid online quantity.");
       return;
@@ -480,6 +497,7 @@ export default function EditProductPage() {
         mrp: mrp ? Number(mrp) : Number(price),
         price: Number(price),
         stock: Number(stock),
+        low_stock_limit: Math.max(0, Math.floor(Number(lowStockLimit || 5))),
         sku: sku.trim() || null,
         barcode: barcode.trim() || null,
         sell_online: sellOnline,
@@ -545,7 +563,26 @@ export default function EditProductPage() {
 
       if (error) throw error;
 
-      setMessage("Product updated successfully.");
+      if (productVariants.length > 0) {
+        const { error: variantLimitError } = await supabase
+          .from("product_variants")
+          .update({
+            low_stock_limit: Math.max(
+              0,
+              Math.floor(Number(lowStockLimit || 5))
+            ),
+          })
+          .eq("product_id", productId);
+
+        if (variantLimitError) throw variantLimitError;
+      }
+
+      setMessage(
+        `Product updated successfully. Low stock alert is set to ${Math.max(
+          0,
+          Math.floor(Number(lowStockLimit || 5))
+        )}.`
+      );
 
       setTimeout(() => {
         router.push("/admin/products");
@@ -828,6 +865,21 @@ export default function EditProductPage() {
                 />
               </Field>
 
+              <Field label="Low Stock Alert Limit" required>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={lowStockLimit}
+                  onChange={(e) =>
+                    setLowStockLimit(
+                      e.target.value.replace(/[^0-9]/g, "")
+                    )
+                  }
+                  placeholder="5"
+                />
+              </Field>
+
               <Field label="Status">
                 <select
                   value={status}
@@ -838,6 +890,15 @@ export default function EditProductPage() {
                   <option value="inactive">Inactive</option>
                 </select>
               </Field>
+            </div>
+
+            <div className="lowStockHelp">
+              <strong>Low Stock Alerts</strong>
+              <span>
+                Stock reaches {lowStockLimit || "5"} or below, this product and
+                all its size/colour variants will appear in Low Stock Alerts.
+                The same limit will sync to the Android owner app.
+              </span>
             </div>
 
             <div className="inventorySyncCard">
@@ -903,6 +964,7 @@ export default function EditProductPage() {
                           <th>SKU</th>
                           <th>Barcode</th>
                           <th>Stock</th>
+                          <th>Low Alert</th>
                           <th>Status</th>
                         </tr>
                       </thead>
@@ -914,6 +976,7 @@ export default function EditProductPage() {
                             <td>{variant.sku || "—"}</td>
                             <td><code>{variant.barcode || "—"}</code></td>
                             <td>{variant.stock}</td>
+                            <td>{lowStockLimit || variant.lowStockLimit || 5}</td>
                             <td>{variant.isActive ? "Active" : "Inactive"}</td>
                           </tr>
                         ))}
@@ -1600,6 +1663,34 @@ export default function EditProductPage() {
         .row input:focus {
           border-color: #0a2e73;
           box-shadow: 0 0 0 4px rgba(10, 46, 115, 0.09);
+        }
+
+        .lowStockHelp {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          margin-top: 18px;
+          padding: 13px 15px;
+          border: 1px solid #f0d788;
+          border-radius: 12px;
+          background: #fffaf0;
+        }
+
+        .lowStockHelp strong,
+        .lowStockHelp span {
+          display: block;
+        }
+
+        .lowStockHelp strong {
+          flex: 0 0 auto;
+          color: #0a2e73;
+          font-size: 13px;
+        }
+
+        .lowStockHelp span {
+          color: #705708;
+          font-size: 11px;
+          line-height: 1.55;
         }
 
         .inventorySyncCard {
