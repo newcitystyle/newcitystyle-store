@@ -829,6 +829,26 @@ export default function PurchasesPage() {
       .slice(0, 8);
   }
 
+  function useTypedProductAsNewDesign(rowId: string) {
+    setItems((current) =>
+      current.map((item) =>
+        item.rowId === rowId
+          ? {
+              ...item,
+              productId: null,
+              variantId: null,
+              barcode: "",
+              sku: "",
+              currentStock: 0,
+            }
+          : item,
+      ),
+    );
+
+    setActiveProductRowId(null);
+    showNotice("New design mode selected. Continue entering size and stock.", "info");
+  }
+
   function selectProductForRow(
     rowId: string,
     product: ProductOption,
@@ -1836,14 +1856,65 @@ export default function PurchasesPage() {
                               );
                               setActiveProductRowId(item.rowId);
                             }}
+                            onKeyDown={(event) => {
+                              if (
+                                event.key === "Escape" ||
+                                event.key === "Tab"
+                              ) {
+                                setActiveProductRowId(null);
+                                return;
+                              }
+
+                              if (
+                                event.key === "Enter" &&
+                                item.productName.trim()
+                              ) {
+                                event.preventDefault();
+                                useTypedProductAsNewDesign(
+                                  item.rowId
+                                );
+                              }
+                            }}
+                            onBlur={() => {
+                              window.setTimeout(() => {
+                                setActiveProductRowId((current) =>
+                                  current === item.rowId
+                                    ? null
+                                    : current
+                                );
+                              }, 120);
+                            }}
                             autoComplete="off"
-                            placeholder="Type one letter to find saved products"
+                            placeholder="Type product name. Press Enter for a new design."
                           />
 
                           {activeProductRowId === item.rowId &&
                             item.productName.trim() &&
                             rowProductMatches.length > 0 && (
                               <div className="ncsRowProductDropdown">
+                                <button
+                                  type="button"
+                                  className="ncsUseNewDesignOption"
+                                  onMouseDown={(event) =>
+                                    event.preventDefault()
+                                  }
+                                  onClick={() =>
+                                    useTypedProductAsNewDesign(
+                                      item.rowId
+                                    )
+                                  }
+                                >
+                                  <strong>
+                                    Use “{item.productName.trim()}” as New Design
+                                  </strong>
+                                  <span>
+                                    Do not connect to any saved shirt
+                                  </span>
+                                  <small>
+                                    Keep the auto design code and create M / L / XL with Duplicate
+                                  </small>
+                                </button>
+
                                 {rowProductMatches.map((product) => (
                                   <button
                                     key={product.key}
@@ -3397,6 +3468,31 @@ export default function PurchasesPage() {
           background: #ffffff;
           text-align: left;
           cursor: pointer;
+        }
+
+        .ncsRowProductDropdown .ncsUseNewDesignOption {
+          position: sticky;
+          top: 0;
+          z-index: 2;
+          border-bottom: 2px solid rgba(212, 175, 55, 0.55);
+          background:
+            linear-gradient(
+              135deg,
+              rgba(10, 46, 115, 0.98),
+              rgba(3, 21, 63, 0.98)
+            );
+        }
+
+        .ncsRowProductDropdown .ncsUseNewDesignOption strong {
+          color: #ffffff;
+        }
+
+        .ncsRowProductDropdown .ncsUseNewDesignOption span {
+          color: rgba(255, 255, 255, 0.78);
+        }
+
+        .ncsRowProductDropdown .ncsUseNewDesignOption small {
+          color: #f6d676;
         }
 
         .ncsRowProductDropdown button:hover {
