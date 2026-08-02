@@ -392,12 +392,25 @@ export default function EditProductPage() {
       const primaryVariant = cleanVariants[0] || null;
       setEditingVariantId(primaryVariant?.id || null);
 
-      const availableStock = primaryVariant?.stock ?? asNumber(row.stock);
-      const onlineLimit = primaryVariant
-        ? asNumber(((variants || [])[0] as Record<string, unknown>)?.online_stock_limit)
+      const availableStock = cleanVariants.length > 0
+        ? cleanVariants.reduce(
+            (total, variant) => total + Math.max(0, variant.stock),
+            0
+          )
+        : asNumber(row.stock);
+
+      const onlineLimit = cleanVariants.length > 0
+        ? ((variants || []) as Record<string, unknown>[]).reduce(
+            (total, variant) =>
+              total + Math.max(0, asNumber(variant.online_stock_limit)),
+            0
+          )
         : asNumber(row.online_stock_limit ?? row.online_stock);
-      const effectiveSellOnline = primaryVariant
-        ? (((variants || [])[0] as Record<string, unknown>)?.sell_online === true || sellOnline)
+
+      const effectiveSellOnline = cleanVariants.length > 0
+        ? ((variants || []) as Record<string, unknown>[]).some(
+            (variant) => variant.sell_online === true
+          ) || sellOnline
         : sellOnline;
 
       const imageFallback = asString(row.image) || asString(row.image_url);
@@ -1041,6 +1054,13 @@ export default function EditProductPage() {
       .filter((faq) => faq.question && faq.answer);
   }
 
+  const totalVariantStock = variantBarcodes.length > 0
+    ? variantBarcodes.reduce(
+        (total, variant) => total + Math.max(0, Number(variant.stock || 0)),
+        0
+      )
+    : Math.max(0, Number(form.stock || 0));
+
   function validateForm() {
     if (!form.name.trim()) {
       alert("Please enter the product name.");
@@ -1083,8 +1103,11 @@ export default function EditProductPage() {
         return false;
       }
 
-      if (Number(form.onlineStockLimit) < 0 || Number(form.onlineStockLimit) > Number(form.stock)) {
-        alert("Online quantity must be between 0 and available physical stock.");
+      if (
+        Number(form.onlineStockLimit) < 0 ||
+        Number(form.onlineStockLimit) > totalVariantStock
+      ) {
+        alert("Online quantity must be between 0 and total variant stock.");
         return false;
       }
     }
@@ -1118,10 +1141,14 @@ export default function EditProductPage() {
       discount_percent: form.sellOnline ? Number(form.discountPercent || 0) : 0,
       tax_percent: getOptionalNumber(form.taxPercent, 0),
       low_stock_limit: getOptionalNumber(form.lowStockLimit, 5),
+      stock: totalVariantStock,
       sell_online: form.sellOnline,
       available_in_pos: true,
       online_stock_limit: form.sellOnline
-        ? Math.min(Number(form.onlineStockLimit || 0), Number(form.stock || 0))
+        ? Math.min(
+            Number(form.onlineStockLimit || 0),
+            totalVariantStock
+          )
         : 0,
       image: form.mainImage || null,
       image_url: form.mainImage || null,
@@ -1171,34 +1198,56 @@ export default function EditProductPage() {
 
       if (error) throw error;
 
-      if (editingVariantId) {
-        const { error: variantPriceError } = await supabase
+      if (variantBarcodes.length > 0) {
+        const variantIds = variantBarcodes.map((variant) => variant.id);
+
+        const { error: variantUpdateError } = await supabase
           .from("product_variants")
           .update({
             mrp: getOptionalNumber(form.mrp, 0),
             low_stock_limit: getOptionalNumber(form.lowStockLimit, 5),
+            sell_online: form.sellOnline,
           })
-          .eq("id", editingVariantId);
+          .in("id", variantIds);
 
-        if (variantPriceError) throw variantPriceError;
-      }
+        if (variantUpdateError) throw variantUpdateError;
 
-      const { error: onlineStockError } = await supabase.rpc(
-        "set_product_online_stock",
-        {
-          p_product_id: Number(productId),
-          p_variant_id: editingVariantId,
-          p_online_quantity: form.sellOnline
-            ? Math.min(Number(form.onlineStockLimit || 0), Number(form.stock || 0))
-            : 0,
-          p_sell_online: form.sellOnline,
+        for (const variant of variantBarcodes) {
+          const { error: variantOnlineError } = await supabase
+            .from("product_variants")
+            .update({
+              online_stock_limit: form.sellOnline
+                ? Math.max(0, variant.stock)
+                : 0,
+              sell_online: form.sellOnline,
+            })
+            .eq("id", variant.id);
+
+          if (variantOnlineError) throw variantOnlineError;
         }
-      );
+      } else {
+        const { error: onlineStockError } = await supabase.rpc(
+          "set_product_online_stock",
+          {
+            p_product_id: Number(productId),
+            p_variant_id: null,
+            p_online_quantity: form.sellOnline
+              ? Math.min(
+                  Number(form.onlineStockLimit || 0),
+                  Number(form.stock || 0)
+                )
+              : 0,
+            p_sell_online: form.sellOnline,
+          }
+        );
 
-      if (onlineStockError) {
-        console.error(onlineStockError);
-        alert(`Product details were updated, but online stock sync failed: ${onlineStockError.message}`);
-        return;
+        if (onlineStockError) {
+          console.error(onlineStockError);
+          alert(
+            `Product details were updated, but online stock sync failed: ${onlineStockError.message}`
+          );
+          return;
+        }
       }
 
       alert(
@@ -1581,7 +1630,7 @@ export default function EditProductPage() {
                     <input
                       type="number"
                       min="0"
-                      value={form.stock}
+                      value={String(totalVariantStock)}
                       readOnly
                       onChange={(event) =>
                         setField("stock", event.target.value)
@@ -1611,7 +1660,7 @@ export default function EditProductPage() {
                     <input
                       type="number"
                       min="0"
-                      max={Number(form.stock || 0)}
+                      max={totalVariantStock}
                       value={form.sellOnline ? form.onlineStockLimit : "0"}
                       disabled={!form.sellOnline}
                       onChange={(event) =>
@@ -1619,7 +1668,7 @@ export default function EditProductPage() {
                           "onlineStockLimit",
                           String(
                             Math.min(
-                              Number(form.stock || 0),
+                              totalVariantStock,
                               Math.max(0, Number(event.target.value || 0))
                             )
                           )
@@ -1641,7 +1690,11 @@ export default function EditProductPage() {
                             ...current,
                             sellOnline: checked,
                             onlineStockLimit: checked
-                              ? current.onlineStockLimit || current.stock || "0"
+                              ? (
+                                  Number(current.onlineStockLimit || 0) > 0
+                                    ? current.onlineStockLimit
+                                    : String(totalVariantStock)
+                                )
                               : "0",
                           }));
                         }}
