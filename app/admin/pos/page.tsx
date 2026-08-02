@@ -296,6 +296,44 @@ function normalizeText(value: string | null | undefined) {
   return value?.trim().toLowerCase() || "";
 }
 
+function cleanDisplayText(
+  value: string | null | undefined,
+  fallback: string
+) {
+  const cleaned = (value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return cleaned || fallback;
+}
+
+function normalizeBrandKey(value: string | null | undefined) {
+  return cleanDisplayText(value, "NEW CITY STYLE").toLocaleLowerCase("en-IN");
+}
+
+function formatBrandName(value: string | null | undefined) {
+  const cleaned = cleanDisplayText(value, "NEW CITY STYLE");
+
+  return cleaned
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => {
+      const upperWord = word.toUpperCase();
+
+      if (
+        upperWord === "NCS" ||
+        upperWord === "NEW" ||
+        upperWord === "CITY" ||
+        upperWord === "STYLE"
+      ) {
+        return upperWord;
+      }
+
+      return upperWord;
+    })
+    .join(" ");
+}
+
 function getPosShortCode(product: PosProduct) {
   if (product.variantId) {
     return `V${product.variantId}`;
@@ -830,13 +868,19 @@ if (!variantsError) {
 
         const commonData = {
           productId,
-          name: getProductName(product),
-          category:
-            product.category?.trim() || "Others",
-          subcategory:
-            product.subcategory?.trim() || "",
-          brand:
-            product.brand?.trim() || "NEW CITY STYLE",
+          name: cleanDisplayText(
+            getProductName(product),
+            "NEW CITY STYLE Product"
+          ),
+          category: cleanDisplayText(
+            product.category,
+            "Others"
+          ),
+          subcategory: cleanDisplayText(
+            product.subcategory,
+            ""
+          ),
+          brand: formatBrandName(product.brand),
           imageUrl: getProductImage(product),
           taxPercent: Math.max(
             0,
@@ -909,6 +953,40 @@ if (!variantsError) {
       });
 
       setProducts(mappedProducts);
+
+      const validProductIds = new Set(
+        mappedProducts.map((item) => String(item.productId))
+      );
+
+      setRecentProductKeys((current) => {
+        const next = current.filter((key) => validProductIds.has(key));
+
+        if (next.length !== current.length) {
+          window.localStorage.setItem(
+            POS_RECENT_PRODUCTS_KEY,
+            JSON.stringify(next)
+          );
+        }
+
+        return next;
+      });
+
+      setPopularProductCounts((current) => {
+        const next = Object.fromEntries(
+          Object.entries(current).filter(([key]) =>
+            validProductIds.has(key)
+          )
+        );
+
+        if (Object.keys(next).length !== Object.keys(current).length) {
+          window.localStorage.setItem(
+            POS_POPULAR_PRODUCTS_KEY,
+            JSON.stringify(next)
+          );
+        }
+
+        return next;
+      });
     } catch (error) {
       console.error("Unable to load POS products:", error);
 
@@ -923,7 +1001,74 @@ if (!variantsError) {
   }, []);
 
   useEffect(() => {
-    loadProducts();
+    void loadProducts();
+  }, [loadProducts]);
+
+  useEffect(() => {
+    let refreshTimer: number | null = null;
+
+    const scheduleRefresh = () => {
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
+
+      refreshTimer = window.setTimeout(() => {
+        void loadProducts();
+        refreshTimer = null;
+      }, 250);
+    };
+
+    const channel = supabase
+      .channel("ncs-pos-products-live")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "products",
+        },
+        scheduleRefresh
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "product_variants",
+        },
+        scheduleRefresh
+      )
+      .subscribe();
+
+    const handleFocus = () => {
+      void loadProducts();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void loadProducts();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+
+    return () => {
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
+
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+
+      void supabase.removeChannel(channel);
+    };
   }, [loadProducts]);
 
   const lookupCustomerRewards = useCallback(
@@ -1106,19 +1251,44 @@ if (!variantsError) {
   }, [filteredProducts]);
 
   const brandGroups = useMemo(() => {
-    const brandMap = new Map<string, PosProductGroup[]>();
+    const brandMap = new Map<
+      string,
+      {
+        brand: string;
+        groups: PosProductGroup[];
+      }
+    >();
 
     groupedProducts.forEach((group) => {
-      const brand = group.brand || "NEW CITY STYLE";
-      const existing = brandMap.get(brand) || [];
-      existing.push(group);
-      brandMap.set(brand, existing);
+      const brand = formatBrandName(group.brand);
+      const brandKey = normalizeBrandKey(brand);
+      const existing = brandMap.get(brandKey);
+
+      if (existing) {
+        existing.groups.push({
+          ...group,
+          brand,
+        });
+        return;
+      }
+
+      brandMap.set(brandKey, {
+        brand,
+        groups: [
+          {
+            ...group,
+            brand,
+          },
+        ],
+      });
     });
 
-    return Array.from(brandMap.entries())
-      .map(([brand, groups]) => ({
+    return Array.from(brandMap.values())
+      .map(({ brand, groups }) => ({
         brand,
-        groups,
+        groups: groups.sort((a, b) =>
+          a.name.localeCompare(b.name)
+        ),
         totalStock: groups.reduce(
           (sum, group) => sum + group.totalStock,
           0

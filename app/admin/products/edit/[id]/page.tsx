@@ -1,57 +1,237 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  type ChangeEvent,
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-type ImageItem = {
-  file: File;
-  preview: string;
-};
-
-type ExistingImageItem = {
-  url: string;
-};
-
-type KeyValueItem = {
+type CollectionOption = {
   id: number;
+  name: string;
+};
+
+type Specification = {
   label: string;
   value: string;
 };
 
-type FAQItem = {
-  id: number;
+type Faq = {
   question: string;
   answer: string;
 };
 
-type ProductVariantInfo = {
-  id: number;
-  size: string;
-  color: string;
+type AiProductDetails = {
+  productName: string;
+  slug: string;
+  tagline: string;
+  category: string;
+  subcategory: string;
+  description: string;
+  keyFeatures: string[];
+  lifestyleTitle: string;
+  lifestyleSubtitle: string;
+  pattern: string;
+  sleeveType: string;
+  fit: string;
+  gender: string;
+  occasion: string;
+  technicalSpecifications: Specification[];
+  whatsInTheBox: string[];
+  faqs: Faq[];
+  seoTitle: string;
+  metaDescription: string;
+  seoKeywords: string[];
+  productTags: string[];
+};
+
+type AiStatus = {
+  type: "idle" | "success" | "error";
+  message: string;
+};
+
+
+type ProductForm = {
+  name: string;
+  slug: string;
+  tagline: string;
+  category: string;
+  subcategory: string;
+  collectionId: string;
+  brand: string;
+  gender: string;
+  ageGroup: string;
+
+  shortDescription: string;
+  description: string;
+
+  mrp: string;
+  price: string;
+  discountPercent: string;
+  taxPercent: string;
+
   sku: string;
   barcode: string;
-  stock: number;
-  mrp: number;
-  sellingPrice: number;
-  lowStockLimit: number;
+  stock: string;
+  lowStockLimit: string;
+  sellOnline: boolean;
+  onlineStockLimit: string;
+
+  mainImage: string;
+  galleryImages: string[];
+  lifestyleImages: string[];
+
+  tags: string[];
+  sizes: string[];
+
+  material: string;
+  fabric: string;
+  pattern: string;
+  sleeveType: string;
+  fitType: string;
+  occasion: string;
+  lifestyleTitle: string;
+  lifestyleSubtitle: string;
+
+  keyFeatures: string[];
+  specifications: Specification[];
+  whatsInBox: string[];
+  faqs: Faq[];
+
+  weight: string;
+  packageLength: string;
+  packageWidth: string;
+  packageHeight: string;
+
+  shippingPolicy: string;
+  returnPolicy: string;
+
+  seoTitle: string;
+  metaDescription: string;
+  seoKeywords: string;
+  socialPreviewUrl: string;
+
+  isFeatured: boolean;
+  isNewArrival: boolean;
+  isOnSale: boolean;
+  isBestseller: boolean;
+  isTrending: boolean;
   isActive: boolean;
 };
 
-const MAX_IMAGES = 8;
+const initialForm: ProductForm = {
+  name: "",
+  slug: "",
+  tagline: "",
+  category: "",
+  subcategory: "",
+  collectionId: "",
+  brand: "NEW CITY STYLE",
+  gender: "",
+  ageGroup: "",
 
-function makeId() {
-  return Date.now() + Math.floor(Math.random() * 100000);
-}
+  shortDescription: "",
+  description: "",
 
-function makeSlug(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/&/g, "and")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
+  mrp: "",
+  price: "",
+  discountPercent: "0",
+  taxPercent: "",
+
+  sku: "",
+  barcode: "",
+  stock: "",
+  lowStockLimit: "",
+  sellOnline: false,
+  onlineStockLimit: "0",
+
+  mainImage: "",
+  galleryImages: [],
+  lifestyleImages: [],
+
+  tags: [],
+  sizes: [],
+
+  material: "",
+  fabric: "",
+  pattern: "",
+  sleeveType: "",
+  fitType: "",
+  occasion: "",
+  lifestyleTitle: "",
+  lifestyleSubtitle: "",
+
+  keyFeatures: ["", "", "", ""],
+  specifications: [
+    { label: "", value: "" },
+    { label: "", value: "" },
+    { label: "", value: "" },
+  ],
+  whatsInBox: [""],
+  faqs: [
+    { question: "", answer: "" },
+    { question: "", answer: "" },
+  ],
+
+  weight: "",
+  packageLength: "",
+  packageWidth: "",
+  packageHeight: "",
+
+  shippingPolicy:
+    "Orders are processed within 1-2 business days. Delivery time may vary according to the customer location.",
+  returnPolicy:
+    "Returns and exchanges are accepted according to the NEW CITY STYLE return policy.",
+
+  seoTitle: "",
+  metaDescription: "",
+  seoKeywords: "",
+  socialPreviewUrl: "",
+
+  isFeatured: false,
+  isNewArrival: true,
+  isOnSale: false,
+  isBestseller: false,
+  isTrending: false,
+  isActive: true,
+};
+
+const commonTags = [
+  "New Arrival",
+  "Featured",
+  "Best Seller",
+  "Trending",
+  "Premium",
+  "Casual",
+  "Formal",
+  "Party Wear",
+  "Festive",
+  "Daily Wear",
+  "Summer",
+  "Winter",
+  "Cotton",
+  "Budget Pick",
+  "Limited Stock",
+];
+
+const commonSizes = [
+  "XS",
+  "S",
+  "M",
+  "L",
+  "XL",
+  "XXL",
+  "3XL",
+  "4XL",
+  "Free Size",
+];
+
 
 export default function EditProductPage() {
   const router = useRouter();
@@ -59,2136 +239,2575 @@ export default function EditProductPage() {
   const productId = params?.id;
 
   const [loading, setLoading] = useState(true);
+  const [editingVariantId, setEditingVariantId] = useState<number | null>(null);
+  const [variantBarcodes, setVariantBarcodes] = useState<Array<{
+    id: number;
+    size: string;
+    color: string;
+    sku: string;
+    barcode: string;
+    stock: number;
+  }>>([]);
+
+  const [form, setForm] = useState<ProductForm>(initialForm);
+  const [collections, setCollections] = useState<CollectionOption[]>([]);
+
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
+  const [uploadingMain, setUploadingMain] = useState(false);
+  const [uploadingGallery, setUploadingGallery] = useState(false);
+  const [uploadingLifestyle, setUploadingLifestyle] = useState(false);
+  const [generatingAi, setGeneratingAi] = useState(false);
+  const [aiStatus, setAiStatus] = useState<AiStatus>({
+    type: "idle",
+    message: "",
+  });
 
-  const [productName, setProductName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [slugTouched, setSlugTouched] = useState(false);
-  const [tagline, setTagline] = useState("");
-  const [category, setCategory] = useState("");
-  const [subcategory, setSubcategory] = useState("");
-  const [brand, setBrand] = useState("NEW CITY STYLE");
-  const [description, setDescription] = useState("");
-
-  const [mrp, setMrp] = useState("");
-  const [price, setPrice] = useState("");
-  const [stock, setStock] = useState("");
-  const [lowStockLimit, setLowStockLimit] = useState("5");
-  const [sku, setSku] = useState("");
-  const [barcode, setBarcode] = useState("");
-  const [sellOnline, setSellOnline] = useState(false);
-  const [onlineQuantity, setOnlineQuantity] = useState("");
-  const [productVariants, setProductVariants] = useState<ProductVariantInfo[]>([]);
-  const [status, setStatus] = useState("active");
-  const [featured, setFeatured] = useState(false);
-
-  const [images, setImages] = useState<ImageItem[]>([]);
-  const [existingImages, setExistingImages] = useState<ExistingImageItem[]>([]);
-
-  const [features, setFeatures] = useState([
-    { id: makeId(), value: "" },
-    { id: makeId(), value: "" },
-    { id: makeId(), value: "" },
-  ]);
-
-  const [lifestyleTitle, setLifestyleTitle] = useState("");
-  const [lifestyleSubtitle, setLifestyleSubtitle] = useState("");
-
-  const [specifications, setSpecifications] = useState<KeyValueItem[]>([
-    { id: makeId(), label: "", value: "" },
-    { id: makeId(), label: "", value: "" },
-    { id: makeId(), label: "", value: "" },
-  ]);
-
-  const [boxContents, setBoxContents] = useState("");
-
-  const [faqs, setFaqs] = useState<FAQItem[]>([
-    { id: makeId(), question: "", answer: "" },
-    { id: makeId(), question: "", answer: "" },
-  ]);
-
-  const [shippingReturns, setShippingReturns] = useState(
-    "Fast and secure delivery across India. Easy returns are available according to the NEW CITY STYLE return policy."
-  );
-
-  const [seoTitle, setSeoTitle] = useState("");
-  const [metaDescription, setMetaDescription] = useState("");
-  const [keywords, setKeywords] = useState("");
-  const [socialPreviewUrl, setSocialPreviewUrl] = useState("");
-
-  const [packWeight, setPackWeight] = useState("");
-  const [variations, setVariations] = useState<KeyValueItem[]>([
-    { id: makeId(), label: "Size", value: "" },
-  ]);
+  const [customTag, setCustomTag] = useState("");
+  const [customSize, setCustomSize] = useState("");
 
 
   useEffect(() => {
-    async function loadProduct() {
-      if (!productId) return;
+    loadCollections();
+  }, []);
 
-      setLoading(true);
-      setErrorMessage("");
-
-      try {
-        const { data, error } = await supabase
-          .from("products")
-          .select("*")
-          .eq("id", productId)
-          .single();
-
-        if (error) throw error;
-
-        setProductName(data.name || data.product_name || "");
-        setSlug(data.slug || "");
-        setSlugTouched(true);
-        setTagline(data.tagline || "");
-        setCategory(data.category || "");
-        setSubcategory(data.subcategory || "");
-        setBrand(data.brand || "NEW CITY STYLE");
-        setDescription(data.description || "");
-
-        setMrp(data.mrp != null ? String(data.mrp) : "");
-        setPrice(data.price != null ? String(data.price) : "");
-        setStock(data.stock != null ? String(data.stock) : "");
-        setLowStockLimit(
-          data.low_stock_limit != null
-            ? String(Math.max(0, Number(data.low_stock_limit)))
-            : "5"
-        );
-        setSku(data.sku || "");
-        setBarcode(data.barcode || "");
-        setSellOnline(Boolean(data.sell_online ?? data.is_online ?? false));
-        setOnlineQuantity(
-          data.online_stock_limit != null
-            ? String(data.online_stock_limit)
-            : data.online_stock != null
-              ? String(data.online_stock)
-              : "0"
-        );
-
-        const { data: variantData, error: variantError } = await supabase
-          .from("product_variants")
-          .select(
-            "id,size,color,sku,barcode,stock,mrp,selling_price,low_stock_limit,is_active"
-          )
-          .eq("product_id", productId)
-          .order("id", { ascending: true });
-
-        if (variantError) {
-          console.info("Unable to load product variants:", variantError.message);
-          setProductVariants([]);
-        } else {
-          setProductVariants(
-            (variantData || []).map((variant) => ({
-              id: Number(variant.id),
-              size: variant.size || "",
-              color: variant.color || "",
-              sku: variant.sku || "",
-              barcode: variant.barcode || "",
-              stock: Number(variant.stock || 0),
-              mrp: Number(variant.mrp || 0),
-              sellingPrice: Number(variant.selling_price || 0),
-              lowStockLimit: Number(variant.low_stock_limit ?? 5),
-              isActive: variant.is_active !== false,
-            }))
-          );
-        }
-        setStatus(data.status || (data.is_active === false ? "inactive" : "active"));
-        setFeatured(Boolean(data.is_featured ?? data.featured ?? false));
-
-        const currentImages: string[] = Array.isArray(data.images)
-          ? data.images
-          : typeof data.images === "string"
-            ? (() => {
-                try {
-                  const parsed = JSON.parse(data.images);
-                  return Array.isArray(parsed) ? parsed : [];
-                } catch {
-                  return data.images ? [data.images] : [];
-                }
-              })()
-            : data.image_url
-              ? [data.image_url]
-              : [];
-
-        setExistingImages(
-          currentImages.filter(Boolean).map((url: string) => ({ url }))
-        );
-
-        const loadedFeatures = Array.isArray(data.key_features)
-          ? data.key_features
-          : [];
-
-        setFeatures(
-          loadedFeatures.length > 0
-            ? loadedFeatures.map((value: string) => ({ id: makeId(), value }))
-            : [{ id: makeId(), value: "" }]
-        );
-
-        setLifestyleTitle(data.lifestyle_title || "");
-        setLifestyleSubtitle(data.lifestyle_subtitle || "");
-
-        const loadedSpecs = Array.isArray(data.technical_specifications)
-          ? data.technical_specifications
-          : [];
-
-        setSpecifications(
-          loadedSpecs.length > 0
-            ? loadedSpecs.map((item: { label?: string; value?: string }) => ({
-                id: makeId(),
-                label: item.label || "",
-                value: item.value || "",
-              }))
-            : [{ id: makeId(), label: "", value: "" }]
-        );
-
-        setBoxContents(data.box_contents || "");
-
-        const loadedFaqs = Array.isArray(data.faqs) ? data.faqs : [];
-
-        setFaqs(
-          loadedFaqs.length > 0
-            ? loadedFaqs.map((item: { question?: string; answer?: string }) => ({
-                id: makeId(),
-                question: item.question || "",
-                answer: item.answer || "",
-              }))
-            : [{ id: makeId(), question: "", answer: "" }]
-        );
-
-        setShippingReturns(data.shipping_returns || "");
-        setSeoTitle(data.seo_title || "");
-        setMetaDescription(data.meta_description || "");
-
-        setKeywords(
-          Array.isArray(data.keywords)
-            ? data.keywords.join(", ")
-            : data.keywords || ""
-        );
-
-        setSocialPreviewUrl(data.social_preview_url || "");
-        setPackWeight(data.pack_weight || "");
-
-        const loadedVariations = Array.isArray(data.variations)
-          ? data.variations
-          : [];
-
-        setVariations(
-          loadedVariations.length > 0
-            ? loadedVariations.map(
-                (item: { name?: string; values?: string[] | string }) => ({
-                  id: makeId(),
-                  label: item.name || "",
-                  value: Array.isArray(item.values)
-                    ? item.values.join(", ")
-                    : item.values || "",
-                })
-              )
-            : [{ id: makeId(), label: "Size", value: "" }]
-        );
-      } catch (error) {
-        console.error(error);
-        setErrorMessage(
-          error instanceof Error
-            ? error.message
-            : "Unable to load the product."
-        );
-      } finally {
-        setLoading(false);
-      }
-    }
-
+  useEffect(() => {
     loadProduct();
   }, [productId]);
 
-  const discount = useMemo(() => {
-    const a = Number(mrp);
-    const b = Number(price);
+  useEffect(() => {
+    const mrp = Number(form.mrp || 0);
+    const price = Number(form.price || 0);
 
-    if (!a || !b || b >= a) return 0;
-    return Math.round(((a - b) / a) * 100);
-  }, [mrp, price]);
+    if (mrp > 0 && price >= 0 && price <= mrp) {
+      const discount = Math.round(((mrp - price) / mrp) * 100);
 
-  function handleNameChange(value: string) {
-    setProductName(value);
-
-    if (!slugTouched) {
-      setSlug(makeSlug(value));
-    }
-
-    if (!seoTitle) {
-      setSeoTitle(value ? `${value} | NEW CITY STYLE` : "");
-    }
-  }
-
-  function handleImages(event: ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(event.target.files || []);
-    event.target.value = "";
-
-    const slots = MAX_IMAGES - existingImages.length - images.length;
-
-    if (slots <= 0) {
-      setErrorMessage(`Maximum ${MAX_IMAGES} images allowed.`);
-      return;
-    }
-
-    const valid = selected
-      .filter((file) => file.type.startsWith("image/"))
-      .slice(0, slots)
-      .map((file) => ({
-        file,
-        preview: URL.createObjectURL(file),
+      setForm((current) => ({
+        ...current,
+        discountPercent: String(discount),
       }));
+    }
+  }, [form.mrp, form.price]);
 
-    setImages((current) => [...current, ...valid]);
+  async function loadCollections() {
+    const { data, error } = await supabase
+      .from("collections")
+      .select("id,name")
+      .eq("is_active", true)
+      .order("name");
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    setCollections((data as CollectionOption[]) || []);
   }
 
-  function removeImage(index: number) {
-    setImages((current) => {
-      const target = current[index];
-      if (target) URL.revokeObjectURL(target.preview);
-      return current.filter((_, i) => i !== index);
-    });
+  function asString(value: unknown) {
+    return typeof value === "string" ? value : "";
   }
 
-  function moveImage(index: number, direction: "left" | "right") {
-    setImages((current) => {
-      const next = [...current];
-      const target = direction === "left" ? index - 1 : index + 1;
+  function asNumber(value: unknown) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+  }
 
-      if (target < 0 || target >= next.length) return current;
+  function asStringArray(value: unknown) {
+    return Array.isArray(value)
+      ? value.filter((item): item is string =>
+          typeof item === "string"
+        )
+      : [];
+  }
 
-      [next[index], next[target]] = [next[target], next[index]];
-      return next;
-    });
+  function asSpecifications(value: unknown): Specification[] {
+    if (!Array.isArray(value)) return [];
+
+    return value
+      .map((item) => {
+        const record = item as Record<string, unknown>;
+        return {
+          label: asString(record.label),
+          value: asString(record.value),
+        };
+      })
+      .filter((item) => item.label || item.value);
+  }
+
+  function asFaqs(value: unknown): Faq[] {
+    if (!Array.isArray(value)) return [];
+
+    return value
+      .map((item) => {
+        const record = item as Record<string, unknown>;
+        return {
+          question: asString(record.question),
+          answer: asString(record.answer),
+        };
+      })
+      .filter((item) => item.question || item.answer);
   }
 
 
-  function removeExistingImage(index: number) {
-    setExistingImages((current) =>
-      current.filter((_, imageIndex) => imageIndex !== index)
-    );
-  }
+  async function loadProduct() {
+    if (!productId) return;
 
-  function moveExistingImage(index: number, direction: "left" | "right") {
-    setExistingImages((current) => {
-      const next = [...current];
-      const target = direction === "left" ? index - 1 : index + 1;
-
-      if (target < 0 || target >= next.length) return current;
-
-      [next[index], next[target]] = [next[target], next[index]];
-      return next;
-    });
-  }
-
-  async function uploadImages(finalSlug: string) {
-    const urls: string[] = [];
-
-    for (let index = 0; index < images.length; index += 1) {
-      const item = images[index];
-      const extension = item.file.name.split(".").pop() || "jpg";
-      const path = `products/${finalSlug}/${Date.now()}-${index}.${extension}`;
-
-      const { error } = await supabase.storage
-        .from("product-images")
-        .upload(path, item.file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (error) throw error;
-
-      const { data } = supabase.storage
-        .from("product-images")
-        .getPublicUrl(path);
-
-      urls.push(data.publicUrl);
-    }
-
-    return urls;
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    setMessage("");
-    setErrorMessage("");
-
-    if (!productName.trim()) {
-      setErrorMessage("Product name is required.");
-      return;
-    }
-
-    if (!category.trim()) {
-      setErrorMessage("Category is required.");
-      return;
-    }
-
-    if (!description.trim()) {
-      setErrorMessage("Description is required.");
-      return;
-    }
-
-    if (!price || Number(price) < 0) {
-      setErrorMessage("Enter a valid selling price.");
-      return;
-    }
-
-    if (!stock || Number(stock) < 0) {
-      setErrorMessage("Enter a valid stock quantity.");
-      return;
-    }
-
-    if (
-      lowStockLimit === "" ||
-      !Number.isFinite(Number(lowStockLimit)) ||
-      Number(lowStockLimit) < 0
-    ) {
-      setErrorMessage("Enter a valid low stock alert limit.");
-      return;
-    }
-
-    if (sellOnline && Number(onlineQuantity || 0) < 0) {
-      setErrorMessage("Enter a valid online quantity.");
-      return;
-    }
-
-    if (sellOnline && Number(onlineQuantity || 0) > Number(stock || 0)) {
-      setErrorMessage("Online quantity cannot be greater than total stock.");
-      return;
-    }
-
-    const finalSlug = makeSlug(slug || productName);
-
-    setSaving(true);
+    setLoading(true);
 
     try {
-      const { data: duplicate, error: duplicateError } = await supabase
+      const { data, error } = await supabase
         .from("products")
-        .select("id")
-        .eq("slug", finalSlug)
-        .neq("id", productId)
-        .maybeSingle();
-
-      if (duplicateError) throw duplicateError;
-
-      if (duplicate) {
-        throw new Error("This URL slug is already in use.");
-      }
-
-      const uploadedUrls = await uploadImages(finalSlug);
-      const finalImageUrls = [
-        ...existingImages.map((item) => item.url),
-        ...uploadedUrls,
-      ];
-
-      const payload = {
-        name: productName.trim(),
-        slug: finalSlug,
-        tagline: tagline.trim() || null,
-        category: category.trim(),
-        subcategory: subcategory.trim() || null,
-        brand: brand.trim() || null,
-        description: description.trim(),
-
-        mrp: mrp ? Number(mrp) : Number(price),
-        price: Number(price),
-        stock: Number(stock),
-        low_stock_limit: Math.max(0, Math.floor(Number(lowStockLimit || 5))),
-        sku: sku.trim() || null,
-        barcode: barcode.trim() || null,
-        sell_online: sellOnline,
-        online_stock_limit: sellOnline ? Number(onlineQuantity || 0) : 0,
-        status,
-        is_active: status === "active",
-        is_featured: featured,
-
-        image_url: finalImageUrls[0] || null,
-        images: finalImageUrls,
-
-        key_features: features
-          .map((item) => item.value.trim())
-          .filter(Boolean),
-
-        lifestyle_title: lifestyleTitle.trim() || null,
-        lifestyle_subtitle: lifestyleSubtitle.trim() || null,
-
-        technical_specifications: specifications
-          .filter((item) => item.label.trim() || item.value.trim())
-          .map((item) => ({
-            label: item.label.trim(),
-            value: item.value.trim(),
-          })),
-
-        box_contents: boxContents.trim() || null,
-
-        faqs: faqs
-          .filter((item) => item.question.trim() || item.answer.trim())
-          .map((item) => ({
-            question: item.question.trim(),
-            answer: item.answer.trim(),
-          })),
-
-        shipping_returns: shippingReturns.trim() || null,
-
-        seo_title:
-          seoTitle.trim() || `${productName.trim()} | NEW CITY STYLE`,
-        meta_description: metaDescription.trim() || null,
-        keywords: keywords
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
-        social_preview_url: socialPreviewUrl.trim() || null,
-
-        pack_weight: packWeight.trim() || null,
-
-        variations: variations
-          .filter((item) => item.label.trim() || item.value.trim())
-          .map((item) => ({
-            name: item.label.trim(),
-            values: item.value
-              .split(",")
-              .map((value) => value.trim())
-              .filter(Boolean),
-          })),
-      };
-
-      const { error } = await supabase
-        .from("products")
-        .update(payload)
-        .eq("id", productId);
+        .select("*")
+        .eq("id", productId)
+        .single();
 
       if (error) throw error;
 
-      if (productVariants.length > 0) {
-        const { error: variantLimitError } = await supabase
-          .from("product_variants")
-          .update({
-            low_stock_limit: Math.max(
-              0,
-              Math.floor(Number(lowStockLimit || 5))
-            ),
-          })
-          .eq("product_id", productId);
+      const row = data as Record<string, unknown>;
+      const existingSpecs = asSpecifications(row.technical_specifications);
+      const existingFaqs = asFaqs(row.faqs);
+      const sellOnline = row.sell_online === true;
 
-        if (variantLimitError) throw variantLimitError;
+      const { data: variants, error: variantsError } = await supabase
+        .from("product_variants")
+        .select("id,size,color,sku,barcode,stock,reserved_stock,online_stock_limit,sell_online")
+        .eq("product_id", productId)
+        .order("id", { ascending: true });
+
+      if (variantsError) {
+        console.info("Unable to load product variants:", variantsError.message);
       }
 
-      setMessage(
-        `Product updated successfully. Low stock alert is set to ${Math.max(
-          0,
-          Math.floor(Number(lowStockLimit || 5))
-        )}.`
-      );
+      const cleanVariants = ((variants || []) as Record<string, unknown>[]).map((variant) => ({
+        id: asNumber(variant.id),
+        size: asString(variant.size),
+        color: asString(variant.color),
+        sku: asString(variant.sku),
+        barcode: asString(variant.barcode),
+        stock: Math.max(0, asNumber(variant.stock) - asNumber(variant.reserved_stock)),
+      }));
 
-      setTimeout(() => {
-        router.push("/admin/products");
-        router.refresh();
-      }, 900);
+      setVariantBarcodes(cleanVariants);
+
+      const primaryVariant = cleanVariants[0] || null;
+      setEditingVariantId(primaryVariant?.id || null);
+
+      const availableStock = primaryVariant?.stock ?? asNumber(row.stock);
+      const onlineLimit = primaryVariant
+        ? asNumber(((variants || [])[0] as Record<string, unknown>)?.online_stock_limit)
+        : asNumber(row.online_stock_limit ?? row.online_stock);
+      const effectiveSellOnline = primaryVariant
+        ? (((variants || [])[0] as Record<string, unknown>)?.sell_online === true || sellOnline)
+        : sellOnline;
+
+      const imageFallback = asString(row.image) || asString(row.image_url);
+      const gallery = asStringArray(row.gallery_images);
+      const legacyImages = asStringArray(row.images);
+      const mainImage = imageFallback || legacyImages[0] || "";
+      const galleryImages = gallery.length
+        ? gallery
+        : legacyImages.filter((url) => url && url !== mainImage);
+
+      setForm((current) => ({
+        ...current,
+        name: asString(row.name) || asString(row.product_name),
+        slug: asString(row.slug) || createSlug(asString(row.name) || asString(row.product_name)),
+        tagline: asString(row.tagline),
+        category: asString(row.category),
+        subcategory: asString(row.subcategory),
+        collectionId: row.collection_id ? String(row.collection_id) : "",
+        brand: asString(row.brand) || "NEW CITY STYLE",
+        gender: asString(row.gender),
+        ageGroup: asString(row.age_group),
+        shortDescription: asString(row.short_description),
+        description: asString(row.description),
+        mrp: asNumber(row.mrp) > 0 ? String(asNumber(row.mrp)) : "",
+        price: effectiveSellOnline && asNumber(row.price) > 0 ? String(asNumber(row.price)) : "",
+        discountPercent: String(asNumber(row.discount_percent)),
+        taxPercent: asNumber(row.tax_percent) > 0 ? String(asNumber(row.tax_percent)) : "",
+        sku: primaryVariant?.sku || asString(row.sku),
+        barcode: primaryVariant?.barcode || asString(row.barcode),
+        stock: String(availableStock),
+        lowStockLimit: String(asNumber(row.low_stock_limit) || 5),
+        sellOnline: effectiveSellOnline,
+        onlineStockLimit: String(Math.min(onlineLimit, availableStock)),
+        mainImage,
+        galleryImages,
+        lifestyleImages: asStringArray(row.lifestyle_images),
+        tags: asStringArray(row.tags),
+        sizes: asStringArray(row.sizes).length
+          ? asStringArray(row.sizes)
+          : cleanVariants.map((variant) => variant.size).filter(Boolean),
+        material: asString(row.material),
+        fabric: asString(row.fabric),
+        pattern: asString(row.pattern),
+        sleeveType: asString(row.sleeve_type),
+        fitType: asString(row.fit_type),
+        occasion: asString(row.occasion),
+        lifestyleTitle: asString(row.lifestyle_title),
+        lifestyleSubtitle: asString(row.lifestyle_subtitle),
+        keyFeatures: asStringArray(row.key_features).length ? asStringArray(row.key_features) : current.keyFeatures,
+        specifications: existingSpecs.length ? existingSpecs : current.specifications,
+        whatsInBox: asStringArray(row.whats_in_box).length
+          ? asStringArray(row.whats_in_box)
+          : asString(row.box_contents)
+            ? [asString(row.box_contents)]
+            : current.whatsInBox,
+        faqs: existingFaqs.length ? existingFaqs : current.faqs,
+        weight: asNumber(row.weight) > 0 ? String(asNumber(row.weight)) : "",
+        packageLength: asNumber(row.package_length) > 0 ? String(asNumber(row.package_length)) : "",
+        packageWidth: asNumber(row.package_width) > 0 ? String(asNumber(row.package_width)) : "",
+        packageHeight: asNumber(row.package_height) > 0 ? String(asNumber(row.package_height)) : "",
+        shippingPolicy: asString(row.shipping_policy) || asString(row.shipping_returns) || current.shippingPolicy,
+        returnPolicy: asString(row.return_policy) || current.returnPolicy,
+        seoTitle: asString(row.seo_title),
+        metaDescription: asString(row.meta_description),
+        seoKeywords: asString(row.seo_keywords) || (Array.isArray(row.keywords) ? (row.keywords as string[]).join(", ") : asString(row.keywords)),
+        socialPreviewUrl: asString(row.social_preview_url),
+        isFeatured: row.is_featured === true,
+        isNewArrival: row.is_new_arrival !== false,
+        isOnSale: row.is_on_sale === true,
+        isBestseller: row.is_bestseller === true,
+        isTrending: row.is_trending === true,
+        isActive: row.is_active !== false,
+      }));
+
+      setAiStatus({
+        type: "success",
+        message: "Existing product loaded. Upload the product photo and use AI to complete all online details. Barcode and physical stock are locked.",
+      });
     } catch (error) {
       console.error(error);
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to save the product."
-      );
+      alert(error instanceof Error ? `Unable to load product: ${error.message}` : "Unable to load product.");
+      router.push("/admin/products");
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   }
 
-  function updateFeature(id: number, value: string) {
-    setFeatures((current) =>
-      current.map((item) => (item.id === id ? { ...item, value } : item))
+  function createSlug(value: string) {
+    return value
+      .toLowerCase()
+      .trim()
+      .replace(/['"]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
+  function setField<K extends keyof ProductForm>(
+    field: K,
+    value: ProductForm[K]
+  ) {
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function handleProductName(value: string) {
+    setForm((current) => ({
+      ...current,
+      name: value,
+      slug: createSlug(value),
+      seoTitle:
+        current.seoTitle ||
+        `${value} Online | NEW CITY STYLE`,
+    }));
+  }
+
+  function validateImage(file: File) {
+    const allowed = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/webp",
+    ];
+
+    if (!allowed.includes(file.type)) {
+      alert("Please select JPG, PNG or WEBP images.");
+      return false;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      alert("Each image must be smaller than 8 MB.");
+      return false;
+    }
+
+    return true;
+  }
+
+  async function uploadFile(file: File, folder: string) {
+    const extension =
+      file.name.split(".").pop()?.toLowerCase() || "jpg";
+
+    const safeName = file.name
+      .replace(/\.[^/.]+$/, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+    const filePath = `products/${folder}/${safeName}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 7)}.${extension}`;
+
+    const { error } = await supabase.storage
+      .from("store-assets")
+      .upload(filePath, file, {
+        contentType: file.type,
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    const { data } = supabase.storage
+      .from("store-assets")
+      .getPublicUrl(filePath);
+
+    if (!data.publicUrl) {
+      throw new Error("Unable to generate image URL.");
+    }
+
+    return data.publicUrl;
+  }
+
+  async function uploadMainImage(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (!validateImage(file)) {
+      event.target.value = "";
+      return;
+    }
+
+    setUploadingMain(true);
+
+    try {
+      const url = await uploadFile(file, "main");
+
+      setField("mainImage", url);
+
+      if (!form.socialPreviewUrl) {
+        setField("socialPreviewUrl", url);
+      }
+
+      alert("Main product image uploaded successfully.");
+    } catch (error) {
+      console.error(error);
+
+      alert(
+        error instanceof Error
+          ? `Image upload failed: ${error.message}`
+          : "Image upload failed."
+      );
+    } finally {
+      setUploadingMain(false);
+      event.target.value = "";
+    }
+  }
+
+  async function uploadGalleryImages(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const files = Array.from(event.target.files || []);
+
+    if (!files.length) return;
+
+    if (form.galleryImages.length + files.length > 10) {
+      alert("Maximum 10 gallery images are allowed.");
+      event.target.value = "";
+      return;
+    }
+
+    const validFiles = files.filter(validateImage);
+
+    if (!validFiles.length) {
+      event.target.value = "";
+      return;
+    }
+
+    setUploadingGallery(true);
+
+    try {
+      const urls = await Promise.all(
+        validFiles.map((file) => uploadFile(file, "gallery"))
+      );
+
+      setForm((current) => ({
+        ...current,
+        galleryImages: [...current.galleryImages, ...urls],
+      }));
+
+      alert("Gallery images uploaded successfully.");
+    } catch (error) {
+      console.error(error);
+
+      alert(
+        error instanceof Error
+          ? `Gallery upload failed: ${error.message}`
+          : "Gallery upload failed."
+      );
+    } finally {
+      setUploadingGallery(false);
+      event.target.value = "";
+    }
+  }
+
+  async function uploadLifestyleImages(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const files = Array.from(event.target.files || []);
+
+    if (!files.length) return;
+
+    if (form.lifestyleImages.length + files.length > 6) {
+      alert("Maximum 6 lifestyle images are allowed.");
+      event.target.value = "";
+      return;
+    }
+
+    const validFiles = files.filter(validateImage);
+
+    if (!validFiles.length) {
+      event.target.value = "";
+      return;
+    }
+
+    setUploadingLifestyle(true);
+
+    try {
+      const urls = await Promise.all(
+        validFiles.map((file) =>
+          uploadFile(file, "lifestyle")
+        )
+      );
+
+      setForm((current) => ({
+        ...current,
+        lifestyleImages: [
+          ...current.lifestyleImages,
+          ...urls,
+        ],
+      }));
+
+      alert("Lifestyle images uploaded successfully.");
+    } catch (error) {
+      console.error(error);
+
+      alert(
+        error instanceof Error
+          ? `Lifestyle upload failed: ${error.message}`
+          : "Lifestyle upload failed."
+      );
+    } finally {
+      setUploadingLifestyle(false);
+      event.target.value = "";
+    }
+  }
+
+  async function generateProductDetailsWithAi() {
+    if (!form.mainImage) {
+      setAiStatus({
+        type: "error",
+        message: "Please upload the main product image first.",
+      });
+      return;
+    }
+
+    setGeneratingAi(true);
+    setAiStatus({
+      type: "idle",
+      message: "Gemini is analysing the product image...",
+    });
+
+    try {
+      const response = await fetch("/api/generate-product-details", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          imageUrl: form.mainImage,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        details?: AiProductDetails;
+        error?: string;
+      };
+
+      if (!response.ok || !result.details) {
+        throw new Error(
+          result.error || "AI could not generate product details."
+        );
+      }
+
+      const details = result.details;
+      const cleanFeatures = details.keyFeatures
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 4);
+      const cleanSpecifications = details.technicalSpecifications
+        .map((item) => ({
+          label: item.label.trim(),
+          value: item.value.trim(),
+        }))
+        .filter((item) => item.label && item.value)
+        .slice(0, 3);
+      const cleanFaqs = details.faqs
+        .map((item) => ({
+          question: item.question.trim(),
+          answer: item.answer.trim(),
+        }))
+        .filter((item) => item.question && item.answer)
+        .slice(0, 2);
+      const cleanBoxItems = details.whatsInTheBox
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const generatedTags = [
+        ...details.productTags,
+        details.occasion,
+      ]
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      setForm((current) => ({
+        ...current,
+        name: details.productName.trim() || current.name,
+        slug:
+          createSlug(details.slug || details.productName) ||
+          current.slug,
+        tagline: details.tagline.trim() || current.tagline,
+        category: details.category.trim() || current.category,
+        subcategory:
+          details.subcategory.trim() || current.subcategory,
+        shortDescription:
+          details.metaDescription.trim() ||
+          current.shortDescription,
+        description:
+          details.description.trim() || current.description,
+        gender: details.gender.trim() || current.gender,
+        pattern: details.pattern.trim() || current.pattern,
+        sleeveType:
+          details.sleeveType.trim() || current.sleeveType,
+        fitType: details.fit.trim() || current.fitType,
+        occasion: details.occasion.trim() || current.occasion,
+        lifestyleTitle:
+          details.lifestyleTitle.trim() || current.lifestyleTitle,
+        lifestyleSubtitle:
+          details.lifestyleSubtitle.trim() ||
+          current.lifestyleSubtitle,
+        keyFeatures: cleanFeatures.length
+          ? [
+              ...cleanFeatures,
+              ...Array(Math.max(4 - cleanFeatures.length, 0)).fill(""),
+            ]
+          : current.keyFeatures,
+        specifications: cleanSpecifications.length
+          ? [
+              ...cleanSpecifications,
+              ...Array(
+                Math.max(3 - cleanSpecifications.length, 0)
+              ).fill(null).map(() => ({ label: "", value: "" })),
+            ]
+          : current.specifications,
+        whatsInBox: cleanBoxItems.length
+          ? cleanBoxItems
+          : current.whatsInBox,
+        faqs: cleanFaqs.length
+          ? [
+              ...cleanFaqs,
+              ...Array(Math.max(2 - cleanFaqs.length, 0))
+                .fill(null)
+                .map(() => ({ question: "", answer: "" })),
+            ]
+          : current.faqs,
+        seoTitle: details.seoTitle.trim() || current.seoTitle,
+        metaDescription:
+          details.metaDescription.trim() ||
+          current.metaDescription,
+        seoKeywords: details.seoKeywords.length
+          ? details.seoKeywords.join(", ")
+          : current.seoKeywords,
+        tags: Array.from(new Set([...current.tags, ...generatedTags])),
+      }));
+
+      setAiStatus({
+        type: "success",
+        message:
+          "AI draft generated successfully. Review and edit every field before saving.",
+      });
+    } catch (error) {
+      console.error(error);
+      setAiStatus({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "AI generation failed. You can continue entering details manually.",
+      });
+    } finally {
+      setGeneratingAi(false);
+    }
+  }
+
+  function removeImage(
+    type: "galleryImages" | "lifestyleImages",
+    index: number
+  ) {
+    setForm((current) => ({
+      ...current,
+      [type]: current[type].filter(
+        (_, imageIndex) => imageIndex !== index
+      ),
+    }));
+  }
+  function toggleTag(tag: string) {
+    setForm((current) => ({
+      ...current,
+      tags: current.tags.includes(tag)
+        ? current.tags.filter((item) => item !== tag)
+        : [...current.tags, tag],
+    }));
+  }
+
+  function addCustomTag() {
+    const value = customTag.trim();
+
+    if (!value) return;
+
+    if (!form.tags.some((tag) => tag.toLowerCase() === value.toLowerCase())) {
+      setField("tags", [...form.tags, value]);
+    }
+
+    setCustomTag("");
+  }
+
+  function toggleSize(size: string) {
+    setForm((current) => ({
+      ...current,
+      sizes: current.sizes.includes(size)
+        ? current.sizes.filter((item) => item !== size)
+        : [...current.sizes, size],
+    }));
+  }
+
+
+  function addCustomSize() {
+    const value = customSize.trim();
+
+    if (!value) return;
+
+    if (!form.sizes.includes(value)) {
+      setField("sizes", [...form.sizes, value]);
+    }
+
+    setCustomSize("");
+  }
+
+
+  function updateFeature(index: number, value: string) {
+    setForm((current) => ({
+      ...current,
+      keyFeatures: current.keyFeatures.map((feature, featureIndex) =>
+        featureIndex === index ? value : feature
+      ),
+    }));
+  }
+
+  function addFeature() {
+    setField("keyFeatures", [...form.keyFeatures, ""]);
+  }
+
+  function removeFeature(index: number) {
+    setField(
+      "keyFeatures",
+      form.keyFeatures.filter(
+        (_, featureIndex) => featureIndex !== index
+      )
     );
   }
 
-  function updateKeyValue(
-    setter: React.Dispatch<React.SetStateAction<KeyValueItem[]>>,
-    id: number,
-    field: "label" | "value",
+  function updateSpecification(
+    index: number,
+    field: keyof Specification,
     value: string
   ) {
-    setter((current) =>
-      current.map((item) =>
-        item.id === id ? { ...item, [field]: value } : item
+    setForm((current) => ({
+      ...current,
+      specifications: current.specifications.map(
+        (specification, specificationIndex) =>
+          specificationIndex === index
+            ? {
+                ...specification,
+                [field]: value,
+              }
+            : specification
+      ),
+    }));
+  }
+
+  function addSpecification() {
+    setField("specifications", [
+      ...form.specifications,
+      { label: "", value: "" },
+    ]);
+  }
+
+  function removeSpecification(index: number) {
+    setField(
+      "specifications",
+      form.specifications.filter(
+        (_, specificationIndex) =>
+          specificationIndex !== index
+      )
+    );
+  }
+
+  function updateBoxItem(index: number, value: string) {
+    setForm((current) => ({
+      ...current,
+      whatsInBox: current.whatsInBox.map((item, itemIndex) =>
+        itemIndex === index ? value : item
+      ),
+    }));
+  }
+
+  function addBoxItem() {
+    setField("whatsInBox", [...form.whatsInBox, ""]);
+  }
+
+  function removeBoxItem(index: number) {
+    setField(
+      "whatsInBox",
+      form.whatsInBox.filter(
+        (_, itemIndex) => itemIndex !== index
       )
     );
   }
 
   function updateFaq(
-    id: number,
-    field: "question" | "answer",
+    index: number,
+    field: keyof Faq,
     value: string
   ) {
-    setFaqs((current) =>
-      current.map((item) =>
-        item.id === id ? { ...item, [field]: value } : item
-      )
+    setForm((current) => ({
+      ...current,
+      faqs: current.faqs.map((faq, faqIndex) =>
+        faqIndex === index
+          ? {
+              ...faq,
+              [field]: value,
+            }
+          : faq
+      ),
+    }));
+  }
+
+  function addFaq() {
+    setField("faqs", [
+      ...form.faqs,
+      { question: "", answer: "" },
+    ]);
+  }
+
+  function removeFaq(index: number) {
+    setField(
+      "faqs",
+      form.faqs.filter((_, faqIndex) => faqIndex !== index)
     );
   }
 
+  function getOptionalNumber(value: string, fallback: number) {
+    const normalizedValue = value.trim();
+
+    if (!normalizedValue) return fallback;
+
+    const parsedValue = Number(normalizedValue);
+    return Number.isFinite(parsedValue) ? parsedValue : fallback;
+  }
+
+  function getCleanFaqs() {
+    return form.faqs
+      .map((faq) => ({
+        question: faq.question.trim(),
+        answer: faq.answer.trim(),
+      }))
+      .filter((faq) => faq.question && faq.answer);
+  }
+
+  function validateForm() {
+    if (!form.name.trim()) {
+      alert("Please enter the product name.");
+      return false;
+    }
+
+    if (!form.slug.trim()) {
+      alert("Please enter the product URL slug.");
+      return false;
+    }
+
+    if (Number(form.mrp || 0) < 0) {
+      alert("Please enter a valid MRP.");
+      return false;
+    }
+
+    if (form.sellOnline) {
+      if (!form.category.trim()) {
+        alert("Please select or enter a category before selling online.");
+        return false;
+      }
+
+      if (!form.description.trim()) {
+        alert("Please enter the product description before selling online.");
+        return false;
+      }
+
+      if (Number(form.price) <= 0) {
+        alert("Please enter the online selling price.");
+        return false;
+      }
+
+      if (Number(form.mrp) > 0 && Number(form.price) > Number(form.mrp)) {
+        alert("Online selling price cannot be greater than MRP.");
+        return false;
+      }
+
+      if (!form.mainImage) {
+        alert("Please upload the main product image before selling online.");
+        return false;
+      }
+
+      if (Number(form.onlineStockLimit) < 0 || Number(form.onlineStockLimit) > Number(form.stock)) {
+        alert("Online quantity must be between 0 and available physical stock.");
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  async function saveProduct(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    if (!validateForm() || !productId) return;
+
+    setSaving(true);
+
+    const productData = {
+      name: form.name.trim(),
+      slug: createSlug(form.slug || form.name),
+      tagline: form.tagline.trim() || null,
+      short_description: form.shortDescription.trim() || null,
+      description: form.description.trim() || null,
+      category: form.category.trim() || null,
+      subcategory: form.subcategory.trim() || null,
+      collection_id: form.collectionId ? Number(form.collectionId) : null,
+      brand: form.brand.trim() || null,
+      gender: form.gender || null,
+      age_group: form.ageGroup || null,
+      mrp: getOptionalNumber(form.mrp, 0),
+      ...(form.sellOnline ? { price: Number(form.price) } : {}),
+      discount_percent: form.sellOnline ? Number(form.discountPercent || 0) : 0,
+      tax_percent: getOptionalNumber(form.taxPercent, 0),
+      low_stock_limit: getOptionalNumber(form.lowStockLimit, 5),
+      sell_online: form.sellOnline,
+      available_in_pos: true,
+      online_stock_limit: form.sellOnline
+        ? Math.min(Number(form.onlineStockLimit || 0), Number(form.stock || 0))
+        : 0,
+      image: form.mainImage || null,
+      image_url: form.mainImage || null,
+      gallery_images: form.galleryImages,
+      images: [form.mainImage, ...form.galleryImages].filter(Boolean),
+      lifestyle_images: form.lifestyleImages,
+      tags: Array.from(new Set([...form.tags, form.occasion.trim()].filter(Boolean))),
+      sizes: form.sizes,
+      material: form.material.trim() || null,
+      fabric: form.fabric.trim() || null,
+      pattern: form.pattern.trim() || null,
+      sleeve_type: form.sleeveType.trim() || null,
+      fit_type: form.fitType.trim() || null,
+      occasion: form.occasion.trim() || null,
+      lifestyle_title: form.lifestyleTitle.trim() || null,
+      lifestyle_subtitle: form.lifestyleSubtitle.trim() || null,
+      key_features: form.keyFeatures.map((feature) => feature.trim()).filter(Boolean),
+      technical_specifications: form.specifications
+        .map((specification) => ({ label: specification.label.trim(), value: specification.value.trim() }))
+        .filter((specification) => specification.label && specification.value),
+      whats_in_box: form.whatsInBox.map((item) => item.trim()).filter(Boolean),
+      faqs: getCleanFaqs(),
+      weight: Number(form.weight || 0),
+      package_length: Number(form.packageLength || 0),
+      package_width: Number(form.packageWidth || 0),
+      package_height: Number(form.packageHeight || 0),
+      shipping_policy: form.shippingPolicy.trim() || null,
+      return_policy: form.returnPolicy.trim() || null,
+      seo_title: form.seoTitle.trim() || `${form.name.trim()} | NEW CITY STYLE`,
+      meta_description: form.metaDescription.trim() || form.shortDescription.trim() || form.description.trim().slice(0, 155) || null,
+      seo_keywords: form.seoKeywords.trim() || null,
+      social_preview_url: form.socialPreviewUrl.trim() || form.mainImage || null,
+      is_featured: form.isFeatured,
+      is_new_arrival: form.isNewArrival,
+      is_on_sale: form.isOnSale,
+      is_bestseller: form.isBestseller,
+      is_trending: form.isTrending,
+      is_active: form.isActive,
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      const { error } = await supabase
+        .from("products")
+        .update(productData)
+        .eq("id", productId);
+
+      if (error) throw error;
+
+      if (editingVariantId) {
+        const { error: variantPriceError } = await supabase
+          .from("product_variants")
+          .update({
+            mrp: getOptionalNumber(form.mrp, 0),
+            low_stock_limit: getOptionalNumber(form.lowStockLimit, 5),
+          })
+          .eq("id", editingVariantId);
+
+        if (variantPriceError) throw variantPriceError;
+      }
+
+      const { error: onlineStockError } = await supabase.rpc(
+        "set_product_online_stock",
+        {
+          p_product_id: Number(productId),
+          p_variant_id: editingVariantId,
+          p_online_quantity: form.sellOnline
+            ? Math.min(Number(form.onlineStockLimit || 0), Number(form.stock || 0))
+            : 0,
+          p_sell_online: form.sellOnline,
+        }
+      );
+
+      if (onlineStockError) {
+        console.error(onlineStockError);
+        alert(`Product details were updated, but online stock sync failed: ${onlineStockError.message}`);
+        return;
+      }
+
+      alert(
+        form.sellOnline
+          ? "Product updated and published online successfully. Existing barcode and physical stock were preserved."
+          : "Product updated successfully. It remains available only in Purchase Stock and POS."
+      );
+
+      router.push("/admin/products");
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? `Unable to update product: ${error.message}` : "Unable to update product.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const discountAmount = useMemo(() => {
+    const mrp = Number(form.mrp || 0);
+    const price = Number(form.price || 0);
+
+    return Math.max(mrp - price, 0);
+  }, [form.mrp, form.price]);
+
+  const uploading =
+    uploadingMain ||
+    uploadingGallery ||
+    uploadingLifestyle;
+
   if (loading) {
     return (
-      <main className="page">
-        <div className="container">
-          <div className="loadingCard">
-            <div className="loader" />
-            <h2>Loading product...</h2>
-            <p>Please wait while the product details are loaded.</p>
-          </div>
+      <main style={mainStyle}>
+        <div style={containerStyle}>
+          <section style={heroStyle}>
+            <p style={heroLabelStyle}>NEW CITY STYLE</p>
+            <h1 style={heroTitleStyle}>Loading Product...</h1>
+            <p style={heroDescriptionStyle}>Please wait while the existing barcode stock product is loaded.</p>
+          </section>
         </div>
-
-        <style jsx>{`
-          :global(body) {
-            margin: 0;
-            background: #f4f6fb;
-            font-family: Inter, Poppins, Arial, sans-serif;
-          }
-
-          .page {
-            min-height: 100vh;
-            padding: 30px 20px;
-            background: #f4f6fb;
-          }
-
-          .container {
-            max-width: 1250px;
-            margin: auto;
-          }
-
-          .loadingCard {
-            min-height: 420px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid #e4e7ec;
-            border-radius: 18px;
-            background: white;
-            text-align: center;
-          }
-
-          .loader {
-            width: 48px;
-            height: 48px;
-            margin-bottom: 18px;
-            border: 4px solid #e7ebf3;
-            border-top-color: #0a2e73;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-          }
-
-          h2 {
-            margin: 0;
-            color: #0a2e73;
-          }
-
-          p {
-            color: #667085;
-          }
-
-          @keyframes spin {
-            to {
-              transform: rotate(360deg);
-            }
-          }
-        `}</style>
       </main>
     );
   }
 
   return (
-    <main className="page">
-      <div className="container">
-        <header className="header">
-          <div>
-            <button
-              type="button"
-              className="back"
-              onClick={() => router.push("/admin/products")}
-            >
-              ← Back to Products
-            </button>
+    <main style={mainStyle}>
+      <div style={containerStyle}>
+        <section style={heroStyle}>
+          <p style={heroLabelStyle}>NEW CITY STYLE</p>
 
-            <p className="eyebrow">NEW CITY STYLE ADMIN</p>
-            <h1>Edit Product</h1>
-            <p className="subtitle">
-              Update this product and save the latest information.
-            </p>
-          </div>
+          <h1 style={heroTitleStyle}>
+            Edit & Complete Product
+          </h1>
 
-          <div className="headerActions">
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => router.push("/admin/products")}
-            >
-              Cancel
-            </button>
+          <p style={heroDescriptionStyle}>
+            Open the existing stock product, upload photos, generate complete details with AI, set online price and publish only when Sell Online is enabled.
+          </p>
+        </section>
 
+        <form onSubmit={saveProduct}>
+          <div className="mobile-sticky-save">
             <button
               type="submit"
-              form="product-form"
-              className="primary"
-              disabled={saving}
+              aria-label="Save Product"
+              title="Save Product"
+              disabled={saving || uploading}
+              className="mobile-sticky-save-button"
             >
-              {saving ? "Updating Product..." : "Update Product"}
+              <span aria-hidden="true">💾</span>
+              <span className="mobile-sticky-save-text">
+                {saving
+                  ? "Saving..."
+                  : uploading
+                    ? "Uploading..."
+                    : "Update Product"}
+              </span>
             </button>
           </div>
-        </header>
 
-        {message && <div className="alert success">✓ {message}</div>}
-        {errorMessage && <div className="alert error">! {errorMessage}</div>}
+          <div className="product-admin-layout">
+            <div
+              style={{
+                display: "grid",
+                gap: "22px",
+              }}
+            >
 
-        <form id="product-form" onSubmit={handleSubmit}>
-          <Section number="1" title="Basic Information">
-            <div className="grid two">
-              <Field label="Product Name" required full>
-                <input
-                  value={productName}
-                  onChange={(e) => handleNameChange(e.target.value)}
-                  placeholder="Premium Men's Slim Fit Shirt"
-                />
-              </Field>
+              <Panel
+                title="Basic Information"
+                subtitle="Add the main product identity and description."
+              >
+                <FormGrid>
+                  <Field label="Product Name" required>
+                    <input
+                      value={form.name}
+                      onChange={(event) =>
+                        handleProductName(event.target.value)
+                      }
+                      placeholder="Premium Men's Cotton Shirt"
+                      style={inputStyle}
+                    />
+                  </Field>
 
-              <Field label="URL Slug" required full>
-                <input
-                  value={slug}
-                  onChange={(e) => {
-                    setSlugTouched(true);
-                    setSlug(makeSlug(e.target.value));
-                  }}
-                  placeholder="premium-mens-slim-fit-shirt"
-                />
-              </Field>
-
-              <Field label="Tagline" full>
-                <input
-                  value={tagline}
-                  onChange={(e) => setTagline(e.target.value)}
-                  placeholder="Premium comfort with timeless style"
-                />
-              </Field>
-
-              <Field label="Category" required>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                >
-                  <option value="">Select category</option>
-                  <option value="Men">Men</option>
-                  <option value="Women">Women</option>
-                  <option value="Kids">Kids</option>
-                  <option value="Sarees">Sarees</option>
-                  <option value="Ethnic Wear">Ethnic Wear</option>
-                  <option value="Sports Wear">Sports Wear</option>
-                  <option value="Accessories">Accessories</option>
-                </select>
-              </Field>
-
-              <Field label="Subcategory">
-                <input
-                  value={subcategory}
-                  onChange={(e) => setSubcategory(e.target.value)}
-                  placeholder="Shirts, Jeans, Frocks"
-                />
-              </Field>
-
-              <Field label="Brand">
-                <input
-                  value={brand}
-                  onChange={(e) => setBrand(e.target.value)}
-                />
-              </Field>
-
-              <Field label="SKU">
-                <input
-                  value={sku}
-                  onChange={(e) => setSku(e.target.value)}
-                  placeholder="NCS-SHIRT-001"
-                />
-              </Field>
-
-              <Field label="Barcode">
-                <input
-                  value={barcode}
-                  onChange={(e) => setBarcode(e.target.value)}
-                  placeholder="Purchase Stock barcode"
-                />
-              </Field>
-
-              <Field label="Description" required full>
-                <textarea
-                  rows={7}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Write a detailed product description..."
-                />
-              </Field>
-            </div>
-          </Section>
-
-          <Section number="2" title="Pricing, Stock & Status">
-            <div className="grid four">
-              <Field label="MRP">
-                <input
-                  type="number"
-                  min="0"
-                  value={mrp}
-                  onChange={(e) => setMrp(e.target.value)}
-                  placeholder="1499"
-                />
-              </Field>
-
-              <Field label="Selling Price" required>
-                <input
-                  type="number"
-                  min="0"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="999"
-                />
-              </Field>
-
-              <Field label="Total Stock" required>
-                <input
-                  type="number"
-                  min="0"
-                  value={stock}
-                  readOnly
-                  aria-readonly="true"
-                  title="Stock is managed from Purchase Stock and POS"
-                />
-              </Field>
-
-              <Field label="Low Stock Alert Limit" required>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={lowStockLimit}
-                  onChange={(e) =>
-                    setLowStockLimit(
-                      e.target.value.replace(/[^0-9]/g, "")
-                    )
-                  }
-                  placeholder="5"
-                />
-              </Field>
-
-              <Field label="Status">
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                >
-                  <option value="active">Active</option>
-                  <option value="draft">Draft</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </Field>
-            </div>
-
-            <div className="lowStockHelp">
-              <strong>Low Stock Alerts</strong>
-              <span>
-                Stock reaches {lowStockLimit || "5"} or below, this product and
-                all its size/colour variants will appear in Low Stock Alerts.
-                The same limit will sync to the Android owner app.
-              </span>
-            </div>
-
-            <div className="inventorySyncCard">
-              <div className="inventorySyncHead">
-                <div>
-                  <strong>Inventory & Online Visibility</strong>
-                  <span>Barcode and total stock are linked with Purchase Stock and POS.</span>
-                </div>
-                <span className="syncBadge">Live Sync</span>
-              </div>
-
-              <div className="grid three inventoryFields">
-                <Field label="Product Barcode">
-                  <input
-                    value={barcode}
-                    onChange={(e) => setBarcode(e.target.value)}
-                    placeholder="Purchase Stock barcode"
-                  />
-                </Field>
-
-                <Field label="Online Quantity">
-                  <input
-                    type="number"
-                    min="0"
-                    max={Number(stock || 0)}
-                    value={onlineQuantity}
-                    onChange={(e) => setOnlineQuantity(e.target.value)}
-                    disabled={!sellOnline}
-                    placeholder="0"
-                  />
-                </Field>
-
-                <label className="onlineToggle">
-                  <input
-                    type="checkbox"
-                    checked={sellOnline}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      setSellOnline(checked);
-                      if (!checked) setOnlineQuantity("0");
-                    }}
-                  />
-                  <span>
-                    <strong>Sell Online</strong>
-                    <small>Website and Android app visibility</small>
-                  </span>
-                </label>
-              </div>
-
-              {productVariants.length > 0 && (
-                <div className="variantInventory">
-                  <div className="variantInventoryTitle">
-                    <strong>Variant Barcodes</strong>
-                    <span>{productVariants.length} variant(s)</span>
-                  </div>
-
-                  <div className="variantTableWrap">
-                    <table className="variantTable">
-                      <thead>
-                        <tr>
-                          <th>Size</th>
-                          <th>Colour</th>
-                          <th>SKU</th>
-                          <th>Barcode</th>
-                          <th>Stock</th>
-                          <th>Low Alert</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {productVariants.map((variant) => (
-                          <tr key={variant.id}>
-                            <td>{variant.size || "Standard"}</td>
-                            <td>{variant.color || "—"}</td>
-                            <td>{variant.sku || "—"}</td>
-                            <td><code>{variant.barcode || "—"}</code></td>
-                            <td>{variant.stock}</td>
-                            <td>{lowStockLimit || variant.lowStockLimit || 5}</td>
-                            <td>{variant.isActive ? "Active" : "Inactive"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="variantNote">Variant stock and barcodes are managed through Purchase Stock. They are shown here for reference.</p>
-                </div>
-              )}
-            </div>
-
-            <div className="summary">
-              <div>
-                <span>Customer Price</span>
-                <strong>₹{Number(price || 0).toLocaleString("en-IN")}</strong>
-              </div>
-
-              <div>
-                <span>Discount</span>
-                <strong>{discount}% OFF</strong>
-              </div>
-
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={featured}
-                  onChange={(e) => setFeatured(e.target.checked)}
-                />
-                Featured Product
-              </label>
-            </div>
-          </Section>
-
-          <Section number="3" title="Product Images">
-            <label className="upload">
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleImages}
-              />
-              <strong>Click to upload product images</strong>
-              <span>
-                PNG, JPG, JPEG or WEBP — {existingImages.length + images.length}/{MAX_IMAGES}
-              </span>
-            </label>
-
-            {existingImages.length > 0 && (
-              <div className="imageGrid">
-                {existingImages.map((item, index) => (
-                  <article className="imageCard" key={`${item.url}-${index}`}>
-                    <div className="preview">
-                      <img src={item.url} alt={`Existing product ${index + 1}`} />
-                      {index === 0 && <span>Main Image</span>}
-                    </div>
-
-                    <div className="imageActions">
-                      <button
-                        type="button"
-                        onClick={() => moveExistingImage(index, "left")}
-                        disabled={index === 0}
-                      >
-                        ←
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => moveExistingImage(index, "right")}
-                        disabled={index === existingImages.length - 1}
-                      >
-                        →
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => removeExistingImage(index)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-
-            {images.length > 0 && (
-              <div className="imageGrid">
-                {images.map((item, index) => (
-                  <article className="imageCard" key={item.preview}>
-                    <div className="preview">
-                      <img src={item.preview} alt={`Product ${index + 1}`} />
-                      {index === 0 && <span>Main Image</span>}
-                    </div>
-
-                    <div className="imageActions">
-                      <button
-                        type="button"
-                        onClick={() => moveImage(index, "left")}
-                        disabled={index === 0}
-                      >
-                        ←
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => moveImage(index, "right")}
-                        disabled={index === images.length - 1}
-                      >
-                        →
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => removeImage(index)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-
-            <p className="note">
-              Supabase Storage bucket name must be <code>product-images</code>.
-            </p>
-          </Section>
-
-          <Section number="4" title="Key Features">
-            <div className="repeat">
-              {features.map((item, index) => (
-                <div className="row featureRow" key={item.id}>
-                  <span>{index + 1}</span>
-
-                  <input
-                    value={item.value}
-                    onChange={(e) => updateFeature(item.id, e.target.value)}
-                    placeholder="Premium breathable fabric"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setFeatures((current) =>
-                        current.length === 1
-                          ? current
-                          : current.filter((x) => x.id !== item.id)
-                      )
-                    }
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <AddButton
-              onClick={() =>
-                setFeatures((current) => [
-                  ...current,
-                  { id: makeId(), value: "" },
-                ])
-              }
-              label="Add Feature"
-            />
-          </Section>
-
-          <Section number="5" title="Lifestyle Gallery">
-            <div className="grid two">
-              <Field label="Lifestyle Title">
-                <input
-                  value={lifestyleTitle}
-                  onChange={(e) => setLifestyleTitle(e.target.value)}
-                  placeholder="Designed for Every Occasion"
-                />
-              </Field>
-
-              <Field label="Lifestyle Subtitle">
-                <input
-                  value={lifestyleSubtitle}
-                  onChange={(e) => setLifestyleSubtitle(e.target.value)}
-                  placeholder="Premium style, comfort and confidence"
-                />
-              </Field>
-            </div>
-          </Section>
-
-          <Section number="6" title="Technical Specifications">
-            <div className="repeat">
-              {specifications.map((item, index) => (
-                <div className="row keyValueRow" key={item.id}>
-                  <span>{index + 1}</span>
-
-                  <input
-                    value={item.label}
-                    onChange={(e) =>
-                      updateKeyValue(
-                        setSpecifications,
-                        item.id,
-                        "label",
-                        e.target.value
-                      )
-                    }
-                    placeholder="Specification name"
-                  />
-
-                  <input
-                    value={item.value}
-                    onChange={(e) =>
-                      updateKeyValue(
-                        setSpecifications,
-                        item.id,
-                        "value",
-                        e.target.value
-                      )
-                    }
-                    placeholder="Specification value"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSpecifications((current) =>
-                        current.length === 1
-                          ? current
-                          : current.filter((x) => x.id !== item.id)
-                      )
-                    }
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <AddButton
-              onClick={() =>
-                setSpecifications((current) => [
-                  ...current,
-                  { id: makeId(), label: "", value: "" },
-                ])
-              }
-              label="Add Specification"
-            />
-          </Section>
-
-          <Section number="7" title="What's In The Box">
-            <Field label="Package Contents">
-              <textarea
-                rows={4}
-                value={boxContents}
-                onChange={(e) => setBoxContents(e.target.value)}
-                placeholder="1 × Shirt, 1 × Brand packaging cover"
-              />
-            </Field>
-          </Section>
-
-          <Section number="8" title="Frequently Asked Questions">
-            <div className="faqList">
-              {faqs.map((item, index) => (
-                <article className="faqCard" key={item.id}>
-                  <div className="faqHead">
-                    <strong>FAQ {index + 1}</strong>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setFaqs((current) =>
-                          current.length === 1
-                            ? current
-                            : current.filter((x) => x.id !== item.id)
+                  <Field label="URL Slug" required>
+                    <input
+                      value={form.slug}
+                      onChange={(event) =>
+                        setField(
+                          "slug",
+                          createSlug(event.target.value)
                         )
                       }
-                    >
-                      Remove
-                    </button>
-                  </div>
+                      placeholder="premium-mens-cotton-shirt"
+                      style={inputStyle}
+                    />
+                  </Field>
+                </FormGrid>
 
-                  <Field label="Question">
+                <Field label="Tagline">
+                  <input
+                    value={form.tagline}
+                    onChange={(event) =>
+                      setField("tagline", event.target.value)
+                    }
+                    placeholder="Premium comfort with timeless style"
+                    style={inputStyle}
+                  />
+                </Field>
+
+                <Field label="Short Description">
+                  <textarea
+                    value={form.shortDescription}
+                    onChange={(event) =>
+                      setField(
+                        "shortDescription",
+                        event.target.value
+                      )
+                    }
+                    placeholder="Write a short product summary..."
+                    style={shortTextareaStyle}
+                  />
+                </Field>
+
+                <Field label="Full Description" required>
+                  <textarea
+                    value={form.description}
+                    onChange={(event) =>
+                      setField(
+                        "description",
+                        event.target.value
+                      )
+                    }
+                    placeholder="Write the complete product description..."
+                    style={largeTextareaStyle}
+                  />
+                </Field>
+              </Panel>
+
+              <Panel
+                title="Category and Product Classification"
+                subtitle="Configure category, collection and customer filters."
+              >
+                <FormGrid>
+                  <Field label="Category" required>
                     <input
-                      value={item.question}
-                      onChange={(e) =>
-                        updateFaq(item.id, "question", e.target.value)
+                      value={form.category}
+                      onChange={(event) =>
+                        setField("category", event.target.value)
                       }
-                      placeholder="Is this product true to size?"
+                      placeholder="Example: Men"
+                      list="product-categories"
+                      style={inputStyle}
+                    />
+
+                    <datalist id="product-categories">
+                      <option value="Men" />
+                      <option value="Women" />
+                      <option value="Kids" />
+                      <option value="Sarees" />
+                      <option value="Shirts" />
+                      <option value="T-Shirts" />
+                      <option value="Jeans" />
+                      <option value="Ethnic Wear" />
+                      <option value="Sports Wear" />
+                    </datalist>
+                  </Field>
+
+                  <Field label="Subcategory">
+                    <input
+                      value={form.subcategory}
+                      onChange={(event) =>
+                        setField(
+                          "subcategory",
+                          event.target.value
+                        )
+                      }
+                      placeholder="Example: Casual Shirts"
+                      style={inputStyle}
                     />
                   </Field>
 
-                  <Field label="Answer">
-                    <textarea
-                      rows={3}
-                      value={item.answer}
-                      onChange={(e) =>
-                        updateFaq(item.id, "answer", e.target.value)
+                  <Field label="Collection">
+                    <select
+                      value={form.collectionId}
+                      onChange={(event) =>
+                        setField(
+                          "collectionId",
+                          event.target.value
+                        )
                       }
-                      placeholder="Write a helpful answer..."
+                      style={inputStyle}
+                    >
+                      <option value="">
+                        No Collection
+                      </option>
+
+                      {collections.map((collection) => (
+                        <option
+                          key={collection.id}
+                          value={collection.id}
+                        >
+                          {collection.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Brand">
+                    <input
+                      value={form.brand}
+                      onChange={(event) =>
+                        setField("brand", event.target.value)
+                      }
+                      placeholder="NEW CITY STYLE"
+                      style={inputStyle}
                     />
                   </Field>
-                </article>
-              ))}
-            </div>
 
-            <AddButton
-              onClick={() =>
-                setFaqs((current) => [
-                  ...current,
-                  { id: makeId(), question: "", answer: "" },
-                ])
-              }
-              label="Add FAQ"
-            />
-          </Section>
+                  <Field label="Gender">
+                    <select
+                      value={form.gender}
+                      onChange={(event) =>
+                        setField("gender", event.target.value)
+                      }
+                      style={inputStyle}
+                    >
+                      <option value="">Select Gender</option>
+                      <option value="Men">Men</option>
+                      <option value="Women">Women</option>
+                      <option value="Boys">Boys</option>
+                      <option value="Girls">Girls</option>
+                      <option value="Unisex">Unisex</option>
+                    </select>
+                  </Field>
 
-          <Section number="9" title="Shipping & Returns">
-            <Field label="Shipping and Returns Policy">
-              <textarea
-                rows={5}
-                value={shippingReturns}
-                onChange={(e) => setShippingReturns(e.target.value)}
-              />
-            </Field>
-          </Section>
+                  <Field label="Age Group">
+                    <select
+                      value={form.ageGroup}
+                      onChange={(event) =>
+                        setField("ageGroup", event.target.value)
+                      }
+                      style={inputStyle}
+                    >
+                      <option value="">Select Age Group</option>
+                      <option value="Kids">Kids</option>
+                      <option value="Teen">Teen</option>
+                      <option value="Adults">Adults</option>
+                      <option value="All Ages">All Ages</option>
+                    </select>
+                  </Field>
+                </FormGrid>
+              </Panel>
 
-          <Section number="10" title="SEO Settings">
-            <div className="grid two">
-              <Field label="SEO Title" full>
-                <input
-                  value={seoTitle}
-                  onChange={(e) => setSeoTitle(e.target.value)}
-                  maxLength={70}
+              <Panel
+                title="Pricing"
+                subtitle="Configure MRP, selling price, discount and GST."
+              >
+                <FormGrid>
+                  <Field label="MRP">
+                    <MoneyInput
+                      value={form.mrp}
+                      onChange={(value) =>
+                        setField("mrp", value)
+                      }
+                      placeholder="1499"
+                    />
+                  </Field>
+
+                  <Field label="Online Selling Price" required={form.sellOnline}>
+                    <MoneyInput
+                      value={form.price}
+                      onChange={(value) =>
+                        setField("price", value)
+                      }
+                      placeholder={form.sellOnline ? "Enter website/app price" : "Enable Sell Online to set price"}
+                    />
+                  </Field>
+
+                  <Field label="Discount Percentage">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={form.discountPercent}
+                      readOnly
+                      style={{
+                        ...inputStyle,
+                        background: "#F3F4F6",
+                      }}
+                    />
+                  </Field>
+
+                  <Field label="GST Percentage (Optional)">
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.taxPercent}
+                      onChange={(event) =>
+                        setField(
+                          "taxPercent",
+                          event.target.value
+                        )
+                      }
+                      placeholder="Blank saves as 0"
+                      style={inputStyle}
+                    />
+                  </Field>
+                </FormGrid>
+
+                <div style={pricingSummaryStyle}>
+                  <span>
+                    Customer saves:{" "}
+                    <strong>
+                      ₹{discountAmount.toLocaleString("en-IN")}
+                    </strong>
+                  </span>
+
+                  <span>
+                    Discount:{" "}
+                    <strong>
+                      {form.discountPercent || 0}% OFF
+                    </strong>
+                  </span>
+                </div>
+              </Panel>
+
+              <Panel
+                title="Inventory"
+                subtitle="Configure SKU, barcode and product stock."
+              >
+                <FormGrid>
+                  <Field label="SKU">
+                    <input
+                      value={form.sku}
+                      readOnly
+                      onChange={(event) =>
+                        setField(
+                          "sku",
+                          event.target.value.toUpperCase()
+                        )
+                      }
+                      placeholder="NCS-SHIRT-001"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Barcode">
+                    <input
+                      value={form.barcode}
+                      readOnly
+                      onChange={(event) =>
+                        setField("barcode", event.target.value)
+                      }
+                      placeholder="Barcode number"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Total Stock" required>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.stock}
+                      readOnly
+                      onChange={(event) =>
+                        setField("stock", event.target.value)
+                      }
+                      placeholder="50"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Low Stock Alert (Optional)">
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.lowStockLimit}
+                      onChange={(event) =>
+                        setField(
+                          "lowStockLimit",
+                          event.target.value
+                        )
+                      }
+                      placeholder="Blank saves as 5"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Online Quantity">
+                    <input
+                      type="number"
+                      min="0"
+                      max={Number(form.stock || 0)}
+                      value={form.sellOnline ? form.onlineStockLimit : "0"}
+                      disabled={!form.sellOnline}
+                      onChange={(event) =>
+                        setField(
+                          "onlineStockLimit",
+                          String(
+                            Math.min(
+                              Number(form.stock || 0),
+                              Math.max(0, Number(event.target.value || 0))
+                            )
+                          )
+                        )
+                      }
+                      placeholder="Quantity for website/app"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Online Visibility">
+                    <div className="inventory-online-toggle">
+                      <input
+                        type="checkbox"
+                        checked={form.sellOnline}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setForm((current) => ({
+                            ...current,
+                            sellOnline: checked,
+                            onlineStockLimit: checked
+                              ? current.onlineStockLimit || current.stock || "0"
+                              : "0",
+                          }));
+                        }}
+                      />
+                      <div>
+                        <strong>Sell Online</strong>
+                        <span>Website and Android app visibility</span>
+                      </div>
+                    </div>
+                  </Field>
+                </FormGrid>
+
+                <div className="inventory-lock-note">
+                  🔒 Barcode, SKU and physical stock are locked. They continue to sync from Purchase Stock and POS.
+                </div>
+
+                {variantBarcodes.length > 0 && (
+                  <div className="variant-reference-card">
+                    <strong>Variant Barcodes</strong>
+                    <div className="variant-reference-list">
+                      {variantBarcodes.map((variant) => (
+                        <div key={variant.id}>
+                          <span>{variant.size || "Standard"}{variant.color ? ` • ${variant.color}` : ""}</span>
+                          <code>{variant.barcode || "No barcode"}</code>
+                          <small>Stock: {variant.stock}</small>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </Panel>
+
+              <Panel
+                title="Main Product Image"
+                subtitle="Upload the primary image shown on product cards."
+              >
+                <UploadBox
+                  uploading={uploadingMain}
+                  label="Upload Main Product Image"
+                  description="JPG, PNG or WEBP — Maximum 8 MB"
+                  multiple={false}
+                  onChange={uploadMainImage}
                 />
-              </Field>
 
-              <Field label="Meta Description" full>
-                <textarea
-                  rows={4}
-                  value={metaDescription}
-                  onChange={(e) => setMetaDescription(e.target.value)}
-                  maxLength={170}
-                />
-              </Field>
-
-              <Field label="Keywords" full>
-                <input
-                  value={keywords}
-                  onChange={(e) => setKeywords(e.target.value)}
-                  placeholder="shirt, mens fashion, premium clothing"
-                />
-              </Field>
-
-              <Field label="Social Preview Image URL" full>
-                <input
-                  type="url"
-                  value={socialPreviewUrl}
-                  onChange={(e) => setSocialPreviewUrl(e.target.value)}
-                  placeholder="Leave blank to use the first product image"
-                />
-              </Field>
-            </div>
-
-            <div className="seoPreview">
-              <span>newcitystyle.in/product/{slug || "product-url"}</span>
-              <strong>{seoTitle || productName || "Product SEO Title"}</strong>
-              <p>
-                {metaDescription ||
-                  description.slice(0, 160) ||
-                  "Product meta description preview."}
-              </p>
-            </div>
-          </Section>
-
-          <Section number="11" title="Pack, Weight & Variations">
-            <Field label="Pack / Weight">
-              <input
-                value={packWeight}
-                onChange={(e) => setPackWeight(e.target.value)}
-                placeholder="1 Piece / 450 g"
-              />
-            </Field>
-
-            <div className="repeat variationList">
-              {variations.map((item, index) => (
-                <div className="row keyValueRow" key={item.id}>
-                  <span>{index + 1}</span>
-
-                  <input
-                    value={item.label}
-                    onChange={(e) =>
-                      updateKeyValue(
-                        setVariations,
-                        item.id,
-                        "label",
-                        e.target.value
-                      )
+                {form.mainImage && (
+                  <ImagePreview
+                    image={form.mainImage}
+                    onRemove={() =>
+                      setField("mainImage", "")
                     }
-                    placeholder="Variation name"
+                    large
                   />
+                )}
+              </Panel>
 
-                  <input
-                    value={item.value}
-                    onChange={(e) =>
-                      updateKeyValue(
-                        setVariations,
-                        item.id,
-                        "value",
-                        e.target.value
-                      )
-                    }
-                    placeholder="S, M, L, XL"
-                  />
+              <Panel
+                title="AI Product Detail Generator"
+                subtitle="Gemini analyses the uploaded product photo and fills all editable product details. Barcode, SKU, physical stock, MRP, online price, online quantity and tax are never changed by AI."
+              >
+                <div style={aiGeneratorCardStyle}>
+                  <div>
+                    <strong style={aiGeneratorTitleStyle}>
+                      Generate Product Details with AI
+                    </strong>
+                    <p style={aiGeneratorTextStyle}>
+                      Upload the main product image first, then generate.
+                      Always verify category, pattern and all written
+                      details before saving.
+                    </p>
+                  </div>
 
                   <button
                     type="button"
-                    onClick={() =>
-                      setVariations((current) =>
-                        current.length === 1
-                          ? current
-                          : current.filter((x) => x.id !== item.id)
-                      )
-                    }
+                    onClick={generateProductDetailsWithAi}
+                    disabled={generatingAi || uploadingMain || !form.mainImage}
+                    style={{
+                      ...aiGenerateButtonStyle,
+                      opacity:
+                        generatingAi || uploadingMain || !form.mainImage
+                          ? 0.65
+                          : 1,
+                      cursor:
+                        generatingAi || uploadingMain || !form.mainImage
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
                   >
-                    ×
+                    {generatingAi
+                      ? "Generating with Gemini..."
+                      : "✨ Generate Product Details with AI"}
                   </button>
                 </div>
-              ))}
-            </div>
 
-            <AddButton
-              onClick={() =>
-                setVariations((current) => [
-                  ...current,
-                  { id: makeId(), label: "", value: "" },
-                ])
-              }
-              label="Add Variation"
-            />
-          </Section>
+                {aiStatus.message && (
+                  <div
+                    role={aiStatus.type === "error" ? "alert" : "status"}
+                    style={{
+                      ...aiStatusStyle,
+                      borderColor:
+                        aiStatus.type === "error"
+                          ? "#DC2626"
+                          : aiStatus.type === "success"
+                            ? "#15803D"
+                            : "#D4AF37",
+                      background:
+                        aiStatus.type === "error"
+                          ? "#FEF2F2"
+                          : aiStatus.type === "success"
+                            ? "#F0FDF4"
+                            : "#FFFBEA",
+                      color:
+                        aiStatus.type === "error"
+                          ? "#991B1B"
+                          : aiStatus.type === "success"
+                            ? "#166534"
+                            : "#7C5B00",
+                    }}
+                  >
+                    {aiStatus.message}
+                  </div>
+                )}
+              </Panel>
 
-          <div className="bottomBar">
-            <div>
-              <strong>Ready to update this product?</strong>
-              <p>Review all changes before updating.</p>
-            </div>
-
-            <div>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => router.push("/admin/products")}
+              <Panel
+                title="Product Gallery"
+                subtitle="Upload up to 10 additional product images."
               >
-                Cancel
-              </button>
+                <UploadBox
+                  uploading={uploadingGallery}
+                  label="Upload Gallery Images"
+                  description={`${form.galleryImages.length}/10 images uploaded`}
+                  multiple
+                  onChange={uploadGalleryImages}
+                />
 
-              <button type="submit" className="primary" disabled={saving}>
-                {saving ? "Updating Product..." : "Update Product"}
-              </button>
+                <ImageGrid
+                  images={form.galleryImages}
+                  onRemove={(index) =>
+                    removeImage("galleryImages", index)
+                  }
+                />
+              </Panel>
+
+              <Panel
+                title="Lifestyle Gallery"
+                subtitle="Upload model, showroom and lifestyle photographs."
+              >
+                <FormGrid>
+                  <Field label="Lifestyle Gallery Title">
+                    <input
+                      value={form.lifestyleTitle}
+                      onChange={(event) =>
+                        setField("lifestyleTitle", event.target.value)
+                      }
+                      placeholder="Styled for Every Moment"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Lifestyle Gallery Subtitle">
+                    <input
+                      value={form.lifestyleSubtitle}
+                      onChange={(event) =>
+                        setField("lifestyleSubtitle", event.target.value)
+                      }
+                      placeholder="Premium fashion for everyday confidence"
+                      style={inputStyle}
+                    />
+                  </Field>
+                </FormGrid>
+
+                <UploadBox
+                  uploading={uploadingLifestyle}
+                  label="Upload Lifestyle Images"
+                  description={`${form.lifestyleImages.length}/6 images uploaded`}
+                  multiple
+                  onChange={uploadLifestyleImages}
+                />
+
+                <ImageGrid
+                  images={form.lifestyleImages}
+                  onRemove={(index) =>
+                    removeImage("lifestyleImages", index)
+                  }
+                />
+              </Panel>
+
+              <Panel
+                title="Product Tags"
+                subtitle="Add searchable tags customers can use to discover and filter this product."
+              >
+                <div style={chipGridStyle}>
+                  {commonTags.map((tag) => (
+                    <ChipButton
+                      key={tag}
+                      label={tag}
+                      selected={form.tags.includes(tag)}
+                      onClick={() => toggleTag(tag)}
+                    />
+                  ))}
+                </div>
+
+                <InlineAdd
+                  value={customTag}
+                  placeholder="Custom tag"
+                  buttonLabel="Add Tag"
+                  onChange={setCustomTag}
+                  onAdd={addCustomTag}
+                />
+
+                <SelectedValues
+                  values={form.tags}
+                  onRemove={toggleTag}
+                />
+              </Panel>
+
+              <Panel
+                title="Sizes"
+                subtitle="Select all available product sizes."
+              >
+                <div style={chipGridStyle}>
+                  {commonSizes.map((size) => (
+                    <ChipButton
+                      key={size}
+                      label={size}
+                      selected={form.sizes.includes(size)}
+                      onClick={() => toggleSize(size)}
+                    />
+                  ))}
+                </div>
+
+                <InlineAdd
+                  value={customSize}
+                  placeholder="Custom size"
+                  buttonLabel="Add Size"
+                  onChange={setCustomSize}
+                  onAdd={addCustomSize}
+                />
+
+                <SelectedValues
+                  values={form.sizes}
+                  onRemove={toggleSize}
+                />
+              </Panel>
+
+              <Panel
+                title="Product Attributes"
+                subtitle="Add material, fabric, pattern, sleeves and fit information."
+              >
+                <FormGrid>
+                  <Field label="Material">
+                    <input
+                      value={form.material}
+                      onChange={(event) =>
+                        setField("material", event.target.value)
+                      }
+                      placeholder="Example: Cotton, Polyester, Silk"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Fabric">
+                    <input
+                      value={form.fabric}
+                      onChange={(event) =>
+                        setField("fabric", event.target.value)
+                      }
+                      placeholder="Example: 100% Cotton"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Pattern">
+                    <input
+                      value={form.pattern}
+                      onChange={(event) =>
+                        setField("pattern", event.target.value)
+                      }
+                      placeholder="Example: Solid"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Sleeve Type">
+                    <input
+                      value={form.sleeveType}
+                      onChange={(event) =>
+                        setField(
+                          "sleeveType",
+                          event.target.value
+                        )
+                      }
+                      placeholder="Example: Full Sleeve"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Fit Type">
+                    <input
+                      value={form.fitType}
+                      onChange={(event) =>
+                        setField("fitType", event.target.value)
+                      }
+                      placeholder="Example: Regular Fit"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Occasion">
+                    <input
+                      value={form.occasion}
+                      onChange={(event) =>
+                        setField("occasion", event.target.value)
+                      }
+                      placeholder="Example: Casual, Festive, Party Wear"
+                      style={inputStyle}
+                    />
+                  </Field>
+                </FormGrid>
+              </Panel>
+
+              <Panel
+                title="Key Features"
+                subtitle="Add the most important product benefits."
+              >
+                {form.keyFeatures.map((feature, index) => (
+                  <DynamicRow key={index}>
+                    <input
+                      value={feature}
+                      onChange={(event) =>
+                        updateFeature(
+                          index,
+                          event.target.value
+                        )
+                      }
+                      placeholder={`Key feature ${index + 1}`}
+                      style={inputStyle}
+                    />
+
+                    <RemoveButton
+                      onClick={() => removeFeature(index)}
+                    />
+                  </DynamicRow>
+                ))}
+
+                <AddButton
+                  label="Add Key Feature"
+                  onClick={addFeature}
+                />
+              </Panel>
+
+              <Panel
+                title="Technical Specifications"
+                subtitle="Three specification fields are recommended."
+              >
+                {form.specifications.map(
+                  (specification, index) => (
+                    <DynamicRow key={index}>
+                      <input
+                        value={specification.label}
+                        onChange={(event) =>
+                          updateSpecification(
+                            index,
+                            "label",
+                            event.target.value
+                          )
+                        }
+                        placeholder="Specification name"
+                        style={inputStyle}
+                      />
+
+                      <input
+                        value={specification.value}
+                        onChange={(event) =>
+                          updateSpecification(
+                            index,
+                            "value",
+                            event.target.value
+                          )
+                        }
+                        placeholder="Specification value"
+                        style={inputStyle}
+                      />
+
+                      <RemoveButton
+                        onClick={() =>
+                          removeSpecification(index)
+                        }
+                      />
+                    </DynamicRow>
+                  )
+                )}
+
+                <AddButton
+                  label="Add Specification"
+                  onClick={addSpecification}
+                />
+              </Panel>
+
+              <Panel
+                title="What's in the Box"
+                subtitle="List all items supplied with this product."
+              >
+                {form.whatsInBox.map((item, index) => (
+                  <DynamicRow key={index}>
+                    <input
+                      value={item}
+                      onChange={(event) =>
+                        updateBoxItem(
+                          index,
+                          event.target.value
+                        )
+                      }
+                      placeholder="Example: 1 x Shirt"
+                      style={inputStyle}
+                    />
+
+                    <RemoveButton
+                      onClick={() => removeBoxItem(index)}
+                    />
+                  </DynamicRow>
+                ))}
+
+                <AddButton
+                  label="Add Box Item"
+                  onClick={addBoxItem}
+                />
+              </Panel>
+
+              <Panel
+                title="Frequently Asked Questions"
+                subtitle="Two FAQs are included by default."
+              >
+                {form.faqs.map((faq, index) => (
+                  <div key={index} style={faqCardStyle}>
+                    <div style={faqHeaderStyle}>
+                      <strong style={{ color: "#0A2E73" }}>
+                        FAQ {index + 1}
+                      </strong>
+
+                      <RemoveButton
+                        onClick={() => removeFaq(index)}
+                      />
+                    </div>
+
+                    <input
+                      value={faq.question}
+                      onChange={(event) =>
+                        updateFaq(
+                          index,
+                          "question",
+                          event.target.value
+                        )
+                      }
+                      placeholder="Customer question"
+                      style={inputStyle}
+                    />
+
+                    <textarea
+                      value={faq.answer}
+                      onChange={(event) =>
+                        updateFaq(
+                          index,
+                          "answer",
+                          event.target.value
+                        )
+                      }
+                      placeholder="Answer"
+                      style={{
+                        ...shortTextareaStyle,
+                        marginTop: "10px",
+                      }}
+                    />
+                  </div>
+                ))}
+
+                <AddButton
+                  label="Add FAQ"
+                  onClick={addFaq}
+                />
+              </Panel>
+
+              <Panel
+                title="Shipping Details"
+                subtitle="Add product weight, dimensions and policies."
+              >
+                <FormGrid>
+                  <Field label="Weight (kg)">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={form.weight}
+                      onChange={(event) =>
+                        setField("weight", event.target.value)
+                      }
+                      placeholder="0.5"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Package Length (cm)">
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.packageLength}
+                      onChange={(event) =>
+                        setField(
+                          "packageLength",
+                          event.target.value
+                        )
+                      }
+                      placeholder="30"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Package Width (cm)">
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.packageWidth}
+                      onChange={(event) =>
+                        setField(
+                          "packageWidth",
+                          event.target.value
+                        )
+                      }
+                      placeholder="25"
+                      style={inputStyle}
+                    />
+                  </Field>
+
+                  <Field label="Package Height (cm)">
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.packageHeight}
+                      onChange={(event) =>
+                        setField(
+                          "packageHeight",
+                          event.target.value
+                        )
+                      }
+                      placeholder="5"
+                      style={inputStyle}
+                    />
+                  </Field>
+                </FormGrid>
+
+                <Field label="Shipping Policy">
+                  <textarea
+                    value={form.shippingPolicy}
+                    onChange={(event) =>
+                      setField(
+                        "shippingPolicy",
+                        event.target.value
+                      )
+                    }
+                    style={shortTextareaStyle}
+                  />
+                </Field>
+
+                <Field label="Return / Refund Policy">
+                  <textarea
+                    value={form.returnPolicy}
+                    onChange={(event) =>
+                      setField(
+                        "returnPolicy",
+                        event.target.value
+                      )
+                    }
+                    style={shortTextareaStyle}
+                  />
+                </Field>
+              </Panel>
+
+              <Panel
+                title="SEO"
+                subtitle="Improve product visibility in Google and social media."
+              >
+                <Field label="SEO Title">
+                  <input
+                    value={form.seoTitle}
+                    maxLength={70}
+                    onChange={(event) =>
+                      setField("seoTitle", event.target.value)
+                    }
+                    placeholder="Premium Product | NEW CITY STYLE"
+                    style={inputStyle}
+                  />
+
+                  <CharacterCount
+                    value={form.seoTitle.length}
+                    maximum={70}
+                  />
+                </Field>
+
+                <Field label="Meta Description">
+                  <textarea
+                    value={form.metaDescription}
+                    maxLength={160}
+                    onChange={(event) =>
+                      setField(
+                        "metaDescription",
+                        event.target.value
+                      )
+                    }
+                    placeholder="Write a Google-friendly product description..."
+                    style={shortTextareaStyle}
+                  />
+
+                  <CharacterCount
+                    value={form.metaDescription.length}
+                    maximum={160}
+                  />
+                </Field>
+
+                <Field label="SEO Keywords">
+                  <input
+                    value={form.seoKeywords}
+                    onChange={(event) =>
+                      setField(
+                        "seoKeywords",
+                        event.target.value
+                      )
+                    }
+                    placeholder="shirt, mens shirt, cotton shirt"
+                    style={inputStyle}
+                  />
+                </Field>
+
+                <Field label="Social Preview Image URL">
+                  <input
+                    value={form.socialPreviewUrl}
+                    onChange={(event) =>
+                      setField(
+                        "socialPreviewUrl",
+                        event.target.value
+                      )
+                    }
+                    placeholder="Normally the main product image is used"
+                    style={inputStyle}
+                  />
+                </Field>
+              </Panel>
+
+              <Panel
+                title="Product Status"
+                subtitle="Control product visibility and marketing badges."
+              >
+                <div className="status-toggle-grid">
+                  <Toggle
+                    label="Active Product"
+                    description="Visible to customers"
+                    value={form.isActive}
+                    onChange={(value) =>
+                      setField("isActive", value)
+                    }
+                  />
+
+                  <Toggle
+                    label="Featured Product"
+                    description="Display in featured section"
+                    value={form.isFeatured}
+                    onChange={(value) =>
+                      setField("isFeatured", value)
+                    }
+                  />
+
+                  <Toggle
+                    label="New Arrival"
+                    description="Display new arrival badge"
+                    value={form.isNewArrival}
+                    onChange={(value) =>
+                      setField("isNewArrival", value)
+                    }
+                  />
+
+                  <Toggle
+                    label="On Sale"
+                    description="Include in sale and discount filters"
+                    value={form.isOnSale}
+                    onChange={(value) =>
+                      setField("isOnSale", value)
+                    }
+                  />
+
+                  <Toggle
+                    label="Bestseller"
+                    description="Display bestseller badge"
+                    value={form.isBestseller}
+                    onChange={(value) =>
+                      setField("isBestseller", value)
+                    }
+                  />
+
+                  <Toggle
+                    label="Trending"
+                    description="Display trending badge"
+                    value={form.isTrending}
+                    onChange={(value) =>
+                      setField("isTrending", value)
+                    }
+                  />
+                </div>
+              </Panel>
             </div>
+
+            <aside className="product-preview-sidebar">
+              <section style={previewPanelStyle}>
+                <p style={previewLabelStyle}>
+                  LIVE PRODUCT PREVIEW
+                </p>
+
+                <div style={previewImageBoxStyle}>
+                  {form.mainImage ? (
+                    <img
+                      src={form.mainImage}
+                      alt={form.name || "Product preview"}
+                      style={previewImageStyle}
+                    />
+                  ) : (
+                    <div style={previewPlaceholderStyle}>
+                      📦
+                    </div>
+                  )}
+
+                  <div style={previewBadgeContainerStyle}>
+                    {form.isNewArrival && (
+                      <Badge label="NEW" />
+                    )}
+
+                    {form.isOnSale && (
+                      <Badge label="SALE" />
+                    )}
+
+                    {form.isBestseller && (
+                      <Badge label="BESTSELLER" />
+                    )}
+
+                    {form.isTrending && (
+                      <Badge label="TRENDING" />
+                    )}
+                  </div>
+                </div>
+
+                <p style={previewCategoryStyle}>
+                  {form.category || "Product Category"}
+                </p>
+
+                <h2 style={previewNameStyle}>
+                  {form.name || "Product Name"}
+                </h2>
+
+                <p style={previewTaglineStyle}>
+                  {form.tagline ||
+                    "Product tagline will appear here."}
+                </p>
+
+                <div style={previewPriceRowStyle}>
+                  <strong style={previewSellingPriceStyle}>
+                    ₹
+                    {Number(form.price || 0).toLocaleString(
+                      "en-IN"
+                    )}
+                  </strong>
+
+                  {Number(form.mrp || 0) >
+                    Number(form.price || 0) && (
+                    <>
+                      <span style={previewMrpStyle}>
+                        ₹
+                        {Number(form.mrp).toLocaleString(
+                          "en-IN"
+                        )}
+                      </span>
+
+                      <span style={previewDiscountStyle}>
+                        {form.discountPercent}% OFF
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                <PreviewInfo
+                  label="Stock"
+                  value={`${form.stock || 0} units`}
+                />
+
+                <PreviewInfo
+                  label="Online Quantity"
+                  value={
+                    form.sellOnline
+                      ? `${form.onlineStockLimit || 0} units`
+                      : "Shop / POS only"
+                  }
+                />
+
+                <PreviewInfo
+                  label="Sizes"
+                  value={
+                    form.sizes.join(", ") || "Not selected"
+                  }
+                />
+
+                <PreviewInfo
+                  label="Brand"
+                  value={form.brand || "Not added"}
+                />
+              </section>
+
+              <section style={previewPanelStyle}>
+                <h3 style={sideTitleStyle}>
+                  Product Completion
+                </h3>
+
+                <CompletionRow
+                  label="Basic Information"
+                  complete={Boolean(
+                    form.name &&
+                      form.description &&
+                      form.category
+                  )}
+                />
+
+                <CompletionRow
+                  label="Pricing"
+                  complete={Number(form.price) > 0}
+                />
+
+                <CompletionRow
+                  label="Inventory"
+                  complete={Boolean(form.stock)}
+                />
+
+                <CompletionRow
+                  label="Main Image"
+                  complete={Boolean(form.mainImage)}
+                />
+
+                <CompletionRow
+                  label="Variants"
+                  complete={Boolean(form.sizes.length)}
+                />
+
+                <CompletionRow
+                  label="SEO"
+                  complete={Boolean(
+                    form.seoTitle &&
+                      form.metaDescription
+                  )}
+                />
+
+                <CompletionRow
+                  label="FAQs"
+                  complete={form.faqs.some(
+                    (faq) => faq.question && faq.answer
+                  )}
+                />
+              </section>
+
+              <button
+                type="submit"
+                disabled={saving || uploading}
+                style={{
+                  ...saveProductButtonStyle,
+                  opacity:
+                    saving || uploading ? 0.7 : 1,
+                  cursor:
+                    saving || uploading
+                      ? "not-allowed"
+                      : "pointer",
+                }}
+              >
+                {saving
+                  ? "Saving Product..."
+                  : uploading
+                    ? "Uploading Images..."
+                    : "Update Product"}
+              </button>
+            </aside>
           </div>
         </form>
       </div>
 
-      <style jsx>{`
-        :global(*) {
-          box-sizing: border-box;
-        }
-
-        :global(body) {
-          margin: 0;
-          background: #f4f6fb;
-          color: #172033;
-          font-family: Inter, Poppins, Arial, sans-serif;
-        }
-
-        input,
-        textarea,
-        select,
-        button {
-          font: inherit;
-        }
-
-        .page {
-          min-height: 100vh;
-          padding: 28px 20px 60px;
-          background:
-            radial-gradient(
-              circle at top right,
-              rgba(212, 175, 55, 0.1),
-              transparent 30%
-            ),
-            #f4f6fb;
-        }
-
-        .container {
-          max-width: 1250px;
-          margin: auto;
-        }
-
-        .header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-end;
-          gap: 24px;
-          margin-bottom: 22px;
-        }
-
-        .back {
-          padding: 0;
-          margin-bottom: 14px;
-          border: 0;
-          background: transparent;
-          color: #0a2e73;
-          font-weight: 700;
-          cursor: pointer;
-        }
-
-        .eyebrow {
-          margin: 0 0 8px;
-          color: #d4af37;
-          font-size: 12px;
-          font-weight: 900;
-          letter-spacing: 2px;
-        }
-
-        h1 {
-          margin: 0;
-          color: #0a2e73;
-          font-size: clamp(30px, 5vw, 44px);
-        }
-
-        .subtitle {
-          margin: 9px 0 0;
-          color: #667085;
-        }
-
-        .headerActions,
-        .bottomBar > div:last-child {
-          display: flex;
-          gap: 10px;
-        }
-
-        .primary,
-        .secondary {
-          min-height: 46px;
-          padding: 0 20px;
-          border-radius: 11px;
-          font-weight: 800;
-          cursor: pointer;
-        }
-
-        .primary {
-          border: 1px solid #0a2e73;
-          background: linear-gradient(135deg, #0a2e73, #16499d);
-          color: white;
-        }
-
-        .secondary {
-          border: 1px solid #d0d5dd;
-          background: white;
-          color: #344054;
-        }
-
-        .primary:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .alert {
-          margin-bottom: 18px;
-          padding: 14px 16px;
-          border-radius: 11px;
-          font-weight: 700;
-        }
-
-        .success {
-          border: 1px solid #a6f4c5;
-          background: #ecfdf3;
-          color: #067647;
-        }
-
-        .error {
-          border: 1px solid #fecdca;
-          background: #fef3f2;
-          color: #b42318;
-        }
-
-        .card {
-          margin-bottom: 18px;
-          padding: 24px;
-          border: 1px solid #e4e7ec;
-          border-radius: 17px;
-          background: white;
-          box-shadow: 0 10px 28px rgba(16, 24, 40, 0.05);
-        }
-
-        .cardHead {
-          display: flex;
-          gap: 13px;
-          align-items: center;
-          margin-bottom: 20px;
-          padding-bottom: 16px;
-          border-bottom: 1px solid #eaecf0;
-        }
-
-        .cardHead > span {
-          width: 38px;
-          height: 38px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 11px;
-          background: #0a2e73;
-          color: #d4af37;
-          font-weight: 900;
-        }
-
-        .cardHead h2 {
-          margin: 0;
-          color: #0a2e73;
-          font-size: 20px;
-        }
-
-        .grid {
+      <style jsx global>{`
+        .product-admin-layout {
           display: grid;
-          gap: 16px;
+          grid-template-columns: minmax(0, 1fr) 390px;
+          gap: 24px;
+          align-items: start;
         }
 
-        .two {
+        .product-preview-sidebar {
+          position: sticky;
+          top: 94px;
+          display: grid;
+          gap: 20px;
+        }
+
+        .form-grid {
+          display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        .four {
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-        }
-
-        .three {
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-        }
-
-        .full {
-          grid-column: 1 / -1;
-        }
-
-        .field {
-          display: block;
-        }
-
-        .field > span {
-          display: block;
-          margin-bottom: 7px;
-          color: #344054;
-          font-size: 13px;
-          font-weight: 750;
-        }
-
-        .field b {
-          color: #d92d20;
-        }
-
-        .field input,
-        .field textarea,
-        .field select,
-        .row input {
-          width: 100%;
-          border: 1px solid #d0d5dd;
-          border-radius: 10px;
-          background: white;
-          outline: none;
-        }
-
-        .field input,
-        .field select,
-        .row input {
-          height: 46px;
-          padding: 0 13px;
-        }
-
-        .field textarea {
-          padding: 12px 13px;
-          resize: vertical;
-        }
-
-        .field input:focus,
-        .field textarea:focus,
-        .field select:focus,
-        .row input:focus {
-          border-color: #0a2e73;
-          box-shadow: 0 0 0 4px rgba(10, 46, 115, 0.09);
-        }
-
-        .lowStockHelp {
-          display: flex;
-          align-items: flex-start;
-          gap: 10px;
-          margin-top: 18px;
-          padding: 13px 15px;
-          border: 1px solid #f0d788;
-          border-radius: 12px;
-          background: #fffaf0;
-        }
-
-        .lowStockHelp strong,
-        .lowStockHelp span {
-          display: block;
-        }
-
-        .lowStockHelp strong {
-          flex: 0 0 auto;
-          color: #0a2e73;
-          font-size: 13px;
-        }
-
-        .lowStockHelp span {
-          color: #705708;
-          font-size: 11px;
-          line-height: 1.55;
-        }
-
-        .inventorySyncCard {
-          margin-top: 18px;
-          padding: 18px;
-          border: 1px solid #d8e2f5;
-          border-radius: 14px;
-          background: linear-gradient(180deg, #fbfdff, #f5f8ff);
-        }
-
-        .inventorySyncHead,
-        .variantInventoryTitle {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
           gap: 14px;
         }
 
-        .inventorySyncHead strong,
-        .inventorySyncHead span,
-        .variantInventoryTitle strong,
-        .variantInventoryTitle span {
-          display: block;
+        .status-toggle-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
         }
 
-        .inventorySyncHead strong {
-          color: #0a2e73;
-          font-size: 15px;
-        }
-
-        .inventorySyncHead div > span {
-          margin-top: 4px;
-          color: #667085;
-          font-size: 12px;
-        }
-
-        .syncBadge {
-          padding: 6px 10px;
-          border-radius: 999px;
-          background: #ecfdf3;
-          color: #067647;
-          font-size: 11px;
-          font-weight: 800;
-          white-space: nowrap;
-        }
-
-        .inventoryFields {
-          margin-top: 16px;
-          align-items: end;
-        }
-
-        .onlineToggle {
-          min-height: 68px;
+        .mobile-sticky-save {
+          position: sticky;
+          top: 10px;
+          z-index: 60;
           display: flex;
+          justify-content: flex-end;
+          pointer-events: none;
+          margin: 0 0 14px;
+        }
+
+        .mobile-sticky-save-button {
+          pointer-events: auto;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          min-height: 44px;
+          border: 1px solid #d4af37;
+          border-radius: 999px;
+          background: linear-gradient(135deg, #0a2e73, #164ca8);
+          color: #ffffff;
+          padding: 10px 16px;
+          font-size: 14px;
+          font-weight: 900;
+          box-shadow: 0 10px 28px rgba(10, 46, 115, 0.3);
+          cursor: pointer;
+        }
+
+        .mobile-sticky-save-button:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+
+        .existing-stock-search-row {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 10px;
+        }
+
+        .existing-stock-search-button {
+          min-height: 46px;
+          border: 1px solid #d4af37;
+          border-radius: 10px;
+          background: #0a2e73;
+          color: #ffffff;
+          padding: 0 18px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .existing-stock-results {
+          display: grid;
+          gap: 9px;
+          margin-top: 14px;
+        }
+
+        .existing-stock-results > button {
+          display: grid;
+          grid-template-columns: 58px minmax(0, 1fr) auto;
           align-items: center;
           gap: 12px;
-          padding: 12px 14px;
-          border: 1px solid #d0d5dd;
-          border-radius: 10px;
-          background: white;
+          width: 100%;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          background: #ffffff;
+          padding: 10px;
+          text-align: left;
           cursor: pointer;
         }
 
-        .onlineToggle input {
-          width: 19px;
-          height: 19px;
-          accent-color: #0a2e73;
+        .existing-stock-results > button:hover {
+          border-color: #d4af37;
+          background: #fffdf5;
         }
 
-        .onlineToggle strong,
-        .onlineToggle small {
-          display: block;
-        }
-
-        .onlineToggle strong {
-          color: #0a2e73;
-          font-size: 13px;
-        }
-
-        .onlineToggle small {
-          margin-top: 3px;
-          color: #667085;
-          font-size: 10px;
-        }
-
-        .variantInventory {
-          margin-top: 18px;
-          padding-top: 16px;
-          border-top: 1px solid #d8e2f5;
-        }
-
-        .variantInventoryTitle strong {
-          color: #0a2e73;
-          font-size: 14px;
-        }
-
-        .variantInventoryTitle span {
-          color: #667085;
-          font-size: 11px;
-        }
-
-        .variantTableWrap {
-          margin-top: 10px;
-          overflow-x: auto;
-          border: 1px solid #e4e7ec;
-          border-radius: 10px;
-          background: white;
-        }
-
-        .variantTable {
-          width: 100%;
-          min-width: 680px;
-          border-collapse: collapse;
-        }
-
-        .variantTable th,
-        .variantTable td {
-          padding: 10px 11px;
-          border-bottom: 1px solid #eef1f5;
-          color: #344054;
-          font-size: 11px;
-          text-align: left;
-        }
-
-        .variantTable th {
-          background: #f8fafc;
-          color: #475467;
-          font-weight: 800;
-        }
-
-        .variantTable tr:last-child td {
-          border-bottom: 0;
-        }
-
-        .variantTable code {
-          color: #0a2e73;
-          font-weight: 800;
-        }
-
-        .variantNote {
-          margin: 9px 0 0;
-          color: #667085;
-          font-size: 11px;
-        }
-
-        .field input[readonly] {
-          background: #f2f4f7;
-          color: #475467;
-          cursor: not-allowed;
-        }
-
-        .field input:disabled {
-          background: #f2f4f7;
-          color: #98a2b3;
-          cursor: not-allowed;
-        }
-
-        .summary {
-          display: grid;
-          grid-template-columns: 180px 150px 1fr;
-          gap: 15px;
-          margin-top: 18px;
-          padding: 15px;
-          border-radius: 12px;
-          background: #f8fafc;
-        }
-
-        .summary span {
-          display: block;
-          margin-bottom: 5px;
-          color: #667085;
-          font-size: 11px;
-          text-transform: uppercase;
-        }
-
-        .summary strong {
-          color: #0a2e73;
-          font-size: 18px;
-        }
-
-        .check {
+        .existing-stock-result-image {
+          width: 58px;
+          height: 58px;
           display: flex;
-          align-items: center;
-          gap: 9px;
-          font-weight: 700;
-        }
-
-        .check input {
-          width: 18px;
-          height: 18px;
-          accent-color: #0a2e73;
-        }
-
-        .upload {
-          min-height: 180px;
-          display: flex;
-          flex-direction: column;
           align-items: center;
           justify-content: center;
-          border: 2px dashed #b8c3d9;
-          border-radius: 14px;
-          background: #f9fbff;
-          cursor: pointer;
-        }
-
-        .upload input {
-          display: none;
-        }
-
-        .upload strong {
-          color: #0a2e73;
-        }
-
-        .upload span {
-          margin-top: 6px;
-          color: #667085;
-          font-size: 12px;
-        }
-
-        .imageGrid {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 14px;
-          margin-top: 17px;
-        }
-
-        .imageCard {
           overflow: hidden;
-          border: 1px solid #e4e7ec;
-          border-radius: 12px;
+          border-radius: 10px;
+          background: #f1f5f9;
+          font-size: 24px;
         }
 
-        .preview {
-          position: relative;
-          aspect-ratio: 4 / 5;
-          background: #f8fafc;
-        }
-
-        .preview img {
+        .existing-stock-result-image img {
           width: 100%;
           height: 100%;
           object-fit: cover;
         }
 
-        .preview span {
-          position: absolute;
-          top: 8px;
-          left: 8px;
-          padding: 5px 8px;
-          border-radius: 999px;
-          background: #0a2e73;
-          color: white;
-          font-size: 10px;
-          font-weight: 800;
-        }
-
-        .imageActions {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 5px;
-          padding: 7px;
-        }
-
-        .imageActions button,
-        .row button,
-        .faqHead button {
-          border: 1px solid #d0d5dd;
-          border-radius: 8px;
-          background: white;
-          cursor: pointer;
-        }
-
-        .imageActions button {
-          height: 34px;
-        }
-
-        .note {
-          margin: 14px 0 0;
-          padding: 11px 13px;
-          border-radius: 9px;
-          background: #f3f6ff;
-          color: #475467;
-          font-size: 12px;
-        }
-
-        .repeat {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-
-        .row {
-          display: grid;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .featureRow {
-          grid-template-columns: 34px 1fr 40px;
-        }
-
-        .keyValueRow {
-          grid-template-columns: 34px 1fr 1fr 40px;
-        }
-
-        .row > span {
-          width: 34px;
-          height: 34px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 9px;
-          background: #eef3ff;
-          color: #0a2e73;
-          font-weight: 800;
-        }
-
-        .row > button {
-          height: 40px;
-          color: #d92d20;
-          font-size: 20px;
-        }
-
-        .addButton {
-          margin-top: 13px;
-          min-height: 40px;
-          padding: 0 14px;
-          border: 1px solid #b9c8eb;
-          border-radius: 9px;
-          background: #eef3ff;
-          color: #0a2e73;
-          font-weight: 800;
-          cursor: pointer;
-        }
-
-        .faqList {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 14px;
-        }
-
-        .faqCard {
-          padding: 15px;
-          border: 1px solid #e4e7ec;
-          border-radius: 12px;
-          background: #f8fafc;
-        }
-
-        .faqCard .field + .field {
-          margin-top: 12px;
-        }
-
-        .faqHead {
-          display: flex;
-          justify-content: space-between;
-          margin-bottom: 12px;
-        }
-
-        .faqHead button {
-          padding: 5px 9px;
-          color: #d92d20;
-        }
-
-        .seoPreview {
-          margin-top: 18px;
-          padding: 16px;
-          border: 1px solid #e4e7ec;
-          border-radius: 12px;
-        }
-
-        .seoPreview span {
-          color: #067647;
-          font-size: 12px;
-        }
-
-        .seoPreview strong {
+        .existing-stock-results strong,
+        .existing-stock-results span,
+        .existing-stock-results small {
           display: block;
-          margin-top: 6px;
-          color: #1a0dab;
-          font-size: 18px;
         }
 
-        .seoPreview p {
-          margin: 6px 0 0;
-          color: #4d5156;
-          line-height: 1.5;
+        .existing-stock-results strong {
+          color: #0a2e73;
+          font-size: 14px;
         }
 
-        .variationList {
-          margin-top: 16px;
+        .existing-stock-results span {
+          margin-top: 3px;
+          color: #334155;
+          font-size: 12px;
+          font-weight: 800;
         }
 
-        .bottomBar {
+        .existing-stock-results small {
+          margin-top: 3px;
+          color: #64748b;
+        }
+
+        .existing-stock-results b {
+          color: #0a2e73;
+        }
+
+        .linked-stock-card {
           display: flex;
+          align-items: flex-start;
           justify-content: space-between;
-          align-items: center;
-          gap: 20px;
-          padding: 20px;
-          border-radius: 16px;
-          background: #0a2e73;
-          color: white;
+          gap: 16px;
+          margin-top: 14px;
+          padding: 16px;
+          border: 1px solid #86efac;
+          border-radius: 14px;
+          background: #f0fdf4;
         }
 
-        .bottomBar strong {
+        .linked-stock-card span,
+        .linked-stock-card strong,
+        .linked-stock-card p {
+          display: block;
+        }
+
+        .linked-stock-card span {
+          color: #15803d;
+          font-size: 10px;
+          font-weight: 950;
+          letter-spacing: 0.8px;
+        }
+
+        .linked-stock-card strong {
+          margin-top: 4px;
+          color: #0a2e73;
           font-size: 17px;
         }
 
-        .bottomBar p {
-          margin: 5px 0 0;
-          color: #d8e2f8;
+        .linked-stock-card p {
+          margin: 4px 0 0;
+          color: #475569;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .linked-stock-card button {
+          border: 1px solid #fca5a5;
+          border-radius: 9px;
+          background: #ffffff;
+          color: #dc2626;
+          padding: 9px 13px;
+          font-weight: 850;
+          cursor: pointer;
+        }
+
+        .existing-stock-note,
+        .inventory-lock-note {
+          margin-top: 13px;
+          padding: 11px 13px;
+          border-radius: 10px;
+          background: #fffbea;
+          color: #7c5b00;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .inventory-online-toggle {
+          min-height: 46px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 9px 12px;
+          border: 1px solid #d1d5db;
+          border-radius: 9px;
+          background: #ffffff;
+        }
+
+        .inventory-online-toggle input {
+          width: 20px;
+          height: 20px;
+          accent-color: #0a2e73;
+        }
+
+        .inventory-online-toggle strong,
+        .inventory-online-toggle span {
+          display: block;
+        }
+
+        .inventory-online-toggle strong {
+          color: #0a2e73;
           font-size: 13px;
         }
 
-        @media (max-width: 900px) {
-          .header {
-            align-items: flex-start;
-            flex-direction: column;
-          }
+        .inventory-online-toggle span {
+          margin-top: 2px;
+          color: #64748b;
+          font-size: 10px;
+        }
 
-          .headerActions {
-            width: 100%;
-          }
-
-          .headerActions button {
-            flex: 1;
-          }
-
-          .four,
-          .three,
-          .two {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-
-          .imageGrid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-
-          .faqList {
+        @media (max-width: 1100px) {
+          .product-admin-layout {
             grid-template-columns: 1fr;
           }
 
-          .summary {
-            grid-template-columns: repeat(2, 1fr);
-          }
-
-          .check {
-            grid-column: 1 / -1;
+          .product-preview-sidebar {
+            position: static;
           }
         }
 
-        @media (max-width: 620px) {
-          .page {
-            padding: 16px 10px 40px;
-          }
-
-          .card {
-            padding: 16px;
-          }
-
-          .four,
-          .three,
-          .two {
+        @media (max-width: 650px) {
+          .form-grid,
+          .status-toggle-grid {
             grid-template-columns: 1fr;
           }
 
-          .imageGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-
-          .keyValueRow {
-            grid-template-columns: 34px 1fr 40px;
-          }
-
-          .keyValueRow input:nth-of-type(2) {
-            grid-column: 2 / 3;
-          }
-
-          .keyValueRow button {
-            grid-column: 3 / 4;
-            grid-row: 1 / 3;
-          }
-
-          .summary {
+          .existing-stock-search-row {
             grid-template-columns: 1fr;
           }
 
-          .check {
-            grid-column: auto;
-          }
-
-          .bottomBar {
-            align-items: stretch;
+          .linked-stock-card {
             flex-direction: column;
           }
 
-          .bottomBar > div:last-child {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
+          .existing-stock-results > button {
+            grid-template-columns: 52px minmax(0, 1fr);
+          }
+
+          .existing-stock-results > button > b {
+            display: none;
+          }
+
+          .mobile-sticky-save {
+            top: 8px;
+            margin-bottom: 12px;
+          }
+
+          .mobile-sticky-save-button {
+            min-width: 48px;
+            min-height: 48px;
+            padding: 10px 14px;
           }
         }
       `}</style>
@@ -2196,45 +2815,277 @@ export default function EditProductPage() {
   );
 }
 
-function Section({
-  number,
+function Panel({
   title,
+  subtitle,
   children,
 }: {
-  number: string;
   title: string;
-  children: React.ReactNode;
+  subtitle: string;
+  children: ReactNode;
 }) {
   return (
-    <section className="card">
-      <div className="cardHead">
-        <span>{number}</span>
-        <h2>{title}</h2>
+    <section style={panelStyle}>
+      <div style={{ marginBottom: "21px" }}>
+        <h2 style={panelTitleStyle}>{title}</h2>
+        <p style={panelSubtitleStyle}>{subtitle}</p>
       </div>
+
       {children}
     </section>
   );
 }
-
 function Field({
   label,
   required = false,
-  full = false,
   children,
 }: {
   label: string;
   required?: boolean;
-  full?: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <label className={`field ${full ? "full" : ""}`}>
-      <span>
-        {label} {required && <b>*</b>}
-      </span>
+    <div style={{ marginBottom: "17px" }}>
+      <label style={fieldLabelStyle}>
+        {label}
+        {required && (
+          <span style={{ color: "#DC2626" }}> *</span>
+        )}
+      </label>
+
       {children}
+    </div>
+  );
+}
+
+function FormGrid({ children }: { children: ReactNode }) {
+  return <div className="form-grid">{children}</div>;
+}
+
+function MoneyInput({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div style={{ position: "relative" }}>
+      <span style={moneySymbolStyle}>₹</span>
+
+      <input
+        type="number"
+        min="0"
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        style={{
+          ...inputStyle,
+          paddingLeft: "34px",
+        }}
+      />
+    </div>
+  );
+}
+
+function UploadBox({
+  uploading,
+  label,
+  description,
+  multiple,
+  onChange,
+}: {
+  uploading: boolean;
+  label: string;
+  description: string;
+  multiple: boolean;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <label style={uploadBoxStyle}>
+      <input
+        type="file"
+        accept="image/png,image/jpeg,image/jpg,image/webp"
+        multiple={multiple}
+        onChange={onChange}
+        disabled={uploading}
+        style={{ display: "none" }}
+      />
+
+      <span style={{ fontSize: "37px" }}>☁️</span>
+
+      <strong style={{ color: "#0A2E73" }}>
+        {uploading ? "Uploading..." : label}
+      </strong>
+
+      <span style={{ color: "#777", fontSize: "13px" }}>
+        {description}
+      </span>
     </label>
   );
+}
+
+function ImagePreview({
+  image,
+  onRemove,
+  large = false,
+}: {
+  image: string;
+  onRemove: () => void;
+  large?: boolean;
+}) {
+  return (
+    <div style={singleImagePreviewStyle}>
+      <img
+        src={image}
+        alt="Product upload preview"
+        style={{
+          width: "100%",
+          maxHeight: large ? "480px" : "250px",
+          objectFit: "contain",
+          borderRadius: "13px",
+          background: "#F8FAFC",
+        }}
+      />
+
+      <button
+        type="button"
+        onClick={onRemove}
+        style={removeImageStyle}
+      >
+        Remove Image
+      </button>
+    </div>
+  );
+}
+
+function ImageGrid({
+  images,
+  onRemove,
+}: {
+  images: string[];
+  onRemove: (index: number) => void;
+}) {
+  if (!images.length) return null;
+
+  return (
+    <div style={imageGridStyle}>
+      {images.map((image, index) => (
+        <div key={`${image}-${index}`} style={imageTileStyle}>
+          <img
+            src={image}
+            alt={`Product image ${index + 1}`}
+            style={imageTileImageStyle}
+          />
+
+          <button
+            type="button"
+            onClick={() => onRemove(index)}
+            style={imageRemoveIconStyle}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ChipButton({
+  label,
+  selected,
+  onClick,
+}: {
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background: selected ? "#0A2E73" : "#FFFFFF",
+        color: selected ? "#FFFFFF" : "#0A2E73",
+        border: selected
+          ? "1px solid #0A2E73"
+          : "1px solid #D1D5DB",
+        borderRadius: "999px",
+        padding: "10px 15px",
+        cursor: "pointer",
+        fontWeight: 700,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function InlineAdd({
+  value,
+  placeholder,
+  buttonLabel,
+  onChange,
+  onAdd,
+}: {
+  value: string;
+  placeholder: string;
+  buttonLabel: string;
+  onChange: (value: string) => void;
+  onAdd: () => void;
+}) {
+  return (
+    <div style={inlineAddStyle}>
+      <input
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        style={inputStyle}
+      />
+
+      <button
+        type="button"
+        onClick={onAdd}
+        style={smallPrimaryButtonStyle}
+      >
+        {buttonLabel}
+      </button>
+    </div>
+  );
+}
+
+function SelectedValues({
+  values,
+  onRemove,
+}: {
+  values: string[];
+  onRemove: (value: string) => void;
+}) {
+  if (!values.length) return null;
+
+  return (
+    <div style={selectedValuesStyle}>
+      {values.map((value) => (
+        <span key={value} style={selectedValueStyle}>
+          {value}
+
+          <button
+            type="button"
+            onClick={() => onRemove(value)}
+            style={selectedValueRemoveStyle}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function DynamicRow({ children }: { children: ReactNode }) {
+  return <div style={dynamicRowStyle}>{children}</div>;
 }
 
 function AddButton({
@@ -2245,8 +3096,661 @@ function AddButton({
   onClick: () => void;
 }) {
   return (
-    <button type="button" className="addButton" onClick={onClick}>
-      ＋ {label}
+    <button
+      type="button"
+      onClick={onClick}
+      style={addButtonStyle}
+    >
+      + {label}
     </button>
   );
 }
+
+function RemoveButton({
+  onClick,
+}: {
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={removeButtonStyle}
+    >
+      ×
+    </button>
+  );
+}
+
+function CharacterCount({
+  value,
+  maximum,
+}: {
+  value: number;
+  maximum: number;
+}) {
+  return (
+    <p style={characterCountStyle}>
+      {value}/{maximum} characters
+    </p>
+  );
+}
+
+function Toggle({
+  label,
+  description,
+  value,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div
+      style={{
+        ...toggleCardStyle,
+        background: value ? "#F0FDF4" : "#FFFFFF",
+        border: value
+          ? "1px solid #86EFAC"
+          : "1px solid #E5E7EB",
+      }}
+    >
+      <div>
+        <strong style={{ color: "#0A2E73" }}>
+          {label}
+        </strong>
+
+        <p style={toggleDescriptionStyle}>
+          {description}
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onChange(!value)}
+        style={{
+          ...toggleSwitchStyle,
+          background: value ? "#16A34A" : "#D1D5DB",
+        }}
+      >
+        <span
+          style={{
+            ...toggleCircleStyle,
+            left: value ? "28px" : "3px",
+          }}
+        />
+      </button>
+    </div>
+  );
+}
+
+function Badge({ label }: { label: string }) {
+  return <span style={badgeStyle}>{label}</span>;
+}
+
+function PreviewInfo({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div style={previewInfoStyle}>
+      <span style={{ color: "#777" }}>{label}</span>
+      <strong
+        style={{
+          color: "#0A2E73",
+          textAlign: "right",
+        }}
+      >
+        {value}
+      </strong>
+    </div>
+  );
+}
+
+function CompletionRow({
+  label,
+  complete,
+}: {
+  label: string;
+  complete: boolean;
+}) {
+  return (
+    <div style={completionRowStyle}>
+      <span style={{ color: "#555", fontWeight: 700 }}>
+        {label}
+      </span>
+
+      <span
+        style={{
+          ...completionBadgeStyle,
+          background: complete ? "#DCFCE7" : "#FEE2E2",
+          color: complete ? "#166534" : "#B91C1C",
+        }}
+      >
+        {complete ? "Complete" : "Incomplete"}
+      </span>
+    </div>
+  );
+}
+
+const mainStyle: CSSProperties = {
+  minHeight: "100vh",
+  background: "#F8F4EC",
+  padding: "30px 20px 90px",
+};
+
+const containerStyle: CSSProperties = {
+  maxWidth: "1550px",
+  margin: "0 auto",
+};
+
+const heroStyle: CSSProperties = {
+  background:
+    "linear-gradient(135deg, #071A43 0%, #0A2E73 55%, #164CA8 100%)",
+  borderRadius: "24px",
+  padding: "32px",
+  color: "#FFFFFF",
+  marginBottom: "25px",
+  boxShadow: "0 15px 40px rgba(10,46,115,0.25)",
+};
+
+const heroLabelStyle: CSSProperties = {
+  color: "#D4AF37",
+  fontWeight: 800,
+  letterSpacing: "1.4px",
+  margin: "0 0 8px",
+};
+
+const heroTitleStyle: CSSProperties = {
+  margin: 0,
+  fontSize: "38px",
+};
+
+const heroDescriptionStyle: CSSProperties = {
+  margin: "11px 0 0",
+  opacity: 0.9,
+  lineHeight: 1.6,
+};
+
+const panelStyle: CSSProperties = {
+  background: "#FFFFFF",
+  borderRadius: "19px",
+  padding: "24px",
+  boxShadow: "0 8px 25px rgba(0,0,0,0.07)",
+  border: "1px solid rgba(212,175,55,0.22)",
+};
+
+const panelTitleStyle: CSSProperties = {
+  color: "#0A2E73",
+  margin: "0 0 5px",
+  fontSize: "23px",
+};
+
+const panelSubtitleStyle: CSSProperties = {
+  color: "#777",
+  margin: 0,
+  fontSize: "13px",
+};
+
+const fieldLabelStyle: CSSProperties = {
+  display: "block",
+  color: "#0A2E73",
+  fontWeight: 700,
+  marginBottom: "7px",
+};
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "12px 13px",
+  border: "1px solid #D1D5DB",
+  borderRadius: "9px",
+  background: "#FFFFFF",
+  color: "#111827",
+  fontSize: "15px",
+  outline: "none",
+};
+
+const shortTextareaStyle: CSSProperties = {
+  ...inputStyle,
+  minHeight: "105px",
+  resize: "vertical",
+  lineHeight: 1.6,
+};
+
+const largeTextareaStyle: CSSProperties = {
+  ...inputStyle,
+  minHeight: "175px",
+  resize: "vertical",
+  lineHeight: 1.7,
+};
+
+const moneySymbolStyle: CSSProperties = {
+  position: "absolute",
+  left: "14px",
+  top: "50%",
+  transform: "translateY(-50%)",
+  color: "#0A2E73",
+  fontWeight: 800,
+};
+
+const pricingSummaryStyle: CSSProperties = {
+  background: "#F0FDF4",
+  color: "#166534",
+  border: "1px solid #BBF7D0",
+  borderRadius: "11px",
+  padding: "14px",
+  display: "flex",
+  justifyContent: "space-between",
+  gap: "12px",
+  flexWrap: "wrap",
+};
+
+const uploadBoxStyle: CSSProperties = {
+  minHeight: "145px",
+  border: "2px dashed #D4AF37",
+  borderRadius: "14px",
+  background: "#FFFDF5",
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "center",
+  alignItems: "center",
+  gap: "8px",
+  padding: "20px",
+  cursor: "pointer",
+  textAlign: "center",
+};
+
+const singleImagePreviewStyle: CSSProperties = {
+  marginTop: "17px",
+  border: "1px solid #E5E7EB",
+  borderRadius: "14px",
+  padding: "12px",
+  background: "#F8FAFC",
+};
+
+const removeImageStyle: CSSProperties = {
+  width: "100%",
+  marginTop: "10px",
+  border: "1px solid #FCA5A5",
+  background: "#FFFFFF",
+  color: "#DC2626",
+  borderRadius: "9px",
+  padding: "10px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const imageGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns:
+    "repeat(auto-fill, minmax(130px, 1fr))",
+  gap: "12px",
+  marginTop: "17px",
+};
+
+const imageTileStyle: CSSProperties = {
+  position: "relative",
+  borderRadius: "12px",
+  overflow: "hidden",
+  border: "1px solid #E5E7EB",
+  aspectRatio: "1 / 1",
+  background: "#F3F4F6",
+};
+
+const imageTileImageStyle: CSSProperties = {
+  width: "100%",
+  height: "100%",
+  objectFit: "cover",
+};
+
+const imageRemoveIconStyle: CSSProperties = {
+  position: "absolute",
+  top: "7px",
+  right: "7px",
+  width: "28px",
+  height: "28px",
+  borderRadius: "50%",
+  border: "none",
+  background: "rgba(220,38,38,0.9)",
+  color: "#FFFFFF",
+  cursor: "pointer",
+  fontSize: "18px",
+};
+
+const chipGridStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "9px",
+  marginBottom: "16px",
+};
+
+const inlineAddStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) auto",
+  gap: "10px",
+};
+
+const smallPrimaryButtonStyle: CSSProperties = {
+  border: "none",
+  borderRadius: "9px",
+  background: "#0A2E73",
+  color: "#FFFFFF",
+  padding: "0 17px",
+  cursor: "pointer",
+  fontWeight: 800,
+};
+
+const selectedValuesStyle: CSSProperties = {
+  display: "flex",
+  gap: "8px",
+  flexWrap: "wrap",
+  marginTop: "14px",
+};
+
+const selectedValueStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "7px",
+  background: "#EEF2FF",
+  color: "#0A2E73",
+  borderRadius: "999px",
+  padding: "7px 10px",
+  fontWeight: 700,
+};
+
+const selectedValueRemoveStyle: CSSProperties = {
+  border: "none",
+  background: "transparent",
+  color: "#DC2626",
+  cursor: "pointer",
+  fontSize: "17px",
+  padding: 0,
+};
+
+const dynamicRowStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr)) auto",
+  gap: "10px",
+  marginBottom: "11px",
+};
+
+const addButtonStyle: CSSProperties = {
+  width: "100%",
+  border: "1px dashed #0A2E73",
+  background: "#EEF2FF",
+  color: "#0A2E73",
+  padding: "12px",
+  borderRadius: "9px",
+  cursor: "pointer",
+  fontWeight: 800,
+};
+
+const removeButtonStyle: CSSProperties = {
+  width: "43px",
+  height: "43px",
+  borderRadius: "9px",
+  border: "1px solid #FCA5A5",
+  background: "#FFFFFF",
+  color: "#DC2626",
+  cursor: "pointer",
+  fontSize: "22px",
+};
+
+const faqCardStyle: CSSProperties = {
+  background: "#F8FAFC",
+  border: "1px solid #E5E7EB",
+  borderRadius: "12px",
+  padding: "15px",
+  marginBottom: "13px",
+};
+
+const faqHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: "11px",
+};
+
+const characterCountStyle: CSSProperties = {
+  color: "#999",
+  fontSize: "11px",
+  textAlign: "right",
+  margin: "5px 0 0",
+};
+
+const toggleCardStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "12px",
+  padding: "15px",
+  borderRadius: "12px",
+};
+
+const toggleDescriptionStyle: CSSProperties = {
+  color: "#777",
+  margin: "4px 0 0",
+  fontSize: "12px",
+};
+
+const toggleSwitchStyle: CSSProperties = {
+  position: "relative",
+  width: "56px",
+  height: "31px",
+  flexShrink: 0,
+  border: "none",
+  borderRadius: "999px",
+  cursor: "pointer",
+  padding: 0,
+};
+
+const toggleCircleStyle: CSSProperties = {
+  position: "absolute",
+  width: "25px",
+  height: "25px",
+  borderRadius: "50%",
+  background: "#FFFFFF",
+  top: "3px",
+  boxShadow: "0 2px 7px rgba(0,0,0,0.2)",
+  transition: "0.25s",
+};
+
+const previewPanelStyle: CSSProperties = {
+  background: "#FFFFFF",
+  borderRadius: "19px",
+  padding: "20px",
+  boxShadow: "0 8px 25px rgba(0,0,0,0.07)",
+  border: "1px solid rgba(212,175,55,0.22)",
+};
+
+const previewLabelStyle: CSSProperties = {
+  color: "#D4AF37",
+  fontWeight: 800,
+  letterSpacing: "1px",
+  margin: "0 0 13px",
+};
+
+const previewImageBoxStyle: CSSProperties = {
+  position: "relative",
+  width: "100%",
+  aspectRatio: "4 / 5",
+  background: "#F8FAFC",
+  borderRadius: "14px",
+  overflow: "hidden",
+  marginBottom: "17px",
+};
+
+const previewImageStyle: CSSProperties = {
+  width: "100%",
+  height: "100%",
+  objectFit: "cover",
+};
+
+const previewPlaceholderStyle: CSSProperties = {
+  width: "100%",
+  height: "100%",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  fontSize: "60px",
+};
+
+const previewBadgeContainerStyle: CSSProperties = {
+  position: "absolute",
+  left: "10px",
+  top: "10px",
+  display: "flex",
+  gap: "6px",
+  flexWrap: "wrap",
+};
+
+const badgeStyle: CSSProperties = {
+  background: "#D4AF37",
+  color: "#FFFFFF",
+  borderRadius: "999px",
+  padding: "6px 9px",
+  fontSize: "10px",
+  fontWeight: 900,
+};
+
+const previewCategoryStyle: CSSProperties = {
+  color: "#D4AF37",
+  fontWeight: 800,
+  fontSize: "12px",
+  textTransform: "uppercase",
+  letterSpacing: "1px",
+  margin: "0 0 5px",
+};
+
+const previewNameStyle: CSSProperties = {
+  color: "#0A2E73",
+  margin: 0,
+  fontSize: "24px",
+};
+
+const previewTaglineStyle: CSSProperties = {
+  color: "#777",
+  margin: "7px 0 14px",
+  lineHeight: 1.5,
+};
+
+const previewPriceRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  flexWrap: "wrap",
+  marginBottom: "16px",
+};
+
+const previewSellingPriceStyle: CSSProperties = {
+  color: "#0A2E73",
+  fontSize: "25px",
+};
+
+const previewMrpStyle: CSSProperties = {
+  color: "#999",
+  textDecoration: "line-through",
+};
+
+const previewDiscountStyle: CSSProperties = {
+  color: "#16A34A",
+  fontWeight: 800,
+};
+
+const previewInfoStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: "12px",
+  padding: "11px 0",
+  borderBottom: "1px solid #E5E7EB",
+};
+
+const sideTitleStyle: CSSProperties = {
+  color: "#0A2E73",
+  margin: "0 0 14px",
+};
+
+const completionRowStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "12px",
+  padding: "11px 0",
+  borderBottom: "1px solid #E5E7EB",
+};
+
+const completionBadgeStyle: CSSProperties = {
+  padding: "5px 8px",
+  borderRadius: "999px",
+  fontSize: "11px",
+  fontWeight: 800,
+};
+
+const aiGeneratorCardStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "18px",
+  flexWrap: "wrap",
+  padding: "18px",
+  border: "1px solid rgba(212, 175, 55, 0.55)",
+  borderRadius: "18px",
+  background:
+    "linear-gradient(135deg, rgba(10, 46, 115, 0.06), rgba(248, 244, 236, 0.95))",
+};
+
+const aiGeneratorTitleStyle: CSSProperties = {
+  display: "block",
+  color: "#0A2E73",
+  fontSize: "17px",
+  lineHeight: 1.3,
+};
+
+const aiGeneratorTextStyle: CSSProperties = {
+  margin: "7px 0 0",
+  maxWidth: "680px",
+  color: "#4B5563",
+  fontSize: "14px",
+  lineHeight: 1.6,
+};
+
+const aiGenerateButtonStyle: CSSProperties = {
+  minHeight: "48px",
+  padding: "12px 18px",
+  border: "1px solid #D4AF37",
+  borderRadius: "14px",
+  background: "#0A2E73",
+  color: "#FFFFFF",
+  fontWeight: 800,
+  fontSize: "14px",
+  boxShadow: "0 10px 24px rgba(10, 46, 115, 0.18)",
+};
+
+const aiStatusStyle: CSSProperties = {
+  marginTop: "14px",
+  padding: "12px 14px",
+  border: "1px solid",
+  borderRadius: "12px",
+  fontSize: "14px",
+  lineHeight: 1.5,
+  fontWeight: 650,
+};
+
+const saveProductButtonStyle: CSSProperties = {
+  width: "100%",
+  border: "none",
+  borderRadius: "12px",
+  background:
+    "linear-gradient(135deg, #0A2E73, #164CA8)",
+  color: "#FFFFFF",
+  padding: "16px",
+  fontSize: "16px",
+  fontWeight: 900,
+  boxShadow: "0 10px 25px rgba(10,46,115,0.25)",
+};

@@ -9,27 +9,47 @@ type Product = {
   name?: string | null;
   price?: number | string | null;
   stock?: number | string | null;
+  online_stock_limit?: number | string | null;
   image?: string | null;
   image_url?: string | null;
+  sell_online?: boolean | null;
+  is_active?: boolean | null;
 };
 
 export default function FeaturedProducts() {
   const router = useRouter();
+
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadProducts() {
+      setLoading(true);
+
       const { data, error } = await supabase
         .from("products")
-        .select("*")
+        .select(
+          `
+            id,
+            name,
+            price,
+            stock,
+            online_stock_limit,
+            image,
+            image_url,
+            sell_online,
+            is_active
+          `
+        )
+        .eq("sell_online", true)
+        .eq("is_active", true)
         .limit(12);
 
       if (error) {
         console.error("Featured products error:", error);
         setProducts([]);
       } else {
-        setProducts(data || []);
+        setProducts((data as Product[]) || []);
       }
 
       setLoading(false);
@@ -42,7 +62,10 @@ export default function FeaturedProducts() {
     return (
       <section className="featuredSection">
         <h2>Featured Products</h2>
-        <p className="statusText">Loading products...</p>
+
+        <p className="statusText">
+          Loading products...
+        </p>
 
         <style jsx>{styles}</style>
       </section>
@@ -53,42 +76,84 @@ export default function FeaturedProducts() {
     <section className="featuredSection">
       <div className="headingArea">
         <span>NEW CITY STYLE</span>
+
         <h2>Featured Products</h2>
-        <p>Premium fashion selected for every member of the family.</p>
+
+        <p>
+          Premium fashion selected for every member of the family.
+        </p>
       </div>
 
       {products.length === 0 ? (
-        <p className="statusText">No featured products available.</p>
+        <p className="statusText">
+          No online products available.
+        </p>
       ) : (
         <div className="productGrid">
           {products.map((item) => {
-            const imageSource = item.image_url || item.image || "";
-            const productName = item.name || "Premium Product";
+            const imageSource =
+              item.image_url || item.image || "";
+
+            const productName =
+              item.name || "Premium Product";
+
+            const totalStock =
+              Number(item.stock || 0);
+
+            const onlineQuantity =
+              Math.min(
+                Number(item.online_stock_limit || 0),
+                totalStock
+              );
+
+            const isAvailableOnline =
+              onlineQuantity > 0 && totalStock > 0;
 
             return (
               <article
                 key={item.id}
                 className="productCard"
-                onClick={() => router.push(`/product/${item.id}`)}
+                onClick={() =>
+                  router.push(`/product/${item.id}`)
+                }
               >
                 <div className="imageArea">
                   {imageSource ? (
-                    <img src={imageSource} alt={productName} loading="lazy" />
+                    <img
+                      src={imageSource}
+                      alt={productName}
+                      loading="lazy"
+                    />
                   ) : (
-                    <div className="imageFallback">NCS</div>
+                    <div className="imageFallback">
+                      NCS
+                    </div>
                   )}
 
-                  <span className="newBadge">NEW</span>
+                  <span className="newBadge">
+                    NEW
+                  </span>
                 </div>
 
                 <div className="productContent">
                   <h3>{productName}</h3>
 
-                  <div className="price">₹{item.price ?? 0}</div>
+                  <div className="price">
+                    ₹
+                    {Number(item.price || 0).toLocaleString(
+                      "en-IN"
+                    )}
+                  </div>
 
-                  <div className="stock">
-                    {Number(item.stock || 0) > 0
-                      ? `${item.stock} in stock`
+                  <div
+                    className={
+                      isAvailableOnline
+                        ? "stock available"
+                        : "stock unavailable"
+                    }
+                  >
+                    {isAvailableOnline
+                      ? `${onlineQuantity} available online`
                       : "Out of stock"}
                   </div>
 
@@ -96,7 +161,10 @@ export default function FeaturedProducts() {
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation();
-                      router.push(`/product/${item.id}`);
+
+                      router.push(
+                        `/product/${item.id}`
+                      );
                     }}
                   >
                     View Product
@@ -200,7 +268,12 @@ const styles = `
     color: #d4af37;
     font-size: 28px;
     font-weight: 900;
-    background: linear-gradient(145deg, #0a2e73, #174ba9);
+    background:
+      linear-gradient(
+        145deg,
+        #0a2e73,
+        #174ba9
+      );
   }
 
   .newBadge {
@@ -241,8 +314,16 @@ const styles = `
 
   .stock {
     margin-top: 7px;
-    color: #6f7787;
     font-size: 12px;
+    font-weight: 700;
+  }
+
+  .stock.available {
+    color: #067647;
+  }
+
+  .stock.unavailable {
+    color: #b42318;
   }
 
   .productContent button {
@@ -255,7 +336,12 @@ const styles = `
     margin-top: 15px;
     border: 0;
     border-radius: 11px;
-    background: linear-gradient(90deg, #0a2e73, #1548a6);
+    background:
+      linear-gradient(
+        90deg,
+        #0a2e73,
+        #1548a6
+      );
     color: #ffffff;
     font-size: 12px;
     font-weight: 850;
@@ -274,7 +360,8 @@ const styles = `
 
   @media (max-width: 1050px) {
     .productGrid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns:
+        repeat(3, minmax(0, 1fr));
     }
   }
 
@@ -301,7 +388,8 @@ const styles = `
     }
 
     .productGrid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
       gap: 10px;
     }
 

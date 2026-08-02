@@ -48,6 +48,7 @@ type ProductRow = {
   online_stock_limit?: number | string | null;
   is_active?: boolean | null;
   status?: string | null;
+  design_code?: string | null;
 };
 
 type VariantRow = {
@@ -89,6 +90,7 @@ type ProductOption = {
   sellOnline: boolean;
   onlineQuantity: number;
   imageUrl: string;
+  designCode: string;
 };
 
 type BarcodeMode = "bulk" | "variant" | "individual";
@@ -116,6 +118,7 @@ type PurchaseItem = {
   onlineQuantity: number;
   onlineSellingPrice: number;
   currentStock: number;
+  designCode: string;
 };
 
 type PaymentRow = {
@@ -202,7 +205,11 @@ function findMatchingProductOption(
   const sameBrandProduct = productOptions.filter(
     (product) =>
       sameIdentityValue(product.name, item.productName) &&
-      sameIdentityValue(product.brand, item.brand),
+      sameIdentityValue(product.brand, item.brand) &&
+      (
+        !item.designCode.trim() ||
+        sameIdentityValue(product.designCode, item.designCode)
+      ),
   );
 
   if (sameBrandProduct.length === 0) {
@@ -257,6 +264,28 @@ function newId(prefix: string) {
     .slice(2, 9)}`;
 }
 
+function createAutoDesignCode() {
+  const now = new Date();
+  const datePart = [
+    String(now.getFullYear()).slice(-2),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("");
+
+  const timePart = [
+    String(now.getHours()).padStart(2, "0"),
+    String(now.getMinutes()).padStart(2, "0"),
+    String(now.getSeconds()).padStart(2, "0"),
+  ].join("");
+
+  const randomPart = Math.random()
+    .toString(36)
+    .slice(2, 6)
+    .toUpperCase();
+
+  return `NCS-D${datePart}${timePart}-${randomPart}`;
+}
+
 function createBlankItem(): PurchaseItem {
   return {
     rowId: newId("item"),
@@ -281,6 +310,7 @@ function createBlankItem(): PurchaseItem {
     onlineQuantity: 0,
     onlineSellingPrice: 0,
     currentStock: 0,
+    designCode: createAutoDesignCode(),
   };
 }
 
@@ -416,6 +446,7 @@ export default function PurchasesPage() {
                 "online_stock_limit",
                 "is_active",
                 "status",
+                "design_code",
               ].join(","),
             )
             .order("created_at", { ascending: false }),
@@ -520,6 +551,7 @@ export default function PurchasesPage() {
                 toNumber(variant.online_stock_limit),
               ),
               imageUrl,
+              designCode: product.design_code?.trim() || "",
             });
           });
           return;
@@ -549,6 +581,7 @@ export default function PurchasesPage() {
             toNumber(product.online_stock_limit),
           ),
           imageUrl,
+          designCode: product.design_code?.trim() || "",
         });
       });
 
@@ -605,6 +638,7 @@ export default function PurchasesPage() {
           product.color,
           product.sku,
           product.barcode,
+          product.designCode,
         ]
           .join(" ")
           .toLowerCase()
@@ -754,6 +788,7 @@ export default function PurchasesPage() {
         onlineQuantity: 0,
         onlineSellingPrice: product.onlineSellingPrice,
         currentStock: product.stock,
+        designCode: product.designCode || createAutoDesignCode(),
       };
 
       const blankOnly =
@@ -785,6 +820,7 @@ export default function PurchasesPage() {
           product.color,
           product.sku,
           product.barcode,
+          product.designCode,
         ]
           .join(" ")
           .toLowerCase()
@@ -825,6 +861,7 @@ export default function PurchasesPage() {
               cessPercent: product.cessPercent,
               onlineSellingPrice: product.onlineSellingPrice,
               currentStock: product.stock,
+              designCode: product.designCode || item.designCode,
             }
           : item,
       ),
@@ -962,6 +999,24 @@ export default function PurchasesPage() {
       ...current,
       createBlankItem(),
     ]);
+  }
+
+  function createNewDesignFromRow(rowId: string) {
+    setItems((current) =>
+      current.map((item) =>
+        item.rowId === rowId
+          ? {
+              ...item,
+              productId: null,
+              variantId: null,
+              barcode: "",
+              sku: "",
+              currentStock: 0,
+              designCode: createAutoDesignCode(),
+            }
+          : item,
+      ),
+    );
   }
 
   function duplicateItem(item: PurchaseItem) {
@@ -1160,6 +1215,7 @@ export default function PurchasesPage() {
 
         const commonItem = {
           product_name: item.productName.trim(),
+          design_code: item.designCode.trim(),
           category: item.category.trim(),
           subcategory:
             item.subcategory.trim() || null,
@@ -1737,8 +1793,8 @@ export default function PurchasesPage() {
                           </strong>
                           <small>
                             {item.productId
-                              ? `Existing product • Current stock ${item.currentStock}`
-                              : "New product / new design"}
+                              ? `Existing product • ${item.designCode} • Current stock ${item.currentStock}`
+                              : `New design • ${item.designCode}`}
                           </small>
                         </div>
                       </div>
@@ -1873,6 +1929,28 @@ export default function PurchasesPage() {
                               Existing product selected అయితే brand
                               change చేసినప్పుడు catalogue brand కూడా
                               update అవుతుంది.
+                            </small>
+                          </label>
+
+                          <label className="wide">
+                            <span>Auto Design / Model Code *</span>
+                            <div className="ncsDesignCodeRow">
+                              <input
+                                value={item.designCode}
+                                readOnly
+                                aria-readonly="true"
+                                title="Same design sizes must use the same design code"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => createNewDesignFromRow(item.rowId)}
+                              >
+                                New Design
+                              </button>
+                            </div>
+                            <small className="ncsBrandEditHint">
+                              M, L, XL ఒకే shirt design అయితే Duplicate button వాడండి.
+                              Design code sameగా ఉంటుంది; size barcode మాత్రమే వేరుగా వస్తుంది.
                             </small>
                           </label>
                         </div>
@@ -2323,9 +2401,9 @@ export default function PurchasesPage() {
               <strong>How matching works:</strong> Supplier ఎవరు
               అయినా same Brand + Product Name + Size + Colour match
               అయితే అదే existing variant stockలో quantity add
-              అవుతుంది. Brand field edit చేస్తే అదే parent product
-              brand update అవుతుంది. కొత్త size/colour మాత్రమే ఉంటే
-              duplicate product కాకుండా కొత్త variant create అవుతుంది.
+              అవుతుంది. Different shirt modelsకు Auto Design Code వేరు.
+              ఒకే designలో M/L/XL rowsకు Duplicate button వాడితే
+              same parent product కింద separate size barcodes create అవుతాయి.
             </div>
           </article>
         </section>
@@ -2843,6 +2921,32 @@ export default function PurchasesPage() {
           font-size: 7.5px;
           font-weight: 700;
           line-height: 1.4;
+        }
+
+        .ncsDesignCodeRow {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 8px;
+          align-items: center;
+        }
+
+        .ncsDesignCodeRow input {
+          background: #f3f6fb !important;
+          color: ${ROYAL_BLUE} !important;
+          font-weight: 900 !important;
+          letter-spacing: 0.4px;
+        }
+
+        .ncsDesignCodeRow button {
+          min-height: 44px;
+          padding: 0 12px;
+          border: 1px solid ${GOLD};
+          border-radius: 10px;
+          background: ${ROYAL_BLUE};
+          color: #ffffff;
+          font-size: 9px;
+          font-weight: 900;
+          cursor: pointer;
         }
 
         .barcodeModeField {
