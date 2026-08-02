@@ -11,6 +11,7 @@ type Product = {
   product_name?: string | null;
   title?: string | null;
   slug?: string | null;
+  sku?: string | null;
   category?: string | null;
   subcategory?: string | null;
   brand?: string | null;
@@ -41,6 +42,14 @@ type SortOption =
   | "price-high"
   | "stock-low"
   | "stock-high";
+
+function isQuickBillingProduct(product: Product) {
+  const sku = String(product.sku || "")
+    .trim()
+    .toUpperCase();
+
+  return sku.startsWith("QUICK-");
+}
 
 function getProductName(product: Product) {
   return (
@@ -190,7 +199,11 @@ export default function AdminProductsPage() {
         throw error;
       }
 
-      setProducts((data as Product[]) || []);
+      const catalogueProducts = ((data as Product[]) || []).filter(
+        (product) => !isQuickBillingProduct(product),
+      );
+
+      setProducts(catalogueProducts);
     } catch (error) {
       console.error("Error loading products:", error);
 
