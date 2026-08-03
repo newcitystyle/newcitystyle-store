@@ -3793,6 +3793,40 @@ if (!variantsError) {
           </p>
         </div>
 
+        <div
+          className="ncsPosCustomerQueue"
+          aria-hidden="true"
+        >
+          <div className="ncsPosCounterDesk">
+            <span className="ncsPosCounterScreen">₹</span>
+            <i className="ncsPosCounterScanner" />
+            <b className="ncsPosCounterTick">✓</b>
+          </div>
+
+          <div className="ncsPosQueueTrack">
+            <span className="ncsPosQueuePerson personOne">
+              <i />
+              <b />
+              <em className="ncsPosShoppingBag bagBlue">NCS</em>
+            </span>
+            <span className="ncsPosQueuePerson personTwo">
+              <i />
+              <b />
+              <em className="ncsPosShoppingBag bagGold">NCS</em>
+            </span>
+            <span className="ncsPosQueuePerson personThree">
+              <i />
+              <b />
+              <em className="ncsPosShoppingBag bagBlue">NCS</em>
+            </span>
+            <span className="ncsPosQueuePerson personFour">
+              <i />
+              <b />
+              <em className="ncsPosShoppingBag bagGold">NCS</em>
+            </span>
+          </div>
+        </div>
+
         <div className="ncsPosHeaderActions">
           <button
             type="button"
@@ -3834,6 +3868,23 @@ if (!variantsError) {
       <section className="ncsPosQuickStats" aria-label="POS live summary">
         <article className="ncsPosQuickCard ncsPosSalesCard">
           <div className="ncsPosQuickGlow" />
+
+          <div
+            className="ncsPosMoneyMotion ncsPosMoneyMotionSales"
+            aria-hidden="true"
+          >
+            <span>₹</span>
+            <span>₹</span>
+            <span>₹</span>
+            <span>₹</span>
+            <span>₹</span>
+          </div>
+
+          <div className="ncsPosCoinStack" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </div>
           <div className="ncsPosQuickIcon">₹</div>
 
           <div className="ncsPosQuickContent">
@@ -3863,6 +3914,20 @@ if (!variantsError) {
 
         <article className="ncsPosQuickCard ncsPosCreditCard">
           <div className="ncsPosQuickGlow" />
+
+          <div
+            className="ncsPosMoneyMotion ncsPosMoneyMotionCredit"
+            aria-hidden="true"
+          >
+            <span>₹</span>
+            <span>₹</span>
+            <span>₹</span>
+          </div>
+
+          <div className="ncsPosCreditPulse" aria-hidden="true">
+            <i />
+            <i />
+          </div>
           <div className="ncsPosQuickIcon">◷</div>
 
           <div className="ncsPosQuickContent">
@@ -5448,6 +5513,256 @@ if (!variantsError) {
           font-weight: 550;
         }
 
+        .ncsPosHeader {
+          position: relative;
+        }
+
+        .ncsPosHeader > div:first-child,
+        .ncsPosHeaderActions {
+          position: relative;
+          z-index: 3;
+        }
+
+        .ncsPosCustomerQueue {
+          position: absolute;
+          z-index: 2;
+          right: 285px;
+          bottom: 15px;
+          width: 330px;
+          height: 78px;
+          overflow: hidden;
+          pointer-events: none;
+          opacity: 0.96;
+        }
+
+        .ncsPosQueueTrack {
+          position: absolute;
+          left: 0;
+          right: 78px;
+          bottom: 3px;
+          height: 60px;
+        }
+
+        .ncsPosQueuePerson {
+          position: absolute;
+          bottom: 0;
+          width: 28px;
+          height: 51px;
+          filter: drop-shadow(0 7px 8px rgba(2, 11, 36, 0.28));
+          animation: ncsPosCustomerQueueWalk 11.2s linear infinite;
+          opacity: 0;
+        }
+
+        .ncsPosQueuePerson i {
+          position: absolute;
+          top: 0;
+          left: 7px;
+          width: 14px;
+          height: 14px;
+          border: 2px solid rgba(255, 255, 255, 0.9);
+          border-radius: 50%;
+          background: ${GOLD};
+        }
+
+        .ncsPosQueuePerson b {
+          position: absolute;
+          left: 4px;
+          bottom: 0;
+          width: 20px;
+          height: 33px;
+          border: 2px solid rgba(255, 255, 255, 0.85);
+          border-radius: 10px 10px 6px 6px;
+          background:
+            linear-gradient(
+              180deg,
+              rgba(255, 255, 255, 0.92),
+              rgba(212, 175, 55, 0.86)
+            );
+        }
+
+        .ncsPosQueuePerson b::before,
+        .ncsPosQueuePerson b::after {
+          content: "";
+          position: absolute;
+          top: 5px;
+          width: 7px;
+          height: 22px;
+          border-radius: 7px;
+          background: rgba(255, 255, 255, 0.85);
+        }
+
+        .ncsPosQueuePerson b::before {
+          left: -7px;
+          transform: rotate(8deg);
+        }
+
+        .ncsPosQueuePerson b::after {
+          right: -7px;
+          transform: rotate(-8deg);
+        }
+
+        .ncsPosShoppingBag {
+          position: absolute;
+          z-index: 3;
+          right: -13px;
+          bottom: 3px;
+          width: 22px;
+          height: 24px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(255, 255, 255, 0.74);
+          border-radius: 4px 4px 6px 6px;
+          color: #ffffff;
+          font-size: 5px;
+          font-style: normal;
+          font-weight: 950;
+          letter-spacing: 0.35px;
+          opacity: 0;
+          transform:
+            translate(11px, 8px)
+            rotate(-14deg)
+            scale(0.45);
+          transform-origin: center;
+          box-shadow: 0 6px 10px rgba(2, 11, 36, 0.28);
+          animation:
+            ncsPosBagPickup 11.2s linear infinite,
+            ncsPosBagSwing 1.15s ease-in-out infinite;
+        }
+
+        .ncsPosShoppingBag::before {
+          content: "";
+          position: absolute;
+          left: 5px;
+          top: -7px;
+          width: 10px;
+          height: 8px;
+          border: 2px solid currentColor;
+          border-bottom: 0;
+          border-radius: 7px 7px 0 0;
+          opacity: 0.92;
+        }
+
+        .ncsPosShoppingBag.bagBlue {
+          background:
+            linear-gradient(
+              145deg,
+              #174f9e,
+              #0a2e73 68%,
+              #061d4a
+            );
+          color: #f2d675;
+        }
+
+        .ncsPosShoppingBag.bagGold {
+          background:
+            linear-gradient(
+              145deg,
+              #f6df86,
+              #d4af37 68%,
+              #b8890b
+            );
+          color: #061d4a;
+        }
+
+        .ncsPosQueuePerson.personTwo .ncsPosShoppingBag {
+          animation-delay: -2.8s, -0.18s;
+        }
+
+        .ncsPosQueuePerson.personThree .ncsPosShoppingBag {
+          animation-delay: -5.6s, -0.36s;
+        }
+
+        .ncsPosQueuePerson.personFour .ncsPosShoppingBag {
+          animation-delay: -8.4s, -0.54s;
+        }
+
+        .ncsPosQueuePerson.personTwo {
+          animation-delay: -2.8s;
+        }
+
+        .ncsPosQueuePerson.personThree {
+          animation-delay: -5.6s;
+        }
+
+        .ncsPosQueuePerson.personFour {
+          animation-delay: -8.4s;
+        }
+
+        .ncsPosQueuePerson.personTwo i {
+          background: #74d3ff;
+        }
+
+        .ncsPosQueuePerson.personThree i {
+          background: #ff9f68;
+        }
+
+        .ncsPosQueuePerson.personFour i {
+          background: #72d99d;
+        }
+
+        .ncsPosCounterDesk {
+          position: absolute;
+          right: 2px;
+          bottom: 0;
+          width: 78px;
+          height: 54px;
+          border: 1px solid rgba(212, 175, 55, 0.68);
+          border-radius: 14px 14px 6px 6px;
+          background:
+            linear-gradient(
+              180deg,
+              rgba(255, 255, 255, 0.17),
+              rgba(2, 11, 36, 0.72)
+            );
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.2),
+            0 9px 18px rgba(2, 11, 36, 0.25);
+        }
+
+        .ncsPosCounterScreen {
+          position: absolute;
+          top: -17px;
+          left: 14px;
+          width: 37px;
+          height: 28px;
+          display: grid;
+          place-items: center;
+          border: 2px solid ${GOLD};
+          border-radius: 8px;
+          background: ${DEEP_BLUE};
+          color: ${GOLD};
+          font-size: 14px;
+          font-weight: 950;
+        }
+
+        .ncsPosCounterScanner {
+          position: absolute;
+          right: 10px;
+          top: 12px;
+          width: 18px;
+          height: 11px;
+          border: 2px solid rgba(255, 255, 255, 0.75);
+          border-radius: 4px;
+          transform: rotate(-12deg);
+        }
+
+        .ncsPosCounterTick {
+          position: absolute;
+          right: 8px;
+          top: -17px;
+          width: 25px;
+          height: 25px;
+          display: grid;
+          place-items: center;
+          border-radius: 50%;
+          background: #35c978;
+          color: #ffffff;
+          font-size: 13px;
+          opacity: 0;
+          transform: scale(0.45);
+          animation: ncsPosCounterSuccess 2.8s ease-in-out infinite;
+        }
+
         .ncsPosHeaderActions {
           display: flex;
           flex-wrap: wrap;
@@ -5575,6 +5890,116 @@ if (!variantsError) {
           background: rgba(212, 175, 55, 0.22);
           filter: blur(2px);
           animation: ncsPosQuickGlow 3.4s ease-in-out infinite;
+        }
+
+        .ncsPosMoneyMotion {
+          position: absolute;
+          z-index: -1;
+          inset: 0;
+          overflow: hidden;
+          pointer-events: none;
+        }
+
+        .ncsPosMoneyMotion span {
+          position: absolute;
+          bottom: -28px;
+          color: rgba(212, 175, 55, 0.22);
+          font-size: 30px;
+          font-weight: 950;
+          animation: ncsPosMoneyRise 6.8s linear infinite;
+        }
+
+        .ncsPosMoneyMotion span:nth-child(1) {
+          left: 8%;
+          animation-delay: -0.8s;
+        }
+
+        .ncsPosMoneyMotion span:nth-child(2) {
+          left: 31%;
+          animation-delay: -2.6s;
+          font-size: 22px;
+        }
+
+        .ncsPosMoneyMotion span:nth-child(3) {
+          left: 57%;
+          animation-delay: -4.4s;
+          font-size: 36px;
+        }
+
+        .ncsPosMoneyMotion span:nth-child(4) {
+          left: 76%;
+          animation-delay: -1.9s;
+          font-size: 25px;
+        }
+
+        .ncsPosMoneyMotion span:nth-child(5) {
+          left: 90%;
+          animation-delay: -5.6s;
+          font-size: 20px;
+        }
+
+        .ncsPosMoneyMotionCredit span {
+          color: rgba(255, 255, 255, 0.16);
+          animation-duration: 7.8s;
+        }
+
+        .ncsPosCoinStack {
+          position: absolute;
+          z-index: 0;
+          right: 112px;
+          bottom: 15px;
+          width: 44px;
+          height: 40px;
+          opacity: 0.62;
+        }
+
+        .ncsPosCoinStack i {
+          position: absolute;
+          left: 3px;
+          width: 37px;
+          height: 10px;
+          border: 1px solid rgba(255, 255, 255, 0.35);
+          border-radius: 50%;
+          background: linear-gradient(180deg, #ffe58c, ${GOLD});
+          box-shadow: 0 4px 8px rgba(3, 21, 63, 0.18);
+          animation: ncsPosCoinLift 2.3s ease-in-out infinite;
+        }
+
+        .ncsPosCoinStack i:nth-child(1) {
+          bottom: 0;
+        }
+
+        .ncsPosCoinStack i:nth-child(2) {
+          bottom: 9px;
+          animation-delay: 0.18s;
+        }
+
+        .ncsPosCoinStack i:nth-child(3) {
+          bottom: 18px;
+          animation-delay: 0.36s;
+        }
+
+        .ncsPosCreditPulse {
+          position: absolute;
+          z-index: 0;
+          right: 100px;
+          top: 50%;
+          width: 64px;
+          height: 64px;
+          transform: translateY(-50%);
+          pointer-events: none;
+        }
+
+        .ncsPosCreditPulse i {
+          position: absolute;
+          inset: 12px;
+          border: 2px solid rgba(212, 175, 55, 0.46);
+          border-radius: 50%;
+          animation: ncsPosCreditRing 2.4s ease-out infinite;
+        }
+
+        .ncsPosCreditPulse i:nth-child(2) {
+          animation-delay: 1.2s;
         }
 
         .ncsPosQuickIcon {
@@ -7342,6 +7767,159 @@ if (!variantsError) {
           50% {
             transform: scale(1.12);
             opacity: 1;
+          }
+        }
+
+        @keyframes ncsPosBagPickup {
+          0%,
+          48% {
+            opacity: 0;
+            transform:
+              translate(11px, 8px)
+              rotate(-14deg)
+              scale(0.45);
+          }
+
+          54% {
+            opacity: 0.25;
+            transform:
+              translate(7px, 4px)
+              rotate(-10deg)
+              scale(0.72);
+          }
+
+          60% {
+            opacity: 1;
+            transform:
+              translate(0, 0)
+              rotate(-5deg)
+              scale(1);
+          }
+
+          82% {
+            opacity: 1;
+            transform:
+              translate(-1px, -1px)
+              rotate(4deg)
+              scale(1);
+          }
+
+          100% {
+            opacity: 0;
+            transform:
+              translate(-8px, -3px)
+              rotate(11deg)
+              scale(0.88);
+          }
+        }
+
+        @keyframes ncsPosBagSwing {
+          0%,
+          100% {
+            margin-top: 0;
+          }
+
+          50% {
+            margin-top: -2px;
+          }
+        }
+
+        @keyframes ncsPosCustomerQueueWalk {
+          0% {
+            left: 230px;
+            opacity: 0;
+            transform: translateY(2px) scale(0.9);
+          }
+
+          8% {
+            opacity: 1;
+          }
+
+          55% {
+            left: 76px;
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+
+          68% {
+            left: 58px;
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+
+          83% {
+            left: 32px;
+            opacity: 0.95;
+            transform: translateY(-2px) scale(0.98);
+          }
+
+          100% {
+            left: -36px;
+            opacity: 0;
+            transform: translateY(-3px) scale(0.9);
+          }
+        }
+
+        @keyframes ncsPosCounterSuccess {
+          0%,
+          44%,
+          100% {
+            opacity: 0;
+            transform: scale(0.45);
+          }
+
+          52%,
+          68% {
+            opacity: 1;
+            transform: scale(1);
+          }
+
+          74% {
+            opacity: 0;
+            transform: scale(1.25);
+          }
+        }
+
+        @keyframes ncsPosMoneyRise {
+          0% {
+            transform: translateY(0) rotate(-8deg);
+            opacity: 0;
+          }
+
+          14% {
+            opacity: 1;
+          }
+
+          72% {
+            opacity: 0.45;
+          }
+
+          100% {
+            transform: translateY(-155px) rotate(16deg);
+            opacity: 0;
+          }
+        }
+
+        @keyframes ncsPosCoinLift {
+          0%,
+          100% {
+            transform: translateY(0);
+          }
+
+          50% {
+            transform: translateY(-4px);
+          }
+        }
+
+        @keyframes ncsPosCreditRing {
+          0% {
+            opacity: 0.55;
+            transform: scale(0.45);
+          }
+
+          100% {
+            opacity: 0;
+            transform: scale(1.65);
           }
         }
 

@@ -925,6 +925,38 @@ export default function AdminDashboardPage() {
   return (
     <main className="dashboardPage">
       <section className="hero">
+        <div className="heroMotion" aria-hidden="true">
+          <span className="heroSweep" />
+          <span className="heroOrb heroOrbOne" />
+          <span className="heroOrb heroOrbTwo" />
+          <span className="heroRupee">₹</span>
+
+          <div className="heroShopExit">
+            <div className="heroShopDoor">
+              <span>NCS</span>
+              <i />
+            </div>
+
+            <div className="heroShopCustomer customerA">
+              <span className="heroCustomerHead" />
+              <span className="heroCustomerBody" />
+              <b className="heroCustomerBag bagBlue">NCS</b>
+            </div>
+
+            <div className="heroShopCustomer customerB">
+              <span className="heroCustomerHead" />
+              <span className="heroCustomerBody" />
+              <b className="heroCustomerBag bagGold">NCS</b>
+            </div>
+
+            <div className="heroShopCustomer customerC">
+              <span className="heroCustomerHead" />
+              <span className="heroCustomerBody" />
+              <b className="heroCustomerBag bagBlue">NCS</b>
+            </div>
+          </div>
+        </div>
+
         <div>
           <span>NEW CITY STYLE • BUSINESS COMMAND CENTRE</span>
           <h1>Premium Business Dashboard</h1>
@@ -940,12 +972,15 @@ export default function AdminDashboardPage() {
         <div className="heroActions">
           <button
             type="button"
+            className={refreshing ? "refreshButton refreshing" : "refreshButton"}
             onClick={() => void loadDashboard(true)}
             disabled={refreshing}
           >
             {refreshing ? "Refreshing..." : "↻ Refresh"}
           </button>
-          <Link href="/admin/pos">＋ New Bill</Link>
+          <Link href="/admin/pos" className="newBillButton">
+            ＋ New Bill
+          </Link>
           <button type="button" onClick={handleLogout}>
             Logout
           </button>
@@ -1010,31 +1045,37 @@ export default function AdminDashboardPage() {
       <section className="secondaryKpis">
         <MiniKpi
           label="Cash Balance"
+          motion="cash"
           value={formatCurrency(business.cashBalance)}
           note="Current month estimate"
         />
         <MiniKpi
           label="Digital Balance"
+          motion="digital"
           value={formatCurrency(business.digitalBalance)}
           note="UPI / Card / Bank"
         />
         <MiniKpi
           label="Today Expenses"
+          motion="expense"
           value={formatCurrency(business.todayExpenses)}
           note="Daily expense book"
         />
         <MiniKpi
           label="Month Expenses"
+          motion="expense"
           value={formatCurrency(business.monthExpenses)}
           note="All expense categories"
         />
         <MiniKpi
           label="Month Purchases"
+          motion="purchase"
           value={formatCurrency(business.monthPurchases)}
           note="Supplier stock purchases"
         />
         <MiniKpi
           label="Est. Operating Profit"
+          motion={business.estimatedOperatingProfit >= 0 ? "profit" : "loss"}
           value={formatCurrency(
             business.estimatedOperatingProfit,
           )}
@@ -1450,6 +1491,51 @@ export default function AdminDashboardPage() {
           box-sizing: border-box;
         }
 
+        :global(.ncsSidebarLink.active),
+        :global(.ncsSidebarItem.active),
+        :global(.ncsAdminNavLink.active),
+        :global(.ncsSidebarLink[aria-current="page"]),
+        :global(.ncsSidebarItem[aria-current="page"]),
+        :global(.ncsAdminNavLink[aria-current="page"]) {
+          position: relative;
+          overflow: hidden;
+          isolation: isolate;
+        }
+
+        :global(.ncsSidebarLink.active)::after,
+        :global(.ncsSidebarItem.active)::after,
+        :global(.ncsAdminNavLink.active)::after,
+        :global(.ncsSidebarLink[aria-current="page"])::after,
+        :global(.ncsSidebarItem[aria-current="page"])::after,
+        :global(.ncsAdminNavLink[aria-current="page"])::after {
+          content: "";
+          position: absolute;
+          z-index: -1;
+          top: -25%;
+          left: -55%;
+          width: 34%;
+          height: 150%;
+          background:
+            linear-gradient(
+              90deg,
+              transparent,
+              rgba(255, 255, 255, 0.56),
+              rgba(255, 245, 184, 0.72),
+              transparent
+            );
+          transform: rotate(16deg);
+          animation: selectedMenuGoldShine 3.2s ease-in-out infinite;
+        }
+
+        :global(.ncsSidebarLink.active),
+        :global(.ncsSidebarItem.active),
+        :global(.ncsAdminNavLink.active),
+        :global(.ncsSidebarLink[aria-current="page"]),
+        :global(.ncsSidebarItem[aria-current="page"]),
+        :global(.ncsAdminNavLink[aria-current="page"]) {
+          animation: selectedMenuGoldGlow 2.4s ease-in-out infinite;
+        }
+
         .dashboardPage {
           min-height: 100vh;
           padding: 24px;
@@ -1465,6 +1551,7 @@ export default function AdminDashboardPage() {
         }
 
         .hero {
+          position: relative;
           display: flex;
           align-items: flex-end;
           justify-content: space-between;
@@ -1487,6 +1574,226 @@ export default function AdminDashboardPage() {
             );
           color: #ffffff;
           box-shadow: 0 20px 48px rgba(3, 21, 63, 0.2);
+        }
+
+        .hero > div:not(.heroMotion) {
+          position: relative;
+          z-index: 2;
+        }
+
+        .heroMotion {
+          position: absolute;
+          z-index: 1;
+          inset: 0;
+          overflow: hidden;
+          pointer-events: none;
+        }
+
+        .heroSweep {
+          position: absolute;
+          top: -35%;
+          left: -35%;
+          width: 28%;
+          height: 170%;
+          background:
+            linear-gradient(
+              90deg,
+              transparent,
+              rgba(255, 255, 255, 0.22),
+              rgba(212, 175, 55, 0.25),
+              transparent
+            );
+          transform: rotate(17deg);
+          animation: heroSweep 7.5s ease-in-out infinite;
+        }
+
+        .heroOrb {
+          position: absolute;
+          border-radius: 50%;
+          background:
+            radial-gradient(
+              circle,
+              rgba(212, 175, 55, 0.3),
+              rgba(212, 175, 55, 0.05) 55%,
+              transparent 72%
+            );
+          filter: blur(2px);
+          animation: heroOrbFloat 6.8s ease-in-out infinite;
+        }
+
+        .heroOrbOne {
+          width: 190px;
+          height: 190px;
+          right: 12%;
+          top: -90px;
+        }
+
+        .heroOrbTwo {
+          width: 120px;
+          height: 120px;
+          right: 35%;
+          bottom: -70px;
+          animation-delay: -2.8s;
+        }
+
+        .heroRupee {
+          position: absolute;
+          right: 30%;
+          top: 20px;
+          color: rgba(212, 175, 55, 0.16);
+          font-size: 88px;
+          font-weight: 950;
+          animation: heroRupeeFloat 5.8s ease-in-out infinite;
+        }
+
+        .heroShopExit {
+          position: absolute;
+          right: 255px;
+          bottom: 10px;
+          width: 310px;
+          height: 108px;
+          overflow: hidden;
+          pointer-events: none;
+        }
+
+        .heroShopDoor {
+          position: absolute;
+          right: 4px;
+          bottom: 0;
+          width: 76px;
+          height: 92px;
+          border: 1px solid rgba(212, 175, 55, 0.74);
+          border-radius: 16px 16px 5px 5px;
+          background:
+            linear-gradient(
+              180deg,
+              rgba(255, 255, 255, 0.15),
+              rgba(2, 11, 36, 0.8)
+            );
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.18),
+            0 12px 24px rgba(2, 11, 36, 0.24);
+        }
+
+        .heroShopDoor span {
+          position: absolute;
+          top: 10px;
+          left: 50%;
+          transform: translateX(-50%);
+          color: ${GOLD};
+          font-size: 12px;
+          font-weight: 950;
+          letter-spacing: 1px;
+        }
+
+        .heroShopDoor i {
+          position: absolute;
+          left: 12px;
+          right: 12px;
+          bottom: 10px;
+          height: 58px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          border-radius: 7px 7px 2px 2px;
+          background:
+            linear-gradient(
+              90deg,
+              rgba(255, 255, 255, 0.09),
+              rgba(212, 175, 55, 0.11)
+            );
+        }
+
+        .heroShopCustomer {
+          position: absolute;
+          z-index: 3;
+          right: 28px;
+          bottom: 6px;
+          width: 34px;
+          height: 67px;
+          opacity: 0;
+          filter: drop-shadow(0 8px 9px rgba(2, 11, 36, 0.32));
+          animation: heroCustomerExit 12s linear infinite;
+        }
+
+        .heroShopCustomer.customerB {
+          animation-delay: -4s;
+        }
+
+        .heroShopCustomer.customerC {
+          animation-delay: -8s;
+        }
+
+        .heroCustomerHead {
+          position: absolute;
+          top: 0;
+          left: 10px;
+          width: 15px;
+          height: 15px;
+          border: 2px solid rgba(255, 255, 255, 0.88);
+          border-radius: 50%;
+          background: #f0c07d;
+        }
+
+        .heroCustomerBody {
+          position: absolute;
+          left: 6px;
+          bottom: 0;
+          width: 23px;
+          height: 45px;
+          border: 2px solid rgba(255, 255, 255, 0.82);
+          border-radius: 12px 12px 7px 7px;
+          background:
+            linear-gradient(
+              180deg,
+              rgba(255, 255, 255, 0.93),
+              rgba(212, 175, 55, 0.75)
+            );
+        }
+
+        .customerB .heroCustomerHead {
+          background: #86d7ff;
+        }
+
+        .customerC .heroCustomerHead {
+          background: #85dda7;
+        }
+
+        .heroCustomerBag {
+          position: absolute;
+          right: -13px;
+          bottom: 4px;
+          width: 24px;
+          height: 28px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(255, 255, 255, 0.76);
+          border-radius: 4px 4px 7px 7px;
+          font-size: 5px;
+          font-weight: 950;
+          letter-spacing: 0.4px;
+          box-shadow: 0 7px 12px rgba(2, 11, 36, 0.28);
+          animation: heroBagSwing 1.2s ease-in-out infinite;
+        }
+
+        .heroCustomerBag::before {
+          content: "";
+          position: absolute;
+          left: 5px;
+          top: -7px;
+          width: 11px;
+          height: 8px;
+          border: 2px solid currentColor;
+          border-bottom: 0;
+          border-radius: 7px 7px 0 0;
+        }
+
+        .heroCustomerBag.bagBlue {
+          background: linear-gradient(145deg, #174f9e, #0a2e73, #061d4a);
+          color: #f3d66f;
+        }
+
+        .heroCustomerBag.bagGold {
+          background: linear-gradient(145deg, #f6df86, #d4af37, #b8890b);
+          color: #061d4a;
         }
 
         .hero span,
@@ -1537,6 +1844,33 @@ export default function AdminDashboardPage() {
           font-weight: 900;
           text-decoration: none;
           cursor: pointer;
+        }
+
+        .refreshButton.refreshing {
+          animation: refreshPulse 1s ease-in-out infinite;
+        }
+
+        .refreshButton.refreshing::first-letter {
+          display: inline-block;
+          animation: refreshSpin 0.8s linear infinite;
+        }
+
+        :global(.newBillButton) {
+          position: relative;
+          overflow: hidden;
+          animation: newBillGlow 2.4s ease-in-out infinite;
+        }
+
+        :global(.newBillButton)::after {
+          content: "";
+          position: absolute;
+          top: -20%;
+          left: -55%;
+          width: 32%;
+          height: 140%;
+          background: rgba(255, 255, 255, 0.48);
+          transform: rotate(18deg);
+          animation: newBillShine 3.5s ease-in-out infinite;
         }
 
         .heroActions button {
@@ -1899,6 +2233,300 @@ export default function AdminDashboardPage() {
           }
         }
 
+        @keyframes heroCustomerExit {
+          0% {
+            right: 26px;
+            opacity: 0;
+            transform: translateY(2px) scale(0.88);
+          }
+
+          8% {
+            opacity: 1;
+          }
+
+          24% {
+            right: 72px;
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+
+          45% {
+            right: 142px;
+            opacity: 1;
+          }
+
+          72% {
+            right: 230px;
+            opacity: 1;
+            transform: translateY(-2px) scale(0.98);
+          }
+
+          100% {
+            right: 324px;
+            opacity: 0;
+            transform: translateY(-4px) scale(0.9);
+          }
+        }
+
+        @keyframes heroBagSwing {
+          0%,
+          100% {
+            transform: rotate(-5deg) translateY(0);
+          }
+
+          50% {
+            transform: rotate(6deg) translateY(-2px);
+          }
+        }
+
+        @keyframes selectedMenuGoldShine {
+          0%,
+          58% {
+            left: -55%;
+          }
+
+          82%,
+          100% {
+            left: 135%;
+          }
+        }
+
+        @keyframes selectedMenuGoldGlow {
+          0%,
+          100% {
+            box-shadow:
+              inset 0 0 0 1px rgba(212, 175, 55, 0.18),
+              0 7px 18px rgba(212, 175, 55, 0.12);
+          }
+
+          50% {
+            box-shadow:
+              inset 0 0 0 1px rgba(255, 239, 159, 0.44),
+              0 10px 26px rgba(212, 175, 55, 0.26);
+          }
+        }
+
+        @keyframes heroSweep {
+          0%,
+          18% {
+            left: -38%;
+            opacity: 0;
+          }
+
+          36% {
+            opacity: 1;
+          }
+
+          64%,
+          100% {
+            left: 125%;
+            opacity: 0;
+          }
+        }
+
+        @keyframes heroOrbFloat {
+          0%,
+          100% {
+            transform: translateY(0) scale(1);
+          }
+
+          50% {
+            transform: translateY(12px) scale(1.06);
+          }
+        }
+
+        @keyframes heroRupeeFloat {
+          0%,
+          100% {
+            transform: translateY(0) rotate(-7deg);
+          }
+
+          50% {
+            transform: translateY(12px) rotate(4deg);
+          }
+        }
+
+        @keyframes refreshPulse {
+          0%,
+          100% {
+            box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+          }
+
+          50% {
+            box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.12);
+          }
+        }
+
+        @keyframes newBillGlow {
+          0%,
+          100% {
+            box-shadow: 0 7px 18px rgba(212, 175, 55, 0.18);
+          }
+
+          50% {
+            box-shadow: 0 10px 28px rgba(212, 175, 55, 0.34);
+          }
+        }
+
+        @keyframes newBillShine {
+          0%,
+          58% {
+            left: -55%;
+          }
+
+          82%,
+          100% {
+            left: 135%;
+          }
+        }
+
+        @keyframes kpiMoneyRise {
+          0% {
+            transform: translateY(0) rotate(-7deg);
+            opacity: 0;
+          }
+
+          16% {
+            opacity: 1;
+          }
+
+          100% {
+            transform: translateY(-150px) rotate(14deg);
+            opacity: 0;
+          }
+        }
+
+        @keyframes kpiPulseRing {
+          0% {
+            opacity: 0.38;
+            transform: scale(0.55);
+          }
+
+          100% {
+            opacity: 0;
+            transform: scale(1.75);
+          }
+        }
+
+        @keyframes miniCoinStack {
+          0%,
+          100% {
+            transform: translateY(0);
+          }
+
+          50% {
+            transform: translateY(-4px);
+          }
+        }
+
+        @keyframes miniDigitalWave {
+          0% {
+            opacity: 0.46;
+            transform: scale(0.45);
+          }
+
+          100% {
+            opacity: 0;
+            transform: scale(1.7);
+          }
+        }
+
+        @keyframes miniSymbolFloat {
+          0%,
+          100% {
+            transform: translateY(0);
+          }
+
+          50% {
+            transform: translateY(5px);
+          }
+        }
+
+        @keyframes lossGlow {
+          0%,
+          100% {
+            box-shadow: 0 0 0 rgba(244, 67, 54, 0);
+          }
+
+          50% {
+            box-shadow: 0 0 18px rgba(244, 67, 54, 0.2);
+          }
+        }
+
+        @keyframes profitGlow {
+          0%,
+          100% {
+            box-shadow: 0 0 0 rgba(18, 183, 106, 0);
+          }
+
+          50% {
+            box-shadow: 0 0 18px rgba(18, 183, 106, 0.2);
+          }
+        }
+
+        @keyframes alertSoftPulse {
+          0%,
+          100% {
+            transform: translateX(0);
+            box-shadow: 0 0 0 rgba(10, 46, 115, 0);
+          }
+
+          50% {
+            transform: translateX(2px);
+            box-shadow: 0 7px 16px rgba(10, 46, 115, 0.08);
+          }
+        }
+
+        @keyframes quickIconFloat {
+          0%,
+          100% {
+            transform: translateY(0) scale(1);
+          }
+
+          50% {
+            transform: translateY(-3px) scale(1.06);
+          }
+        }
+
+        @keyframes quickIconGlow {
+          0%,
+          100% {
+            opacity: 0.45;
+            transform: scale(0.82);
+          }
+
+          50% {
+            opacity: 1;
+            transform: scale(1.16);
+          }
+        }
+
+        @keyframes quickIconRing {
+          0% {
+            opacity: 0.48;
+            transform: scale(0.72);
+          }
+
+          100% {
+            opacity: 0;
+            transform: scale(1.38);
+          }
+        }
+
+        @keyframes quickIconPop {
+          0% {
+            transform: scale(1);
+          }
+
+          45% {
+            transform: scale(1.24) rotate(-6deg);
+          }
+
+          100% {
+            transform: scale(1.08);
+          }
+        }
+
         @media (max-width: 1250px) {
           .primaryKpis {
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1931,6 +2559,23 @@ export default function AdminDashboardPage() {
           }
         }
 
+        @media (prefers-reduced-motion: reduce) {
+          .heroSweep,
+          .heroOrb,
+          .heroRupee,
+          .businessKpiMotion span,
+          .businessKpiPulse,
+          .miniMotion i,
+          .miniSymbol,
+          :global(.newBillButton),
+          :global(.alertRow.activeAlert),
+          .quickActionIcon b,
+          .quickActionIconGlow,
+          .quickActionIconRing {
+            animation: none !important;
+          }
+        }
+
         @media (max-width: 720px) {
           .dashboardPage {
             padding: 12px 8px 30px;
@@ -1938,6 +2583,16 @@ export default function AdminDashboardPage() {
 
           .hero {
             padding: 20px;
+          }
+
+          .heroOrbTwo,
+          .heroRupee,
+          .heroShopExit {
+            display: none;
+          }
+
+          .businessKpiMotion span:nth-child(n + 2) {
+            display: none;
           }
 
           .heroActions {
@@ -1987,6 +2642,14 @@ function BusinessKpi({
 }: BusinessKpiProps) {
   return (
     <article className={`businessKpi ${tone}`}>
+      <div className="businessKpiMotion" aria-hidden="true">
+        <span>₹</span>
+        <span>₹</span>
+        <span>₹</span>
+      </div>
+
+      <div className="businessKpiPulse" aria-hidden="true" />
+
       <div className="businessKpiIcon">{icon}</div>
       <div>
         <span>{label}</span>
@@ -2026,6 +2689,56 @@ function BusinessKpi({
 
         .businessKpi.red {
           background: linear-gradient(135deg, #4c2131, #0a2e73);
+        }
+
+        .businessKpiMotion {
+          position: absolute;
+          z-index: 0;
+          inset: 0;
+          overflow: hidden;
+          pointer-events: none;
+        }
+
+        .businessKpiMotion span {
+          position: absolute;
+          bottom: -28px;
+          color: rgba(212, 175, 55, 0.13);
+          font-size: 30px;
+          font-weight: 950;
+          animation: kpiMoneyRise 7s linear infinite;
+        }
+
+        .businessKpiMotion span:nth-child(1) {
+          left: 9%;
+          animation-delay: -1.2s;
+        }
+
+        .businessKpiMotion span:nth-child(2) {
+          left: 58%;
+          animation-delay: -3.8s;
+          font-size: 22px;
+        }
+
+        .businessKpiMotion span:nth-child(3) {
+          left: 84%;
+          animation-delay: -5.6s;
+          font-size: 38px;
+        }
+
+        .businessKpiPulse {
+          position: absolute;
+          right: 22px;
+          bottom: 18px;
+          width: 44px;
+          height: 44px;
+          border: 2px solid rgba(212, 175, 55, 0.35);
+          border-radius: 50%;
+          animation: kpiPulseRing 2.8s ease-out infinite;
+        }
+
+        .businessKpi > div:not(.businessKpiMotion):not(.businessKpiPulse) {
+          position: relative;
+          z-index: 2;
         }
 
         .businessKpi::after {
@@ -2097,18 +2810,48 @@ type MiniKpiProps = {
   label: string;
   value: string;
   note: string;
+  motion?: "cash" | "digital" | "expense" | "purchase" | "profit" | "loss";
 };
 
-function MiniKpi({ label, value, note }: MiniKpiProps) {
+function MiniKpi({
+  label,
+  value,
+  note,
+  motion,
+}: MiniKpiProps) {
   return (
-    <article className="miniKpi">
+    <article className={`miniKpi ${motion || ""}`}>
+      <div className="miniMotion" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </div>
+
+      <div className="miniSymbol" aria-hidden="true">
+        {motion === "cash"
+          ? "₹"
+          : motion === "digital"
+            ? "◈"
+            : motion === "expense"
+              ? "↓"
+              : motion === "purchase"
+                ? "▣"
+                : motion === "profit"
+                  ? "↗"
+                  : motion === "loss"
+                    ? "↘"
+                    : ""}
+      </div>
+
       <span>{label}</span>
       <strong>{value}</strong>
       <small>{note}</small>
 
       <style jsx>{`
         .miniKpi {
+          position: relative;
           min-width: 0;
+          overflow: hidden;
           min-height: 91px;
           padding: 13px;
           border: 1px solid rgba(212, 175, 55, 0.23);
@@ -2119,6 +2862,85 @@ function MiniKpi({ label, value, note }: MiniKpiProps) {
             ${DEEP_BLUE}
           );
           color: #ffffff;
+        }
+
+        .miniKpi > span,
+        .miniKpi > strong,
+        .miniKpi > small {
+          position: relative;
+          z-index: 2;
+        }
+
+        .miniMotion {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+        }
+
+        .miniMotion i {
+          position: absolute;
+          right: 18px;
+          bottom: 13px;
+          width: 30px;
+          height: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.28);
+          border-radius: 50%;
+          background: linear-gradient(180deg, #ffe58c, ${GOLD});
+          opacity: 0;
+        }
+
+        .miniKpi.cash .miniMotion i {
+          opacity: 0.5;
+          animation: miniCoinStack 2.5s ease-in-out infinite;
+        }
+
+        .miniKpi.cash .miniMotion i:nth-child(2) {
+          bottom: 20px;
+          animation-delay: 0.18s;
+        }
+
+        .miniKpi.cash .miniMotion i:nth-child(3) {
+          bottom: 27px;
+          animation-delay: 0.36s;
+        }
+
+        .miniKpi.digital .miniMotion i {
+          right: 24px;
+          bottom: 20px;
+          width: 18px;
+          height: 18px;
+          border: 2px solid rgba(212, 175, 55, 0.4);
+          border-radius: 50%;
+          background: transparent;
+          opacity: 1;
+          animation: miniDigitalWave 2.4s ease-out infinite;
+        }
+
+        .miniKpi.digital .miniMotion i:nth-child(2) {
+          animation-delay: 0.8s;
+        }
+
+        .miniKpi.digital .miniMotion i:nth-child(3) {
+          animation-delay: 1.6s;
+        }
+
+        .miniKpi.loss {
+          animation: lossGlow 2.6s ease-in-out infinite;
+        }
+
+        .miniKpi.profit {
+          animation: profitGlow 2.6s ease-in-out infinite;
+        }
+
+        .miniSymbol {
+          position: absolute;
+          z-index: 1;
+          right: 12px;
+          top: 12px;
+          color: rgba(212, 175, 55, 0.18);
+          font-size: 28px;
+          font-weight: 950;
+          animation: miniSymbolFloat 3.6s ease-in-out infinite;
         }
 
         span,
@@ -2168,13 +2990,19 @@ function QuickAction({
 }: QuickActionProps) {
   return (
     <Link href={href} className="quickAction">
-      <div>{icon}</div>
+      <div className="quickActionIcon">
+        <span className="quickActionIconGlow" aria-hidden="true" />
+        <span className="quickActionIconRing" aria-hidden="true" />
+        <b>{icon}</b>
+      </div>
       <strong>{title}</strong>
       <span>{text}</span>
 
       <style jsx>{`
         :global(.quickAction) {
+          position: relative;
           min-height: 112px;
+          overflow: hidden;
           display: flex;
           flex-direction: column;
           padding: 13px;
@@ -2191,20 +3019,121 @@ function QuickAction({
             box-shadow 0.2s ease;
         }
 
+        :global(.quickAction)::after {
+          content: "";
+          position: absolute;
+          top: -30%;
+          left: -60%;
+          width: 34%;
+          height: 170%;
+          background:
+            linear-gradient(
+              90deg,
+              transparent,
+              rgba(255, 255, 255, 0.2),
+              transparent
+            );
+          transform: rotate(18deg);
+          transition: left 0.55s ease;
+        }
+
+        :global(.quickAction:hover)::after {
+          left: 130%;
+        }
+
+        :global(.quickAction:hover) .quickActionIcon {
+          transform: translateY(-4px) rotate(-3deg) scale(1.05);
+          border-color: rgba(212, 175, 55, 0.82);
+          box-shadow:
+            0 10px 22px rgba(212, 175, 55, 0.24),
+            inset 0 1px 0 rgba(255, 255, 255, 0.18);
+        }
+
+        :global(.quickAction:hover) .quickActionIcon b {
+          animation: quickIconPop 0.55s ease both;
+        }
+
         :global(.quickAction:hover) {
           transform: translateY(-3px);
           box-shadow: 0 13px 25px rgba(3, 21, 63, 0.18);
         }
 
-        div {
-          width: 36px;
-          height: 36px;
+        .quickActionIcon {
+          position: relative;
+          width: 40px;
+          height: 40px;
           display: grid;
           place-items: center;
-          border: 1px solid rgba(212, 175, 55, 0.4);
-          border-radius: 10px;
-          background: rgba(255, 255, 255, 0.08);
-          font-size: 15px;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.48);
+          border-radius: 12px;
+          background:
+            radial-gradient(
+              circle at 30% 25%,
+              rgba(255, 255, 255, 0.18),
+              transparent 48%
+            ),
+            rgba(255, 255, 255, 0.08);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.12),
+            0 7px 16px rgba(2, 11, 36, 0.18);
+          transition:
+            transform 0.22s ease,
+            box-shadow 0.22s ease,
+            border-color 0.22s ease;
+        }
+
+        .quickActionIcon b {
+          position: relative;
+          z-index: 3;
+          font-size: 16px;
+          line-height: 1;
+          animation: quickIconFloat 2.8s ease-in-out infinite;
+        }
+
+        .quickActionIconGlow {
+          position: absolute;
+          z-index: 1;
+          width: 26px;
+          height: 26px;
+          border-radius: 50%;
+          background:
+            radial-gradient(
+              circle,
+              rgba(212, 175, 55, 0.42),
+              rgba(212, 175, 55, 0.08) 58%,
+              transparent 72%
+            );
+          animation: quickIconGlow 2.2s ease-in-out infinite;
+        }
+
+        .quickActionIconRing {
+          position: absolute;
+          z-index: 2;
+          inset: 5px;
+          border: 1px solid rgba(212, 175, 55, 0.42);
+          border-radius: 50%;
+          animation: quickIconRing 2.6s ease-out infinite;
+        }
+
+        :global(.quickAction:nth-child(2)) .quickActionIcon b {
+          animation-delay: -0.35s;
+        }
+
+        :global(.quickAction:nth-child(3)) .quickActionIcon b {
+          animation-delay: -0.7s;
+        }
+
+        :global(.quickAction:nth-child(4)) .quickActionIcon b {
+          animation-delay: -1.05s;
+        }
+
+        :global(.quickAction:nth-child(5)) .quickActionIcon b {
+          animation-delay: -1.4s;
+        }
+
+        :global(.quickAction:nth-child(6)) .quickActionIcon b {
+          animation-delay: -1.75s;
         }
 
         strong {
@@ -2241,7 +3170,10 @@ function AlertRow({
   tone,
 }: AlertRowProps) {
   return (
-    <Link href={href} className={`alertRow ${tone}`}>
+    <Link
+      href={href}
+      className={`alertRow ${tone} ${value > 0 ? "activeAlert" : ""}`}
+    >
       <div>{icon}</div>
       <span>{title}</span>
       <strong>{value}</strong>
@@ -2275,6 +3207,10 @@ function AlertRow({
 
         :global(.alertRow.green) {
           border-left-color: #12b76a;
+        }
+
+        :global(.alertRow.activeAlert) {
+          animation: alertSoftPulse 2.8s ease-in-out infinite;
         }
 
         div {

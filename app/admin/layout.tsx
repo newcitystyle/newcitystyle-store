@@ -3,6 +3,7 @@
 import {
   type ReactNode,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import Link from "next/link";
@@ -28,6 +29,11 @@ const menuItems = [
     label: "Cash & Bank Book",
     href: "/admin/cash-bank-book",
     icon: "🏦",
+  },
+  {
+    label: "Bank Cheques",
+    href: "/admin/cheque-reminders",
+    icon: "📝",
   },
   {
     label: "Party Ledgers",
@@ -63,6 +69,11 @@ const menuItems = [
   { label: "Returns", href: "/admin/returns", icon: "↩️" },
   { label: "Customers", href: "/admin/customers", icon: "👥" },
   {
+    label: "Customer Requests",
+    href: "/admin/customer-requests",
+    icon: "🔔",
+  },
+  {
     label: "Customer Dues",
     href: "/admin/customer-dues",
     icon: "💰",
@@ -88,6 +99,485 @@ const menuItems = [
     icon: "⚙️",
   },
 ];
+
+
+
+
+type TickerAlertItem = {
+  id: string;
+  type: "critical" | "warning" | "success" | "info" | "bank";
+  label: string;
+  message: string;
+  href: string;
+  isBankCheque: boolean;
+};
+
+const TICKER_DAY_MS = 86_400_000;
+
+function startOfTickerDay(value: number) {
+  const date = new Date(value);
+
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  ).getTime();
+}
+
+function formatTickerMoney(value: number) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function formatTickerDate(value: number) {
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function getTickerWaitingDays(
+  createdAt: string | null | undefined
+) {
+  if (!createdAt) return 0;
+
+  const created = new Date(createdAt).getTime();
+
+  if (!Number.isFinite(created)) return 0;
+
+  return Math.max(
+    0,
+    Math.floor((Date.now() - created) / TICKER_DAY_MS)
+  );
+}
+
+function BusinessAlertTicker() {
+  const pathname = usePathname();
+
+  const [requestRows, setRequestRows] = useState<
+    Record<string, unknown>[]
+  >([]);
+  const [productRows, setProductRows] = useState<
+    Record<string, unknown>[]
+  >([]);
+  const [businessAlertRows, setBusinessAlertRows] = useState<
+    Record<string, unknown>[]
+  >([]);
+  const [chequeRows, setChequeRows] = useState<
+    Record<string, unknown>[]
+  >([]);
+
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [phase, setPhase] = useState<
+    "entering" | "holding" | "leaving"
+  >("entering");
+
+  async function loadTickerData() {
+    const [
+      requestsResult,
+      productsResult,
+      alertsResult,
+      chequesResult,
+    ] = await Promise.all([
+      supabase
+        .from("customer_product_requests")
+        .select("*")
+        .in("status", [
+          "WAITING",
+          "MATCH_FOUND",
+          "CUSTOMER_CONTACTED",
+          "RESERVED",
+        ])
+        .order("created_at", { ascending: true })
+        .limit(30),
+
+      supabase.from("products").select("*").limit(120),
+
+      supabase
+        .from("business_alerts")
+        .select("*")
+        .eq("is_resolved", false)
+        .order("created_at", { ascending: false })
+        .limit(30),
+
+      supabase
+        .from("billing_cheques")
+        .select("*")
+        .eq("status", "UPCOMING")
+        .eq("is_deleted", false)
+        .order("due_date", { ascending: true })
+        .limit(50),
+    ]);
+
+    if (!requestsResult.error) {
+      setRequestRows(
+        (requestsResult.data as Record<string, unknown>[]) || []
+      );
+    }
+
+    if (!productsResult.error) {
+      setProductRows(
+        (productsResult.data as Record<string, unknown>[]) || []
+      );
+    }
+
+    if (!alertsResult.error) {
+      setBusinessAlertRows(
+        (alertsResult.data as Record<string, unknown>[]) || []
+      );
+    }
+
+    if (!chequesResult.error) {
+      setChequeRows(
+        (chequesResult.data as Record<string, unknown>[]) || []
+      );
+    }
+  }
+
+  useEffect(() => {
+    if (pathname === "/admin/login") return;
+
+    void loadTickerData();
+
+    const channel = supabase
+      .channel("ncs-all-business-alerts-ticker")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "customer_product_requests",
+        },
+        () => void loadTickerData()
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "products",
+        },
+        () => void loadTickerData()
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "business_alerts",
+        },
+        () => void loadTickerData()
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "billing_cheques",
+        },
+        () => void loadTickerData()
+      )
+      .subscribe();
+
+    const refreshTimer = window.setInterval(
+      () => void loadTickerData(),
+      60_000
+    );
+
+    return () => {
+      window.clearInterval(refreshTimer);
+      void supabase.removeChannel(channel);
+    };
+  }, [pathname]);
+
+  const tickerItems = useMemo<TickerAlertItem[]>(() => {
+    const items: TickerAlertItem[] = [];
+
+    requestRows.forEach((row) => {
+      const id = String(row.id || crypto.randomUUID());
+      const status = String(row.status || "WAITING");
+      const customerName = String(
+        row.customer_name || "Customer"
+      ).trim();
+      const itemName = String(
+        row.product_name ||
+          row.item_name ||
+          row.category ||
+          "Requested item"
+      ).trim();
+      const size = String(row.size || "").trim();
+      const colour = String(
+        row.colour || row.color || ""
+      ).trim();
+      const waitingDays = getTickerWaitingDays(
+        String(row.requested_at || row.created_at || "")
+      );
+
+      if (status === "MATCH_FOUND") {
+        items.push({
+          id: `request-match-${id}`,
+          type: "success",
+          label: "STOCK MATCH",
+          message: `${itemName}${
+            size ? ` • Size ${size}` : ""
+          }${colour ? ` • ${colour}` : ""} • ${customerName} is waiting`,
+          href: "/admin/customer-requests?status=MATCH_FOUND",
+          isBankCheque: false,
+        });
+        return;
+      }
+
+      items.push({
+        id: `request-${id}`,
+        type:
+          waitingDays >= 15
+            ? "critical"
+            : waitingDays >= 7
+              ? "warning"
+              : "info",
+        label: "CUSTOMER REQUEST",
+        message: `${customerName} • ${itemName}${
+          size ? ` • Size ${size}` : ""
+        } • waiting ${waitingDays} day${
+          waitingDays === 1 ? "" : "s"
+        }`,
+        href: "/admin/customer-requests",
+        isBankCheque: false,
+      });
+    });
+
+    productRows.forEach((row) => {
+      const stock = Number(
+        row.stock ??
+          row.quantity ??
+          row.total_stock ??
+          row.available_stock ??
+          0
+      );
+      const lowStockLimit = Number(
+        row.low_stock_limit ??
+          row.lowStockLimit ??
+          row.low_stock_alert ??
+          5
+      );
+      const isActive =
+        row.is_active === undefined ||
+        row.is_active === null ||
+        row.is_active === true;
+
+      if (
+        !isActive ||
+        !Number.isFinite(stock) ||
+        stock > lowStockLimit
+      ) {
+        return;
+      }
+
+      const id = String(row.id || crypto.randomUUID());
+      const name = String(
+        row.product_name ||
+          row.name ||
+          row.title ||
+          "Product"
+      ).trim();
+
+      items.push({
+        id: `stock-${id}`,
+        type: stock <= 0 ? "critical" : "warning",
+        label: stock <= 0 ? "OUT OF STOCK" : "LOW STOCK",
+        message: `${name} • ${
+          stock <= 0 ? "No stock left" : `${stock} left`
+        } • alert at ${lowStockLimit}`,
+        href: "/admin/products",
+        isBankCheque: false,
+      });
+    });
+
+    businessAlertRows.forEach((row) => {
+      const id = String(row.id || crypto.randomUUID());
+      const priority = String(
+        row.priority || "INFO"
+      ).toUpperCase();
+
+      items.push({
+        id: `business-${id}`,
+        type:
+          priority === "CRITICAL"
+            ? "critical"
+            : priority === "WARNING"
+              ? "warning"
+              : priority === "SUCCESS"
+                ? "success"
+                : "info",
+        label: String(
+          row.title || row.alert_type || "BUSINESS ALERT"
+        ).toUpperCase(),
+        message: String(row.message || "").trim(),
+        href: String(row.target_route || "/admin/dashboard"),
+        isBankCheque: false,
+      });
+    });
+
+    const today = startOfTickerDay(Date.now());
+
+    chequeRows.forEach((row) => {
+      const dueDate = startOfTickerDay(Number(row.due_date));
+      const difference = Math.round(
+        (dueDate - today) / TICKER_DAY_MS
+      );
+
+      if (!Number.isFinite(difference) || difference > 2) {
+        return;
+      }
+
+      const label =
+        difference < 0
+          ? `CHEQUE OVERDUE ${Math.abs(difference)} DAY${
+              Math.abs(difference) === 1 ? "" : "S"
+            }`
+          : difference === 0
+            ? "CHEQUE DUE TODAY"
+            : difference === 1
+              ? "CHEQUE DUE TOMORROW"
+              : "CHEQUE DUE IN 2 DAYS";
+
+      items.push({
+        id: `cheque-${String(row.id || crypto.randomUUID())}`,
+        type: "bank",
+        label,
+        message: `${String(
+          row.supplier_name || "Supplier"
+        )} • ${formatTickerMoney(Number(row.amount || 0))} • ${String(
+          row.bank_name || "Bank"
+        )} / ${String(row.cheque_number || "")} • ${formatTickerDate(
+          dueDate
+        )}`,
+        href: "/admin/cheque-reminders",
+        isBankCheque: true,
+      });
+    });
+
+    if (items.length === 0) {
+      items.push({
+        id: "all-clear",
+        type: "success",
+        label: "ALL SYSTEMS READY",
+        message:
+          "No urgent customer requests, stock alerts or cheque reminders.",
+        href: "/admin/dashboard",
+        isBankCheque: false,
+      });
+    }
+
+    return items.slice(0, 60);
+  }, [
+    requestRows,
+    productRows,
+    businessAlertRows,
+    chequeRows,
+  ]);
+
+  useEffect(() => {
+    setActiveIndex((current) =>
+      tickerItems.length === 0
+        ? 0
+        : current % tickerItems.length
+    );
+  }, [tickerItems.length]);
+
+  const activeItem =
+    tickerItems[activeIndex % tickerItems.length];
+
+  useEffect(() => {
+    if (!activeItem) return;
+
+    setPhase("entering");
+
+    const enterTime = 850;
+    const holdTime = activeItem.isBankCheque ? 5_000 : 700;
+    const leaveTime = 850;
+
+    const holdTimer = window.setTimeout(() => {
+      setPhase("holding");
+    }, enterTime);
+
+    const leaveTimer = window.setTimeout(() => {
+      setPhase("leaving");
+    }, enterTime + holdTime);
+
+    const nextTimer = window.setTimeout(() => {
+      setActiveIndex((current) =>
+        tickerItems.length <= 1
+          ? 0
+          : (current + 1) % tickerItems.length
+      );
+      setPhase("entering");
+    }, enterTime + holdTime + leaveTime);
+
+    return () => {
+      window.clearTimeout(holdTimer);
+      window.clearTimeout(leaveTimer);
+      window.clearTimeout(nextTimer);
+    };
+  }, [activeIndex, activeItem, tickerItems.length]);
+
+  if (
+    pathname === "/admin/login" ||
+    tickerItems.length === 0 ||
+    !activeItem
+  ) {
+    return null;
+  }
+
+  return (
+    <section
+      className={`ncsBusinessTicker ${
+        activeItem.isBankCheque ? "ncsTickerBankActive" : ""
+      }`}
+      aria-label="Live business alerts"
+    >
+      <Link
+        href={
+          activeItem.isBankCheque
+            ? "/admin/cheque-reminders"
+            : "/admin/dashboard"
+        }
+        className="ncsTickerLiveBadge"
+      >
+        <span className="ncsTickerLiveDot" />
+        LIVE BUSINESS ALERTS
+      </Link>
+
+      <div className="ncsTickerViewport">
+        <Link
+          key={`${activeItem.id}-${activeIndex}`}
+          href={activeItem.href}
+          className={`ncsChequeTickerCard ncsChequeTickerCard-${phase} ncsChequeTickerCard-${activeItem.type} ${
+            activeItem.isBankCheque
+              ? "ncsChequeTickerCard-bank-blink"
+              : ""
+          }`}
+        >
+          <span className="ncsChequeTickerLight" />
+
+          <span className="ncsChequeTickerStatus">
+            {activeItem.label}
+          </span>
+
+          <span className="ncsChequeTickerSupplier">
+            {activeItem.message}
+          </span>
+
+          <span className="ncsTickerArrow">›</span>
+        </Link>
+      </div>
+    </section>
+  );
+}
 
 export default function AdminLayout({
   children,
@@ -418,7 +908,10 @@ export default function AdminLayout({
         </div>
       </aside>
 
-      <main className="ncsAdminContent">{children}</main>
+      <main className="ncsAdminContent">
+        <BusinessAlertTicker />
+        <div className="ncsAdminPageContent">{children}</div>
+      </main>
 
       <style jsx global>{`
         * {
@@ -441,6 +934,293 @@ export default function AdminLayout({
           font-family: Poppins, Inter, Arial, sans-serif;
         }
 
+
+        .ncsAdminPageContent {
+          min-width: 0;
+        }
+
+
+.ncsBusinessTicker {
+  position: sticky;
+  z-index: 80;
+  top: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 62px;
+  overflow: hidden;
+  border-top: 1px solid rgba(212, 175, 55, 0.75);
+  border-bottom: 1px solid rgba(212, 175, 55, 0.82);
+  background:
+    radial-gradient(
+      circle at 18% 20%,
+      rgba(212, 175, 55, 0.22),
+      transparent 24%
+    ),
+    linear-gradient(90deg, #fffdf7, #f8f4ec, #fff8df);
+  box-shadow:
+    0 10px 26px rgba(3, 21, 63, 0.18),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.ncsTickerLiveBadge {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-width: 190px;
+  padding: 0 20px;
+  border-right: 1px solid rgba(212, 175, 55, 0.78);
+  background:
+    radial-gradient(
+      circle at 88% 18%,
+      rgba(212, 175, 55, 0.22),
+      transparent 34%
+    ),
+    linear-gradient(135deg, #020b24, #061d4a, #0a2e73);
+  box-shadow: 9px 0 22px rgba(3, 21, 63, 0.2);
+  color: #f3d66f !important;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.95px;
+  text-decoration: none !important;
+  white-space: nowrap;
+}
+
+.ncsTickerLiveDot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #ffd75f;
+  box-shadow:
+    0 0 0 4px rgba(255, 215, 95, 0.16),
+    0 0 15px rgba(255, 215, 95, 0.92);
+  animation: ncsChequeBadgePulse 1.15s ease-in-out infinite;
+}
+
+.ncsTickerViewport {
+  position: relative;
+  min-width: 0;
+  min-height: 62px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 18px;
+}
+
+.ncsChequeTickerCard {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px 16px 8px 13px;
+  border: 1px solid rgba(10, 46, 115, 0.17);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #0a2e73 !important;
+  box-shadow:
+    0 7px 18px rgba(3, 21, 63, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  text-decoration: none !important;
+  white-space: nowrap;
+  will-change: transform, opacity, box-shadow;
+}
+
+.ncsChequeTickerCard-entering {
+  animation: ncsChequeEnter 0.76s cubic-bezier(0.22, 1, 0.36, 1)
+    both;
+}
+
+.ncsChequeTickerCard-holding {
+  transform: translate(-50%, -50%);
+  opacity: 1;
+}
+
+.ncsChequeTickerCard-leaving {
+  animation: ncsChequeLeave 0.8s cubic-bezier(0.64, 0, 0.78, 0)
+    both;
+}
+
+.ncsChequeTickerCard-holding.ncsChequeTickerCard-bank-blink
+  .ncsChequeTickerLight {
+  animation: ncsChequeLightBlink 0.58s ease-in-out infinite;
+}
+
+.ncsChequeTickerCard-holding.ncsChequeTickerCard-bank-blink {
+  animation: ncsChequeCardBlink 0.72s ease-in-out infinite;
+}
+
+.ncsChequeTickerLight {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #d4af37;
+  box-shadow:
+    0 0 0 4px rgba(212, 175, 55, 0.15),
+    0 0 13px rgba(212, 175, 55, 0.7);
+}
+
+.ncsChequeTickerCard-today .ncsChequeTickerLight,
+.ncsChequeTickerCard-overdue .ncsChequeTickerLight {
+  background: #e02929;
+  box-shadow:
+    0 0 0 4px rgba(224, 41, 41, 0.15),
+    0 0 17px rgba(224, 41, 41, 0.88);
+}
+
+.ncsChequeTickerStatus {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 4px 9px;
+  border: 1px solid rgba(180, 132, 0, 0.34);
+  border-radius: 999px;
+  background: rgba(212, 175, 55, 0.13);
+  color: #8a6400;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.55px;
+}
+
+.ncsChequeTickerCard-today .ncsChequeTickerStatus,
+.ncsChequeTickerCard-overdue .ncsChequeTickerStatus {
+  border-color: rgba(179, 38, 30, 0.38);
+  background: rgba(179, 38, 30, 0.1);
+  color: #a11f18;
+}
+
+.ncsChequeTickerCard-critical .ncsChequeTickerStatus {
+  border-color: rgba(179, 38, 30, 0.38);
+  background: rgba(179, 38, 30, 0.1);
+  color: #a11f18;
+}
+
+.ncsChequeTickerCard-warning .ncsChequeTickerStatus,
+.ncsChequeTickerCard-bank .ncsChequeTickerStatus {
+  border-color: rgba(180, 132, 0, 0.38);
+  background: rgba(212, 175, 55, 0.14);
+  color: #8a6400;
+}
+
+.ncsChequeTickerCard-success .ncsChequeTickerStatus {
+  border-color: rgba(22, 131, 74, 0.34);
+  background: rgba(22, 131, 74, 0.1);
+  color: #126b3e;
+}
+
+.ncsChequeTickerCard-info .ncsChequeTickerStatus {
+  border-color: rgba(10, 46, 115, 0.24);
+  background: rgba(10, 46, 115, 0.08);
+  color: #0a2e73;
+}
+
+.ncsTickerBankActive {
+  border-top-color: rgba(212, 175, 55, 0.95);
+  border-bottom-color: rgba(212, 175, 55, 0.95);
+}
+
+
+.ncsChequeTickerSupplier,
+.ncsChequeTickerAmount {
+  overflow: hidden;
+  color: #061d4a;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+}
+
+.ncsChequeTickerAmount {
+  color: #9a7100;
+}
+
+.ncsChequeTickerBank,
+.ncsChequeTickerDate {
+  color: #42506d;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.ncsChequeTickerSeparator {
+  color: rgba(10, 46, 115, 0.28);
+  font-weight: 900;
+}
+
+.ncsTickerArrow {
+  color: #b8890b;
+  font-size: 20px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+@keyframes ncsChequeEnter {
+  from {
+    transform: translate(90vw, -50%);
+    opacity: 0.2;
+  }
+  to {
+    transform: translate(-50%, -50%);
+    opacity: 1;
+  }
+}
+
+@keyframes ncsChequeLeave {
+  from {
+    transform: translate(-50%, -50%);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-110vw, -50%);
+    opacity: 0.15;
+  }
+}
+
+@keyframes ncsChequeLightBlink {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.22);
+  }
+}
+
+@keyframes ncsChequeCardBlink {
+  0%,
+  100% {
+    box-shadow:
+      0 7px 18px rgba(3, 21, 63, 0.12),
+      0 0 0 1px rgba(179, 38, 30, 0.05);
+  }
+  50% {
+    box-shadow:
+      0 11px 26px rgba(179, 38, 30, 0.24),
+      0 0 0 3px rgba(224, 41, 41, 0.13);
+  }
+}
+
+@keyframes ncsChequeBadgePulse {
+  0%,
+  100% {
+    opacity: 0.48;
+    transform: scale(0.86);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
         .ncsSidebar {
           position: fixed;
           z-index: 100;
@@ -794,6 +1574,56 @@ export default function AdminLayout({
         }
 
         @media (max-width: 900px) {
+          .ncsBusinessTicker {
+            position: fixed;
+            right: 0;
+            left: 0;
+            top: 0;
+            grid-template-columns: 1fr;
+            min-height: 84px;
+          }
+
+          .ncsTickerLiveBadge {
+            min-width: 0;
+            min-height: 30px;
+            padding: 0 10px;
+            border-right: 0;
+            border-bottom: 1px solid rgba(212, 175, 55, 0.68);
+            font-size: 8px;
+          }
+
+          .ncsTickerViewport {
+            min-height: 54px;
+            padding: 6px 8px;
+          }
+
+          .ncsChequeTickerCard {
+            max-width: calc(100% - 14px);
+            min-height: 39px;
+            gap: 6px;
+            padding: 6px 9px;
+          }
+
+          .ncsChequeTickerStatus {
+            min-height: 22px;
+            padding: 3px 7px;
+            font-size: 7px;
+          }
+
+          .ncsChequeTickerSupplier,
+          .ncsChequeTickerAmount {
+            font-size: 9px;
+          }
+
+          .ncsChequeTickerBank,
+          .ncsChequeTickerDate {
+            font-size: 8px;
+          }
+
+          .ncsChequeTickerSeparator {
+            display: none;
+          }
+
           .ncsSidebarCollapseButton {
             display: none;
           }
@@ -812,7 +1642,7 @@ export default function AdminLayout({
           .ncsAdminContent,
           .ncsAdminShellCollapsed .ncsAdminContent {
             margin-left: 0;
-            padding-top: 64px;
+            padding-top: 128px;
           }
 
           .ncsMobileMenuButton {
@@ -843,7 +1673,7 @@ export default function AdminLayout({
             background: rgba(3, 21, 63, 0.62);
           }
         }
-      `}</style>
+            `}</style>
     </div>
   );
 }
