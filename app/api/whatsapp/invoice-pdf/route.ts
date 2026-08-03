@@ -188,9 +188,9 @@ async function createInvoicePdf(body: InvoiceRequest) {
   const pageWidth = 595.28;
   const pageHeight = 841.89;
   const margin = 38;
-  const footerHeight = 34;
-  const headerHeight = 112;
-  const tableTop = pageHeight - 226;
+  const footerHeight = 54;
+  const headerHeight = 142;
+  const tableTop = pageHeight - 256;
   const rowHeight = 28;
 
   let page = pdf.addPage([pageWidth, pageHeight]);
@@ -244,6 +244,44 @@ async function createInvoicePdf(body: InvoiceRequest) {
       color: GOLD,
     });
 
+    page.drawText("Main Road, Opp. Govt. MPDO Office", {
+      x: margin + 70,
+      y: pageHeight - 82,
+      size: 8.5,
+      font: regular,
+      color: rgb(1, 1, 1),
+    });
+
+    page.drawText(
+      "Sarubujjili, Andhra Pradesh - 532458",
+      {
+        x: margin + 70,
+        y: pageHeight - 96,
+        size: 8.5,
+        font: regular,
+        color: rgb(1, 1, 1),
+      },
+    );
+
+    page.drawText(
+      "Phone / WhatsApp: +91 90100 14001",
+      {
+        x: margin + 70,
+        y: pageHeight - 110,
+        size: 8.5,
+        font: bold,
+        color: GOLD,
+      },
+    );
+
+    page.drawText("www.newcitystyle.store", {
+      x: margin + 70,
+      y: pageHeight - 124,
+      size: 8.5,
+      font: regular,
+      color: rgb(1, 1, 1),
+    });
+
     page.drawText("TAX INVOICE", {
       x: pageWidth - margin - 112,
       y: pageHeight - 42,
@@ -252,7 +290,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
       color: GOLD,
     });
 
-    page.drawText("www.newcitystyle.store", {
+    page.drawText("Premium Retail Invoice", {
       x: pageWidth - margin - 112,
       y: pageHeight - 62,
       size: 8.5,
@@ -271,11 +309,33 @@ async function createInvoicePdf(body: InvoiceRequest) {
     });
 
     page.drawText(
-      "NEW CITY STYLE  |  Style for Every Family  |  www.newcitystyle.store",
+      "Thank you for shopping with NEW CITY STYLE.",
       {
         x: margin,
-        y: 13,
-        size: 8,
+        y: 37,
+        size: 8.5,
+        font: bold,
+        color: GOLD,
+      },
+    );
+
+    page.drawText(
+      "Main Road, Opp. Govt. MPDO Office, Sarubujjili, Andhra Pradesh - 532458",
+      {
+        x: margin,
+        y: 24,
+        size: 7.5,
+        font: regular,
+        color: rgb(1, 1, 1),
+      },
+    );
+
+    page.drawText(
+      "Phone / WhatsApp: +91 90100 14001  |  www.newcitystyle.store",
+      {
+        x: margin,
+        y: 11,
+        size: 7.5,
         font: regular,
         color: rgb(1, 1, 1),
       },
@@ -541,7 +601,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
     "Thank you for shopping with NEW CITY STYLE.",
     {
       x: margin,
-      y: Math.max(58, y - 172),
+      y: Math.max(78, y - 172),
       size: 9.5,
       font: bold,
       color: BLUE,
@@ -552,7 +612,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
     "Please retain this invoice for return or exchange reference.",
     {
       x: margin,
-      y: Math.max(42, y - 189),
+      y: Math.max(64, y - 189),
       size: 8,
       font: regular,
       color: GRAY,
