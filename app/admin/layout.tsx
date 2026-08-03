@@ -1,331 +1,264 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import {
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-type ProductRow = {
-  id: number | string;
-  name: string | null;
-  category: string | null;
-  subcategory: string | null;
-  brand: string | null;
-  stock: number | string | null;
-  low_stock_limit: number | string | null;
-  sku: string | null;
-  barcode: string | null;
-  is_active: boolean | null;
-  status: string | null;
+const ADMIN_EMAIL = "badri.nsv@gmail.com";
+
+type AdminLayoutProps = {
+  children: ReactNode;
 };
 
-type VariantRow = {
-  id: number | string;
-  product_id: number | string;
-  variant_name: string | null;
-  size: string | null;
-  color: string | null;
-  sku: string | null;
-  barcode: string | null;
-  stock: number | string | null;
-  reserved_stock: number | string | null;
-  low_stock_limit: number | string | null;
-  is_active: boolean | null;
+const menuItems = [
+  { label: "Dashboard", href: "/admin/dashboard", icon: "🏠" },
+  { label: "Products", href: "/admin/products", icon: "🛍️" },
+  { label: "Add Product", href: "/admin/add-product", icon: "➕" },
+  { label: "Categories", href: "/admin/categories", icon: "🏷️" },
+  { label: "Collections", href: "/admin/collections", icon: "✨" },
+  { label: "Orders", href: "/admin/orders", icon: "📦" },
+  { label: "Billing / POS", href: "/admin/pos", icon: "🧾" },
+  { label: "Daily Expenses", href: "/admin/expenses", icon: "💸" },
+  {
+    label: "Cash & Bank Book",
+    href: "/admin/cash-bank-book",
+    icon: "🏦",
+  },
+  {
+    label: "Bank Cheques",
+    href: "/admin/cheque-reminders",
+    icon: "📝",
+  },
+  {
+    label: "Party Ledgers",
+    href: "/admin/party-ledgers",
+    icon: "📒",
+  },
+  {
+    label: "Reconciliation",
+    href: "/admin/reconciliation",
+    icon: "✅",
+  },
+  { label: "Purchase Stock", href: "/admin/purchases", icon: "📥" },
+  {
+    label: "Purchase History",
+    href: "/admin/purchase-history",
+    icon: "📚",
+  },
+  {
+    label: "Suppliers",
+    href: "/admin/suppliers",
+    icon: "🏭",
+  },
+  {
+    label: "Barcodes & Stock",
+    href: "/admin/barcodes",
+    icon: "▥",
+  },
+  {
+    label: "Low Stock Report",
+    href: "/admin/low-stock-report",
+    icon: "⚠️",
+  },
+  {
+    label: "POS Return History",
+    href: "/admin/pos-returns",
+    icon: "↩",
+  },
+  { label: "Returns", href: "/admin/returns", icon: "↩️" },
+  { label: "Customers", href: "/admin/customers", icon: "👥" },
+  {
+    label: "Customer Requests",
+    href: "/admin/customer-requests",
+    icon: "🔔",
+  },
+  {
+    label: "Customer Dues",
+    href: "/admin/customer-dues",
+    icon: "💰",
+  },
+  { label: "Reviews", href: "/admin/reviews", icon: "⭐" },
+  { label: "Coupons", href: "/admin/coupons", icon: "🎟️" },
+  { label: "Marketing", href: "/admin/marketing", icon: "📣" },
+  { label: "Home Preview", href: "/admin/home-preview", icon: "🖥️" },
+  { label: "Branding", href: "/admin/branding", icon: "🎨" },
+  { label: "Payments", href: "/admin/payments", icon: "💳" },
+  { label: "Shipping", href: "/admin/shipping", icon: "🚚" },
+  { label: "SEO", href: "/admin/seo", icon: "🔍" },
+  { label: "Analytics", href: "/admin/analytics", icon: "📊" },
+  { label: "Sales History", href: "/admin/sales-history", icon: "📊" },
+  {
+    label: "Billing Reports",
+    href: "/admin/billing-reports",
+    icon: "📈",
+  },
+  {
+    label: "Store Details",
+    href: "/admin/store-settings",
+    icon: "⚙️",
+  },
+];
+
+
+
+
+type TickerAlertItem = {
+  id: string;
+  type: "critical" | "warning" | "success" | "info" | "bank";
+  label: string;
+  message: string;
+  href: string;
+  isBankCheque: boolean;
 };
 
-type LowStockItem = {
-  key: string;
-  productId: number;
-  variantId: number | null;
-  productName: string;
-  category: string;
-  subcategory: string;
-  brand: string;
-  size: string;
-  color: string;
-  sku: string;
-  barcode: string;
-  stock: number;
-  reservedStock: number;
-  availableStock: number;
-  lowStockLimit: number;
-};
+const TICKER_DAY_MS = 86_400_000;
 
-type StockFilter = "below5" | "below10" | "out" | "custom";
+function startOfTickerDay(value: number) {
+  const date = new Date(value);
 
-const ROYAL_BLUE = "#0A2E73";
-const DEEP_BLUE = "#061D4A";
-const GOLD = "#D4AF37";
-const IVORY = "#F8F4EC";
-const CHARCOAL = "#2C2C2C";
-const SOFT_GRAY = "#6F7280";
-const SUCCESS = "#16834A";
-const DANGER = "#B3261E";
-
-function numberValue(value: unknown): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  ).getTime();
 }
 
-function clean(value: unknown, fallback = ""): string {
-  const text = String(value ?? "").trim();
-  return text || fallback;
+function formatTickerMoney(value: number) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(value) ? value : 0);
 }
 
-function normalize(value: unknown): string {
-  return clean(value).toLowerCase();
-}
-
-function safeFileName(value: string): string {
-  return (
-    value
-      .trim()
-      .replace(/[^a-zA-Z0-9-_]+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "") || "low-stock-report"
-  );
-}
-
-function formatDateTime(date = new Date()): string {
+function formatTickerDate(value: number) {
   return new Intl.DateTimeFormat("en-IN", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
 }
 
-function csvCell(value: string | number): string {
-  return `"${String(value).replace(/"/g, '""')}"`;
-}
+function getTickerWaitingDays(
+  createdAt: string | null | undefined
+) {
+  if (!createdAt) return 0;
 
-export default function LowStockReportPage() {
-  const router = useRouter();
+  const created = new Date(createdAt).getTime();
 
-  const [items, setItems] = useState<LowStockItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  if (!Number.isFinite(created)) return 0;
 
-  const [search, setSearch] = useState("");
-  const [brandFilter, setBrandFilter] = useState("ALL");
-  const [categoryFilter, setCategoryFilter] = useState("ALL");
-  const [sizeFilter, setSizeFilter] = useState("ALL");
-  const [stockFilter, setStockFilter] = useState<StockFilter>("below5");
-  const [customLimit, setCustomLimit] = useState(5);
-  const [groupByBrand, setGroupByBrand] = useState(true);
-
-  const loadLowStock = useCallback(
-    async (showRefresh = false) => {
-      if (showRefresh) setRefreshing(true);
-      else setLoading(true);
-
-      setErrorMessage("");
-
-      try {
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-
-        if (userError) throw userError;
-
-        if (!user) {
-          router.replace("/admin/login");
-          return;
-        }
-
-        const [productsResponse, variantsResponse] = await Promise.all([
-          supabase
-            .from("products")
-            .select(
-              [
-                "id",
-                "name",
-                "category",
-                "subcategory",
-                "brand",
-                "stock",
-                "low_stock_limit",
-                "sku",
-                "barcode",
-                "is_active",
-                "status",
-              ].join(","),
-            )
-            .order("brand", { ascending: true })
-            .order("name", { ascending: true }),
-
-          supabase
-            .from("product_variants")
-            .select(
-              [
-                "id",
-                "product_id",
-                "variant_name",
-                "size",
-                "color",
-                "sku",
-                "barcode",
-                "stock",
-                "reserved_stock",
-                "low_stock_limit",
-                "is_active",
-              ].join(","),
-            )
-            .eq("is_active", true),
-        ]);
-
-        if (productsResponse.error) throw productsResponse.error;
-
-        if (variantsResponse.error) {
-          console.info(
-            "Product variants could not be loaded:",
-            variantsResponse.error.message,
-          );
-        }
-
-        const products = (productsResponse.data || []) as unknown as ProductRow[];
-        const variants = variantsResponse.error
-          ? []
-          : ((variantsResponse.data || []) as unknown as VariantRow[]);
-
-        const variantsByProduct = new Map<number, VariantRow[]>();
-
-        variants.forEach((variant) => {
-          const productId = numberValue(variant.product_id);
-          const current = variantsByProduct.get(productId) || [];
-          current.push(variant);
-          variantsByProduct.set(productId, current);
-        });
-
-        const mapped: LowStockItem[] = [];
-
-        products.forEach((product) => {
-          if (
-            product.is_active === false ||
-            normalize(product.status) === "inactive"
-          ) {
-            return;
-          }
-
-          const productId = numberValue(product.id);
-          const productName = clean(product.name, "NEW CITY STYLE Product");
-          const category = clean(product.category, "Others");
-          const subcategory = clean(product.subcategory);
-          const brand = clean(product.brand, "NEW CITY STYLE");
-          const productVariants = variantsByProduct.get(productId) || [];
-          const productLimit = Math.max(
-            0,
-            Math.floor(numberValue(product.low_stock_limit) || 5),
-          );
-
-          if (productVariants.length > 0) {
-            productVariants.forEach((variant) => {
-              const stock = Math.max(0, numberValue(variant.stock));
-              const reservedStock = Math.max(
-                0,
-                numberValue(variant.reserved_stock),
-              );
-              const availableStock = Math.max(0, stock - reservedStock);
-              const lowStockLimit = Math.max(
-                0,
-                Math.floor(
-                  numberValue(variant.low_stock_limit) || productLimit || 5,
-                ),
-              );
-
-              mapped.push({
-                key: `variant-${variant.id}`,
-                productId,
-                variantId: numberValue(variant.id),
-                productName,
-                category,
-                subcategory,
-                brand,
-                size: clean(variant.size, "—"),
-                color: clean(variant.color, "—"),
-                sku: clean(variant.sku, clean(product.sku, "—")),
-                barcode: clean(
-                  variant.barcode,
-                  clean(product.barcode, "—"),
-                ),
-                stock,
-                reservedStock,
-                availableStock,
-                lowStockLimit,
-              });
-            });
-
-            return;
-          }
-
-          const stock = Math.max(0, numberValue(product.stock));
-
-          mapped.push({
-            key: `product-${productId}`,
-            productId,
-            variantId: null,
-            productName,
-            category,
-            subcategory,
-            brand,
-            size: "—",
-            color: "—",
-            sku: clean(product.sku, "—"),
-            barcode: clean(product.barcode, "—"),
-            stock,
-            reservedStock: 0,
-            availableStock: stock,
-            lowStockLimit: productLimit,
-          });
-        });
-
-        setItems(
-          mapped.sort((a, b) => {
-            if (a.availableStock !== b.availableStock) {
-              return a.availableStock - b.availableStock;
-            }
-
-            const brandCompare = a.brand.localeCompare(b.brand);
-            if (brandCompare !== 0) return brandCompare;
-
-            const nameCompare = a.productName.localeCompare(b.productName);
-            if (nameCompare !== 0) return nameCompare;
-
-            return a.size.localeCompare(b.size);
-          }),
-        );
-      } catch (error) {
-        console.error("Unable to load low stock report:", error);
-        setErrorMessage(
-          error instanceof Error
-            ? error.message
-            : "Unable to load low stock report.",
-        );
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [router],
+  return Math.max(
+    0,
+    Math.floor((Date.now() - created) / TICKER_DAY_MS)
   );
+}
+
+function BusinessAlertTicker() {
+  const pathname = usePathname();
+
+  const [requestRows, setRequestRows] = useState<
+    Record<string, unknown>[]
+  >([]);
+  const [productRows, setProductRows] = useState<
+    Record<string, unknown>[]
+  >([]);
+  const [businessAlertRows, setBusinessAlertRows] = useState<
+    Record<string, unknown>[]
+  >([]);
+  const [chequeRows, setChequeRows] = useState<
+    Record<string, unknown>[]
+  >([]);
+
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [phase, setPhase] = useState<
+    "entering" | "holding" | "leaving"
+  >("entering");
+
+  async function loadTickerData() {
+    const [
+      requestsResult,
+      productsResult,
+      alertsResult,
+      chequesResult,
+    ] = await Promise.all([
+      supabase
+        .from("customer_product_requests")
+        .select("*")
+        .in("status", [
+          "WAITING",
+          "MATCH_FOUND",
+          "CUSTOMER_CONTACTED",
+          "RESERVED",
+        ])
+        .order("created_at", { ascending: true })
+        .limit(30),
+
+      supabase.from("products").select("*").limit(120),
+
+      supabase
+        .from("business_alerts")
+        .select("*")
+        .eq("is_resolved", false)
+        .order("created_at", { ascending: false })
+        .limit(30),
+
+      supabase
+        .from("billing_cheques")
+        .select("*")
+        .eq("status", "UPCOMING")
+        .eq("is_deleted", false)
+        .order("due_date", { ascending: true })
+        .limit(50),
+    ]);
+
+    if (!requestsResult.error) {
+      setRequestRows(
+        (requestsResult.data as Record<string, unknown>[]) || []
+      );
+    }
+
+    if (!productsResult.error) {
+      setProductRows(
+        (productsResult.data as Record<string, unknown>[]) || []
+      );
+    }
+
+    if (!alertsResult.error) {
+      setBusinessAlertRows(
+        (alertsResult.data as Record<string, unknown>[]) || []
+      );
+    }
+
+    if (!chequesResult.error) {
+      setChequeRows(
+        (chequesResult.data as Record<string, unknown>[]) || []
+      );
+    }
+  }
 
   useEffect(() => {
-    void loadLowStock();
-  }, [loadLowStock]);
+    if (pathname === "/admin/login") return;
 
-  useEffect(() => {
-    let timer: number | null = null;
-
-    const scheduleRefresh = () => {
-      if (timer !== null) window.clearTimeout(timer);
-
-      timer = window.setTimeout(() => {
-        void loadLowStock(true);
-        timer = null;
-      }, 500);
-    };
+    void loadTickerData();
 
     const channel = supabase
-      .channel("ncs-low-stock-report-live")
+      .channel("ncs-all-business-alerts-ticker")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "customer_product_requests",
+        },
+        () => void loadTickerData()
+      )
       .on(
         "postgres_changes",
         {
@@ -333,1215 +266,1419 @@ export default function LowStockReportPage() {
           schema: "public",
           table: "products",
         },
-        scheduleRefresh,
+        () => void loadTickerData()
       )
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
-          table: "product_variants",
+          table: "business_alerts",
         },
-        scheduleRefresh,
+        () => void loadTickerData()
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "billing_cheques",
+        },
+        () => void loadTickerData()
       )
       .subscribe();
 
+    const refreshTimer = window.setInterval(
+      () => void loadTickerData(),
+      60_000
+    );
+
     return () => {
-      if (timer !== null) window.clearTimeout(timer);
+      window.clearInterval(refreshTimer);
       void supabase.removeChannel(channel);
     };
-  }, [loadLowStock]);
+  }, [pathname]);
 
-  const stockLimit = useMemo(() => {
-    if (stockFilter === "below10") return 10;
-    if (stockFilter === "custom") {
-      return Math.max(0, Math.floor(customLimit || 0));
-    }
-    return 5;
-  }, [customLimit, stockFilter]);
+  const tickerItems = useMemo<TickerAlertItem[]>(() => {
+    const items: TickerAlertItem[] = [];
 
-  const brands = useMemo(
-    () =>
-      Array.from(new Set(items.map((item) => item.brand))).sort((a, b) =>
-        a.localeCompare(b),
-      ),
-    [items],
-  );
+    requestRows.forEach((row) => {
+      const id = String(row.id || crypto.randomUUID());
+      const status = String(row.status || "WAITING");
+      const customerName = String(
+        row.customer_name || "Customer"
+      ).trim();
+      const itemName = String(
+        row.product_name ||
+          row.item_name ||
+          row.category ||
+          "Requested item"
+      ).trim();
+      const size = String(row.size || "").trim();
+      const colour = String(
+        row.colour || row.color || ""
+      ).trim();
+      const waitingDays = getTickerWaitingDays(
+        String(row.requested_at || row.created_at || "")
+      );
 
-  const categories = useMemo(
-    () =>
-      Array.from(new Set(items.map((item) => item.category))).sort((a, b) =>
-        a.localeCompare(b),
-      ),
-    [items],
-  );
-
-  const sizes = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          items
-            .map((item) => item.size)
-            .filter((value) => value && value !== "—"),
-        ),
-      ).sort((a, b) =>
-        a.localeCompare(b, undefined, {
-          numeric: true,
-          sensitivity: "base",
-        }),
-      ),
-    [items],
-  );
-
-  const filteredItems = useMemo(() => {
-    const query = normalize(search);
-
-    return items.filter((item) => {
-      const matchesSearch =
-        !query ||
-        [
-          item.productName,
-          item.brand,
-          item.category,
-          item.subcategory,
-          item.size,
-          item.color,
-          item.sku,
-          item.barcode,
-        ]
-          .map(normalize)
-          .some((value) => value.includes(query));
-
-      if (!matchesSearch) return false;
-      if (brandFilter !== "ALL" && item.brand !== brandFilter) return false;
-      if (categoryFilter !== "ALL" && item.category !== categoryFilter) {
-        return false;
+      if (status === "MATCH_FOUND") {
+        items.push({
+          id: `request-match-${id}`,
+          type: "success",
+          label: "STOCK MATCH",
+          message: `${itemName}${
+            size ? ` • Size ${size}` : ""
+          }${colour ? ` • ${colour}` : ""} • ${customerName} is waiting`,
+          href: "/admin/customer-requests?status=MATCH_FOUND",
+          isBankCheque: false,
+        });
+        return;
       }
-      if (sizeFilter !== "ALL" && item.size !== sizeFilter) return false;
 
-      if (stockFilter === "out") return item.availableStock <= 0;
-
-      return item.availableStock <= stockLimit;
+      items.push({
+        id: `request-${id}`,
+        type:
+          waitingDays >= 15
+            ? "critical"
+            : waitingDays >= 7
+              ? "warning"
+              : "info",
+        label: "CUSTOMER REQUEST",
+        message: `${customerName} • ${itemName}${
+          size ? ` • Size ${size}` : ""
+        } • waiting ${waitingDays} day${
+          waitingDays === 1 ? "" : "s"
+        }`,
+        href: "/admin/customer-requests",
+        isBankCheque: false,
+      });
     });
+
+    productRows.forEach((row) => {
+      const stock = Number(
+        row.stock ??
+          row.quantity ??
+          row.total_stock ??
+          row.available_stock ??
+          0
+      );
+      const lowStockLimit = Number(
+        row.low_stock_limit ??
+          row.lowStockLimit ??
+          row.low_stock_alert ??
+          5
+      );
+      const isActive =
+        row.is_active === undefined ||
+        row.is_active === null ||
+        row.is_active === true;
+
+      if (
+        !isActive ||
+        !Number.isFinite(stock) ||
+        stock > lowStockLimit
+      ) {
+        return;
+      }
+
+      const id = String(row.id || crypto.randomUUID());
+      const name = String(
+        row.product_name ||
+          row.name ||
+          row.title ||
+          "Product"
+      ).trim();
+
+      items.push({
+        id: `stock-${id}`,
+        type: stock <= 0 ? "critical" : "warning",
+        label: stock <= 0 ? "OUT OF STOCK" : "LOW STOCK",
+        message: `${name} • ${
+          stock <= 0 ? "No stock left" : `${stock} left`
+        } • alert at ${lowStockLimit}`,
+        href: "/admin/low-stock-report",
+        isBankCheque: false,
+      });
+    });
+
+    businessAlertRows.forEach((row) => {
+      const id = String(row.id || crypto.randomUUID());
+      const priority = String(
+        row.priority || "INFO"
+      ).toUpperCase();
+
+      items.push({
+        id: `business-${id}`,
+        type:
+          priority === "CRITICAL"
+            ? "critical"
+            : priority === "WARNING"
+              ? "warning"
+              : priority === "SUCCESS"
+                ? "success"
+                : "info",
+        label: String(
+          row.title || row.alert_type || "BUSINESS ALERT"
+        ).toUpperCase(),
+        message: String(row.message || "").trim(),
+        href: String(row.target_route || "/admin/dashboard"),
+        isBankCheque: false,
+      });
+    });
+
+    const today = startOfTickerDay(Date.now());
+
+    chequeRows.forEach((row) => {
+      const dueDate = startOfTickerDay(Number(row.due_date));
+      const difference = Math.round(
+        (dueDate - today) / TICKER_DAY_MS
+      );
+
+      if (!Number.isFinite(difference) || difference > 2) {
+        return;
+      }
+
+      const label =
+        difference < 0
+          ? `CHEQUE OVERDUE ${Math.abs(difference)} DAY${
+              Math.abs(difference) === 1 ? "" : "S"
+            }`
+          : difference === 0
+            ? "CHEQUE DUE TODAY"
+            : difference === 1
+              ? "CHEQUE DUE TOMORROW"
+              : "CHEQUE DUE IN 2 DAYS";
+
+      items.push({
+        id: `cheque-${String(row.id || crypto.randomUUID())}`,
+        type: "bank",
+        label,
+        message: `${String(
+          row.supplier_name || "Supplier"
+        )} • ${formatTickerMoney(Number(row.amount || 0))} • ${String(
+          row.bank_name || "Bank"
+        )} / ${String(row.cheque_number || "")} • ${formatTickerDate(
+          dueDate
+        )}`,
+        href: "/admin/cheque-reminders",
+        isBankCheque: true,
+      });
+    });
+
+    if (items.length === 0) {
+      items.push({
+        id: "all-clear",
+        type: "success",
+        label: "ALL SYSTEMS READY",
+        message:
+          "No urgent customer requests, stock alerts or cheque reminders.",
+        href: "/admin/dashboard",
+        isBankCheque: false,
+      });
+    }
+
+    return items.slice(0, 60);
   }, [
-    brandFilter,
-    categoryFilter,
-    items,
-    search,
-    sizeFilter,
-    stockFilter,
-    stockLimit,
+    requestRows,
+    productRows,
+    businessAlertRows,
+    chequeRows,
   ]);
 
-  const groupedItems = useMemo(() => {
-    const groups = new Map<string, LowStockItem[]>();
-
-    filteredItems.forEach((item) => {
-      const key = groupByBrand ? item.brand : item.category;
-      const current = groups.get(key) || [];
-      current.push(item);
-      groups.set(key, current);
-    });
-
-    return Array.from(groups.entries()).sort(([a], [b]) =>
-      a.localeCompare(b),
+  useEffect(() => {
+    setActiveIndex((current) =>
+      tickerItems.length === 0
+        ? 0
+        : current % tickerItems.length
     );
-  }, [filteredItems, groupByBrand]);
+  }, [tickerItems.length]);
 
-  const summary = useMemo(() => {
-    const outOfStock = filteredItems.filter(
-      (item) => item.availableStock <= 0,
-    ).length;
+  const activeItem =
+    tickerItems[activeIndex % tickerItems.length];
 
-    const critical = filteredItems.filter(
-      (item) => item.availableStock > 0 && item.availableStock <= 2,
-    ).length;
+  useEffect(() => {
+    if (!activeItem) return;
 
-    const totalUnits = filteredItems.reduce(
-      (sum, item) => sum + item.availableStock,
-      0,
-    );
+    setPhase("entering");
 
-    return {
-      total: filteredItems.length,
-      outOfStock,
-      critical,
-      totalUnits,
+    const enterTime = 850;
+    const holdTime = activeItem.isBankCheque ? 5_000 : 700;
+    const leaveTime = 850;
+
+    const holdTimer = window.setTimeout(() => {
+      setPhase("holding");
+    }, enterTime);
+
+    const leaveTimer = window.setTimeout(() => {
+      setPhase("leaving");
+    }, enterTime + holdTime);
+
+    const nextTimer = window.setTimeout(() => {
+      setActiveIndex((current) =>
+        tickerItems.length <= 1
+          ? 0
+          : (current + 1) % tickerItems.length
+      );
+      setPhase("entering");
+    }, enterTime + holdTime + leaveTime);
+
+    return () => {
+      window.clearTimeout(holdTimer);
+      window.clearTimeout(leaveTimer);
+      window.clearTimeout(nextTimer);
     };
-  }, [filteredItems]);
+  }, [activeIndex, activeItem, tickerItems.length]);
 
-  function stockStatus(item: LowStockItem) {
-    if (item.availableStock <= 0) {
-      return {
-        label: "OUT OF STOCK",
-        className: "danger",
-      };
-    }
-
-    if (item.availableStock <= 2) {
-      return {
-        label: "CRITICAL",
-        className: "critical",
-      };
-    }
-
-    return {
-      label: "LOW STOCK",
-      className: "warning",
-    };
-  }
-
-  function clearFilters() {
-    setSearch("");
-    setBrandFilter("ALL");
-    setCategoryFilter("ALL");
-    setSizeFilter("ALL");
-    setStockFilter("below5");
-    setCustomLimit(5);
-  }
-
-  async function downloadPdf() {
-    if (filteredItems.length === 0) {
-      window.alert("No low stock items are available for this filter.");
-      return;
-    }
-
-    try {
-      const { jsPDF } = await import("jspdf");
-      const autoTableModule = await import("jspdf-autotable");
-      const autoTable =
-        autoTableModule.default ||
-        (autoTableModule as unknown as {
-          autoTable: typeof autoTableModule.default;
-        }).autoTable;
-
-      const pdf = new jsPDF({
-        orientation: "landscape",
-        unit: "mm",
-        format: "a4",
-        compress: true,
-      });
-
-      const pageWidth = pdf.internal.pageSize.getWidth();
-
-      pdf.setFillColor(10, 46, 115);
-      pdf.rect(0, 0, pageWidth, 30, "F");
-
-      pdf.setTextColor(212, 175, 55);
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(18);
-      pdf.text("NEW CITY STYLE", 14, 12);
-
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(9);
-      pdf.text("Style for Every Family", 14, 19);
-
-      pdf.setFontSize(14);
-      pdf.text("LOW STOCK REORDER REPORT", pageWidth - 14, 12, {
-        align: "right",
-      });
-
-      pdf.setFontSize(8);
-      pdf.text(
-        `Generated: ${formatDateTime()}`,
-        pageWidth - 14,
-        19,
-        {
-          align: "right",
-        },
-      );
-
-      pdf.setTextColor(44, 44, 44);
-      pdf.setFontSize(9);
-
-      const filterLabel =
-        stockFilter === "out"
-          ? "Out of Stock"
-          : `Stock ${stockLimit} or Below`;
-
-      pdf.text(
-        `Filter: ${filterLabel}   |   Brand: ${
-          brandFilter === "ALL" ? "All Brands" : brandFilter
-        }   |   Category: ${
-          categoryFilter === "ALL" ? "All Categories" : categoryFilter
-        }`,
-        14,
-        37,
-      );
-
-      pdf.text(
-        `Low Stock Lines: ${summary.total}   |   Out of Stock: ${
-          summary.outOfStock
-        }   |   Critical: ${summary.critical}`,
-        14,
-        43,
-      );
-
-      const body = filteredItems.map((item, index) => [
-        index + 1,
-        item.brand,
-        item.productName,
-        item.category,
-        item.size,
-        item.color,
-        item.sku,
-        item.availableStock,
-        item.lowStockLimit,
-        item.availableStock <= 0
-          ? "OUT OF STOCK"
-          : item.availableStock <= 2
-            ? "CRITICAL"
-            : "LOW STOCK",
-      ]);
-
-      autoTable(pdf, {
-        startY: 48,
-        head: [
-          [
-            "#",
-            "Brand",
-            "Product",
-            "Category",
-            "Size",
-            "Colour",
-            "SKU",
-            "Stock",
-            "Alert",
-            "Status",
-          ],
-        ],
-        body,
-        theme: "grid",
-        margin: {
-          left: 14,
-          right: 14,
-          bottom: 16,
-        },
-        styles: {
-          font: "helvetica",
-          fontSize: 7.5,
-          cellPadding: 2.2,
-          textColor: [44, 44, 44],
-          lineColor: [220, 220, 220],
-        },
-        headStyles: {
-          fillColor: [10, 46, 115],
-          textColor: [255, 255, 255],
-          fontStyle: "bold",
-        },
-        alternateRowStyles: {
-          fillColor: [248, 244, 236],
-        },
-        columnStyles: {
-          0: { halign: "center", cellWidth: 9 },
-          7: { halign: "center", cellWidth: 13 },
-          8: { halign: "center", cellWidth: 13 },
-          9: { cellWidth: 23 },
-        },
-        didParseCell: (data) => {
-          if (data.section !== "body" || data.column.index !== 9) return;
-
-          const value = String(data.cell.raw || "");
-
-          if (value === "OUT OF STOCK") {
-            data.cell.styles.textColor = [179, 38, 30];
-            data.cell.styles.fontStyle = "bold";
-          } else if (value === "CRITICAL") {
-            data.cell.styles.textColor = [205, 87, 0];
-            data.cell.styles.fontStyle = "bold";
-          }
-        },
-        didDrawPage: () => {
-          const pageHeight = pdf.internal.pageSize.getHeight();
-          pdf.setFontSize(7);
-          pdf.setTextColor(111, 114, 128);
-          pdf.text(
-            "NEW CITY STYLE • Internal Stock Reorder Report",
-            14,
-            pageHeight - 7,
-          );
-          pdf.text(
-            `Page ${pdf.getNumberOfPages()}`,
-            pageWidth - 14,
-            pageHeight - 7,
-            {
-              align: "right",
-            },
-          );
-        },
-      });
-
-      const fileName = safeFileName(
-        `NEW-CITY-STYLE-low-stock-${new Date()
-          .toISOString()
-          .slice(0, 10)}`,
-      );
-
-      pdf.save(`${fileName}.pdf`);
-    } catch (error) {
-      console.error("Unable to create PDF:", error);
-      window.alert(
-        error instanceof Error
-          ? error.message
-          : "Unable to create PDF report.",
-      );
-    }
-  }
-
-  function downloadCsv() {
-    if (filteredItems.length === 0) {
-      window.alert("No low stock items are available for this filter.");
-      return;
-    }
-
-    const headers = [
-      "Brand",
-      "Product",
-      "Category",
-      "Subcategory",
-      "Size",
-      "Colour",
-      "SKU",
-      "Barcode",
-      "Stock",
-      "Reserved",
-      "Available Stock",
-      "Low Stock Limit",
-    ];
-
-    const rows = filteredItems.map((item) => [
-      item.brand,
-      item.productName,
-      item.category,
-      item.subcategory,
-      item.size,
-      item.color,
-      item.sku,
-      item.barcode,
-      item.stock,
-      item.reservedStock,
-      item.availableStock,
-      item.lowStockLimit,
-    ]);
-
-    const csv = [
-      headers.map(csvCell).join(","),
-      ...rows.map((row) => row.map(csvCell).join(",")),
-    ].join("\n");
-
-    const blob = new Blob([`\uFEFF${csv}`], {
-      type: "text/csv;charset=utf-8",
-    });
-
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `NEW-CITY-STYLE-low-stock-${new Date()
-      .toISOString()
-      .slice(0, 10)}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+  if (
+    pathname === "/admin/login" ||
+    tickerItems.length === 0 ||
+    !activeItem
+  ) {
+    return null;
   }
 
   return (
-    <main className="ncsLowStockPage">
-      <section className="ncsLowStockHero">
-        <div>
-          <span>NEW CITY STYLE • INVENTORY INTELLIGENCE</span>
-          <h1>Low Stock Command Center</h1>
-          <p>
-            Brand-wise and size-wise live stock report for products that need
-            immediate reorder.
-          </p>
-        </div>
+    <section
+      className={`ncsBusinessTicker ${
+        activeItem.isBankCheque ? "ncsTickerBankActive" : ""
+      }`}
+      aria-label="Live business alerts"
+    >
+      <Link
+        href={
+          activeItem.isBankCheque
+            ? "/admin/cheque-reminders"
+            : "/admin/dashboard"
+        }
+        className="ncsTickerLiveBadge"
+      >
+        <span className="ncsTickerLiveDot" />
+        LIVE BUSINESS ALERTS
+      </Link>
 
-        <div className="ncsHeroActions">
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => router.back()}
-          >
-            ← Back
-          </button>
+      <div className="ncsTickerViewport">
+        <Link
+          key={`${activeItem.id}-${activeIndex}`}
+          href={activeItem.href}
+          className={`ncsChequeTickerCard ncsChequeTickerCard-${phase} ncsChequeTickerCard-${activeItem.type} ${
+            activeItem.isBankCheque
+              ? "ncsChequeTickerCard-bank-blink"
+              : ""
+          }`}
+        >
+          <span className="ncsChequeTickerLight" />
 
-          <button
-            type="button"
-            className="secondary"
-            disabled={refreshing}
-            onClick={() => void loadLowStock(true)}
-          >
-            {refreshing ? "Refreshing..." : "↻ Refresh Live Stock"}
-          </button>
-
-          <button type="button" className="gold" onClick={downloadPdf}>
-            ↓ Download PDF
-          </button>
-        </div>
-      </section>
-
-      {errorMessage && (
-        <div className="ncsMessage error">{errorMessage}</div>
-      )}
-
-      <section className="ncsSummaryGrid">
-        <article>
-          <span>LOW STOCK LINES</span>
-          <strong>{summary.total}</strong>
-          <small>Matching selected filters</small>
-        </article>
-
-        <article className="dangerCard">
-          <span>OUT OF STOCK</span>
-          <strong>{summary.outOfStock}</strong>
-          <small>Immediate purchase required</small>
-        </article>
-
-        <article className="criticalCard">
-          <span>CRITICAL 1–2</span>
-          <strong>{summary.critical}</strong>
-          <small>Very limited availability</small>
-        </article>
-
-        <article className="stockCard">
-          <span>AVAILABLE UNITS</span>
-          <strong>{summary.totalUnits}</strong>
-          <small>Across filtered low-stock lines</small>
-        </article>
-      </section>
-
-      <section className="ncsFilterPanel">
-        <div className="ncsFilterTitle">
-          <div>
-            <span>SMART FILTERS</span>
-            <h2>Find required stock quickly</h2>
-          </div>
-
-          <button type="button" onClick={clearFilters}>
-            Clear Filters
-          </button>
-        </div>
-
-        <div className="ncsFilterGrid">
-          <label>
-            <span>Search</span>
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Product, brand, size, colour, SKU..."
-            />
-          </label>
-
-          <label>
-            <span>Brand</span>
-            <select
-              value={brandFilter}
-              onChange={(event) => setBrandFilter(event.target.value)}
-            >
-              <option value="ALL">All Brands</option>
-              {brands.map((brand) => (
-                <option key={brand} value={brand}>
-                  {brand}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            <span>Category</span>
-            <select
-              value={categoryFilter}
-              onChange={(event) => setCategoryFilter(event.target.value)}
-            >
-              <option value="ALL">All Categories</option>
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            <span>Size</span>
-            <select
-              value={sizeFilter}
-              onChange={(event) => setSizeFilter(event.target.value)}
-            >
-              <option value="ALL">All Sizes</option>
-              {sizes.map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            <span>Stock Level</span>
-            <select
-              value={stockFilter}
-              onChange={(event) =>
-                setStockFilter(event.target.value as StockFilter)
-              }
-            >
-              <option value="below5">5 or Below</option>
-              <option value="below10">10 or Below</option>
-              <option value="out">Out of Stock Only</option>
-              <option value="custom">Custom Limit</option>
-            </select>
-          </label>
-
-          {stockFilter === "custom" && (
-            <label>
-              <span>Custom Limit</span>
-              <input
-                type="number"
-                min={0}
-                step={1}
-                value={customLimit}
-                onChange={(event) =>
-                  setCustomLimit(
-                    Math.max(0, Math.floor(numberValue(event.target.value))),
-                  )
-                }
-              />
-            </label>
-          )}
-
-          <label>
-            <span>Group Report By</span>
-            <select
-              value={groupByBrand ? "brand" : "category"}
-              onChange={(event) =>
-                setGroupByBrand(event.target.value === "brand")
-              }
-            >
-              <option value="brand">Brand</option>
-              <option value="category">Category</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="ncsExportRow">
-          <span>
-            Showing <strong>{filteredItems.length}</strong> low-stock lines
+          <span className="ncsChequeTickerStatus">
+            {activeItem.label}
           </span>
 
-          <div>
-            <button type="button" onClick={downloadCsv}>
-              ↓ Download CSV
-            </button>
-            <button type="button" className="gold" onClick={downloadPdf}>
-              ↓ Download PDF
-            </button>
-          </div>
-        </div>
-      </section>
+          <span className="ncsChequeTickerSupplier">
+            {activeItem.message}
+          </span>
 
-      {loading ? (
-        <section className="ncsLoading">
-          <div className="spinner" />
-          <h3>Loading live stock...</h3>
-          <p>Reading products and variants from Supabase.</p>
-        </section>
-      ) : groupedItems.length === 0 ? (
-        <section className="ncsEmpty">
-          <div>✓</div>
-          <h2>No low-stock items found</h2>
-          <p>Try changing the brand, category, size, or stock filter.</p>
-        </section>
-      ) : (
-        <section className="ncsReportGroups">
-          {groupedItems.map(([groupName, groupItems]) => (
-            <article className="ncsBrandGroup" key={groupName}>
-              <header>
-                <div>
-                  <span>{groupByBrand ? "BRAND" : "CATEGORY"}</span>
-                  <h2>{groupName}</h2>
-                </div>
+          <span className="ncsTickerArrow">›</span>
+        </Link>
+      </div>
+    </section>
+  );
+}
 
-                <div>
-                  <strong>{groupItems.length}</strong>
-                  <small>low-stock line(s)</small>
-                </div>
-              </header>
+export default function AdminLayout({
+  children,
+}: AdminLayoutProps) {
+  const pathname = usePathname();
+  const router = useRouter();
 
-              <div className="ncsTableWrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Product</th>
-                      <th>Category</th>
-                      <th>Size</th>
-                      <th>Colour</th>
-                      <th>SKU</th>
-                      <th>Stock</th>
-                      <th>Reserved</th>
-                      <th>Available</th>
-                      <th>Alert At</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
+  const [checkingAccess, setCheckingAccess] = useState(true);
+  const [hasAdminAccess, setHasAdminAccess] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [adminEmail, setAdminEmail] = useState("");
 
-                  <tbody>
-                    {groupItems.map((item) => {
-                      const status = stockStatus(item);
+  const isLoginPage = pathname === "/admin/login";
 
-                      return (
-                        <tr key={item.key}>
-                          <td>
-                            <strong>{item.productName}</strong>
-                            {item.subcategory && (
-                              <small>{item.subcategory}</small>
-                            )}
-                          </td>
-                          <td>{item.category}</td>
-                          <td>
-                            <span className="variantBadge">{item.size}</span>
-                          </td>
-                          <td>
-                            <span className="variantBadge">{item.color}</span>
-                          </td>
-                          <td>{item.sku}</td>
-                          <td>{item.stock}</td>
-                          <td>{item.reservedStock}</td>
-                          <td>
-                            <strong
-                              className={
-                                item.availableStock <= 0
-                                  ? "stockZero"
-                                  : item.availableStock <= 2
-                                    ? "stockCritical"
-                                    : "stockLow"
-                              }
-                            >
-                              {item.availableStock}
-                            </strong>
-                          </td>
-                          <td>{item.lowStockLimit}</td>
-                          <td>
-                            <span
-                              className={`statusBadge ${status.className}`}
-                            >
-                              {status.label}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </article>
-          ))}
-        </section>
+  useEffect(() => {
+    if (isLoginPage) {
+      setCheckingAccess(false);
+      setHasAdminAccess(true);
+      return;
+    }
+
+    let active = true;
+
+    async function checkAccess() {
+      setCheckingAccess(true);
+
+      try {
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
+
+        if (!active) return;
+
+        if (error || !session?.user) {
+          setHasAdminAccess(false);
+          router.replace("/admin/login");
+          return;
+        }
+
+        const email =
+          session.user.email?.trim().toLowerCase() || "";
+
+        if (email !== ADMIN_EMAIL) {
+          await supabase.auth.signOut({ scope: "local" });
+
+          if (!active) return;
+
+          setHasAdminAccess(false);
+          router.replace("/admin/login");
+          return;
+        }
+
+        setAdminEmail(email);
+        setHasAdminAccess(true);
+      } catch (error) {
+        console.error("Admin access check error:", error);
+
+        if (!active) return;
+
+        setHasAdminAccess(false);
+        router.replace("/admin/login");
+      } finally {
+        if (active) {
+          setCheckingAccess(false);
+        }
+      }
+    }
+
+    checkAccess();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+
+      const email =
+        session?.user?.email?.trim().toLowerCase() || "";
+
+      if (session?.user && email === ADMIN_EMAIL) {
+        setAdminEmail(email);
+        setHasAdminAccess(true);
+        setCheckingAccess(false);
+        return;
+      }
+
+      if (!session) {
+        setAdminEmail("");
+        setHasAdminAccess(false);
+        setCheckingAccess(false);
+        router.replace("/admin/login");
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [isLoginPage, router]);
+
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
+  async function handleLogout() {
+    try {
+      const { error } = await supabase.auth.signOut({
+        scope: "local",
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setAdminEmail("");
+      setHasAdminAccess(false);
+      setSidebarOpen(false);
+
+      window.location.replace("/admin/login");
+    } catch (error) {
+      console.error("Admin logout error:", error);
+      alert("Unable to logout. Please try again.");
+    }
+  }
+
+  function isActiveRoute(href: string) {
+    if (href === "/admin/dashboard") {
+      return pathname === "/admin" || pathname === "/admin/dashboard";
+    }
+
+    if (href === "/admin/products") {
+      return pathname === "/admin/products";
+    }
+
+    return pathname === href || pathname.startsWith(`${href}/`);
+  }
+
+  if (isLoginPage) {
+    return <>{children}</>;
+  }
+
+  if (checkingAccess) {
+    return (
+      <main className="ncsCheckingPage">
+        <div className="ncsCheckingLogo">NCS</div>
+        <div className="ncsSpinner" />
+        <h2>Opening Admin Studio...</h2>
+        <p>Verifying your secure NEW CITY STYLE admin session.</p>
+
+        <style jsx global>{`
+          * {
+            box-sizing: border-box;
+          }
+
+          body {
+            margin: 0;
+          }
+
+          .ncsCheckingPage {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background:
+              radial-gradient(
+                circle at 18% 18%,
+                rgba(212, 175, 55, 0.18),
+                transparent 28%
+              ),
+              linear-gradient(135deg, #03153f, #0a2e73, #164ca8);
+            color: #ffffff;
+            text-align: center;
+            font-family: Poppins, Inter, Arial, sans-serif;
+          }
+
+          .ncsCheckingLogo {
+            width: 88px;
+            height: 88px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #d4af37;
+            border-radius: 25px;
+            background: rgba(212, 175, 55, 0.1);
+            color: #d4af37;
+            font-size: 25px;
+            font-weight: 950;
+            letter-spacing: 2px;
+          }
+
+          .ncsSpinner {
+            width: 45px;
+            height: 45px;
+            margin-top: 25px;
+            border: 4px solid rgba(255, 255, 255, 0.22);
+            border-top-color: #d4af37;
+            border-radius: 50%;
+            animation: ncsSpin 0.8s linear infinite;
+          }
+
+          .ncsCheckingPage h2 {
+            margin: 18px 0 0;
+            font-size: 21px;
+          }
+
+          .ncsCheckingPage p {
+            margin: 9px 0 0;
+            color: rgba(255, 255, 255, 0.68);
+            font-size: 13px;
+          }
+
+          @keyframes ncsSpin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+        `}</style>
+      </main>
+    );
+  }
+
+  if (!hasAdminAccess) {
+    return null;
+  }
+
+  return (
+    <div
+      className={
+        sidebarCollapsed
+          ? "ncsAdminShell ncsAdminShellCollapsed"
+          : "ncsAdminShell"
+      }
+    >
+      <button
+        type="button"
+        className="ncsMobileMenuButton"
+        onClick={() => setSidebarOpen((current) => !current)}
+        aria-label="Open admin menu"
+      >
+        ☰
+      </button>
+
+      {sidebarOpen && (
+        <button
+          type="button"
+          className="ncsMobileOverlay"
+          onClick={() => setSidebarOpen(false)}
+          aria-label="Close admin menu"
+        />
       )}
 
-      <style jsx>{`
+      <aside
+        className={`ncsSidebar ${
+          sidebarOpen ? "ncsSidebarOpen" : ""
+        } ${sidebarCollapsed ? "ncsSidebarCollapsed" : ""}`}
+      >
+        <button
+          type="button"
+          className="ncsSidebarCollapseButton"
+          onClick={() =>
+            setSidebarCollapsed((current) => !current)
+          }
+          aria-label={
+            sidebarCollapsed
+              ? "Expand admin sidebar"
+              : "Collapse admin sidebar"
+          }
+          title={
+            sidebarCollapsed
+              ? "Expand sidebar"
+              : "Collapse sidebar"
+          }
+        >
+          {sidebarCollapsed ? "›" : "‹"}
+        </button>
+        <div className="ncsBrandArea">
+          <div className="ncsBrandLogo">NCS</div>
+
+          <div className="ncsBrandText">
+            <strong>NEW CITY STYLE</strong>
+            <span>Premium Admin Studio</span>
+          </div>
+        </div>
+
+        <nav className="ncsMenu">
+          {menuItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={
+                isActiveRoute(item.href)
+                  ? "ncsMenuItem ncsActiveMenuItem"
+                  : "ncsMenuItem"
+              }
+            >
+              <span className="ncsMenuIcon">{item.icon}</span>
+              <span className="ncsMenuLabel">{item.label}</span>
+            </Link>
+          ))}
+        </nav>
+
+        <div className="ncsSidebarBottom">
+          <div className="ncsAdminIdentity">
+            <div className="ncsAdminAvatar">N</div>
+
+            <div className="ncsAdminText">
+              <strong>Administrator</strong>
+              <span>{adminEmail}</span>
+            </div>
+          </div>
+
+          <Link href="/" className="ncsViewStoreButton">
+            <span>🏪</span>
+            View Store
+          </Link>
+
+          <button
+            type="button"
+            className="ncsLogoutButton"
+            onClick={handleLogout}
+          >
+            <span>🚪</span>
+            Logout
+          </button>
+        </div>
+      </aside>
+
+      <main className="ncsAdminContent">
+        <BusinessAlertTicker />
+        <div className="ncsAdminPageContent">{children}</div>
+      </main>
+
+      <style jsx global>{`
         * {
           box-sizing: border-box;
         }
 
-        .ncsLowStockPage {
+        html,
+        body {
+          margin: 0;
+          min-height: 100%;
+        }
+
+        body {
+          background: #f8f4ec;
+        }
+
+        .ncsAdminShell {
           min-height: 100vh;
-          padding: 26px;
-          color: ${CHARCOAL};
+          background: #f8f4ec;
+          font-family: Poppins, Inter, Arial, sans-serif;
+        }
+
+
+        .ncsAdminPageContent {
+          min-width: 0;
+        }
+
+
+.ncsBusinessTicker {
+  position: sticky;
+  z-index: 80;
+  top: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 62px;
+  overflow: hidden;
+  border-top: 1px solid rgba(212, 175, 55, 0.75);
+  border-bottom: 1px solid rgba(212, 175, 55, 0.82);
+  background:
+    radial-gradient(
+      circle at 18% 20%,
+      rgba(212, 175, 55, 0.22),
+      transparent 24%
+    ),
+    linear-gradient(90deg, #fffdf7, #f8f4ec, #fff8df);
+  box-shadow:
+    0 10px 26px rgba(3, 21, 63, 0.18),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.ncsTickerLiveBadge {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-width: 190px;
+  padding: 0 20px;
+  border-right: 1px solid rgba(212, 175, 55, 0.78);
+  background:
+    radial-gradient(
+      circle at 88% 18%,
+      rgba(212, 175, 55, 0.22),
+      transparent 34%
+    ),
+    linear-gradient(135deg, #020b24, #061d4a, #0a2e73);
+  box-shadow: 9px 0 22px rgba(3, 21, 63, 0.2);
+  color: #f3d66f !important;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.95px;
+  text-decoration: none !important;
+  white-space: nowrap;
+}
+
+.ncsTickerLiveDot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #ffd75f;
+  box-shadow:
+    0 0 0 4px rgba(255, 215, 95, 0.16),
+    0 0 15px rgba(255, 215, 95, 0.92);
+  animation: ncsChequeBadgePulse 1.15s ease-in-out infinite;
+}
+
+.ncsTickerViewport {
+  position: relative;
+  min-width: 0;
+  min-height: 62px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 18px;
+}
+
+.ncsChequeTickerCard {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px 16px 8px 13px;
+  border: 1px solid rgba(10, 46, 115, 0.17);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #0a2e73 !important;
+  box-shadow:
+    0 7px 18px rgba(3, 21, 63, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  text-decoration: none !important;
+  white-space: nowrap;
+  will-change: transform, opacity, box-shadow;
+}
+
+.ncsChequeTickerCard-entering {
+  animation: ncsChequeEnter 0.76s cubic-bezier(0.22, 1, 0.36, 1)
+    both;
+}
+
+.ncsChequeTickerCard-holding {
+  transform: translate(-50%, -50%);
+  opacity: 1;
+}
+
+.ncsChequeTickerCard-leaving {
+  animation: ncsChequeLeave 0.8s cubic-bezier(0.64, 0, 0.78, 0)
+    both;
+}
+
+.ncsChequeTickerCard-holding.ncsChequeTickerCard-bank-blink
+  .ncsChequeTickerLight {
+  animation: ncsChequeLightBlink 0.58s ease-in-out infinite;
+}
+
+.ncsChequeTickerCard-holding.ncsChequeTickerCard-bank-blink {
+  animation: ncsChequeCardBlink 0.72s ease-in-out infinite;
+}
+
+.ncsChequeTickerLight {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #d4af37;
+  box-shadow:
+    0 0 0 4px rgba(212, 175, 55, 0.15),
+    0 0 13px rgba(212, 175, 55, 0.7);
+}
+
+.ncsChequeTickerCard-today .ncsChequeTickerLight,
+.ncsChequeTickerCard-overdue .ncsChequeTickerLight {
+  background: #e02929;
+  box-shadow:
+    0 0 0 4px rgba(224, 41, 41, 0.15),
+    0 0 17px rgba(224, 41, 41, 0.88);
+}
+
+.ncsChequeTickerStatus {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 4px 9px;
+  border: 1px solid rgba(180, 132, 0, 0.34);
+  border-radius: 999px;
+  background: rgba(212, 175, 55, 0.13);
+  color: #8a6400;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.55px;
+}
+
+.ncsChequeTickerCard-today .ncsChequeTickerStatus,
+.ncsChequeTickerCard-overdue .ncsChequeTickerStatus {
+  border-color: rgba(179, 38, 30, 0.38);
+  background: rgba(179, 38, 30, 0.1);
+  color: #a11f18;
+}
+
+.ncsChequeTickerCard-critical .ncsChequeTickerStatus {
+  border-color: rgba(179, 38, 30, 0.38);
+  background: rgba(179, 38, 30, 0.1);
+  color: #a11f18;
+}
+
+.ncsChequeTickerCard-warning .ncsChequeTickerStatus,
+.ncsChequeTickerCard-bank .ncsChequeTickerStatus {
+  border-color: rgba(180, 132, 0, 0.38);
+  background: rgba(212, 175, 55, 0.14);
+  color: #8a6400;
+}
+
+.ncsChequeTickerCard-success .ncsChequeTickerStatus {
+  border-color: rgba(22, 131, 74, 0.34);
+  background: rgba(22, 131, 74, 0.1);
+  color: #126b3e;
+}
+
+.ncsChequeTickerCard-info .ncsChequeTickerStatus {
+  border-color: rgba(10, 46, 115, 0.24);
+  background: rgba(10, 46, 115, 0.08);
+  color: #0a2e73;
+}
+
+.ncsTickerBankActive {
+  border-top-color: rgba(212, 175, 55, 0.95);
+  border-bottom-color: rgba(212, 175, 55, 0.95);
+}
+
+
+.ncsChequeTickerSupplier,
+.ncsChequeTickerAmount {
+  overflow: hidden;
+  color: #061d4a;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+}
+
+.ncsChequeTickerAmount {
+  color: #9a7100;
+}
+
+.ncsChequeTickerBank,
+.ncsChequeTickerDate {
+  color: #42506d;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.ncsChequeTickerSeparator {
+  color: rgba(10, 46, 115, 0.28);
+  font-weight: 900;
+}
+
+.ncsTickerArrow {
+  color: #b8890b;
+  font-size: 20px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+@keyframes ncsChequeEnter {
+  from {
+    transform: translate(90vw, -50%);
+    opacity: 0.2;
+  }
+  to {
+    transform: translate(-50%, -50%);
+    opacity: 1;
+  }
+}
+
+@keyframes ncsChequeLeave {
+  from {
+    transform: translate(-50%, -50%);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-110vw, -50%);
+    opacity: 0.15;
+  }
+}
+
+@keyframes ncsChequeLightBlink {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.22);
+  }
+}
+
+@keyframes ncsChequeCardBlink {
+  0%,
+  100% {
+    box-shadow:
+      0 7px 18px rgba(3, 21, 63, 0.12),
+      0 0 0 1px rgba(179, 38, 30, 0.05);
+  }
+  50% {
+    box-shadow:
+      0 11px 26px rgba(179, 38, 30, 0.24),
+      0 0 0 3px rgba(224, 41, 41, 0.13);
+  }
+}
+
+@keyframes ncsChequeBadgePulse {
+  0%,
+  100% {
+    opacity: 0.48;
+    transform: scale(0.86);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+        .ncsSidebar {
+          position: fixed;
+          z-index: 100;
+          top: 0;
+          bottom: 0;
+          left: 0;
+          width: 292px;
+          display: flex;
+          flex-direction: column;
+          padding: 22px 17px;
+          overflow-x: hidden;
+          overflow-y: auto;
           background:
             radial-gradient(
-              circle at 90% 0%,
-              rgba(212, 175, 55, 0.16),
-              transparent 34%
+              circle at 25% 0%,
+              rgba(212, 175, 55, 0.18),
+              transparent 26%
             ),
-            linear-gradient(180deg, #f8f4ec, #eee6d8);
+            linear-gradient(180deg, #03153f 0%, #08265f 48%, #0a2e73 100%);
+          color: #ffffff;
+          box-shadow: 12px 0 35px rgba(3, 21, 63, 0.2);
+          scrollbar-width: thin;
+          scrollbar-color: rgba(212, 175, 55, 0.55) transparent;
         }
 
-        .ncsLowStockHero {
+        .ncsSidebar::-webkit-scrollbar {
+          width: 5px;
+        }
+
+        .ncsSidebar::-webkit-scrollbar-thumb {
+          border-radius: 10px;
+          background: rgba(212, 175, 55, 0.55);
+        }
+
+        .ncsBrandArea {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-          padding: 28px 30px;
-          overflow: hidden;
-          border: 1px solid rgba(212, 175, 55, 0.58);
-          border-radius: 26px;
-          color: #ffffff;
-          background: linear-gradient(
-            135deg,
-            ${DEEP_BLUE},
-            ${ROYAL_BLUE},
-            #1b4f9c
-          );
-          box-shadow: 0 22px 48px rgba(6, 29, 74, 0.2);
+          gap: 13px;
+          min-height: 76px;
+          padding: 5px 7px 20px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.13);
         }
 
-        .ncsLowStockHero span,
-        .ncsFilterTitle span,
-        .ncsBrandGroup header span {
-          color: ${GOLD};
-          font-size: 10px;
-          font-weight: 950;
-          letter-spacing: 1.2px;
-        }
-
-        .ncsLowStockHero h1 {
-          margin: 7px 0 8px;
-          font-size: clamp(28px, 4vw, 46px);
-          line-height: 1;
-          font-weight: 950;
-        }
-
-        .ncsLowStockHero p {
-          max-width: 720px;
-          margin: 0;
-          color: rgba(255, 255, 255, 0.76);
-          font-size: 14px;
-          line-height: 1.6;
-        }
-
-        .ncsHeroActions,
-        .ncsExportRow > div {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 9px;
-        }
-
-        button {
-          min-height: 42px;
-          border: 1px solid rgba(10, 46, 115, 0.2);
-          border-radius: 13px;
-          padding: 0 15px;
-          color: ${ROYAL_BLUE};
-          background: #ffffff;
-          font: inherit;
-          font-size: 12px;
-          font-weight: 850;
-          cursor: pointer;
-          transition:
-            transform 0.18s ease,
-            box-shadow 0.18s ease;
-        }
-
-        button:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 8px 18px rgba(6, 29, 74, 0.12);
-        }
-
-        button:disabled {
-          cursor: wait;
-          opacity: 0.65;
-        }
-
-        button.gold {
-          border-color: ${GOLD};
-          color: ${DEEP_BLUE};
-          background: linear-gradient(135deg, #f8df7f, ${GOLD});
-        }
-
-        button.secondary {
-          border-color: rgba(255, 255, 255, 0.22);
-          color: #ffffff;
-          background: rgba(255, 255, 255, 0.09);
-        }
-
-        .ncsMessage {
-          margin-top: 16px;
-          padding: 14px 16px;
-          border-radius: 14px;
-          font-size: 13px;
-          font-weight: 800;
-        }
-
-        .ncsMessage.error {
-          border: 1px solid rgba(179, 38, 30, 0.3);
-          color: ${DANGER};
-          background: #fff1f0;
-        }
-
-        .ncsSummaryGrid {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 12px;
-          margin-top: 16px;
-        }
-
-        .ncsSummaryGrid article {
-          min-height: 128px;
-          padding: 20px;
-          border: 1px solid rgba(10, 46, 115, 0.12);
-          border-radius: 20px;
-          background: rgba(255, 255, 255, 0.92);
-          box-shadow: 0 12px 28px rgba(6, 29, 74, 0.08);
-        }
-
-        .ncsSummaryGrid span {
-          color: ${SOFT_GRAY};
-          font-size: 9px;
-          font-weight: 950;
-          letter-spacing: 0.8px;
-        }
-
-        .ncsSummaryGrid strong {
-          display: block;
-          margin: 10px 0 5px;
-          color: ${ROYAL_BLUE};
-          font-size: 34px;
-          line-height: 1;
-        }
-
-        .ncsSummaryGrid small {
-          color: ${SOFT_GRAY};
-          font-size: 10px;
-        }
-
-        .ncsSummaryGrid .dangerCard strong {
-          color: ${DANGER};
-        }
-
-        .ncsSummaryGrid .criticalCard strong {
-          color: #cb5700;
-        }
-
-        .ncsSummaryGrid .stockCard strong {
-          color: ${SUCCESS};
-        }
-
-        .ncsFilterPanel {
-          margin-top: 16px;
-          padding: 22px;
-          border: 1px solid rgba(212, 175, 55, 0.38);
-          border-radius: 22px;
-          background: rgba(255, 255, 255, 0.94);
-          box-shadow: 0 14px 32px rgba(6, 29, 74, 0.08);
-        }
-
-        .ncsFilterTitle,
-        .ncsExportRow,
-        .ncsBrandGroup > header {
+        .ncsBrandLogo {
+          width: 60px;
+          height: 60px;
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 14px;
-        }
-
-        .ncsFilterTitle h2,
-        .ncsBrandGroup header h2 {
-          margin: 4px 0 0;
-          color: ${ROYAL_BLUE};
-          font-size: 22px;
+          justify-content: center;
+          flex-shrink: 0;
+          border: 2px solid #d4af37;
+          border-radius: 18px;
+          background: rgba(212, 175, 55, 0.08);
+          color: #d4af37;
+          font-size: 18px;
           font-weight: 950;
+          letter-spacing: 1px;
         }
 
-        .ncsFilterGrid {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 12px;
-          margin-top: 18px;
+        .ncsBrandText {
+          min-width: 0;
         }
 
-        .ncsFilterGrid label {
-          display: grid;
-          gap: 7px;
-        }
-
-        .ncsFilterGrid label > span {
-          color: ${DEEP_BLUE};
-          font-size: 10px;
-          font-weight: 850;
-        }
-
-        input,
-        select {
-          width: 100%;
-          min-height: 46px;
-          border: 1px solid #d9dde6;
-          border-radius: 13px;
-          padding: 0 13px;
-          outline: 0;
-          color: ${CHARCOAL};
-          background: #ffffff;
-          font: inherit;
-          font-size: 12px;
-        }
-
-        input:focus,
-        select:focus {
-          border-color: ${GOLD};
-          box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.12);
-        }
-
-        .ncsExportRow {
-          margin-top: 18px;
-          padding-top: 16px;
-          border-top: 1px solid #ece7dd;
-          color: ${SOFT_GRAY};
-          font-size: 12px;
-        }
-
-        .ncsExportRow strong {
-          color: ${ROYAL_BLUE};
-        }
-
-        .ncsLoading,
-        .ncsEmpty {
-          margin-top: 16px;
-          padding: 55px 20px;
-          border: 1px dashed rgba(10, 46, 115, 0.26);
-          border-radius: 22px;
-          text-align: center;
-          background: rgba(255, 255, 255, 0.88);
-        }
-
-        .spinner {
-          width: 42px;
-          height: 42px;
-          margin: 0 auto 16px;
-          border: 4px solid rgba(10, 46, 115, 0.12);
-          border-top-color: ${GOLD};
-          border-radius: 50%;
-          animation: spin 0.8s linear infinite;
-        }
-
-        .ncsEmpty > div {
-          width: 54px;
-          height: 54px;
-          display: grid;
-          place-items: center;
-          margin: 0 auto 14px;
-          border-radius: 50%;
-          color: #ffffff;
-          background: ${SUCCESS};
-          font-size: 24px;
-          font-weight: 950;
-        }
-
-        .ncsLoading h3,
-        .ncsEmpty h2 {
-          margin: 0 0 7px;
-          color: ${ROYAL_BLUE};
-        }
-
-        .ncsLoading p,
-        .ncsEmpty p {
-          margin: 0;
-          color: ${SOFT_GRAY};
-          font-size: 12px;
-        }
-
-        .ncsReportGroups {
-          display: grid;
-          gap: 16px;
-          margin-top: 16px;
-        }
-
-        .ncsBrandGroup {
-          overflow: hidden;
-          border: 1px solid rgba(10, 46, 115, 0.12);
-          border-radius: 22px;
-          background: #ffffff;
-          box-shadow: 0 14px 32px rgba(6, 29, 74, 0.08);
-        }
-
-        .ncsBrandGroup > header {
-          padding: 18px 20px;
-          color: #ffffff;
-          background: linear-gradient(
-            135deg,
-            ${DEEP_BLUE},
-            ${ROYAL_BLUE}
-          );
-        }
-
-        .ncsBrandGroup header h2 {
-          color: #ffffff;
-        }
-
-        .ncsBrandGroup header > div:last-child {
-          text-align: right;
-        }
-
-        .ncsBrandGroup header strong {
+        .ncsBrandText strong,
+        .ncsBrandText span {
           display: block;
-          color: ${GOLD};
-          font-size: 25px;
         }
 
-        .ncsBrandGroup header small {
-          color: rgba(255, 255, 255, 0.7);
-          font-size: 9px;
-        }
-
-        .ncsTableWrap {
-          overflow-x: auto;
-        }
-
-        table {
-          width: 100%;
-          border-collapse: collapse;
-          min-width: 1060px;
-        }
-
-        th,
-        td {
-          padding: 13px 14px;
-          border-bottom: 1px solid #eceff3;
-          text-align: left;
-          font-size: 11px;
+        .ncsBrandText strong {
+          color: #d4af37;
+          font-size: 16px;
+          font-weight: 900;
+          line-height: 1.25;
+          letter-spacing: 0.4px;
           white-space: nowrap;
         }
 
-        th {
-          color: ${ROYAL_BLUE};
-          background: #f6f8fc;
-          font-size: 9px;
-          font-weight: 950;
-          letter-spacing: 0.5px;
+        .ncsBrandText span {
+          margin-top: 4px;
+          color: rgba(255, 255, 255, 0.68);
+          font-size: 11px;
+          font-weight: 600;
         }
 
-        tbody tr:hover {
-          background: #fffcf3;
+        .ncsMenu {
+          display: grid;
+          gap: 6px;
+          margin-top: 18px;
         }
 
-        td:first-child {
-          min-width: 190px;
-          white-space: normal;
+        .ncsMenuItem {
+          width: 100%;
+          min-height: 47px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 0 14px;
+          border: 1px solid transparent;
+          border-radius: 11px;
+          color: rgba(255, 255, 255, 0.84) !important;
+          font-size: 14px;
+          font-weight: 700;
+          line-height: 1;
+          text-decoration: none !important;
+          white-space: nowrap;
+          transition:
+            transform 0.2s ease,
+            background 0.2s ease,
+            border-color 0.2s ease,
+            color 0.2s ease;
         }
 
-        td:first-child strong {
-          display: block;
-          color: ${DEEP_BLUE};
-          font-size: 12px;
+        .ncsMenuItem:hover {
+          transform: translateX(3px);
+          border-color: rgba(255, 255, 255, 0.11);
+          background: rgba(255, 255, 255, 0.08);
+          color: #ffffff !important;
         }
 
-        td:first-child small {
-          display: block;
-          margin-top: 3px;
-          color: ${SOFT_GRAY};
-          font-size: 9px;
+        .ncsActiveMenuItem {
+          border-color: rgba(255, 255, 255, 0.5);
+          background: linear-gradient(135deg, #d4af37, #f1d26a);
+          color: #0a2e73 !important;
+          box-shadow: 0 10px 25px rgba(212, 175, 55, 0.23);
         }
 
-        .variantBadge {
+        .ncsMenuIcon {
+          width: 27px;
           display: inline-flex;
-          min-width: 34px;
+          align-items: center;
           justify-content: center;
-          padding: 5px 8px;
-          border: 1px solid rgba(10, 46, 115, 0.15);
-          border-radius: 9px;
-          color: ${ROYAL_BLUE};
-          background: #f6f8fc;
+          flex-shrink: 0;
+          font-size: 18px;
+        }
+
+        .ncsMenuLabel {
+          display: block;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .ncsSidebarBottom {
+          display: grid;
+          gap: 10px;
+          margin-top: auto;
+          padding-top: 22px;
+        }
+
+        .ncsAdminIdentity {
+          display: flex;
+          align-items: center;
+          gap: 11px;
+          padding: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          border-radius: 13px;
+          background: rgba(255, 255, 255, 0.07);
+        }
+
+        .ncsAdminAvatar {
+          width: 42px;
+          height: 42px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          border-radius: 12px;
+          background: linear-gradient(135deg, #d4af37, #f1d26a);
+          color: #0a2e73;
+          font-size: 15px;
+          font-weight: 950;
+        }
+
+        .ncsAdminText {
+          min-width: 0;
+        }
+
+        .ncsAdminText strong,
+        .ncsAdminText span {
+          display: block;
+        }
+
+        .ncsAdminText strong {
+          color: #ffffff;
+          font-size: 12px;
           font-weight: 850;
         }
 
-        .statusBadge {
-          display: inline-flex;
-          padding: 6px 9px;
-          border-radius: 999px;
-          font-size: 8px;
+        .ncsAdminText span {
+          max-width: 182px;
+          margin-top: 4px;
+          overflow: hidden;
+          color: rgba(255, 255, 255, 0.62);
+          font-size: 10px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .ncsViewStoreButton,
+        .ncsLogoutButton {
+          width: 100%;
+          min-height: 44px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 9px;
+          border-radius: 10px;
+          font-size: 12px;
+          font-weight: 850;
+          text-decoration: none !important;
+          cursor: pointer;
+        }
+
+        .ncsViewStoreButton {
+          border: 1px solid #d4af37;
+          background: rgba(212, 175, 55, 0.12);
+          color: #d4af37 !important;
+        }
+
+        .ncsLogoutButton {
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          background: rgba(255, 255, 255, 0.07);
+          color: #ffffff;
+        }
+
+        .ncsViewStoreButton:hover,
+        .ncsLogoutButton:hover {
+          transform: translateY(-1px);
+          filter: brightness(1.08);
+        }
+
+        .ncsAdminContent {
+          min-height: 100vh;
+          margin-left: 292px;
+        }
+
+        .ncsSidebarCollapseButton {
+          position: absolute;
+          z-index: 5;
+          top: 92px;
+          right: -15px;
+          width: 31px;
+          height: 42px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid #d4af37;
+          border-radius: 0 11px 11px 0;
+          background: linear-gradient(180deg, #d4af37, #f1d26a);
+          color: #0a2e73;
+          font-size: 25px;
           font-weight: 950;
-          letter-spacing: 0.4px;
+          cursor: pointer;
+          box-shadow: 5px 6px 16px rgba(3, 21, 63, 0.22);
+          transition:
+            transform 0.2s ease,
+            filter 0.2s ease;
         }
 
-        .statusBadge.danger {
-          color: ${DANGER};
-          background: #ffefed;
+        .ncsSidebarCollapseButton:hover {
+          transform: translateX(2px);
+          filter: brightness(1.04);
         }
 
-        .statusBadge.critical {
-          color: #b84c00;
-          background: #fff2df;
+        .ncsSidebar,
+        .ncsAdminContent {
+          transition:
+            width 0.25s ease,
+            margin-left 0.25s ease,
+            padding 0.25s ease;
         }
 
-        .statusBadge.warning {
-          color: #846500;
-          background: #fff7d8;
+        .ncsSidebarCollapsed {
+          width: 86px;
+          padding-left: 12px;
+          padding-right: 12px;
+          overflow: visible;
         }
 
-        .stockZero {
-          color: ${DANGER};
+        .ncsSidebarCollapsed .ncsBrandArea {
+          justify-content: center;
+          padding-left: 0;
+          padding-right: 0;
         }
 
-        .stockCritical {
-          color: #cb5700;
+        .ncsSidebarCollapsed .ncsBrandLogo {
+          width: 54px;
+          height: 54px;
         }
 
-        .stockLow {
-          color: #846500;
+        .ncsSidebarCollapsed .ncsBrandText,
+        .ncsSidebarCollapsed .ncsMenuLabel,
+        .ncsSidebarCollapsed .ncsAdminText,
+        .ncsSidebarCollapsed .ncsViewStoreButton:not(:hover) {
+          display: none;
         }
 
-        @keyframes spin {
-          to {
-            transform: rotate(360deg);
+        .ncsSidebarCollapsed .ncsMenuItem {
+          min-height: 48px;
+          justify-content: center;
+          gap: 0;
+          padding: 0;
+        }
+
+        .ncsSidebarCollapsed .ncsMenuIcon {
+          width: 100%;
+          font-size: 20px;
+        }
+
+        .ncsSidebarCollapsed .ncsSidebarBottom {
+          gap: 8px;
+        }
+
+        .ncsSidebarCollapsed .ncsAdminIdentity {
+          justify-content: center;
+          padding: 8px;
+        }
+
+        .ncsSidebarCollapsed .ncsViewStoreButton,
+        .ncsSidebarCollapsed .ncsLogoutButton {
+          min-height: 44px;
+          padding: 0;
+          font-size: 0;
+        }
+
+        .ncsSidebarCollapsed .ncsViewStoreButton span,
+        .ncsSidebarCollapsed .ncsLogoutButton span {
+          font-size: 18px;
+        }
+
+        .ncsAdminShellCollapsed .ncsAdminContent {
+          margin-left: 86px;
+        }
+
+        .ncsMobileMenuButton,
+        .ncsMobileOverlay {
+          display: none;
+        }
+
+        @media (max-width: 1100px) {
+          .ncsSidebar {
+            width: 270px;
+          }
+
+          .ncsAdminContent {
+            margin-left: 270px;
+          }
+
+          .ncsMenuItem {
+            font-size: 13px;
           }
         }
 
-        @media (max-width: 1050px) {
-          .ncsLowStockHero {
-            align-items: flex-start;
-            flex-direction: column;
-          }
-
-          .ncsSummaryGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-
-          .ncsFilterGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-        }
-
-        @media (max-width: 650px) {
-          .ncsLowStockPage {
-            padding: 12px;
-          }
-
-          .ncsLowStockHero {
-            padding: 20px;
-            border-radius: 20px;
-          }
-
-          .ncsHeroActions {
-            width: 100%;
-          }
-
-          .ncsHeroActions button {
-            flex: 1;
-          }
-
-          .ncsSummaryGrid {
-            gap: 8px;
-          }
-
-          .ncsSummaryGrid article {
-            min-height: 108px;
-            padding: 15px;
-          }
-
-          .ncsSummaryGrid strong {
-            font-size: 28px;
-          }
-
-          .ncsFilterPanel {
-            padding: 16px;
-          }
-
-          .ncsFilterGrid {
+        @media (max-width: 900px) {
+          .ncsBusinessTicker {
+            position: fixed;
+            right: 0;
+            left: 0;
+            top: 0;
             grid-template-columns: 1fr;
+            min-height: 84px;
           }
 
-          .ncsFilterTitle,
-          .ncsExportRow {
-            align-items: stretch;
-            flex-direction: column;
+          .ncsTickerLiveBadge {
+            min-width: 0;
+            min-height: 30px;
+            padding: 0 10px;
+            border-right: 0;
+            border-bottom: 1px solid rgba(212, 175, 55, 0.68);
+            font-size: 8px;
           }
 
-          .ncsExportRow > div {
-            width: 100%;
+          .ncsTickerViewport {
+            min-height: 54px;
+            padding: 6px 8px;
           }
 
-          .ncsExportRow button {
-            flex: 1;
+          .ncsChequeTickerCard {
+            max-width: calc(100% - 14px);
+            min-height: 39px;
+            gap: 6px;
+            padding: 6px 9px;
+          }
+
+          .ncsChequeTickerStatus {
+            min-height: 22px;
+            padding: 3px 7px;
+            font-size: 7px;
+          }
+
+          .ncsChequeTickerSupplier,
+          .ncsChequeTickerAmount {
+            font-size: 9px;
+          }
+
+          .ncsChequeTickerBank,
+          .ncsChequeTickerDate {
+            font-size: 8px;
+          }
+
+          .ncsChequeTickerSeparator {
+            display: none;
+          }
+
+          .ncsSidebarCollapseButton {
+            display: none;
+          }
+
+          .ncsSidebar,
+          .ncsSidebarCollapsed {
+            width: min(86vw, 310px);
+            transform: translateX(-105%);
+            transition: transform 0.25s ease;
+          }
+
+          .ncsSidebarOpen {
+            transform: translateX(0);
+          }
+
+          .ncsAdminContent,
+          .ncsAdminShellCollapsed .ncsAdminContent {
+            margin-left: 0;
+            padding-top: 128px;
+          }
+
+          .ncsMobileMenuButton {
+            position: fixed;
+            z-index: 120;
+            top: 12px;
+            left: 12px;
+            width: 47px;
+            height: 47px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #d4af37;
+            border-radius: 12px;
+            background: #0a2e73;
+            color: #d4af37;
+            font-size: 23px;
+            cursor: pointer;
+            box-shadow: 0 8px 25px rgba(10, 46, 115, 0.3);
+          }
+
+          .ncsMobileOverlay {
+            position: fixed;
+            z-index: 90;
+            inset: 0;
+            display: block;
+            border: 0;
+            background: rgba(3, 21, 63, 0.62);
           }
         }
-      `}</style>
-    </main>
+            `}</style>
+    </div>
   );
 }
