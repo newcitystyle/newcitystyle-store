@@ -2690,64 +2690,71 @@ if (!variantsError) {
       );
     }
 
-    const pdf = generateCustomerInvoicePdf(sale);
-    const fileName = `${safePdfFileName(sale.invoiceNumber)}.pdf`;
-    const pdfBlob = pdf.output("blob");
-
-    const formData = new FormData();
-    formData.append(
-      "pdf",
-      new File([pdfBlob], fileName, {
-        type: "application/pdf",
-      }),
-    );
-    formData.append("to", recipientPhone);
-    formData.append(
-      "customerName",
-      sale.customerName.trim() || "Customer",
-    );
-    formData.append("billNumber", sale.invoiceNumber);
-    formData.append(
-      "billAmount",
-      sale.totalAmount.toFixed(2),
-    );
-    formData.append(
-      "paidAmount",
-      sale.paidAmount.toFixed(2),
-    );
-    formData.append(
-      "dueAmount",
-      sale.dueAmount.toFixed(2),
-    );
-    formData.append(
-      "paymentMethod",
-      sale.paymentMethod.toUpperCase(),
-    );
-    formData.append("fileName", fileName);
-
     const response = await fetch(
-      "/api/whatsapp/invoice",
+      "/api/whatsapp/invoice-pdf",
       {
         method: "POST",
-        body: formData,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: recipientPhone,
+          sendWhatsApp: true,
+          customerName:
+            sale.customerName.trim() || "Customer",
+          customerPhone: sale.customerPhone,
+          billNumber: sale.invoiceNumber,
+          billDate: new Date(
+            sale.completedAt,
+          ).toLocaleString("en-IN"),
+          paymentMethod:
+            sale.paymentMethod.toUpperCase(),
+          subtotal: sale.subtotal,
+          discountAmount: sale.billDiscount,
+          taxAmount: sale.taxAmount,
+          roundOff: sale.roundOff,
+          billAmount: sale.totalAmount,
+          paidAmount: sale.paidAmount,
+          dueAmount: sale.dueAmount,
+          items: sale.items.map((item) => ({
+            name: item.name,
+            quantity: item.quantity,
+            mrp: item.mrp,
+            price: item.price,
+            total: item.price * item.quantity,
+            size: item.size,
+            color: item.color,
+          })),
+        }),
       },
     );
 
     const result = (await response.json()) as {
       success?: boolean;
+      whatsappPdfSent?: boolean;
       message?: string;
       error?: string;
       stage?: string;
       whatsappMessageId?: string | null;
+      metaErrorCode?: number | null;
+      errorDetails?: string | null;
     };
 
-    if (!response.ok || result.success !== true) {
+    if (
+      !response.ok ||
+      result.success !== true ||
+      result.whatsappPdfSent !== true
+    ) {
       const stageMessage = result.stage
         ? ` (${result.stage})`
         : "";
 
+      const detailMessage = result.errorDetails
+        ? ` - ${result.errorDetails}`
+        : "";
+
       throw new Error(
-        `${result.error || "WhatsApp PDF invoice could not be sent."}${stageMessage}`,
+        `${result.error || "WhatsApp PDF invoice could not be sent."}${stageMessage}${detailMessage}`,
       );
     }
 
