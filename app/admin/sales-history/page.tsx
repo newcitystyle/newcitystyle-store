@@ -917,26 +917,33 @@ export default function SalesHistoryPage() {
     setPaymentEditSaving(true);
 
     try {
-      const updatePayload = {
-        customer_name: customerName,
-        payment_method: paymentEditValue,
-        paid_amount: paidAmount,
-        due_amount: dueAmount,
-        payment_status: nextPaymentStatus,
-        total_amount: nextTotalAmount,
-        bill_discount: nextBillDiscount,
-      };
-
-      const { error } = await supabase
-        .from("pos_sales")
-        .update(updatePayload)
-        .eq("id", selected.id);
+      const { data: updatedSaleData, error } = await supabase.rpc(
+        "update_pos_sale_payment_correction",
+        {
+          p_sale_id: selected.id,
+          p_customer_name: customerName,
+          p_payment_method: paymentEditValue,
+          p_paid_amount: paidAmount,
+          p_balance_treatment: paymentBalanceTreatment,
+        },
+      );
 
       if (error) throw error;
 
+      const updatedRow = Array.isArray(updatedSaleData)
+        ? updatedSaleData[0]
+        : updatedSaleData;
+
+      if (!updatedRow) {
+        throw new Error(
+          "Payment update completed but the database did not return the updated bill.",
+        );
+      }
+
       const updatedSelected: SaleDetails = {
         ...selected,
-        ...updatePayload,
+        ...(updatedRow as Sale),
+        items: selected.items,
       };
 
       setSelected(updatedSelected);
@@ -945,7 +952,7 @@ export default function SalesHistoryPage() {
           sale.id === selected.id
             ? {
                 ...sale,
-                ...updatePayload,
+                ...(updatedRow as Sale),
               }
             : sale,
         ),
