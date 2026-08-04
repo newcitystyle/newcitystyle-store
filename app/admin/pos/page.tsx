@@ -75,6 +75,7 @@ type PosProduct = {
 
 type CartItem = PosProduct & {
   quantity: number;
+  discountPercent?: number;
 };
 
 type PosProductGroup = {
@@ -1329,11 +1330,29 @@ if (!variantsError) {
       .slice(0, 6);
   }, [groupedProducts, popularProductCounts]);
 
-  const subtotal = useMemo(
+  const itemMrpSubtotal = useMemo(
+    () =>
+      cartItems.reduce(
+        (total, item) => total + item.mrp * item.quantity,
+        0
+      ),
+    [cartItems]
+  );
+
+  const itemDiscountAmount = useMemo(
     () =>
       cartItems.reduce(
         (total, item) =>
-          total + item.price * item.quantity,
+          total + Math.max(0, item.mrp - item.price) * item.quantity,
+        0
+      ),
+    [cartItems]
+  );
+
+  const subtotal = useMemo(
+    () =>
+      cartItems.reduce(
+        (total, item) => total + item.price * item.quantity,
         0
       ),
     [cartItems]
@@ -1342,13 +1361,9 @@ if (!variantsError) {
   const itemTax = useMemo(
     () =>
       cartItems.reduce((total, item) => {
-        const taxableValue =
-          item.price * item.quantity;
+        const taxableValue = item.price * item.quantity;
 
-        return (
-          total +
-          (taxableValue * item.taxPercent) / 100
-        );
+        return total + (taxableValue * item.taxPercent) / 100;
       }, 0),
     [cartItems]
   );
@@ -1659,6 +1674,7 @@ if (!variantsError) {
         {
           ...product,
           quantity: 1,
+          discountPercent: 0,
         },
       ];
     });
@@ -1672,6 +1688,35 @@ if (!variantsError) {
 
     setSearchQuery("");
     searchInputRef.current?.focus();
+  }
+
+  function updateItemDiscount(
+    itemKey: string,
+    rawDiscountPercent: number
+  ) {
+    const discountPercent = Math.min(
+      100,
+      Math.max(0, toNumber(rawDiscountPercent))
+    );
+
+    setCartItems((currentItems) =>
+      currentItems.map((item) => {
+        if (item.key !== itemKey) {
+          return item;
+        }
+
+        const sellingPrice = Math.max(
+          0,
+          item.mrp - (item.mrp * discountPercent) / 100
+        );
+
+        return {
+          ...item,
+          discountPercent,
+          price: Number(sellingPrice.toFixed(2)),
+        };
+      })
+    );
   }
 
   function increaseQuantity(itemKey: string) {
@@ -2563,58 +2608,15 @@ if (!variantsError) {
 
   async function shareCustomerInvoicePdf(sale: CompletedSale) {
     try {
-      const pdf = generateCustomerInvoicePdf(sale);
-      const fileName = `${safePdfFileName(sale.invoiceNumber)}.pdf`;
-      const blob = pdf.output("blob");
-      const file = new File([blob], fileName, {
-        type: "application/pdf",
-      });
-
-      const shareData = {
-        title: `NEW CITY STYLE Invoice ${sale.invoiceNumber}`,
-        text: `NEW CITY STYLE invoice ${sale.invoiceNumber}`,
-        files: [file],
-      };
-
-      if (
-        typeof navigator !== "undefined" &&
-        typeof navigator.share === "function" &&
-        (!navigator.canShare || navigator.canShare(shareData))
-      ) {
-        await navigator.share(shareData);
-        showNotice("PDF invoice sharing opened.", "success");
-        return;
-      }
-
-      pdf.save(fileName);
-
-      const digits = sale.customerPhone.replace(/\D/g, "");
-      const phone = digits.length === 10 ? `91${digits}` : digits;
-      const message = [
-        "NEW CITY STYLE",
-        `Invoice: ${sale.invoiceNumber}`,
-        `Total: ${formatCurrency(sale.totalAmount)}`,
-        "",
-        `The PDF invoice "${fileName}" has been downloaded.`,
-        "Please attach the downloaded PDF in this WhatsApp chat.",
-      ].join("\n");
-
-      const whatsappUrl = phone
-        ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
-        : `https://wa.me/?text=${encodeURIComponent(message)}`;
-
-      window.open(whatsappUrl, "_blank", "noopener,noreferrer");
-
-      showNotice(
-        "PDF downloaded. WhatsApp opened—attach the downloaded invoice PDF.",
-        "info",
-      );
+      showNotice("Sending PDF invoice directly to WhatsApp...", "info");
+      await sendInvoicePdfViaWhatsApp(sale);
+      showNotice("PDF invoice sent directly on WhatsApp.", "success");
     } catch (error) {
-      console.error("Unable to share PDF invoice:", error);
+      console.error("Unable to send PDF invoice:", error);
       showNotice(
         error instanceof Error
           ? error.message
-          : "Unable to generate the PDF invoice.",
+          : "Unable to send the PDF invoice on WhatsApp.",
         "error",
       );
     }
@@ -2721,6 +2723,7 @@ if (!variantsError) {
             quantity: item.quantity,
             mrp: item.mrp,
             price: item.price,
+            discountPercent: Math.max(0, item.discountPercent || 0),
             total: item.price * item.quantity,
             size: item.size,
             color: item.color,
@@ -2761,24 +2764,18 @@ if (!variantsError) {
     return result;
   }
 
-  function shareCompletedSaleOnWhatsApp(sale: CompletedSale) {
-    const digits = sale.customerPhone.replace(/\D/g, "");
-    const phone =
-      digits.length === 10
-        ? `91${digits}`
-        : digits;
-
-    const message = buildWhatsAppInvoiceMessage(sale);
-    const url = phone
-      ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
-      : `https://wa.me/?text=${encodeURIComponent(message)}`;
-
-    const popup = window.open(url, "_blank", "noopener,noreferrer");
-
-    if (!popup) {
+  async function shareCompletedSaleOnWhatsApp(sale: CompletedSale) {
+    try {
+      showNotice("Sending invoice directly to WhatsApp...", "info");
+      await sendInvoicePdfViaWhatsApp(sale);
+      showNotice("Invoice sent directly on WhatsApp.", "success");
+    } catch (error) {
+      console.error("Unable to send WhatsApp invoice:", error);
       showNotice(
-        "Please allow popups to share the invoice on WhatsApp.",
-        "error"
+        error instanceof Error
+          ? error.message
+          : "Unable to send the invoice on WhatsApp.",
+        "error",
       );
     }
   }
@@ -4478,6 +4475,9 @@ if (!variantsError) {
               />
               <span>
                 Customer agreed to receive WhatsApp offers
+                <small>
+                  Existing opted-in customers are selected automatically.
+                </small>
               </span>
             </label>
           </div>
@@ -4527,8 +4527,64 @@ if (!variantsError) {
                           item.category}
                       </p>
 
+                      <div className="ncsPosItemPriceLine">
+                        <span>MRP {formatCurrency(item.mrp)}</span>
+                        <strong>Sell {formatCurrency(item.price)}</strong>
+                      </div>
+                    </div>
+
+                    <div className="ncsPosQuantityControl">
+                      <button
+                        type="button"
+                        onClick={() => decreaseQuantity(item.key)}
+                        aria-label={`Decrease ${item.name} quantity`}
+                      >
+                        −
+                      </button>
+
+                      <span>{item.quantity}</span>
+
+                      <button
+                        type="button"
+                        onClick={() => increaseQuantity(item.key)}
+                        aria-label={`Increase ${item.name} quantity`}
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    <label className="ncsPosItemDiscountField">
+                      <span>Discount</span>
+                      <div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={
+                            item.discountPercent === 0 ||
+                            item.discountPercent == null
+                              ? ""
+                              : item.discountPercent
+                          }
+                          onChange={(event) =>
+                            updateItemDiscount(
+                              item.key,
+                              toNumber(event.target.value)
+                            )
+                          }
+                          placeholder="0"
+                          inputMode="decimal"
+                          aria-label={`${item.name} discount percentage`}
+                        />
+                        <b>%</b>
+                      </div>
+                    </label>
+
+                    <div className="ncsPosItemLineTotal">
+                      <span>Line Total</span>
                       <strong>
-                        {formatCurrency(item.price)}
+                        {formatCurrency(item.price * item.quantity)}
                       </strong>
                     </div>
 
@@ -4542,36 +4598,6 @@ if (!variantsError) {
                     >
                       ×
                     </button>
-                  </div>
-
-                  <div className="ncsPosCartItemBottom">
-                    <div className="ncsPosQuantityControl">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          decreaseQuantity(item.key)
-                        }
-                      >
-                        −
-                      </button>
-
-                      <span>{item.quantity}</span>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          increaseQuantity(item.key)
-                        }
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    <strong>
-                      {formatCurrency(
-                        item.price * item.quantity
-                      )}
-                    </strong>
                   </div>
                 </article>
               ))
@@ -4611,6 +4637,16 @@ if (!variantsError) {
                 <span>%</span>
               </div>
             </label>
+
+            <div className="ncsPosSummaryLine">
+              <span>MRP Total</span>
+              <strong>{formatCurrency(itemMrpSubtotal)}</strong>
+            </div>
+
+            <div className="ncsPosSummaryLine ncsPosDiscountLine">
+              <span>Item Discounts</span>
+              <strong>− {formatCurrency(itemDiscountAmount)}</strong>
+            </div>
 
             <div className="ncsPosSummaryLine">
               <span>Subtotal</span>
@@ -6103,7 +6139,7 @@ if (!variantsError) {
           display: grid;
           grid-template-columns:
             minmax(0, 1fr)
-            minmax(400px, 460px);
+            minmax(520px, 610px);
           gap: 18px;
           align-items: start;
         }
@@ -6611,6 +6647,14 @@ if (!variantsError) {
           cursor: pointer;
         }
 
+        .ncsPosMarketingConsent small {
+          display: block;
+          margin-top: 2px;
+          color: #667085;
+          font-size: 7px;
+          font-weight: 650;
+        }
+
         .ncsPosMarketingConsent input {
           margin-top: 1px;
           accent-color: #16A34A;
@@ -6780,8 +6824,15 @@ if (!variantsError) {
         }
 
         .ncsPosCartItemTop {
-          display: flex;
-          align-items: flex-start;
+          display: grid;
+          grid-template-columns:
+            48px
+            minmax(150px, 1fr)
+            auto
+            minmax(96px, 112px)
+            minmax(96px, 122px)
+            27px;
+          align-items: center;
           gap: 9px;
         }
 
@@ -6816,9 +6867,9 @@ if (!variantsError) {
           margin: 0;
           overflow: hidden;
           color: ${DEEP_BLUE};
-          font-size: 10px;
-          font-weight: 850;
-          line-height: 1.4;
+          font-size: 12px;
+          font-weight: 900;
+          line-height: 1.35;
           -webkit-box-orient: vertical;
           -webkit-line-clamp: 2;
         }
@@ -6836,6 +6887,26 @@ if (!variantsError) {
           font-weight: 900;
         }
 
+        .ncsPosItemPriceLine {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 7px;
+        }
+
+        .ncsPosItemPriceLine span,
+        .ncsPosItemPriceLine del {
+          color: #7b8493;
+          font-size: 9px;
+          font-weight: 750;
+        }
+
+        .ncsPosItemPriceLine strong {
+          color: ${ROYAL_BLUE};
+          font-size: 11px;
+          font-weight: 950;
+        }
+
         .ncsPosRemoveItem {
           width: 25px;
           height: 25px;
@@ -6848,19 +6919,61 @@ if (!variantsError) {
           cursor: pointer;
         }
 
-        .ncsPosCartItemBottom {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          margin-top: 9px;
-          padding-top: 9px;
-          border-top: 1px dashed #e5e8ed;
+        .ncsPosItemDiscountField,
+        .ncsPosItemLineTotal {
+          display: grid;
+          gap: 4px;
+          min-width: 0;
         }
 
-        .ncsPosCartItemBottom > strong {
+        .ncsPosItemDiscountField > span,
+        .ncsPosItemLineTotal > span {
+          color: #727b8a;
+          font-size: 8px;
+          font-weight: 850;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .ncsPosItemDiscountField > div {
+          min-height: 34px;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 28px;
+          align-items: center;
+          overflow: hidden;
+          border: 1px solid rgba(10, 46, 115, 0.2);
+          border-radius: 10px;
+          background: #fffdf6;
+        }
+
+        .ncsPosItemDiscountField input {
+          width: 100%;
+          min-width: 0;
+          height: 32px;
+          border: 0;
+          outline: 0;
+          background: transparent;
           color: ${DEEP_BLUE};
           font-size: 12px;
+          font-weight: 900;
+          text-align: center;
+        }
+
+        .ncsPosItemDiscountField b {
+          color: ${ROYAL_BLUE};
+          font-size: 11px;
+          font-weight: 950;
+          text-align: center;
+        }
+
+        .ncsPosItemLineTotal {
+          text-align: right;
+          white-space: nowrap;
+        }
+
+        .ncsPosItemLineTotal strong {
+          color: ${DEEP_BLUE};
+          font-size: 15px;
           font-weight: 950;
         }
 
@@ -8015,7 +8128,7 @@ if (!variantsError) {
           .ncsPosWorkspace {
             grid-template-columns:
               minmax(0, 1fr)
-              minmax(340px, 370px);
+              minmax(430px, 500px);
           }
 
           .ncsPosProductGrid {
@@ -8238,6 +8351,42 @@ if (!variantsError) {
           to {
             opacity: 1;
             transform: translateY(0) scale(1);
+          }
+        }
+
+        @media (max-width: 760px) {
+          .ncsPosCartItemTop {
+            grid-template-columns: 44px minmax(0, 1fr) 27px;
+            align-items: start;
+          }
+
+          .ncsPosCartThumbnail {
+            width: 44px;
+            height: 50px;
+          }
+
+          .ncsPosQuantityControl,
+          .ncsPosItemDiscountField,
+          .ncsPosItemLineTotal {
+            margin-top: 4px;
+          }
+
+          .ncsPosQuantityControl {
+            grid-column: 1 / 2;
+          }
+
+          .ncsPosItemDiscountField {
+            grid-column: 2 / 3;
+          }
+
+          .ncsPosItemLineTotal {
+            grid-column: 2 / 4;
+            text-align: right;
+          }
+
+          .ncsPosRemoveItem {
+            grid-column: 3 / 4;
+            grid-row: 1;
           }
         }
 

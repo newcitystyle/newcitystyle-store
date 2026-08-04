@@ -111,6 +111,7 @@ export default function LowStockReportPage() {
   const [stockFilter, setStockFilter] = useState<StockFilter>("below5");
   const [customLimit, setCustomLimit] = useState(5);
   const [groupByBrand, setGroupByBrand] = useState(true);
+  const [whatsAppSending, setWhatsAppSending] = useState(false);
 
   const loadLowStock = useCallback(
     async (showRefresh = false) => {
@@ -688,6 +689,130 @@ export default function LowStockReportPage() {
     }
   }
 
+  async function sendLowStockPdfViaWhatsApp() {
+    if (whatsAppSending) return;
+
+    if (filteredItems.length === 0) {
+      window.alert("No low stock items are available for this filter.");
+      return;
+    }
+
+    const enteredPhone = window.prompt(
+      "Enter WhatsApp mobile number:",
+      "",
+    );
+
+    if (enteredPhone === null) return;
+
+    const digits = enteredPhone.replace(/\D/g, "");
+    const recipientPhone =
+      digits.length === 10 ? `91${digits}` : digits;
+
+    if (
+      recipientPhone.length < 10 ||
+      recipientPhone.length > 15
+    ) {
+      window.alert("Enter a valid WhatsApp mobile number.");
+      return;
+    }
+
+    setWhatsAppSending(true);
+
+    try {
+      const now = new Date();
+      const reportNumber = `LOW-STOCK-${now
+        .toISOString()
+        .slice(0, 10)
+        .replace(/-/g, "")}`;
+
+      const reportItems = filteredItems.slice(0, 80).map((item) => ({
+        name: `${item.brand} - ${item.productName}`,
+        quantity: Math.max(1, item.lowStockLimit - item.availableStock),
+        mrp: 0,
+        price: 0,
+        total: 0,
+        size: item.size === "—" ? "" : item.size,
+        color: [
+          item.color === "—" ? "" : item.color,
+          `Available ${item.availableStock}`,
+          `Alert ${item.lowStockLimit}`,
+        ]
+          .filter(Boolean)
+          .join(" • "),
+      }));
+
+      const response = await fetch(
+        "/api/whatsapp/invoice-pdf",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: recipientPhone,
+            sendWhatsApp: true,
+            customerName: "Low Stock Reorder Report",
+            customerPhone: enteredPhone,
+            billNumber: reportNumber,
+            billDate: now.toLocaleString("en-IN"),
+            paymentMethod: "STOCK REORDER",
+            subtotal: 0,
+            discountAmount: 0,
+            taxAmount: 0,
+            roundOff: 0,
+            billAmount: 0,
+            paidAmount: 0,
+            dueAmount: 0,
+            items: reportItems,
+          }),
+        },
+      );
+
+      const result = (await response.json()) as {
+        success?: boolean;
+        whatsappPdfSent?: boolean;
+        error?: string;
+        stage?: string;
+        errorDetails?: string | null;
+      };
+
+      if (
+        !response.ok ||
+        result.success !== true ||
+        result.whatsappPdfSent !== true
+      ) {
+        const stageText = result.stage
+          ? ` (${result.stage})`
+          : "";
+        const detailText = result.errorDetails
+          ? ` - ${result.errorDetails}`
+          : "";
+
+        throw new Error(
+          `${
+            result.error ||
+            "Low-stock WhatsApp PDF could not be sent."
+          }${stageText}${detailText}`,
+        );
+      }
+
+      window.alert("Low-stock PDF sent directly on WhatsApp.");
+    } catch (error) {
+      console.error(
+        "Unable to send low-stock WhatsApp PDF:",
+        error,
+      );
+
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to send low-stock WhatsApp PDF.",
+      );
+    } finally {
+      setWhatsAppSending(false);
+    }
+  }
+
   function downloadCsv() {
     if (filteredItems.length === 0) {
       window.alert("No low stock items are available for this filter.");
@@ -775,6 +900,17 @@ export default function LowStockReportPage() {
 
           <button type="button" className="gold" onClick={downloadPdf}>
             ↓ Download PDF
+          </button>
+
+          <button
+            type="button"
+            className="whatsApp"
+            disabled={whatsAppSending}
+            onClick={() => void sendLowStockPdfViaWhatsApp()}
+          >
+            {whatsAppSending
+              ? "Sending..."
+              : "💬 WhatsApp PDF"}
           </button>
         </div>
       </section>
@@ -933,6 +1069,16 @@ export default function LowStockReportPage() {
             </button>
             <button type="button" className="gold" onClick={downloadPdf}>
               ↓ Download PDF
+            </button>
+            <button
+              type="button"
+              className="whatsApp"
+              disabled={whatsAppSending}
+              onClick={() => void sendLowStockPdfViaWhatsApp()}
+            >
+              {whatsAppSending
+                ? "Sending..."
+                : "💬 WhatsApp PDF"}
             </button>
           </div>
         </div>
@@ -1141,6 +1287,12 @@ export default function LowStockReportPage() {
           border-color: rgba(255, 255, 255, 0.22);
           color: #ffffff;
           background: rgba(255, 255, 255, 0.09);
+        }
+
+        button.whatsApp {
+          border-color: #1fa855;
+          color: #067647;
+          background: #ecfdf3;
         }
 
         .ncsMessage {

@@ -180,6 +180,8 @@ export default function CustomerRequestsPage() {
   );
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [ageFilter, setAgeFilter] = useState("ALL");
+  const [whatsAppSendingRequestId, setWhatsAppSendingRequestId] =
+    useState<string | null>(null);
 
   useEffect(() => {
     void loadRequests();
@@ -460,42 +462,90 @@ export default function CustomerRequestsPage() {
     }
   }
 
-  function openWhatsApp(request: CustomerRequest) {
+  async function sendWhatsAppRequestUpdate(
+    request: CustomerRequest
+  ) {
+    if (whatsAppSendingRequestId !== null) return;
+
     const rawPhone = request.phone.replace(/\D/g, "");
     const phone =
       rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
 
+    if (phone.length < 10 || phone.length > 15) {
+      alert("This customer does not have a valid mobile number.");
+      return;
+    }
+
     const itemDescription = [
       request.product_name,
+      request.brand ? `Brand ${request.brand}` : "",
       request.size ? `Size ${request.size}` : "",
-      request.colour || "",
+      request.colour ? `Colour ${request.colour}` : "",
     ]
       .filter(Boolean)
       .join(" • ");
 
-    const message = [
-      `Hello ${request.customer_name} garu,`,
-      "",
+    const offerMessage = [
       `You requested ${itemDescription} at NEW CITY STYLE.`,
       request.status === "MATCH_FOUND"
-        ? "The requested item is now available."
+        ? "Good news! The requested item is now available."
         : "We are following up regarding your requested item.",
-      "",
       "Please reply or visit the store for availability.",
-      "",
-      "NEW CITY STYLE",
-      "Style for Every Family",
-    ].join("\n");
+    ].join(" ");
 
-    window.open(
-      `https://wa.me/${phone}?text=${encodeURIComponent(
-        message
-      )}`,
-      "_blank",
-      "noopener,noreferrer"
-    );
+    setWhatsAppSendingRequestId(request.id);
 
-    void updateStatus(request, "CUSTOMER_CONTACTED");
+    try {
+      const response = await fetch("/api/whatsapp/offer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: phone,
+          customerName: request.customer_name,
+          offerMessage,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        stage?: string;
+        errorDetails?: string | null;
+      };
+
+      if (!response.ok || result.success !== true) {
+        const stageText = result.stage ? ` (${result.stage})` : "";
+        const detailText = result.errorDetails
+          ? ` - ${result.errorDetails}`
+          : "";
+
+        throw new Error(
+          `${
+            result.error ||
+            "WhatsApp request update could not be sent."
+          }${stageText}${detailText}`
+        );
+      }
+
+      await updateStatus(request, "CUSTOMER_CONTACTED");
+      alert(
+        `WhatsApp request update sent directly to ${request.customer_name}.`
+      );
+    } catch (error) {
+      console.error(
+        "Unable to send customer request WhatsApp update:",
+        error
+      );
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to send WhatsApp request update."
+      );
+    } finally {
+      setWhatsAppSendingRequestId(null);
+    }
   }
 
   function callCustomer(request: CustomerRequest) {
@@ -1093,10 +1143,15 @@ export default function CustomerRequestsPage() {
                           type="button"
                           className="request-action-whatsapp"
                           onClick={() =>
-                            openWhatsApp(request)
+                            void sendWhatsAppRequestUpdate(request)
+                          }
+                          disabled={
+                            whatsAppSendingRequestId !== null
                           }
                         >
-                          💬 WhatsApp
+                          {whatsAppSendingRequestId === request.id
+                            ? "Sending..."
+                            : "💬 WhatsApp"}
                         </button>
 
                         <select
@@ -1651,6 +1706,11 @@ export default function CustomerRequestsPage() {
           border: 1px solid #86efac;
           background: #f0fdf4;
           color: #166534;
+        }
+
+        .request-action-whatsapp:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
 
         .request-action-edit {

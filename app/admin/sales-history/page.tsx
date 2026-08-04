@@ -148,6 +148,8 @@ export default function SalesHistoryPage() {
   const [paymentEditValue, setPaymentEditValue] = useState("cash");
   const [paymentEditSaving, setPaymentEditSaving] = useState(false);
   const [deleteSaving, setDeleteSaving] = useState(false);
+  const [whatsAppSendingSaleId, setWhatsAppSendingSaleId] =
+    useState<string | null>(null);
 
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnType, setReturnType] = useState<ReturnType>("refund");
@@ -913,6 +915,123 @@ export default function SalesHistoryPage() {
     }
   }
 
+  async function sendSaleWhatsAppPdf(sale: SaleDetails) {
+    if (whatsAppSendingSaleId !== null) return;
+
+    const digits = (sale.customer_phone || "").replace(/\D/g, "");
+    const recipientPhone =
+      digits.length === 10 ? `91${digits}` : digits;
+
+    if (
+      recipientPhone.length < 10 ||
+      recipientPhone.length > 15
+    ) {
+      setNotice("A valid customer mobile number is required.");
+      window.setTimeout(() => setNotice(""), 3500);
+      return;
+    }
+
+    if (norm(sale.sale_status) === "cancelled") {
+      setNotice("Cancelled bill cannot be sent.");
+      window.setTimeout(() => setNotice(""), 3000);
+      return;
+    }
+
+    setWhatsAppSendingSaleId(sale.id);
+    setNotice("");
+
+    try {
+      const response = await fetch(
+        "/api/whatsapp/invoice-pdf",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: recipientPhone,
+            sendWhatsApp: true,
+            customerName:
+              sale.customer_name || "Walk-in Customer",
+            customerPhone: sale.customer_phone || "",
+            billNumber:
+              sale.invoice_number || `POS-${sale.id}`,
+            billDate: formatDate(sale.created_at),
+            paymentMethod:
+              label(sale.payment_method),
+            subtotal: num(sale.subtotal),
+            discountAmount: num(sale.bill_discount),
+            taxAmount: num(sale.tax_amount),
+            roundOff: num(sale.round_off),
+            billAmount: num(sale.total_amount),
+            paidAmount: num(sale.paid_amount),
+            dueAmount: num(sale.due_amount),
+            items: sale.items.map((item) => ({
+              name: item.product_name || "Product",
+              quantity: num(item.quantity),
+              mrp: num(item.unit_price),
+              price: num(item.unit_price),
+              total:
+                num(item.line_total) ||
+                num(item.unit_price) * num(item.quantity),
+              size: item.size || "",
+              color: item.color || "",
+              barcode: item.barcode || "",
+            })),
+          }),
+        },
+      );
+
+      const result = (await response.json()) as {
+        success?: boolean;
+        whatsappPdfSent?: boolean;
+        error?: string;
+        stage?: string;
+        errorDetails?: string | null;
+      };
+
+      if (
+        !response.ok ||
+        result.success !== true ||
+        result.whatsappPdfSent !== true
+      ) {
+        const stageText = result.stage
+          ? ` (${result.stage})`
+          : "";
+        const detailText = result.errorDetails
+          ? ` - ${result.errorDetails}`
+          : "";
+
+        throw new Error(
+          `${
+            result.error ||
+            "WhatsApp invoice PDF could not be sent."
+          }${stageText}${detailText}`
+        );
+      }
+
+      setNotice(
+        `Invoice PDF sent directly to ${
+          sale.customer_name || "customer"
+        }.`
+      );
+      window.setTimeout(() => setNotice(""), 4000);
+    } catch (error) {
+      console.error(
+        "Unable to send Sales History WhatsApp PDF:",
+        error
+      );
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to send WhatsApp invoice PDF."
+      );
+      window.setTimeout(() => setNotice(""), 5000);
+    } finally {
+      setWhatsAppSendingSaleId(null);
+    }
+  }
+
   function printInvoice(sale: SaleDetails) {
     const popup = window.open("", "_blank", "width=900,height=900");
 
@@ -1192,6 +1311,23 @@ export default function SalesHistoryPage() {
                 onClick={() => printInvoice(selected)}
               >
                 Print Invoice
+              </button>
+
+              <button
+                className="whatsAppAction"
+                onClick={() =>
+                  void sendSaleWhatsAppPdf(selected)
+                }
+                disabled={
+                  whatsAppSendingSaleId !== null ||
+                  norm(selected.sale_status) === "cancelled"
+                }
+              >
+                {whatsAppSendingSaleId === selected.id
+                  ? "Sending..."
+                  : num(selected.due_amount) > 0
+                    ? "WhatsApp PDF + Due"
+                    : "WhatsApp PDF"}
               </button>
 
               <button
@@ -1801,7 +1937,7 @@ export default function SalesHistoryPage() {
         .customerGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:18px}.customerGrid>div{padding:14px;border-radius:12px;background:#f7f8fb}.customerGrid span,.customerGrid small{display:block;color:#7d8491;font-size:10px}.customerGrid strong{display:block;margin:4px 0;color:${DEEP}}
         .items{padding:0 18px}.items article{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;padding:13px 0;border-bottom:1px solid #e8ebf1}.items strong,.items small{display:block}.items small{color:#8a91a0;font-size:10px}.items span{font-size:11px}.items b{color:${BLUE}}
         .totals{margin:18px;padding:16px;border-radius:14px;background:#f8f9fc}.totals p{display:flex;justify-content:space-between;margin:8px 0}.totals .grand{padding-top:12px;border-top:2px solid ${BLUE};font-size:19px;color:${BLUE};font-weight:900}.totals .due{color:#b43232}
-        .modalActions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;padding:0 18px 18px}.modalActions button{min-height:46px;border:0;border-radius:12px;padding:12px 17px;background:${BLUE};color:#fff;font-weight:900;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,filter .2s ease}.modalActions button:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 12px 28px rgba(10,46,115,.18);filter:brightness(1.05)}.modalActions button:disabled{opacity:.45;cursor:not-allowed}.modalActions .close{background:#e9edf4;color:#2C2C2C}.modalActions .returnAction{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,${GOLD},#f3d66f);color:${DEEP};box-shadow:0 10px 24px rgba(212,175,55,.22)}.returnActionIcon{font-size:18px;animation:returnPulse 1.8s ease-in-out infinite}.modalActions .printAction{background:linear-gradient(135deg,${DEEP},${BLUE})}.modalActions .editPaymentAction{background:linear-gradient(135deg,#0f766e,#115e59);color:#fff;box-shadow:0 10px 24px rgba(15,118,110,.2)}.modalActions .deleteAction{background:linear-gradient(135deg,#b42318,#7a1510);color:#fff;box-shadow:0 10px 24px rgba(180,35,24,.22)}
+        .modalActions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;padding:0 18px 18px}.modalActions button{min-height:46px;border:0;border-radius:12px;padding:12px 17px;background:${BLUE};color:#fff;font-weight:900;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,filter .2s ease}.modalActions button:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 12px 28px rgba(10,46,115,.18);filter:brightness(1.05)}.modalActions button:disabled{opacity:.45;cursor:not-allowed}.modalActions .close{background:#e9edf4;color:#2C2C2C}.modalActions .returnAction{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,${GOLD},#f3d66f);color:${DEEP};box-shadow:0 10px 24px rgba(212,175,55,.22)}.returnActionIcon{font-size:18px;animation:returnPulse 1.8s ease-in-out infinite}.modalActions .printAction{background:linear-gradient(135deg,${DEEP},${BLUE})}.modalActions .whatsAppAction{background:linear-gradient(135deg,#1f9d55,#167a42);color:#fff;box-shadow:0 10px 24px rgba(31,157,85,.22)}.modalActions .editPaymentAction{background:linear-gradient(135deg,#0f766e,#115e59);color:#fff;box-shadow:0 10px 24px rgba(15,118,110,.2)}.modalActions .deleteAction{background:linear-gradient(135deg,#b42318,#7a1510);color:#fff;box-shadow:0 10px 24px rgba(180,35,24,.22)}
         .paymentEditOverlay{position:fixed;inset:0;z-index:10040;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,21,63,.78);backdrop-filter:blur(10px)}
         .paymentEditModal{width:min(520px,100%);overflow:hidden;border:1px solid rgba(212,175,55,.34);border-radius:22px;background:#fff;box-shadow:0 30px 90px rgba(0,0,0,.34);animation:returnModalEnter .24s ease-out}
         .paymentEditModal>header{display:flex;justify-content:space-between;gap:18px;padding:22px;background:radial-gradient(circle at 88% 0%,rgba(212,175,55,.22),transparent 34%),linear-gradient(135deg,${DEEP},${BLUE});color:#fff}

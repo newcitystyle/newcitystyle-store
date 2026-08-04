@@ -74,6 +74,10 @@ export default function CustomersPage() {
   const [offerMessage, setOfferMessage] = useState(
     "NEW CITY STYLE special offer is now available. Visit our store for the latest family fashion collection."
   );
+  const [sendingCustomerId, setSendingCustomerId] =
+    useState<number | null>(null);
+  const [bulkSending, setBulkSending] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState("");
 
   useEffect(() => {
     loadCustomers();
@@ -379,77 +383,216 @@ export default function CustomersPage() {
     setSelectedCustomerIds([]);
   }
 
-  async function openOfferForCustomer(customer: Customer) {
-    const digits = (customer.phone || "").replace(/\D/g, "");
-    const phone = digits.length === 10 ? `91${digits}` : digits;
+  async function sendOfferForCustomer(customer: Customer) {
+    if (sendingCustomerId !== null || bulkSending) return false;
 
     if (!customer.whatsapp_opt_in) {
       alert("This customer has not agreed to receive WhatsApp offers.");
-      return;
+      return false;
     }
 
-    if (phone.length < 10) {
+    if (customer.is_blocked) {
+      alert("This customer is blocked.");
+      return false;
+    }
+
+    const digits = (customer.phone || "").replace(/\D/g, "");
+    const phone = digits.length === 10 ? `91${digits}` : digits;
+
+    if (phone.length < 10 || phone.length > 15) {
       alert("This customer does not have a valid mobile number.");
-      return;
+      return false;
     }
 
-    const personalisedMessage = [
-      `Hello ${customer.full_name},`,
-      "",
-      offerMessage.trim(),
-      "",
-      "NEW CITY STYLE",
-      "Style for Every Family",
-    ].join("\n");
+    const cleanOfferMessage = offerMessage.trim();
 
-    window.open(
-      `https://wa.me/${phone}?text=${encodeURIComponent(
-        personalisedMessage
-      )}`,
-      "_blank",
-      "noopener,noreferrer"
-    );
+    if (!cleanOfferMessage) {
+      alert("Write the WhatsApp offer message first.");
+      return false;
+    }
 
-    const sentAt = new Date().toISOString();
+    setSendingCustomerId(customer.id);
 
-    const { error } = await supabase
-      .from("customers")
-      .update({
-        last_marketing_message_at: sentAt,
-      })
-      .eq("id", customer.id);
+    try {
+      const response = await fetch("/api/whatsapp/offer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: phone,
+          customerName: customer.full_name,
+          offerMessage: cleanOfferMessage,
+        }),
+      });
 
-    if (!error) {
-      setCustomers((current) =>
-        current.map((item) =>
-          item.id === customer.id
-            ? {
-                ...item,
-                last_marketing_message_at: sentAt,
-              }
-            : item
-        )
+      const result = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        stage?: string;
+        errorDetails?: string | null;
+      };
+
+      if (!response.ok || result.success !== true) {
+        const stageText = result.stage ? ` (${result.stage})` : "";
+        const detailText = result.errorDetails
+          ? ` - ${result.errorDetails}`
+          : "";
+
+        throw new Error(
+          `${
+            result.error || "WhatsApp offer could not be sent."
+          }${stageText}${detailText}`
+        );
+      }
+
+      const sentAt = new Date().toISOString();
+
+      const { error } = await supabase
+        .from("customers")
+        .update({
+          last_marketing_message_at: sentAt,
+        })
+        .eq("id", customer.id);
+
+      if (!error) {
+        setCustomers((current) =>
+          current.map((item) =>
+            item.id === customer.id
+              ? {
+                  ...item,
+                  last_marketing_message_at: sentAt,
+                }
+              : item
+          )
+        );
+      }
+
+      alert(`WhatsApp offer sent directly to ${customer.full_name}.`);
+      return true;
+    } catch (error) {
+      console.error("Unable to send WhatsApp offer:", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to send WhatsApp offer."
       );
+      return false;
+    } finally {
+      setSendingCustomerId(null);
     }
   }
 
-  function openNextSelectedOffer() {
-    const nextCustomer = selectedCustomers.find(
+  async function sendSelectedOffers() {
+    if (bulkSending || sendingCustomerId !== null) return;
+
+    const eligibleCustomers = selectedCustomers.filter(
       (customer) =>
         customer.whatsapp_opt_in === true &&
         Boolean(customer.phone) &&
         !customer.is_blocked
     );
 
-    if (!nextCustomer) {
+    if (eligibleCustomers.length === 0) {
       alert("Select at least one opted-in customer with a mobile number.");
       return;
     }
 
-    void openOfferForCustomer(nextCustomer);
-    setSelectedCustomerIds((current) =>
-      current.filter((id) => id !== nextCustomer.id)
+    const cleanOfferMessage = offerMessage.trim();
+
+    if (!cleanOfferMessage) {
+      alert("Write the WhatsApp offer message first.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Send this offer directly to ${eligibleCustomers.length} selected customer(s)?`
     );
+
+    if (!confirmed) return;
+
+    setBulkSending(true);
+
+    let sentCount = 0;
+    let failedCount = 0;
+    const successfulIds: number[] = [];
+
+    try {
+      for (let index = 0; index < eligibleCustomers.length; index += 1) {
+        const customer = eligibleCustomers[index];
+        setBulkProgress(
+          `Sending ${index + 1} of ${eligibleCustomers.length}: ${customer.full_name}`
+        );
+
+        const digits = (customer.phone || "").replace(/\D/g, "");
+        const phone = digits.length === 10 ? `91${digits}` : digits;
+
+        try {
+          const response = await fetch("/api/whatsapp/offer", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              to: phone,
+              customerName: customer.full_name,
+              offerMessage: cleanOfferMessage,
+            }),
+          });
+
+          const result = (await response.json()) as {
+            success?: boolean;
+            error?: string;
+          };
+
+          if (!response.ok || result.success !== true) {
+            throw new Error(
+              result.error || "WhatsApp offer could not be sent."
+            );
+          }
+
+          const sentAt = new Date().toISOString();
+
+          await supabase
+            .from("customers")
+            .update({
+              last_marketing_message_at: sentAt,
+            })
+            .eq("id", customer.id);
+
+          setCustomers((current) =>
+            current.map((item) =>
+              item.id === customer.id
+                ? {
+                    ...item,
+                    last_marketing_message_at: sentAt,
+                  }
+                : item
+            )
+          );
+
+          successfulIds.push(customer.id);
+          sentCount += 1;
+        } catch (error) {
+          console.error(
+            `Unable to send offer to ${customer.full_name}:`,
+            error
+          );
+          failedCount += 1;
+        }
+      }
+
+      setSelectedCustomerIds((current) =>
+        current.filter((id) => !successfulIds.includes(id))
+      );
+
+      alert(
+        `WhatsApp offers completed. Sent: ${sentCount}. Failed: ${failedCount}.`
+      );
+    } finally {
+      setBulkSending(false);
+      setBulkProgress("");
+    }
   }
 
   return (
@@ -946,10 +1089,13 @@ export default function CustomersPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={openNextSelectedOffer}
+                    onClick={() => void sendSelectedOffers()}
                     className="marketing-primary-button"
+                    disabled={bulkSending || sendingCustomerId !== null}
                   >
-                    Open Next WhatsApp ({selectedCustomerIds.length})
+                    {bulkSending
+                      ? "Sending..."
+                      : `Send Selected (${selectedCustomerIds.length})`}
                   </button>
                 </div>
               </div>
@@ -976,9 +1122,22 @@ export default function CustomersPage() {
                   lineHeight: 1.5,
                 }}
               >
-                Messages open one customer at a time in WhatsApp.
+                Offers are sent directly through WhatsApp Cloud API.
                 Only customers with recorded consent should be selected.
               </p>
+
+              {bulkProgress && (
+                <p
+                  style={{
+                    margin: "9px 0 0",
+                    color: "#0A2E73",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                  }}
+                >
+                  {bulkProgress}
+                </p>
+              )}
             </div>
 
             <div
@@ -1439,12 +1598,14 @@ export default function CustomersPage() {
                     <button
                       type="button"
                       onClick={() =>
-                        void openOfferForCustomer(customer)
+                        void sendOfferForCustomer(customer)
                       }
                       disabled={
                         !customer.whatsapp_opt_in ||
                         !customer.phone ||
-                        customer.is_blocked
+                        customer.is_blocked ||
+                        sendingCustomerId !== null ||
+                        bulkSending
                       }
                       style={{
                         width: "100%",
@@ -1452,13 +1613,17 @@ export default function CustomersPage() {
                         background:
                           customer.whatsapp_opt_in &&
                           customer.phone &&
-                          !customer.is_blocked
+                          !customer.is_blocked &&
+                          sendingCustomerId === null &&
+                          !bulkSending
                             ? "#16A34A"
                             : "#E5E7EB",
                         color:
                           customer.whatsapp_opt_in &&
                           customer.phone &&
-                          !customer.is_blocked
+                          !customer.is_blocked &&
+                          sendingCustomerId === null &&
+                          !bulkSending
                             ? "#FFFFFF"
                             : "#9CA3AF",
                         border: "none",
@@ -1467,13 +1632,17 @@ export default function CustomersPage() {
                         cursor:
                           customer.whatsapp_opt_in &&
                           customer.phone &&
-                          !customer.is_blocked
+                          !customer.is_blocked &&
+                          sendingCustomerId === null &&
+                          !bulkSending
                             ? "pointer"
                             : "not-allowed",
                         fontWeight: 800,
                       }}
                     >
-                      Send WhatsApp Offer
+                      {sendingCustomerId === customer.id
+                        ? "Sending..."
+                        : "Send WhatsApp Offer"}
                     </button>
 
                     <button
@@ -1641,6 +1810,12 @@ export default function CustomersPage() {
           border: 1px solid #D1D5DB;
           background: #FFFFFF;
           color: #0A2E73;
+        }
+
+        .marketing-primary-button:disabled,
+        .marketing-secondary-button:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
 
         .customer-card {
