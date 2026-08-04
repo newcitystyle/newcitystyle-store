@@ -566,9 +566,10 @@ export default function PurchaseHistoryPage() {
   }
 
   function openAddItemModal(purchase: PurchaseRow) {
-    setAddingItemPurchase(purchase);
-    setItemEditForm(createBlankPurchaseItemForm());
-    setShowAddItemModal(true);
+    window.location.href =
+      `/admin/purchase-history/add-items?purchaseId=${encodeURIComponent(
+        purchase.id,
+      )}`;
   }
 
   async function saveAddedPurchaseItem(
@@ -1510,7 +1511,7 @@ export default function PurchaseHistoryPage() {
                       className="addMissedItemButton"
                       onClick={() => openAddItemModal(purchase)}
                     >
-                      + Add Missed Item
+                      + Add Missed Items
                     </button>
 
                     <button
@@ -1786,7 +1787,7 @@ export default function PurchaseHistoryPage() {
                 className="addMissedItemButton"
                 onClick={() => openAddItemModal(selectedPurchase)}
               >
-                + Add Missed Item
+                + Add Missed Items
               </button>
 
               <button

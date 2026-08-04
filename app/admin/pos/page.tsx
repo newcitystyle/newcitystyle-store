@@ -3616,13 +3616,11 @@ if (!variantsError) {
         }
       }
 
-      if (paymentMethod === "credit") {
-        await saveCustomerCredit(
-          result.sale_id,
-          invoiceNumber,
-          syncedCustomerId
-        );
-      }
+      /*
+       * Credit balance is already handled by the complete_pos_sale RPC /
+       * database credit flow. Do not call saveCustomerCredit here again,
+       * otherwise the same due is added twice to customer_credit_accounts.
+       */
 
       const saleSnapshot: CompletedSale = {
         saleId: result.sale_id || "",
