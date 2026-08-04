@@ -1050,6 +1050,10 @@ export default function PurchasesPage() {
         barcode: "",
         sku: "",
         currentStock: 0,
+
+        // New duplicated size/colour row must not assume quantity.
+        quantity: 0,
+        onlineQuantity: 0,
       },
     ]);
   }
@@ -2155,14 +2159,19 @@ export default function PurchasesPage() {
                             <input
                               type="number"
                               min="1"
-                              value={item.quantity}
+                              value={item.quantity > 0 ? item.quantity : ""}
                               onChange={(event) => {
-                                const quantity = Math.max(
-                                  1,
-                                  Math.floor(
-                                    toNumber(event.target.value, 1),
-                                  ),
-                                );
+                                const rawValue = event.target.value;
+
+                                const quantity =
+                                  rawValue === ""
+                                    ? 0
+                                    : Math.max(
+                                        1,
+                                        Math.floor(
+                                          toNumber(rawValue, 1),
+                                        ),
+                                      );
 
                                 updateItem(
                                   item.rowId,
@@ -2174,10 +2183,11 @@ export default function PurchasesPage() {
                                   updateItem(
                                     item.rowId,
                                     "onlineQuantity",
-                                    quantity,
+                                    Math.max(0, quantity),
                                   );
                                 }
                               }}
+                              placeholder="Enter qty"
                             />
                           </label>
 
@@ -4002,6 +4012,133 @@ export default function PurchasesPage() {
         .ncsSuccessActions a {
           background: white;
           color: ${ROYAL_BLUE};
+        }
+
+
+        /*
+         * Desktop purchase item: keep every original option, but arrange
+         * the details into two compact horizontal rows.
+         */
+        @media (min-width: 1180px) {
+          .ncsPurchaseRowGrid {
+            display: grid;
+            grid-template-columns: repeat(12, minmax(0, 1fr));
+            gap: 8px;
+            padding: 10px 12px 12px;
+            align-items: start;
+          }
+
+          .ncsPurchaseRowGrid > .ncsPurchaseRowSection:not(.ncsOnlineSection) {
+            display: contents;
+          }
+
+          .ncsPurchaseRowGrid
+            > .ncsPurchaseRowSection:not(.ncsOnlineSection)
+            > h3 {
+            display: none;
+          }
+
+          .ncsPurchaseRowGrid .ncsPurchaseInnerGrid,
+          .ncsPurchaseRowGrid .ncsPricingGrid {
+            display: contents;
+          }
+
+          .ncsPurchaseRowGrid
+            > .ncsPurchaseRowSection:not(.ncsOnlineSection)
+            label {
+            min-width: 0;
+            margin: 0;
+            grid-column: span 1;
+          }
+
+          .ncsPurchaseRowGrid .ncsRowProductSearch {
+            grid-column: span 3 !important;
+          }
+
+          .ncsPurchaseRowGrid
+            .ncsPurchaseInnerGrid.three
+            > label.wide {
+            grid-column: span 2 !important;
+          }
+
+          .ncsPurchaseRowGrid .barcodeModeField {
+            grid-column: span 2 !important;
+          }
+
+          .ncsPurchaseRowGrid
+            > .ncsPurchaseRowSection:not(.ncsOnlineSection)
+            label > span {
+            min-height: 20px;
+            display: flex;
+            align-items: flex-end;
+            margin-bottom: 3px;
+            font-size: 7px;
+            line-height: 1.15;
+          }
+
+          .ncsPurchaseRowGrid
+            > .ncsPurchaseRowSection:not(.ncsOnlineSection)
+            input,
+          .ncsPurchaseRowGrid
+            > .ncsPurchaseRowSection:not(.ncsOnlineSection)
+            select {
+            min-height: 36px;
+            padding: 7px 8px;
+            border-radius: 8px;
+            font-size: 8px;
+          }
+
+          .ncsPurchaseRowGrid .ncsDesignCodeRow {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 68px;
+            gap: 5px;
+          }
+
+          .ncsPurchaseRowGrid .ncsDesignCodeRow button {
+            min-height: 36px;
+            padding: 5px;
+            font-size: 7px;
+          }
+
+          .ncsPurchaseRowGrid .ncsBrandEditHint {
+            display: none;
+          }
+
+          .ncsPurchaseRowGrid .barcodeIdentityNote,
+          .ncsPurchaseRowGrid .individualCodePreview,
+          .ncsPurchaseRowGrid .ncsItemDiscountNote,
+          .ncsPurchaseRowGrid .ncsNewVariantMessage {
+            grid-column: 1 / -1;
+            margin: 0;
+            padding: 5px 7px;
+            font-size: 7px;
+            line-height: 1.3;
+          }
+
+          .ncsPurchaseRowGrid .ncsOnlineSection {
+            grid-column: 1 / -1;
+            padding: 8px 10px;
+            border-radius: 10px;
+          }
+
+          .ncsPurchaseRowGrid .ncsOnlineSection .ncsPurchaseInnerGrid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 180px));
+            gap: 8px;
+          }
+
+          .ncsPurchaseRowGrid .ncsPurchaseRowTotal {
+            margin-top: 6px;
+            padding-top: 6px;
+          }
+
+          .ncsPurchaseRowCard .ncsPurchaseRowHeader {
+            padding: 9px 12px;
+          }
+
+          .ncsPurchaseRowCard .ncsAddNextRowButton {
+            min-height: 34px;
+          }
         }
 
         @media (max-width: 1380px) {

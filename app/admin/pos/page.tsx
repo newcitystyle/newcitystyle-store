@@ -108,7 +108,7 @@ type QuickItemForm = {
 const EMPTY_QUICK_ITEM_FORM: QuickItemForm = {
   name: "",
   category: "Others",
-  quantity: 1,
+  quantity: 0,
   mrp: 0,
   purchasePrice: 0,
   taxPercent: 0,
@@ -1451,8 +1451,8 @@ if (!variantsError) {
     const name = quickItemForm.name.trim();
     const category = quickItemForm.category.trim() || "Others";
     const quantity = Math.max(
-      1,
-      Math.floor(toNumber(quickItemForm.quantity, 1)),
+      0,
+      Math.floor(toNumber(quickItemForm.quantity, 0)),
     );
     const mrp = Math.max(
       0,
@@ -1473,6 +1473,11 @@ if (!variantsError) {
 
     if (!name) {
       showNotice("Enter the quick item name.", "error");
+      return;
+    }
+
+    if (quantity <= 0) {
+      showNotice("Enter a valid quantity.", "error");
       return;
     }
 
@@ -5041,13 +5046,26 @@ if (!variantsError) {
                     type="number"
                     min="1"
                     step="1"
-                    value={quickItemForm.quantity}
-                    onChange={(event) =>
+                    value={
+                      quickItemForm.quantity > 0
+                        ? quickItemForm.quantity
+                        : ""
+                    }
+                    placeholder="Enter quantity"
+                    onChange={(event) => {
+                      const rawValue = event.target.value;
+
                       setQuickItemForm((current) => ({
                         ...current,
-                        quantity: Math.max(1, Number(event.target.value) || 1),
-                      }))
-                    }
+                        quantity:
+                          rawValue === ""
+                            ? 0
+                            : Math.max(
+                                1,
+                                Math.floor(Number(rawValue) || 1),
+                              ),
+                      }));
+                    }}
                   />
                 </label>
 
@@ -6735,14 +6753,16 @@ if (!variantsError) {
         .ncsPosCartItemTop {
           display: grid;
           grid-template-columns:
-            48px
-            minmax(150px, 1fr)
-            auto
-            minmax(96px, 112px)
-            minmax(96px, 122px)
+            46px
+            minmax(105px, 1fr)
+            96px
+            104px
+            94px
             27px;
           align-items: center;
-          gap: 9px;
+          gap: 7px;
+          width: 100%;
+          min-width: 0;
         }
 
         .ncsPosCartThumbnail {
@@ -6772,15 +6792,15 @@ if (!variantsError) {
         }
 
         .ncsPosCartProductInfo h3 {
-          display: -webkit-box;
+          display: block;
           margin: 0;
           overflow: hidden;
           color: ${DEEP_BLUE};
-          font-size: 12px;
+          font-size: 11px;
           font-weight: 900;
-          line-height: 1.35;
-          -webkit-box-orient: vertical;
-          -webkit-line-clamp: 2;
+          line-height: 1.3;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         .ncsPosCartProductInfo p {
@@ -6833,6 +6853,15 @@ if (!variantsError) {
           display: grid;
           gap: 4px;
           min-width: 0;
+          align-self: center;
+        }
+
+        .ncsPosItemDiscountField {
+          width: 104px;
+        }
+
+        .ncsPosItemLineTotal {
+          width: 94px;
         }
 
         .ncsPosItemDiscountField > span,
@@ -6887,16 +6916,19 @@ if (!variantsError) {
         }
 
         .ncsPosQuantityControl {
-          display: flex;
+          width: 96px;
+          display: grid;
+          grid-template-columns: 30px minmax(34px, 1fr) 30px;
           align-items: center;
           overflow: hidden;
           border: 1px solid #dfe4eb;
           border-radius: 9px;
+          white-space: nowrap;
         }
 
         .ncsPosQuantityControl button {
           width: 30px;
-          height: 29px;
+          height: 32px;
           border: 0;
           background: #f2f5fa;
           color: ${ROYAL_BLUE};
