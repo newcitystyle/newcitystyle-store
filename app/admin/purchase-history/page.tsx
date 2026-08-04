@@ -2028,21 +2028,68 @@ export default function PurchaseHistoryPage() {
               ))}
             </div>
 
-            <div className="addItemNetPreview">
-              <span>Net Purchase / Pc</span>
-              <strong>
-                {formatCurrency(
-                  Math.max(
-                    0,
-                    toNumber(itemEditForm.purchasePrice) -
-                      toNumber(itemEditForm.purchaseDiscount),
-                  ),
-                )}
-              </strong>
-              <small>
-                Purchase Price − Discount per piece
-              </small>
-            </div>
+            {(() => {
+              const grossPurchase = Math.max(
+                0,
+                toNumber(itemEditForm.purchasePrice),
+              );
+              const discountPerPiece = Math.max(
+                0,
+                toNumber(itemEditForm.purchaseDiscount),
+              );
+              const netPurchase = Math.max(
+                0,
+                grossPurchase - discountPerPiece,
+              );
+              const gstPercent = Math.max(
+                0,
+                toNumber(itemEditForm.taxPercent),
+              );
+              const cessPercent = Math.max(
+                0,
+                toNumber(itemEditForm.cessPercent),
+              );
+              const gstAmount =
+                Math.round(
+                  ((netPurchase * gstPercent) / 100) * 100,
+                ) / 100;
+              const cessAmount =
+                Math.round(
+                  ((netPurchase * cessPercent) / 100) * 100,
+                ) / 100;
+              const landedCost =
+                Math.round(
+                  (netPurchase + gstAmount + cessAmount) * 100,
+                ) / 100;
+
+              return (
+                <div className="addItemCostPreview">
+                  <div>
+                    <span>Net Purchase / Pc</span>
+                    <strong>{formatCurrency(netPurchase)}</strong>
+                    <small>Purchase Price − Discount</small>
+                  </div>
+
+                  <div>
+                    <span>GST Amount / Pc</span>
+                    <strong>{formatCurrency(gstAmount)}</strong>
+                    <small>{gstPercent}% on net purchase</small>
+                  </div>
+
+                  <div>
+                    <span>Cess Amount / Pc</span>
+                    <strong>{formatCurrency(cessAmount)}</strong>
+                    <small>{cessPercent}% on net purchase</small>
+                  </div>
+
+                  <div className="landedCostHighlight">
+                    <span>Landed Cost / Pc</span>
+                    <strong>{formatCurrency(landedCost)}</strong>
+                    <small>Net Purchase + GST + Cess</small>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="addMissedItemNote">
               Same Brand + Product + Size + Colour matches existing
@@ -3407,29 +3454,56 @@ export default function PurchaseHistoryPage() {
           font-size: 11px;
         }
 
-        .addItemNetPreview {
+        .addItemCostPreview {
           display: grid;
-          grid-template-columns: auto auto 1fr;
-          align-items: center;
-          gap: 10px;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 9px;
           margin-top: 13px;
+        }
+
+        .addItemCostPreview > div {
           padding: 11px 12px;
-          border: 1px solid rgba(212, 175, 55, 0.55);
+          border: 1px solid rgba(212, 175, 55, 0.48);
           border-radius: 11px;
           background: #fff9e7;
         }
 
-        .addItemNetPreview span,
-        .addItemNetPreview small {
-          color: #6f5b18;
-          font-size: 9px;
-          font-weight: 800;
+        .addItemCostPreview span,
+        .addItemCostPreview strong,
+        .addItemCostPreview small {
+          display: block;
         }
 
-        .addItemNetPreview strong {
+        .addItemCostPreview span {
+          color: #6f5b18;
+          font-size: 8px;
+          font-weight: 900;
+          text-transform: uppercase;
+        }
+
+        .addItemCostPreview strong {
+          margin-top: 5px;
           color: ${ROYAL_BLUE};
           font-size: 15px;
           font-weight: 950;
+        }
+
+        .addItemCostPreview small {
+          margin-top: 4px;
+          color: #7a6a35;
+          font-size: 8px;
+          font-weight: 750;
+          line-height: 1.35;
+        }
+
+        .addItemCostPreview .landedCostHighlight {
+          border-color: #55b779;
+          background: #ecfdf3;
+        }
+
+        .addItemCostPreview .landedCostHighlight span,
+        .addItemCostPreview .landedCostHighlight strong {
+          color: #067647;
         }
 
         .addMissedItemNote {
@@ -3756,7 +3830,8 @@ export default function PurchaseHistoryPage() {
           }
         }
         @media (max-width: 760px) {
-          .addItemPurchaseSummary {
+          .addItemPurchaseSummary,
+          .addItemCostPreview {
             grid-template-columns: 1fr;
           }
         }
