@@ -3801,34 +3801,33 @@ if (!variantsError) {
           className="ncsPosCustomerQueue"
           aria-hidden="true"
         >
-          <div className="ncsPosCounterDesk">
-            <span className="ncsPosCounterScreen">₹</span>
-            <i className="ncsPosCounterScanner" />
-            <b className="ncsPosCounterTick">✓</b>
-          </div>
+          <video
+            className="ncsRealFamilyVideo ncsRealFamilyVideoBg"
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="auto"
+          >
+            <source
+              src="/animations/ncs-family-shopping.mp4"
+              type="video/mp4"
+            />
+          </video>
 
-          <div className="ncsPosQueueTrack">
-            <span className="ncsPosQueuePerson personOne">
-              <i />
-              <b />
-              <em className="ncsPosShoppingBag bagBlue">NCS</em>
-            </span>
-            <span className="ncsPosQueuePerson personTwo">
-              <i />
-              <b />
-              <em className="ncsPosShoppingBag bagGold">NCS</em>
-            </span>
-            <span className="ncsPosQueuePerson personThree">
-              <i />
-              <b />
-              <em className="ncsPosShoppingBag bagBlue">NCS</em>
-            </span>
-            <span className="ncsPosQueuePerson personFour">
-              <i />
-              <b />
-              <em className="ncsPosShoppingBag bagGold">NCS</em>
-            </span>
-          </div>
+          <video
+            className="ncsRealFamilyVideo ncsRealFamilyVideoMain"
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="auto"
+          >
+            <source
+              src="/animations/ncs-family-shopping.mp4"
+              type="video/mp4"
+            />
+          </video>
         </div>
 
         <div className="ncsPosHeaderActions">
@@ -5569,181 +5568,91 @@ if (!variantsError) {
         .ncsPosCustomerQueue {
           position: absolute;
           z-index: 2;
-          right: 285px;
-          bottom: 15px;
-          width: 330px;
-          height: 78px;
+          right: 258px;
+          bottom: 0;
+          width: 500px;
+          height: 156px;
           overflow: hidden;
           pointer-events: none;
-          opacity: 0.96;
+          isolation: isolate;
+          background: transparent;
+
+          -webkit-mask-image: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(0, 0, 0, 0.18) 5%,
+            #000 18%,
+            #000 82%,
+            rgba(0, 0, 0, 0.18) 95%,
+            transparent 100%
+          );
+          mask-image: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(0, 0, 0, 0.18) 5%,
+            #000 18%,
+            #000 82%,
+            rgba(0, 0, 0, 0.18) 95%,
+            transparent 100%
+          );
         }
 
-        .ncsPosQueueTrack {
+        .ncsPosCustomerQueue::before {
+          content: "";
           position: absolute;
-          left: 0;
-          right: 78px;
-          bottom: 3px;
-          height: 60px;
-        }
-
-        .ncsPosQueuePerson {
-          position: absolute;
-          bottom: 0;
-          width: 28px;
-          height: 51px;
-          filter: drop-shadow(0 7px 8px rgba(2, 11, 36, 0.28));
-          animation: ncsPosCustomerQueueWalk 11.2s linear infinite;
-          opacity: 0;
-        }
-
-        .ncsPosQueuePerson i {
-          position: absolute;
-          top: 0;
-          left: 7px;
-          width: 14px;
-          height: 14px;
-          border: 2px solid rgba(255, 255, 255, 0.9);
-          border-radius: 50%;
-          background: ${GOLD};
-        }
-
-        .ncsPosQueuePerson b {
-          position: absolute;
-          left: 4px;
-          bottom: 0;
-          width: 20px;
-          height: 33px;
-          border: 2px solid rgba(255, 255, 255, 0.85);
-          border-radius: 10px 10px 6px 6px;
+          z-index: 4;
+          inset: 0;
+          pointer-events: none;
           background:
             linear-gradient(
               180deg,
-              rgba(255, 255, 255, 0.92),
-              rgba(212, 175, 55, 0.86)
+              rgba(10, 46, 115, 0.92) 0%,
+              rgba(10, 46, 115, 0.22) 9%,
+              rgba(10, 46, 115, 0) 20%
             );
         }
 
-        .ncsPosQueuePerson b::before,
-        .ncsPosQueuePerson b::after {
-          content: "";
+        .ncsRealFamilyVideo {
           position: absolute;
-          top: 5px;
-          width: 7px;
-          height: 22px;
-          border-radius: 7px;
-          background: rgba(255, 255, 255, 0.85);
+          left: 50%;
+          bottom: 0;
+          display: block;
+          pointer-events: none;
+          transform: translateX(-50%);
+          transform-origin: center bottom;
         }
 
-        .ncsPosQueuePerson b::before {
-          left: -7px;
-          transform: rotate(8deg);
+        .ncsRealFamilyVideoBg {
+          z-index: 1;
+          width: 116%;
+          height: 118%;
+          object-fit: cover;
+          object-position: center center;
+          opacity: 0.62;
+          filter:
+            blur(15px)
+            saturate(1.18)
+            brightness(0.72);
+          transform: translateX(-50%) scale(1.12);
         }
 
-        .ncsPosQueuePerson b::after {
-          right: -7px;
-          transform: rotate(-8deg);
-        }
-
-        .ncsPosShoppingBag {
-          position: absolute;
-          z-index: 3;
-          right: -13px;
-          bottom: 3px;
-          width: 22px;
-          height: 24px;
-          display: grid;
-          place-items: center;
-          border: 1px solid rgba(255, 255, 255, 0.74);
-          border-radius: 4px 4px 6px 6px;
-          color: #ffffff;
-          font-size: 5px;
-          font-style: normal;
-          font-weight: 950;
-          letter-spacing: 0.35px;
-          opacity: 0;
-          transform:
-            translate(11px, 8px)
-            rotate(-14deg)
-            scale(0.45);
-          transform-origin: center;
-          box-shadow: 0 6px 10px rgba(2, 11, 36, 0.28);
-          animation:
-            ncsPosBagPickup 11.2s linear infinite,
-            ncsPosBagSwing 1.15s ease-in-out infinite;
-        }
-
-        .ncsPosShoppingBag::before {
-          content: "";
-          position: absolute;
-          left: 5px;
-          top: -7px;
-          width: 10px;
-          height: 8px;
-          border: 2px solid currentColor;
-          border-bottom: 0;
-          border-radius: 7px 7px 0 0;
-          opacity: 0.92;
-        }
-
-        .ncsPosShoppingBag.bagBlue {
-          background:
-            linear-gradient(
-              145deg,
-              #174f9e,
-              #0a2e73 68%,
-              #061d4a
-            );
-          color: #f2d675;
-        }
-
-        .ncsPosShoppingBag.bagGold {
-          background:
-            linear-gradient(
-              145deg,
-              #f6df86,
-              #d4af37 68%,
-              #b8890b
-            );
-          color: #061d4a;
-        }
-
-        .ncsPosQueuePerson.personTwo .ncsPosShoppingBag {
-          animation-delay: -2.8s, -0.18s;
-        }
-
-        .ncsPosQueuePerson.personThree .ncsPosShoppingBag {
-          animation-delay: -5.6s, -0.36s;
-        }
-
-        .ncsPosQueuePerson.personFour .ncsPosShoppingBag {
-          animation-delay: -8.4s, -0.54s;
-        }
-
-        .ncsPosQueuePerson.personTwo {
-          animation-delay: -2.8s;
-        }
-
-        .ncsPosQueuePerson.personThree {
-          animation-delay: -5.6s;
-        }
-
-        .ncsPosQueuePerson.personFour {
-          animation-delay: -8.4s;
-        }
-
-        .ncsPosQueuePerson.personTwo i {
-          background: #74d3ff;
-        }
-
-        .ncsPosQueuePerson.personThree i {
-          background: #ff9f68;
-        }
-
-        .ncsPosQueuePerson.personFour i {
-          background: #72d99d;
+        .ncsRealFamilyVideoMain {
+          z-index: 2;
+          width: 92%;
+          height: 100%;
+          object-fit: contain;
+          object-position: center bottom;
+          opacity: 1;
+          filter:
+            saturate(1.05)
+            contrast(1.04)
+            brightness(1)
+            drop-shadow(0 12px 16px rgba(2, 11, 36, 0.34));
+          transform: translateX(-50%) scale(0.98);
         }
 
         .ncsPosCounterDesk {
+          display: none;
           position: absolute;
           right: 2px;
           bottom: 0;
@@ -7944,6 +7853,98 @@ if (!variantsError) {
           }
         }
 
+        @keyframes ncsPosFamilyWalkAcross {
+          0% {
+            transform: translateX(-28px);
+            opacity: 0;
+          }
+          10% {
+            opacity: 1;
+          }
+          42% {
+            transform: translateX(54px);
+            opacity: 1;
+          }
+          58% {
+            transform: translateX(68px);
+            opacity: 1;
+          }
+          88% {
+            transform: translateX(132px);
+            opacity: 1;
+          }
+          100% {
+            transform: translateX(164px);
+            opacity: 0;
+          }
+        }
+
+        @keyframes ncsPosHumanBodyWalk {
+          from {
+            transform: translateY(0) rotate(-1deg);
+          }
+          to {
+            transform: translateY(-3px) rotate(1.4deg);
+          }
+        }
+
+        @keyframes ncsPosArmSwingLeft {
+          from {
+            transform: rotate(18deg);
+          }
+          to {
+            transform: rotate(-17deg);
+          }
+        }
+
+        @keyframes ncsPosArmSwingRight {
+          from {
+            transform: rotate(-17deg);
+          }
+          to {
+            transform: rotate(18deg);
+          }
+        }
+
+        @keyframes ncsPosLegWalkLeft {
+          from {
+            transform: rotate(14deg);
+          }
+          to {
+            transform: rotate(-13deg);
+          }
+        }
+
+        @keyframes ncsPosLegWalkRight {
+          from {
+            transform: rotate(-13deg);
+          }
+          to {
+            transform: rotate(14deg);
+          }
+        }
+
+        @keyframes ncsPosFamilyBagSwing {
+          from {
+            transform: rotate(-9deg) translateY(0);
+          }
+          to {
+            transform: rotate(9deg) translateY(-2px);
+          }
+        }
+
+        @keyframes ncsPosFamilyGlowPulse {
+          0%,
+          100% {
+            transform: scale(0.72);
+            opacity: 0.35;
+          }
+          50% {
+            transform: scale(1.2);
+            opacity: 1;
+          }
+        }
+
         @keyframes ncsPosCustomerQueueWalk {
           0% {
             left: 230px;
@@ -8554,7 +8555,44 @@ if (!variantsError) {
           }
         }
 
+        @media (prefers-reduced-motion: reduce) {
+          .ncsPosFamilyGroup,
+          .ncsPosHuman,
+          .ncsPosHumanArm,
+          .ncsPosHumanLeg,
+          .ncsPosFamilyBag,
+          .ncsPosFamilyGlow {
+            animation-duration: 0.001ms !important;
+            animation-iteration-count: 1 !important;
+          }
+
+          .ncsPosFamilyGroup {
+            transform: translateX(70px);
+            opacity: 1;
+          }
+        }
+
+        @media (max-width: 1250px) {
+          .ncsPosCustomerQueue {
+            right: 245px;
+            width: 420px;
+            height: 142px;
+          }
+        }
+
+        @media (max-width: 1080px) {
+          .ncsPosCustomerQueue {
+            right: 220px;
+            width: 340px;
+            height: 130px;
+          }
+        }
+
         @media (max-width: 900px) {
+          .ncsPosCustomerQueue {
+            display: none;
+          }
+
           .ncsPosMobileCartButton {
             left: 18px;
           }
