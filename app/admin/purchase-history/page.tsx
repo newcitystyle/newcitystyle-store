@@ -99,6 +99,7 @@ type PurchaseItemEditForm = {
   barcode: string;
   quantity: string;
   purchasePrice: string;
+  purchaseDiscount: string;
   sellingPrice: string;
   mrp: string;
   taxPercent: string;
@@ -245,6 +246,7 @@ export default function PurchaseHistoryPage() {
       barcode: "",
       quantity: "1",
       purchasePrice: "0",
+      purchaseDiscount: "0",
       sellingPrice: "0",
       mrp: "0",
       taxPercent: "0",
@@ -553,6 +555,7 @@ export default function PurchaseHistoryPage() {
       barcode: "",
       quantity: "",
       purchasePrice: "",
+      purchaseDiscount: "0",
       sellingPrice: "0",
       mrp: "",
       taxPercent: "0",
@@ -587,6 +590,10 @@ export default function PurchaseHistoryPage() {
       0,
       toNumber(itemEditForm.purchasePrice),
     );
+    const purchaseDiscount = Math.max(
+      0,
+      toNumber(itemEditForm.purchaseDiscount),
+    );
     const mrp = Math.max(0, toNumber(itemEditForm.mrp));
 
     if (!itemEditForm.productName.trim()) {
@@ -601,6 +608,13 @@ export default function PurchaseHistoryPage() {
 
     if (quantity <= 0) {
       setNotice("Enter the missed item quantity.");
+      return;
+    }
+
+    if (purchaseDiscount > purchasePrice) {
+      setNotice(
+        "Discount per piece cannot be greater than purchase price.",
+      );
       return;
     }
 
@@ -631,6 +645,7 @@ export default function PurchaseHistoryPage() {
           p_barcode: itemEditForm.barcode.trim() || null,
           p_quantity: quantity,
           p_purchase_price: purchasePrice,
+          p_purchase_discount: purchaseDiscount,
           p_selling_price: Math.max(
             0,
             toNumber(itemEditForm.sellingPrice),
@@ -694,6 +709,7 @@ export default function PurchaseHistoryPage() {
       barcode: item.barcode || "",
       quantity: String(toNumber(item.quantity) || 1),
       purchasePrice: String(toNumber(item.purchase_price)),
+      purchaseDiscount: "0",
       sellingPrice: String(toNumber(item.selling_price)),
       mrp: String(toNumber(item.mrp)),
       taxPercent: String(toNumber(item.tax_percent)),
@@ -1959,7 +1975,8 @@ export default function PurchaseHistoryPage() {
                 ["SKU / Model No.", "sku", "text"],
                 ["Barcode", "barcode", "text"],
                 ["Quantity *", "quantity", "number"],
-                ["Purchase Price *", "purchasePrice", "number"],
+                ["Purchase Price / Pc *", "purchasePrice", "number"],
+                ["Discount / Pc", "purchaseDiscount", "number"],
                 ["Selling Price", "sellingPrice", "number"],
                 ["MRP *", "mrp", "number"],
                 ["GST %", "taxPercent", "number"],
@@ -1975,6 +1992,7 @@ export default function PurchaseHistoryPage() {
                     step={
                       [
                         "purchasePrice",
+                        "purchaseDiscount",
                         "sellingPrice",
                         "mrp",
                         "taxPercent",
@@ -2008,6 +2026,22 @@ export default function PurchaseHistoryPage() {
                   />
                 </label>
               ))}
+            </div>
+
+            <div className="addItemNetPreview">
+              <span>Net Purchase / Pc</span>
+              <strong>
+                {formatCurrency(
+                  Math.max(
+                    0,
+                    toNumber(itemEditForm.purchasePrice) -
+                      toNumber(itemEditForm.purchaseDiscount),
+                  ),
+                )}
+              </strong>
+              <small>
+                Purchase Price − Discount per piece
+              </small>
             </div>
 
             <div className="addMissedItemNote">
@@ -3371,6 +3405,31 @@ export default function PurchaseHistoryPage() {
           margin-top: 5px;
           color: ${ROYAL_BLUE};
           font-size: 11px;
+        }
+
+        .addItemNetPreview {
+          display: grid;
+          grid-template-columns: auto auto 1fr;
+          align-items: center;
+          gap: 10px;
+          margin-top: 13px;
+          padding: 11px 12px;
+          border: 1px solid rgba(212, 175, 55, 0.55);
+          border-radius: 11px;
+          background: #fff9e7;
+        }
+
+        .addItemNetPreview span,
+        .addItemNetPreview small {
+          color: #6f5b18;
+          font-size: 9px;
+          font-weight: 800;
+        }
+
+        .addItemNetPreview strong {
+          color: ${ROYAL_BLUE};
+          font-size: 15px;
+          font-weight: 950;
         }
 
         .addMissedItemNote {
