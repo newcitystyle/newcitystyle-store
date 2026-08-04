@@ -161,6 +161,8 @@ export default function SuppliersPage() {
   );
   const [paymentNotes, setPaymentNotes] = useState("");
   const [savingPayment, setSavingPayment] = useState(false);
+  const [whatsAppSendingSupplierId, setWhatsAppSendingSupplierId] =
+    useState<number | null>(null);
 
   const showNotice = useCallback((message: string) => {
     setNotice(message);
@@ -380,6 +382,151 @@ export default function SuppliersPage() {
     setPaymentDate(new Date().toISOString().slice(0, 10));
     setPaymentNotes("");
     setShowPaymentModal(true);
+  }
+
+  async function sendSupplierStatement(
+    summary: SupplierSummary,
+  ) {
+    if (whatsAppSendingSupplierId !== null) return;
+
+    const supplier = summary.supplier;
+    const digits = (supplier.phone || "").replace(/\D/g, "");
+    const recipientPhone =
+      digits.length === 10 ? `91${digits}` : digits;
+
+    if (
+      recipientPhone.length < 10 ||
+      recipientPhone.length > 15
+    ) {
+      showNotice(
+        "Add a valid supplier mobile number before sending WhatsApp PDF.",
+      );
+      return;
+    }
+
+    setWhatsAppSendingSupplierId(supplier.id);
+
+    try {
+      const now = new Date();
+      const statementNumber = `SUP-${supplier.id}-${now
+        .toISOString()
+        .slice(0, 10)
+        .replace(/-/g, "")}`;
+
+      const purchaseItems =
+        summary.purchases.length > 0
+          ? summary.purchases.slice(0, 40).map((purchase) => ({
+              name:
+                purchase.purchase_number ||
+                purchase.supplier_invoice_number ||
+                "Supplier Purchase",
+              quantity: 1,
+              mrp: Math.max(
+                0,
+                toNumber(purchase.total_amount),
+              ),
+              price: Math.max(
+                0,
+                toNumber(purchase.total_amount),
+              ),
+              total: Math.max(
+                0,
+                toNumber(purchase.total_amount),
+              ),
+              size: formatDate(
+                purchase.purchase_date ||
+                  purchase.created_at,
+              ),
+              color:
+                toNumber(purchase.due_amount) > 0
+                  ? `Due ${formatCurrency(
+                      toNumber(purchase.due_amount),
+                    )}`
+                  : "Paid",
+            }))
+          : [
+              {
+                name: "Outstanding Supplier Balance",
+                quantity: 1,
+                mrp: summary.currentBalance,
+                price: summary.currentBalance,
+                total: summary.currentBalance,
+                size: "",
+                color: "",
+              },
+            ];
+
+      const response = await fetch(
+        "/api/whatsapp/invoice-pdf",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: recipientPhone,
+            sendWhatsApp: true,
+            customerName: supplier.supplier_name,
+            customerPhone: supplier.phone || "",
+            billNumber: statementNumber,
+            billDate: now.toLocaleString("en-IN"),
+            paymentMethod: "SUPPLIER PAYABLE",
+            subtotal: summary.totalPurchase,
+            discountAmount: 0,
+            taxAmount: 0,
+            roundOff: 0,
+            billAmount: summary.totalPurchase,
+            paidAmount: summary.purchasePaid,
+            dueAmount: summary.currentBalance,
+            items: purchaseItems,
+          }),
+        },
+      );
+
+      const result = (await response.json()) as {
+        success?: boolean;
+        whatsappPdfSent?: boolean;
+        error?: string;
+        stage?: string;
+        errorDetails?: string | null;
+      };
+
+      if (
+        !response.ok ||
+        result.success !== true ||
+        result.whatsappPdfSent !== true
+      ) {
+        const stageText = result.stage
+          ? ` (${result.stage})`
+          : "";
+        const detailText = result.errorDetails
+          ? ` - ${result.errorDetails}`
+          : "";
+
+        throw new Error(
+          `${
+            result.error ||
+            "Supplier WhatsApp PDF could not be sent."
+          }${stageText}${detailText}`,
+        );
+      }
+
+      showNotice(
+        `WhatsApp PDF sent directly to ${supplier.supplier_name}.`,
+      );
+    } catch (error) {
+      console.error(
+        "Unable to send supplier WhatsApp PDF:",
+        error,
+      );
+      showNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to send supplier WhatsApp PDF.",
+      );
+    } finally {
+      setWhatsAppSendingSupplierId(null);
+    }
   }
 
   async function recordPayment(
@@ -658,6 +805,21 @@ export default function SuppliersPage() {
                       </button>
                     )}
 
+                    <button
+                      type="button"
+                      className="whatsAppButton"
+                      disabled={
+                        whatsAppSendingSupplierId === supplier.id
+                      }
+                      onClick={() =>
+                        void sendSupplierStatement(summary)
+                      }
+                    >
+                      {whatsAppSendingSupplierId === supplier.id
+                        ? "Sending..."
+                        : "💬 WhatsApp"}
+                    </button>
+
                     <a href="/admin/purchases">
                       Add Purchase
                     </a>
@@ -891,6 +1053,23 @@ export default function SuppliersPage() {
                   Pay Supplier
                 </button>
               )}
+
+              <button
+                type="button"
+                className="whatsAppButton"
+                disabled={
+                  whatsAppSendingSupplierId ===
+                  selectedSummary.supplier.id
+                }
+                onClick={() =>
+                  void sendSupplierStatement(selectedSummary)
+                }
+              >
+                {whatsAppSendingSupplierId ===
+                selectedSummary.supplier.id
+                  ? "Sending..."
+                  : "💬 WhatsApp PDF"}
+              </button>
 
               <button
                 type="button"
@@ -1526,6 +1705,19 @@ export default function SuppliersPage() {
           border-color: ${GOLD};
           background: ${ROYAL_BLUE};
           color: #ffffff;
+        }
+
+        .supplierCard footer .whatsAppButton,
+        .ledgerActions .whatsAppButton {
+          border-color: #1fa855;
+          background: #ecfdf3;
+          color: #067647;
+        }
+
+        .supplierCard footer button:disabled,
+        .ledgerActions button:disabled {
+          opacity: 0.58;
+          cursor: not-allowed;
         }
 
         .stateBox {

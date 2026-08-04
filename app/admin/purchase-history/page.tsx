@@ -220,6 +220,13 @@ export default function PurchaseHistoryPage() {
     useState<PurchaseItemRow | null>(null);
   const [savingItemEdit, setSavingItemEdit] =
     useState(false);
+
+  const [showAddItemModal, setShowAddItemModal] =
+    useState(false);
+  const [addingItemPurchase, setAddingItemPurchase] =
+    useState<PurchaseRow | null>(null);
+  const [savingAddItem, setSavingAddItem] =
+    useState(false);
   const [showDeleteModal, setShowDeleteModal] =
     useState(false);
   const [deletingPurchase, setDeletingPurchase] =
@@ -533,6 +540,146 @@ export default function PurchaseHistoryPage() {
       window.setTimeout(() => setNotice(""), 6000);
     } finally {
       setDeletingPurchase(false);
+    }
+  }
+
+  function createBlankPurchaseItemForm(): PurchaseItemEditForm {
+    return {
+      productName: "",
+      brand: "NEW CITY STYLE",
+      size: "",
+      color: "",
+      sku: "",
+      barcode: "",
+      quantity: "",
+      purchasePrice: "",
+      sellingPrice: "0",
+      mrp: "",
+      taxPercent: "0",
+      cessPercent: "0",
+      hsnCode: "",
+      onlineQuantity: "0",
+    };
+  }
+
+  function openAddItemModal(purchase: PurchaseRow) {
+    setAddingItemPurchase(purchase);
+    setItemEditForm(createBlankPurchaseItemForm());
+    setShowAddItemModal(true);
+  }
+
+  async function saveAddedPurchaseItem(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!addingItemPurchase || savingAddItem) return;
+
+    const quantity = Math.max(
+      0,
+      Math.trunc(toNumber(itemEditForm.quantity)),
+    );
+    const onlineQuantity = Math.max(
+      0,
+      Math.trunc(toNumber(itemEditForm.onlineQuantity)),
+    );
+    const purchasePrice = Math.max(
+      0,
+      toNumber(itemEditForm.purchasePrice),
+    );
+    const mrp = Math.max(0, toNumber(itemEditForm.mrp));
+
+    if (!itemEditForm.productName.trim()) {
+      setNotice("Product name is required.");
+      return;
+    }
+
+    if (!itemEditForm.brand.trim()) {
+      setNotice("Brand is required.");
+      return;
+    }
+
+    if (quantity <= 0) {
+      setNotice("Enter the missed item quantity.");
+      return;
+    }
+
+    if (mrp <= 0) {
+      setNotice("Enter a valid MRP.");
+      return;
+    }
+
+    if (onlineQuantity > quantity) {
+      setNotice(
+        "Online quantity cannot be greater than total quantity.",
+      );
+      return;
+    }
+
+    setSavingAddItem(true);
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "ncs_add_purchase_item_v1",
+        {
+          p_purchase_id: addingItemPurchase.id,
+          p_product_name: itemEditForm.productName.trim(),
+          p_brand: itemEditForm.brand.trim(),
+          p_size: itemEditForm.size.trim() || null,
+          p_color: itemEditForm.color.trim() || null,
+          p_sku: itemEditForm.sku.trim() || null,
+          p_barcode: itemEditForm.barcode.trim() || null,
+          p_quantity: quantity,
+          p_purchase_price: purchasePrice,
+          p_selling_price: Math.max(
+            0,
+            toNumber(itemEditForm.sellingPrice),
+          ),
+          p_mrp: mrp,
+          p_tax_percent: Math.max(
+            0,
+            toNumber(itemEditForm.taxPercent),
+          ),
+          p_cess_percent: Math.max(
+            0,
+            toNumber(itemEditForm.cessPercent),
+          ),
+          p_hsn_code: itemEditForm.hsnCode.trim() || null,
+          p_online_quantity: onlineQuantity,
+        },
+      );
+
+      if (error) throw error;
+
+      const result = (data || {}) as {
+        success?: boolean;
+        message?: string;
+      };
+
+      if (result.success === false) {
+        throw new Error(
+          result.message || "Unable to add missed item.",
+        );
+      }
+
+      setShowAddItemModal(false);
+      setAddingItemPurchase(null);
+      setNotice(
+        result.message ||
+          `Item added to ${addingItemPurchase.purchase_number || "purchase"} successfully.`,
+      );
+      window.setTimeout(() => setNotice(""), 4000);
+      await loadData(true);
+    } catch (error) {
+      console.error("Add missed purchase item error:", error);
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to add missed item.",
+      );
+      window.setTimeout(() => setNotice(""), 5500);
+    } finally {
+      setSavingAddItem(false);
     }
   }
 
@@ -1344,6 +1491,14 @@ export default function PurchaseHistoryPage() {
 
                     <button
                       type="button"
+                      className="addMissedItemButton"
+                      onClick={() => openAddItemModal(purchase)}
+                    >
+                      + Add Missed Item
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => setSelectedPurchase(purchase)}
                     >
                       View Details
@@ -1612,6 +1767,14 @@ export default function PurchaseHistoryPage() {
 
               <button
                 type="button"
+                className="addMissedItemButton"
+                onClick={() => openAddItemModal(selectedPurchase)}
+              >
+                + Add Missed Item
+              </button>
+
+              <button
+                type="button"
                 onClick={() => printPurchase(selectedPurchase)}
               >
                 Print Purchase Bill
@@ -1725,6 +1888,156 @@ export default function PurchaseHistoryPage() {
                 {deletingPurchase
                   ? "Deleting..."
                   : "Delete & Reverse Stock"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {showAddItemModal && addingItemPurchase && (
+        <div className="modalOverlay">
+          <form
+            className="itemEditModal addMissedItemModal"
+            onSubmit={saveAddedPurchaseItem}
+          >
+            <button
+              type="button"
+              className="closeButton"
+              onClick={() => {
+                if (!savingAddItem) {
+                  setShowAddItemModal(false);
+                  setAddingItemPurchase(null);
+                }
+              }}
+              aria-label="Close add missed item form"
+            >
+              ✕
+            </button>
+
+            <span>ADD MISSED ITEM</span>
+            <h2>
+              {addingItemPurchase.purchase_number || "Purchase"}
+            </h2>
+
+            <p className="editSafetyNote">
+              This item will be saved under the same purchase number.
+              Stock, GST, purchase total, supplier due and outstanding
+              will be recalculated together.
+            </p>
+
+            <div className="addItemPurchaseSummary">
+              <div>
+                <span>Supplier</span>
+                <strong>
+                  {addingItemPurchase.supplier_name || "—"}
+                </strong>
+              </div>
+              <div>
+                <span>Current Total</span>
+                <strong>
+                  {formatCurrency(
+                    toNumber(addingItemPurchase.total_amount),
+                  )}
+                </strong>
+              </div>
+              <div>
+                <span>Current Due</span>
+                <strong>
+                  {formatCurrency(
+                    toNumber(addingItemPurchase.due_amount),
+                  )}
+                </strong>
+              </div>
+            </div>
+
+            <div className="editPurchaseGrid">
+              {[
+                ["Product Name *", "productName", "text"],
+                ["Brand *", "brand", "text"],
+                ["Size", "size", "text"],
+                ["Colour", "color", "text"],
+                ["SKU / Model No.", "sku", "text"],
+                ["Barcode", "barcode", "text"],
+                ["Quantity *", "quantity", "number"],
+                ["Purchase Price *", "purchasePrice", "number"],
+                ["Selling Price", "sellingPrice", "number"],
+                ["MRP *", "mrp", "number"],
+                ["GST %", "taxPercent", "number"],
+                ["Cess %", "cessPercent", "number"],
+                ["HSN Code", "hsnCode", "text"],
+                ["Online Quantity", "onlineQuantity", "number"],
+              ].map(([label, field, type]) => (
+                <label key={field}>
+                  <span>{label}</span>
+                  <input
+                    type={type}
+                    min={type === "number" ? "0" : undefined}
+                    step={
+                      [
+                        "purchasePrice",
+                        "sellingPrice",
+                        "mrp",
+                        "taxPercent",
+                        "cessPercent",
+                      ].includes(field)
+                        ? "0.01"
+                        : type === "number"
+                          ? "1"
+                          : undefined
+                    }
+                    value={
+                      itemEditForm[
+                        field as keyof PurchaseItemEditForm
+                      ]
+                    }
+                    placeholder={
+                      field === "quantity"
+                        ? "Enter quantity"
+                        : field === "barcode"
+                          ? "Leave blank for auto"
+                          : field === "sku"
+                            ? "Optional model number"
+                            : undefined
+                    }
+                    onChange={(event) =>
+                      updateItemEditField(
+                        field as keyof PurchaseItemEditForm,
+                        event.target.value,
+                      )
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+
+            <div className="addMissedItemNote">
+              Same Brand + Product + Size + Colour matches existing
+              stock. A new size or colour creates a new variant.
+              Leave Barcode blank for automatic generation.
+            </div>
+
+            <div className="editModalActions">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!savingAddItem) {
+                    setShowAddItemModal(false);
+                    setAddingItemPurchase(null);
+                  }
+                }}
+                disabled={savingAddItem}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                className="saveEditButton"
+                disabled={savingAddItem}
+              >
+                {savingAddItem
+                  ? "Adding Item..."
+                  : "Add Item to Same Purchase"}
               </button>
             </div>
           </form>
@@ -3012,6 +3325,66 @@ export default function PurchaseHistoryPage() {
           margin-top: 16px;
         }
 
+        .addMissedItemButton {
+          border-color: rgba(212, 175, 55, 0.75) !important;
+          background: linear-gradient(
+            135deg,
+            #fff8dc,
+            #f4d768
+          ) !important;
+          color: ${ROYAL_BLUE} !important;
+          font-weight: 900 !important;
+        }
+
+        .addMissedItemModal {
+          max-height: min(88vh, 850px);
+          overflow-y: auto;
+        }
+
+        .addItemPurchaseSummary {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 9px;
+          margin: 12px 0 16px;
+        }
+
+        .addItemPurchaseSummary div {
+          padding: 11px 12px;
+          border: 1px solid #e2e7ef;
+          border-radius: 11px;
+          background: #f7f9fc;
+        }
+
+        .addItemPurchaseSummary span,
+        .addItemPurchaseSummary strong {
+          display: block;
+        }
+
+        .addItemPurchaseSummary span {
+          color: #788396;
+          font-size: 8px;
+          font-weight: 900;
+          text-transform: uppercase;
+        }
+
+        .addItemPurchaseSummary strong {
+          margin-top: 5px;
+          color: ${ROYAL_BLUE};
+          font-size: 11px;
+        }
+
+        .addMissedItemNote {
+          margin-top: 13px;
+          padding: 11px 12px;
+          border: 1px solid #b9d7ff;
+          border-radius: 11px;
+          background: #eff7ff;
+          color: #184b8f;
+          font-size: 9px;
+          font-weight: 750;
+          line-height: 1.5;
+        }
+
         .editPurchaseModal label,
         .itemEditModal label {
           display: grid;
@@ -3321,6 +3694,11 @@ export default function PurchaseHistoryPage() {
 
           .detailsItemNumbers {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+        @media (max-width: 760px) {
+          .addItemPurchaseSummary {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>

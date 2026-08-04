@@ -4091,12 +4091,14 @@ export default function PurchasesPage() {
           .ncsPurchaseRowGrid
             > .ncsPurchaseRowSection:not(.ncsOnlineSection)
             label > span {
-            min-height: 20px;
+            min-height: 26px;
             display: flex;
             align-items: flex-end;
-            margin-bottom: 3px;
-            font-size: 7px;
-            line-height: 1.15;
+            margin-bottom: 5px;
+            color: #42516a;
+            font-size: 10px;
+            font-weight: 900;
+            line-height: 1.2;
           }
 
           .ncsPurchaseRowGrid
@@ -4105,22 +4107,24 @@ export default function PurchasesPage() {
           .ncsPurchaseRowGrid
             > .ncsPurchaseRowSection:not(.ncsOnlineSection)
             select {
-            min-height: 36px;
-            padding: 7px 8px;
-            border-radius: 8px;
-            font-size: 8px;
+            min-height: 46px;
+            padding: 10px 11px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 700;
           }
 
           .ncsPurchaseRowGrid .ncsDesignCodeRow {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 68px;
-            gap: 5px;
+            grid-template-columns: minmax(0, 1fr) 92px;
+            gap: 8px;
           }
 
           .ncsPurchaseRowGrid .ncsDesignCodeRow button {
-            min-height: 36px;
-            padding: 5px;
-            font-size: 7px;
+            min-height: 46px;
+            padding: 8px 10px;
+            font-size: 10px;
+            font-weight: 900;
           }
 
           .ncsPurchaseRowGrid .ncsBrandEditHint {
@@ -4133,15 +4137,16 @@ export default function PurchasesPage() {
           .ncsPurchaseRowGrid .ncsNewVariantMessage {
             grid-column: 1 / -1;
             margin: 0;
-            padding: 5px 7px;
-            font-size: 7px;
-            line-height: 1.3;
+            padding: 8px 10px;
+            font-size: 9px;
+            font-weight: 700;
+            line-height: 1.45;
           }
 
           .ncsPurchaseRowGrid .ncsOnlineSection {
             grid-column: 1 / -1;
-            padding: 8px 10px;
-            border-radius: 10px;
+            padding: 12px 14px;
+            border-radius: 12px;
           }
 
           .ncsPurchaseRowGrid .ncsOnlineSection .ncsPurchaseInnerGrid {
@@ -4151,26 +4156,88 @@ export default function PurchasesPage() {
           }
 
           .ncsPurchaseRowGrid .ncsPurchaseRowTotal {
-            margin-top: 6px;
-            padding-top: 6px;
+            margin-top: 10px;
+            padding-top: 10px;
           }
 
           .ncsPurchaseRowCard .ncsPurchaseRowHeader {
-            padding: 9px 12px;
+            padding: 12px 14px;
           }
 
           .ncsPurchaseRowCard .ncsAddNextRowButton {
-            min-height: 34px;
+            min-height: 42px;
+            font-size: 10px;
+            font-weight: 900;
           }
         }
 
 
         .ncsProductSearchHint {
           display: block;
-          margin-top: 6px;
-          color: #6b7280;
-          font-size: 8px;
+          margin-top: 7px;
+          color: #5f6c80;
+          font-size: 10px;
           font-weight: 700;
+        }
+
+
+        @media (min-width: 1180px) {
+          .ncsPurchaseRowTitle strong {
+            font-size: 14px;
+            line-height: 1.3;
+          }
+
+          .ncsPurchaseRowTitle small {
+            font-size: 9px;
+            line-height: 1.4;
+          }
+
+          .ncsPurchaseRowActions button {
+            min-height: 40px;
+            padding: 8px 12px;
+            font-size: 10px;
+            font-weight: 900;
+          }
+
+          .ncsPurchaseRowGrid .ncsOnlineSection h3 {
+            font-size: 13px;
+          }
+
+          .ncsPurchaseRowGrid .ncsOnlineSection label > span,
+          .ncsPurchaseRowGrid .ncsOnlineSection .ncsToggle span {
+            font-size: 10px;
+            font-weight: 900;
+          }
+
+          .ncsPurchaseRowGrid .ncsOnlineSection input,
+          .ncsPurchaseRowGrid .ncsOnlineSection select {
+            min-height: 44px;
+            padding: 9px 10px;
+            font-size: 11px;
+            font-weight: 700;
+          }
+
+          .ncsPurchaseRowTotal span {
+            font-size: 10px;
+          }
+
+          .ncsPurchaseRowTotal small {
+            font-size: 9px;
+          }
+
+          .ncsPurchaseRowTotal strong {
+            font-size: 15px;
+          }
+
+          .ncsCalculatedInput,
+          .ncsLandedCostInput {
+            font-size: 13px !important;
+            font-weight: 900 !important;
+          }
+
+          .ncsPurchaseRowGrid input::placeholder {
+            font-size: 10px;
+          }
         }
 
         @media (max-width: 1380px) {
