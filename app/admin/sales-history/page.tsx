@@ -146,6 +146,10 @@ export default function SalesHistoryPage() {
   const [notice, setNotice] = useState("");
   const [paymentEditOpen, setPaymentEditOpen] = useState(false);
   const [paymentEditValue, setPaymentEditValue] = useState("cash");
+  const [paymentEditCustomerName, setPaymentEditCustomerName] = useState("");
+  const [paymentEditPaidAmount, setPaymentEditPaidAmount] = useState("");
+  const [paymentBalanceTreatment, setPaymentBalanceTreatment] =
+    useState<"due" | "waive">("due");
   const [paymentEditSaving, setPaymentEditSaving] = useState(false);
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [whatsAppSendingSaleId, setWhatsAppSendingSaleId] =
@@ -779,29 +783,133 @@ export default function SalesHistoryPage() {
     if (!selected) return;
 
     const currentMethod = norm(selected.payment_method);
-    const safeMethod = ["cash", "upi", "card", "bank_transfer"].includes(
-      currentMethod
-    )
+    const safeMethod = [
+      "cash",
+      "upi",
+      "card",
+      "bank_transfer",
+    ].includes(currentMethod)
       ? currentMethod
       : "cash";
 
     setPaymentEditValue(safeMethod);
+    setPaymentEditCustomerName(
+      selected.customer_name?.trim() || "Walk-in Customer",
+    );
+    setPaymentEditPaidAmount(
+      num(selected.paid_amount).toFixed(2),
+    );
+    setPaymentBalanceTreatment(
+      num(selected.due_amount) > 0 ? "due" : "waive",
+    );
     setPaymentEditOpen(true);
   }
 
   async function savePaymentMethod() {
     if (!selected) return;
 
-    const currentMethod = norm(selected.payment_method);
-    if (paymentEditValue === currentMethod) {
-      setNotice("Select a different payment method.");
+    const customerName = paymentEditCustomerName.trim();
+
+    if (!customerName) {
+      setNotice("Enter a valid customer name.");
       return;
     }
 
+    const billTotal = Math.max(0, num(selected.total_amount));
+    const previousPaid = Math.max(0, num(selected.paid_amount));
+    const enteredPaid = Number(paymentEditPaidAmount);
+
+    if (!Number.isFinite(enteredPaid) || enteredPaid < 0) {
+      setNotice("Enter a valid paid amount.");
+      return;
+    }
+
+    const paidAmount = Math.round(enteredPaid * 100) / 100;
+
+    if (paidAmount > billTotal) {
+      setNotice(
+        `Paid amount cannot exceed bill total ${money(billTotal)}.`,
+      );
+      return;
+    }
+
+    const remainingAmount =
+      Math.round((billTotal - paidAmount) * 100) / 100;
+
+    const currentMethod = norm(selected.payment_method);
+    const methodChanged = paymentEditValue !== currentMethod;
+    const paidChanged =
+      Math.abs(paidAmount - previousPaid) > 0.009;
+    const nameChanged =
+      customerName !==
+      (selected.customer_name?.trim() || "Walk-in Customer");
+
+    if (!methodChanged && !paidChanged && !nameChanged) {
+      setNotice(
+        "Change customer name, payment method or paid amount before saving.",
+      );
+      return;
+    }
+
+    const dueAmount =
+      remainingAmount > 0 && paymentBalanceTreatment === "due"
+        ? remainingAmount
+        : 0;
+
+    /*
+     * When the balance is waived, convert only that remaining amount
+     * into an additional bill discount. Items, stock, tax and subtotal
+     * stay unchanged. This prevents the amount from appearing in
+     * Customer Dues.
+     */
+    const previousBillDiscount = Math.max(
+      0,
+      num(selected.bill_discount),
+    );
+
+    const waivedAmount =
+      remainingAmount > 0 && paymentBalanceTreatment === "waive"
+        ? remainingAmount
+        : 0;
+
+    const nextBillDiscount =
+      Math.round(
+        (previousBillDiscount + waivedAmount) * 100,
+      ) / 100;
+
+    const nextTotalAmount =
+      paymentBalanceTreatment === "waive"
+        ? paidAmount
+        : billTotal;
+
+    const nextPaymentStatus =
+      dueAmount > 0 ? "partial" : "paid";
+
+    const treatmentText =
+      remainingAmount <= 0
+        ? "fully paid"
+        : paymentBalanceTreatment === "due"
+          ? `${money(remainingAmount)} customer due`
+          : `${money(remainingAmount)} waived off`;
+
     const confirmed = window.confirm(
-      `Change ${selected.invoice_number || "this sale"} payment from ${label(
-        selected.payment_method
-      )} to ${label(paymentEditValue)}?`
+      `Update ${selected.invoice_number || "this sale"}?
+
+` +
+        `Customer: ${
+          selected.customer_name || "Walk-in Customer"
+        } → ${customerName}
+` +
+        `Payment: ${label(selected.payment_method)} → ${label(
+          paymentEditValue,
+        )}
+` +
+        `Paid: ${money(previousPaid)} → ${money(paidAmount)}
+` +
+        `Balance: ${treatmentText}
+
+` +
+        `After saving, the updated invoice PDF will be sent directly on WhatsApp.`,
     );
 
     if (!confirmed) return;
@@ -809,39 +917,60 @@ export default function SalesHistoryPage() {
     setPaymentEditSaving(true);
 
     try {
+      const updatePayload = {
+        customer_name: customerName,
+        payment_method: paymentEditValue,
+        paid_amount: paidAmount,
+        due_amount: dueAmount,
+        payment_status: nextPaymentStatus,
+        total_amount: nextTotalAmount,
+        bill_discount: nextBillDiscount,
+      };
+
       const { error } = await supabase
         .from("pos_sales")
-        .update({ payment_method: paymentEditValue })
+        .update(updatePayload)
         .eq("id", selected.id);
 
       if (error) throw error;
 
       const updatedSelected: SaleDetails = {
         ...selected,
-        payment_method: paymentEditValue,
+        ...updatePayload,
       };
 
       setSelected(updatedSelected);
       setSales((current) =>
         current.map((sale) =>
           sale.id === selected.id
-            ? { ...sale, payment_method: paymentEditValue }
-            : sale
-        )
+            ? {
+                ...sale,
+                ...updatePayload,
+              }
+            : sale,
+        ),
       );
+
       setPaymentEditOpen(false);
       setNotice(
-        `${selected.invoice_number || "Sale"} payment changed to ${label(
-          paymentEditValue
-        )}. Cash & Bank Book totals will recalculate automatically.`
+        `${selected.invoice_number || "Sale"} updated. Sending revised WhatsApp invoice...`,
       );
-      window.setTimeout(() => setNotice(""), 4500);
+
+      /*
+       * Send only after Supabase update succeeds, so the PDF carries
+       * the corrected method, paid amount, due and waived discount.
+       */
+      await sendSaleWhatsAppPdf(updatedSelected);
+      await loadSales();
     } catch (error) {
-      console.error("Unable to update payment method:", error);
+      console.error(
+        "Unable to update payment correction:",
+        error,
+      );
       setNotice(
         error instanceof Error
           ? error.message
-          : "Unable to update payment method."
+          : "Unable to update payment details.",
       );
     } finally {
       setPaymentEditSaving(false);
@@ -1356,7 +1485,7 @@ export default function SalesHistoryPage() {
             <header>
               <div>
                 <span>PAYMENT CORRECTION</span>
-                <h2>Edit Payment Method</h2>
+                <h2>Edit Payment & Settlement</h2>
                 <p>{selected.invoice_number || "POS Invoice"}</p>
               </div>
               <button
@@ -1375,31 +1504,153 @@ export default function SalesHistoryPage() {
                   <strong>{label(selected.payment_method)}</strong>
                 </div>
                 <div>
-                  <span>Sale Amount</span>
+                  <span>Original Bill Total</span>
                   <strong>{money(selected.total_amount)}</strong>
                 </div>
               </div>
 
-              <label>
-                <span>Correct Payment Method</span>
-                <select
-                  value={paymentEditValue}
+              <label className="paymentCustomerNameField">
+                <span>Correct Customer Name</span>
+                <input
+                  type="text"
+                  value={paymentEditCustomerName}
                   onChange={(event) =>
-                    setPaymentEditValue(event.target.value)
+                    setPaymentEditCustomerName(event.target.value)
                   }
-                >
-                  <option value="cash">Cash</option>
-                  <option value="upi">UPI</option>
-                  <option value="card">Card</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                </select>
+                  placeholder="Enter customer name"
+                  maxLength={80}
+                />
               </label>
 
+              <div className="paymentEditFields">
+                <label>
+                  <span>Correct Payment Method</span>
+                  <select
+                    value={paymentEditValue}
+                    onChange={(event) =>
+                      setPaymentEditValue(event.target.value)
+                    }
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI</option>
+                    <option value="card">Card</option>
+                    <option value="bank_transfer">
+                      Bank Transfer
+                    </option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Amount Actually Received</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max={num(selected.total_amount)}
+                    step="0.01"
+                    value={paymentEditPaidAmount}
+                    onChange={(event) =>
+                      setPaymentEditPaidAmount(event.target.value)
+                    }
+                    placeholder="Enter received amount"
+                  />
+                </label>
+              </div>
+
+              {(() => {
+                const billTotal = Math.max(
+                  0,
+                  num(selected.total_amount),
+                );
+                const paid = Math.max(
+                  0,
+                  Math.min(
+                    billTotal,
+                    num(paymentEditPaidAmount),
+                  ),
+                );
+                const balance =
+                  Math.round((billTotal - paid) * 100) / 100;
+
+                return (
+                  <>
+                    {balance > 0 && (
+                      <div className="balanceTreatment">
+                        <span>How should the remaining balance be treated?</span>
+
+                        <div className="balanceTreatmentGrid">
+                          <button
+                            type="button"
+                            className={
+                              paymentBalanceTreatment === "due"
+                                ? "active"
+                                : ""
+                            }
+                            onClick={() =>
+                              setPaymentBalanceTreatment("due")
+                            }
+                          >
+                            <b>Customer Due</b>
+                            <small>
+                              Show {money(balance)} in Customer Dues
+                            </small>
+                          </button>
+
+                          <button
+                            type="button"
+                            className={
+                              paymentBalanceTreatment === "waive"
+                                ? "active"
+                                : ""
+                            }
+                            onClick={() =>
+                              setPaymentBalanceTreatment("waive")
+                            }
+                          >
+                            <b>Discount / Waived Off</b>
+                            <small>
+                              Set due to ₹0 and waive {money(balance)}
+                            </small>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="paymentCorrectionSummary">
+                      <p>
+                        <span>Bill Total</span>
+                        <strong>{money(billTotal)}</strong>
+                      </p>
+                      <p>
+                        <span>Received</span>
+                        <strong>{money(paid)}</strong>
+                      </p>
+                      <p>
+                        <span>
+                          {balance <= 0
+                            ? "Balance"
+                            : paymentBalanceTreatment === "due"
+                              ? "Customer Due"
+                              : "Waived Off"}
+                        </span>
+                        <strong
+                          className={
+                            balance > 0 ? "paymentBalanceAmount" : ""
+                          }
+                        >
+                          {money(balance)}
+                        </strong>
+                      </p>
+                    </div>
+                  </>
+                );
+              })()}
+
               <div className="paymentSafetyNote">
-                Only the payment method changes. Sale amount, items, stock,
-                returns, paid amount and due amount remain unchanged. Cash &
-                Bank Book summaries are calculated from POS sales and will
-                update automatically.
+                Items and stock remain unchanged. Select Customer Due only
+                when the customer will pay later. Select Discount / Waived
+                Off when the remaining amount should never appear as due.
+                After saving, the revised invoice PDF is sent directly on
+                WhatsApp.
               </div>
             </div>
 
@@ -1418,10 +1669,16 @@ export default function SalesHistoryPage() {
                 onClick={savePaymentMethod}
                 disabled={
                   paymentEditSaving ||
-                  paymentEditValue === norm(selected.payment_method)
+                  paymentEditCustomerName.trim() === "" ||
+                  paymentEditPaidAmount.trim() === "" ||
+                  num(paymentEditPaidAmount) < 0 ||
+                  num(paymentEditPaidAmount) >
+                    num(selected.total_amount)
                 }
               >
-                {paymentEditSaving ? "Saving..." : "Save Payment Method"}
+                {paymentEditSaving
+                  ? "Updating & Sending..."
+                  : "Save & Send WhatsApp"}
               </button>
             </footer>
           </section>
@@ -1942,7 +2199,7 @@ export default function SalesHistoryPage() {
         .paymentEditModal{width:min(520px,100%);overflow:hidden;border:1px solid rgba(212,175,55,.34);border-radius:22px;background:#fff;box-shadow:0 30px 90px rgba(0,0,0,.34);animation:returnModalEnter .24s ease-out}
         .paymentEditModal>header{display:flex;justify-content:space-between;gap:18px;padding:22px;background:radial-gradient(circle at 88% 0%,rgba(212,175,55,.22),transparent 34%),linear-gradient(135deg,${DEEP},${BLUE});color:#fff}
         .paymentEditModal>header span{color:${GOLD};font-size:9px;font-weight:950;letter-spacing:1.3px}.paymentEditModal>header h2{margin:5px 0 3px;font-size:25px}.paymentEditModal>header p{margin:0;color:rgba(255,255,255,.68);font-size:10px}.paymentEditModal>header button{width:40px;height:40px;border:1px solid rgba(255,255,255,.22);border-radius:11px;background:rgba(255,255,255,.08);color:#fff;font-size:23px;cursor:pointer}
-        .paymentEditBody{padding:20px}.paymentCompare{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:15px}.paymentCompare>div{padding:13px;border-radius:13px;background:#f5f7fb}.paymentCompare span{display:block;color:#7d8491;font-size:8px;font-weight:850;text-transform:uppercase}.paymentCompare strong{display:block;margin-top:5px;color:${DEEP};font-size:15px}.paymentEditBody label>span{display:block;margin-bottom:6px;color:#667085;font-size:9px;font-weight:900;text-transform:uppercase}.paymentEditBody select{width:100%;height:46px;border:1px solid #dfe4ed;border-radius:12px;background:#fff;padding:0 12px;color:${DEEP};font:inherit;font-size:12px;font-weight:800;outline:none}.paymentEditBody select:focus{border-color:${BLUE};box-shadow:0 0 0 3px rgba(10,46,115,.08)}.paymentSafetyNote{margin-top:13px;padding:12px;border:1px solid #f0d98a;border-radius:12px;background:#fff9e7;color:#715a13;font-size:9px;line-height:1.55;font-weight:700}
+        .paymentEditBody{padding:20px}.paymentCompare{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:15px}.paymentCompare>div{padding:13px;border-radius:13px;background:#f5f7fb}.paymentCompare span{display:block;color:#7d8491;font-size:8px;font-weight:850;text-transform:uppercase}.paymentCompare strong{display:block;margin-top:5px;color:${DEEP};font-size:15px}.paymentEditBody label>span{display:block;margin-bottom:6px;color:#667085;font-size:9px;font-weight:900;text-transform:uppercase}.paymentCustomerNameField{display:block;margin-bottom:12px}.paymentEditFields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.paymentEditBody select,.paymentEditBody input{width:100%;height:46px;border:1px solid #dfe4ed;border-radius:12px;background:#fff;padding:0 12px;color:${DEEP};font:inherit;font-size:12px;font-weight:800;outline:none}.paymentEditBody select:focus,.paymentEditBody input:focus{border-color:${BLUE};box-shadow:0 0 0 3px rgba(10,46,115,.08)}.balanceTreatment{margin-top:15px}.balanceTreatment>span{display:block;margin-bottom:7px;color:#667085;font-size:9px;font-weight:900;text-transform:uppercase}.balanceTreatmentGrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.balanceTreatmentGrid button{display:grid;gap:4px;min-height:74px;padding:12px;border:1px solid #dfe4ed;border-radius:12px;background:#fff;color:${DEEP};text-align:left;cursor:pointer}.balanceTreatmentGrid button.active{border-color:${GOLD};background:#fff9e7;box-shadow:0 0 0 3px rgba(212,175,55,.13)}.balanceTreatmentGrid b{font-size:11px}.balanceTreatmentGrid small{color:#6b7280;font-size:8px;line-height:1.4}.paymentCorrectionSummary{display:grid;gap:7px;margin-top:14px;padding:12px;border-radius:12px;background:#f5f7fb}.paymentCorrectionSummary p{display:flex;justify-content:space-between;margin:0;color:#667085;font-size:10px}.paymentCorrectionSummary strong{color:${DEEP}}.paymentBalanceAmount{color:#b43232!important}.paymentSafetyNote{margin-top:13px;padding:12px;border:1px solid #f0d98a;border-radius:12px;background:#fff9e7;color:#715a13;font-size:9px;line-height:1.55;font-weight:700}
         .paymentEditModal>footer{display:flex;justify-content:flex-end;gap:10px;padding:0 20px 20px}.paymentEditModal>footer button{min-height:44px;border:0;border-radius:11px;padding:0 16px;font:inherit;font-size:10px;font-weight:900;cursor:pointer}.paymentEditModal>footer button:disabled{opacity:.45;cursor:not-allowed}.paymentCancel{background:#e9edf4;color:#394150}.paymentSave{background:linear-gradient(135deg,${GOLD},#efcf68);color:${DEEP};box-shadow:0 10px 24px rgba(212,175,55,.24)}
         
         .returnOverlay{position:fixed;inset:0;z-index:10050;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,21,63,.78);backdrop-filter:blur(11px)}

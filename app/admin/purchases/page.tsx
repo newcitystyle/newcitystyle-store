@@ -1703,11 +1703,25 @@ export default function PurchasesPage() {
                     setProductSearch(event.target.value);
                     setShowProductResults(true);
                   }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setShowProductResults(false);
+                      setProductSearch("");
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  onBlur={() => {
+                    window.setTimeout(() => {
+                      setShowProductResults(false);
+                    }, 160);
+                  }}
                   placeholder="Search brand, product, barcode, SKU, size or colour"
                 />
               </label>
 
-              {showProductResults && (
+              {showProductResults &&
+                productSearch.trim() && (
                 <div className="ncsDropdown ncsProductDropdown">
                   {loading ? (
                     <div className="ncsDropdownMessage">
@@ -1723,6 +1737,9 @@ export default function PurchasesPage() {
                       <button
                         key={product.key}
                         type="button"
+                        onMouseDown={(event) =>
+                          event.preventDefault()
+                        }
                         onClick={() =>
                           addExistingProduct(product)
                         }
@@ -1759,6 +1776,12 @@ export default function PurchasesPage() {
                     ))
                   )}
                 </div>
+              )}
+
+              {productSearch.trim() && (
+                <small className="ncsProductSearchHint">
+                  Press Esc or click outside to close search results.
+                </small>
               )}
             </div>
 
@@ -4139,6 +4162,15 @@ export default function PurchasesPage() {
           .ncsPurchaseRowCard .ncsAddNextRowButton {
             min-height: 34px;
           }
+        }
+
+
+        .ncsProductSearchHint {
+          display: block;
+          margin-top: 6px;
+          color: #6b7280;
+          font-size: 8px;
+          font-weight: 700;
         }
 
         @media (max-width: 1380px) {
