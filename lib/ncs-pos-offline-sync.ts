@@ -322,80 +322,64 @@ async function sendOfflineInvoiceWhatsApp(
     recipientPhone.length > 15
   ) {
     throw new Error(
-      "A valid customer mobile number is required for WhatsApp invoice.",
+      "A valid customer mobile number is required for WhatsApp bill message.",
     );
   }
 
+  const formData = new FormData();
+
+  formData.append("to", recipientPhone);
+  formData.append(
+    "customerName",
+    sale.customerName.trim() ||
+      "Walk-in Customer",
+  );
+  formData.append(
+    "billNumber",
+    invoiceNumber,
+  );
+  formData.append(
+    "billAmount",
+    String(
+      toNumber(
+        cloudResult.total_amount,
+        sale.finalPayable,
+      ),
+    ),
+  );
+  formData.append(
+    "paidAmount",
+    String(
+      toNumber(
+        cloudResult.paid_amount,
+        sale.paidAmount,
+      ),
+    ),
+  );
+  formData.append(
+    "dueAmount",
+    String(
+      toNumber(
+        cloudResult.due_amount,
+        sale.dueAmount,
+      ),
+    ),
+  );
+  formData.append(
+    "paymentMethod",
+    sale.paymentMethod.toUpperCase(),
+  );
+
   const response = await fetch(
-    "/api/whatsapp/invoice-pdf",
+    "/api/whatsapp/invoice",
     {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        to: recipientPhone,
-        sendWhatsApp: true,
-        customerName:
-          sale.customerName.trim() ||
-          "Walk-in Customer",
-        customerPhone: sale.customerPhone,
-        billNumber: invoiceNumber,
-        billDate: new Date(
-          sale.createdAt,
-        ).toLocaleString("en-IN"),
-        paymentMethod:
-          sale.paymentMethod.toUpperCase(),
-        subtotal: toNumber(
-          cloudResult.subtotal,
-          sale.subtotal,
-        ),
-        discountAmount: toNumber(
-          cloudResult.bill_discount,
-          sale.billDiscountAmount +
-            sale.rewardDiscountAmount,
-        ),
-        taxAmount: toNumber(
-          cloudResult.tax_amount,
-          sale.taxAmount,
-        ),
-        roundOff: toNumber(
-          cloudResult.round_off,
-          sale.roundOffAmount,
-        ),
-        billAmount: toNumber(
-          cloudResult.total_amount,
-          sale.finalPayable,
-        ),
-        paidAmount: toNumber(
-          cloudResult.paid_amount,
-          sale.paidAmount,
-        ),
-        dueAmount: toNumber(
-          cloudResult.due_amount,
-          sale.dueAmount,
-        ),
-        items: sale.items.map((item) => ({
-          name: item.name,
-          quantity: item.quantity,
-          mrp: item.mrp,
-          price: item.price,
-          discountPercent: Math.max(
-            0,
-            item.discountPercent || 0,
-          ),
-          total: item.price * item.quantity,
-          size: item.size,
-          color: item.color,
-          barcode: item.barcode,
-        })),
-      }),
+      body: formData,
     },
   );
 
   const result = (await response.json()) as {
     success?: boolean;
-    whatsappPdfSent?: boolean;
     error?: string;
     stage?: string;
     errorDetails?: string | null;
@@ -403,8 +387,7 @@ async function sendOfflineInvoiceWhatsApp(
 
   if (
     !response.ok ||
-    result.success !== true ||
-    result.whatsappPdfSent !== true
+    result.success !== true
   ) {
     const stageText = result.stage
       ? ` (${result.stage})`
@@ -416,7 +399,7 @@ async function sendOfflineInvoiceWhatsApp(
     throw new Error(
       `${
         result.error ||
-        "WhatsApp invoice could not be sent."
+        "WhatsApp bill message could not be sent."
       }${stageText}${detailsText}`,
     );
   }
