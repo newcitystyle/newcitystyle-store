@@ -104,6 +104,7 @@ export default function PartyLedgersPage() {
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [whatsAppSending, setWhatsAppSending] = useState(false);
   const [notice, setNotice] = useState("");
 
   const loadData = useCallback(async () => {
@@ -219,11 +220,141 @@ export default function PartyLedgersPage() {
     window.print();
   }
 
-  function shareStatement() {
-    const party = tab === "customers" ? selectedCustomer?.customer_name : selectedSupplier?.supplier_name;
-    const balance = tab === "customers" ? n(selectedCustomer?.current_balance) : n(selectedSupplier?.current_balance);
-    const message = `NEW CITY STYLE\n${tab === "customers" ? "Customer Receivable" : "Supplier Payable"} Statement\nParty: ${party || "—"}\nCurrent Balance: ${money(balance)}`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
+  async function shareStatement() {
+    if (whatsAppSending) return;
+
+    const party =
+      tab === "customers"
+        ? selectedCustomer?.customer_name
+        : selectedSupplier?.supplier_name;
+
+    const rawPhone =
+      tab === "customers"
+        ? selectedCustomer?.customer_phone
+        : selectedSupplier?.phone;
+
+    const balance =
+      tab === "customers"
+        ? Math.max(0, n(selectedCustomer?.current_balance))
+        : Math.max(0, n(selectedSupplier?.current_balance));
+
+    if (!party) {
+      setNotice("Select a party first.");
+      return;
+    }
+
+    const digits = (rawPhone || "").replace(/\D/g, "");
+    const recipientPhone =
+      digits.length === 10 ? `91${digits}` : digits;
+
+    if (
+      recipientPhone.length < 10 ||
+      recipientPhone.length > 15
+    ) {
+      setNotice(
+        "A valid mobile number is required to send the WhatsApp PDF."
+      );
+      return;
+    }
+
+    setWhatsAppSending(true);
+    setNotice("");
+
+    try {
+      const now = new Date();
+      const statementNumber = `${
+        tab === "customers" ? "DUE" : "PAYABLE"
+      }-${now.getFullYear()}${String(now.getMonth() + 1).padStart(
+        2,
+        "0"
+      )}${String(now.getDate()).padStart(2, "0")}-${String(
+        now.getHours()
+      ).padStart(2, "0")}${String(now.getMinutes()).padStart(
+        2,
+        "0"
+      )}`;
+
+      const response = await fetch("/api/whatsapp/invoice", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: recipientPhone,
+          sendWhatsApp: true,
+          customerName: party,
+          customerPhone: rawPhone || "",
+          billNumber: statementNumber,
+          billDate: now.toLocaleString("en-IN"),
+          paymentMethod:
+            tab === "customers"
+              ? "CREDIT DUE REMINDER"
+              : "SUPPLIER PAYABLE",
+          subtotal: balance,
+          discountAmount: 0,
+          taxAmount: 0,
+          roundOff: 0,
+          billAmount: balance,
+          paidAmount: 0,
+          dueAmount: balance,
+          items: [
+            {
+              name:
+                tab === "customers"
+                  ? "Outstanding Credit Balance"
+                  : "Outstanding Supplier Payable",
+              quantity: 1,
+              mrp: balance,
+              price: balance,
+              total: balance,
+              size: "",
+              color: "",
+            },
+          ],
+        }),
+      });
+
+      const result = (await response.json()) as {
+        success?: boolean;
+        whatsappPdfSent?: boolean;
+        error?: string;
+        stage?: string;
+        errorDetails?: string | null;
+      };
+
+      if (
+        !response.ok ||
+        result.success !== true ||
+        result.whatsappPdfSent !== true
+      ) {
+        const stageMessage = result.stage
+          ? ` (${result.stage})`
+          : "";
+        const detailMessage = result.errorDetails
+          ? ` - ${result.errorDetails}`
+          : "";
+
+        throw new Error(
+          `${
+            result.error ||
+            "WhatsApp PDF statement could not be sent."
+          }${stageMessage}${detailMessage}`
+        );
+      }
+
+      setNotice(
+        `WhatsApp PDF sent directly to ${party}.`
+      );
+    } catch (error) {
+      console.error("Unable to send WhatsApp PDF:", error);
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to send WhatsApp PDF."
+      );
+    } finally {
+      setWhatsAppSending(false);
+    }
   }
 
   return (
@@ -284,7 +415,13 @@ export default function PartyLedgersPage() {
 
           <div className="actions">
             <button onClick={printStatement}>🖨 Print</button>
-            <button onClick={shareStatement}>💬 WhatsApp</button>
+            <button
+              type="button"
+              onClick={() => void shareStatement()}
+              disabled={whatsAppSending}
+            >
+              {whatsAppSending ? "Sending..." : "💬 WhatsApp PDF"}
+            </button>
           </div>
 
           <div className="statementList">
@@ -321,7 +458,7 @@ export default function PartyLedgersPage() {
       <style jsx global>{`
         *{box-sizing:border-box}.ledgerPage{min-height:100vh;padding:24px;background:${IVORY};font-family:Poppins,Inter,Arial,sans-serif;color:#2c2c2c}
         .hero{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;padding:24px;border:1px solid rgba(212,175,55,.35);border-radius:22px;background:radial-gradient(circle at 90% 0%,rgba(212,175,55,.25),transparent 34%),linear-gradient(135deg,${DEEP},${BLUE});color:white;box-shadow:0 18px 45px rgba(3,21,63,.18)}
-        .hero span,.paymentPanel>span,.partyHeader>div>span{color:${GOLD};font-size:9px;font-weight:950;letter-spacing:1px}.hero h1{margin:5px 0 0;font-size:31px}.hero p{margin:6px 0 0;color:#ffffffb8;font-size:10px}.hero button,.actions button{min-height:40px;padding:0 14px;border:1px solid ${GOLD};border-radius:10px;background:${GOLD};color:${BLUE};font-weight:900;cursor:pointer}
+        .hero span,.paymentPanel>span,.partyHeader>div>span{color:${GOLD};font-size:9px;font-weight:950;letter-spacing:1px}.hero h1{margin:5px 0 0;font-size:31px}.hero p{margin:6px 0 0;color:#ffffffb8;font-size:10px}.hero button,.actions button{min-height:40px;padding:0 14px;border:1px solid ${GOLD};border-radius:10px;background:${GOLD};color:${BLUE};font-weight:900;cursor:pointer}.actions button:disabled{opacity:.65;cursor:not-allowed}
         .notice{margin-top:12px;padding:11px;border-radius:10px;background:#fff7df;color:#775d11;font-size:10px;font-weight:800}
         .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:15px 0}.kpis article{padding:18px;border-radius:18px;background:linear-gradient(135deg,${BLUE},${DEEP});color:white}.kpis span,.kpis strong,.kpis small{display:block}.kpis span{color:${GOLD};font-size:8px;font-weight:950}.kpis strong{margin-top:7px;font-size:24px}.kpis small{margin-top:5px;color:#ffffffa8;font-size:8px}
         .tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button{padding:11px 16px;border:1px solid #dce2eb;border-radius:11px;background:white;color:${BLUE};font-weight:850;cursor:pointer}.tabs .active{border-color:${GOLD};background:${BLUE};color:white}

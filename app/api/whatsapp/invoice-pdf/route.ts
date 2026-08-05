@@ -997,7 +997,7 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     success: true,
-    route: "/api/whatsapp/invoice-pdf",
+    route: "/api/whatsapp/invoice",
     method: "POST",
     message:
       "NEW CITY STYLE premium PDF invoice generator and WhatsApp sender is ready.",

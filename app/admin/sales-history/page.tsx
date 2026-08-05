@@ -1078,7 +1078,7 @@ export default function SalesHistoryPage() {
 
     try {
       const response = await fetch(
-        "/api/whatsapp/invoice-pdf",
+        "/api/whatsapp/invoice",
         {
           method: "POST",
           headers: {

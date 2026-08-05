@@ -130,6 +130,8 @@ export default function CustomerDuesPage() {
   const [referenceNumber, setReferenceNumber] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
   const [savingPayment, setSavingPayment] = useState(false);
+  const [whatsAppSendingAccountId, setWhatsAppSendingAccountId] =
+    useState<number | null>(null);
 
   const loadData = useCallback(async (showRefresh = false) => {
     if (showRefresh) {
@@ -387,34 +389,189 @@ export default function CustomerDuesPage() {
     }
   }
 
-  function sendWhatsAppReminder(account: CreditAccount) {
-    const phone = (account.customer_phone || "").replace(/\D/g, "");
-    const balance = toNumber(account.current_balance);
+  async function sendWhatsAppReminder(account: CreditAccount) {
+    if (whatsAppSendingAccountId !== null) return;
 
-    if (!phone) {
-      setNotice("Customer phone number is missing.");
+    const digits = (account.customer_phone || "").replace(/\D/g, "");
+    const recipientPhone =
+      digits.length === 10 ? `91${digits}` : digits;
+    const balance = Math.max(0, toNumber(account.current_balance));
+
+    if (
+      recipientPhone.length < 10 ||
+      recipientPhone.length > 15
+    ) {
+      setNotice("Customer phone number is missing or invalid.");
+      window.setTimeout(() => setNotice(""), 3500);
+      return;
+    }
+
+    if (balance <= 0) {
+      setNotice("This customer does not have a pending due.");
       window.setTimeout(() => setNotice(""), 3000);
       return;
     }
 
-    const dueText = account.next_due_date
-      ? ` Due date: ${formatDate(account.next_due_date)}.`
-      : "";
-
-    const message = [
-      `Dear ${account.customer_name || "Customer"},`,
-      `Your pending amount at NEW CITY STYLE is ${formatCurrency(balance)}.${dueText}`,
-      "Please make the payment at your convenience.",
-      "Thank you.",
-    ].join(" ");
-
-    const whatsappPhone = phone.startsWith("91") ? phone : `91${phone}`;
-
-    window.open(
-      `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(message)}`,
-      "_blank",
-      "noopener,noreferrer",
+    const accountTransactions = transactions.filter(
+      (transaction) =>
+        transaction.credit_account_id === account.id ||
+        (account.customer_id &&
+          transaction.customer_id === account.customer_id),
     );
+
+    const latestCreditTransaction = accountTransactions.find(
+      (transaction) =>
+        normalize(transaction.transaction_type) !== "payment" &&
+        toNumber(transaction.amount_change) > 0,
+    );
+
+    const invoiceNumber =
+      latestCreditTransaction?.reference_number?.trim() ||
+      `DUE-${account.id}-${new Date()
+        .toISOString()
+        .slice(0, 10)
+        .replace(/-/g, "")}`;
+
+    const totalCreditGiven = Math.max(
+      balance,
+      toNumber(account.total_credit_given),
+    );
+    const totalCreditPaid = Math.max(
+      0,
+      toNumber(account.total_credit_paid),
+    );
+
+    setWhatsAppSendingAccountId(account.id);
+    setNotice("");
+
+    try {
+      const response = await fetch(
+        "/api/whatsapp/invoice",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: recipientPhone,
+            sendWhatsApp: true,
+            customerName:
+              account.customer_name || "Customer",
+            customerPhone:
+              account.customer_phone || "",
+            billNumber: invoiceNumber,
+            billDate: new Date().toLocaleString("en-IN"),
+            paymentMethod: "CREDIT DUE REMINDER",
+            subtotal: totalCreditGiven,
+            discountAmount: 0,
+            taxAmount: 0,
+            roundOff: 0,
+            billAmount: totalCreditGiven,
+            paidAmount: totalCreditPaid,
+            dueAmount: balance,
+            items: [
+              {
+                name: "Outstanding Credit Balance",
+                quantity: 1,
+                mrp: balance,
+                price: balance,
+                total: balance,
+                size: account.next_due_date
+                  ? `Due: ${formatDate(account.next_due_date)}`
+                  : "",
+                color: "",
+              },
+            ],
+          }),
+        },
+      );
+
+      const result = (await response.json()) as {
+        success?: boolean;
+        whatsappPdfSent?: boolean;
+        error?: string;
+        stage?: string;
+        errorDetails?: string | null;
+      };
+
+      if (
+        !response.ok ||
+        result.success !== true ||
+        result.whatsappPdfSent !== true
+      ) {
+        const stageText = result.stage
+          ? ` (${result.stage})`
+          : "";
+        const detailText = result.errorDetails
+          ? ` - ${result.errorDetails}`
+          : "";
+
+        throw new Error(
+          `${
+            result.error ||
+            "WhatsApp due reminder PDF could not be sent."
+          }${stageText}${detailText}`,
+        );
+      }
+
+      const sentAt = new Date().toISOString();
+      const reminderMessage = [
+        `Pending due: ${formatCurrency(balance)}`,
+        account.next_due_date
+          ? `Due date: ${formatDate(account.next_due_date)}`
+          : "",
+        `Reference: ${invoiceNumber}`,
+      ]
+        .filter(Boolean)
+        .join(" • ");
+
+      const { error: logError } = await supabase
+        .from("credit_reminder_logs")
+        .insert({
+          credit_account_id: account.id,
+          customer_id: account.customer_id || null,
+          customer_name:
+            account.customer_name || "Customer",
+          customer_phone:
+            account.customer_phone || null,
+          outstanding_balance: balance,
+          due_date: account.next_due_date || null,
+          reminder_type: "WHATSAPP_PDF",
+          reminder_status: "SENT",
+          message_text: reminderMessage,
+          sent_by: "WEBSITE_ADMIN",
+          sent_at: sentAt,
+          created_at: sentAt,
+        });
+
+      if (logError) {
+        console.info(
+          "WhatsApp reminder sent, but reminder log was not saved:",
+          logError.message,
+        );
+      }
+
+      setNotice(
+        `WhatsApp due reminder PDF sent directly to ${
+          account.customer_name || "customer"
+        }.`,
+      );
+      window.setTimeout(() => setNotice(""), 4000);
+      await loadData(true);
+    } catch (error) {
+      console.error(
+        "Unable to send WhatsApp due reminder PDF:",
+        error,
+      );
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to send WhatsApp due reminder PDF.",
+      );
+      window.setTimeout(() => setNotice(""), 5000);
+    } finally {
+      setWhatsAppSendingAccountId(null);
+    }
   }
 
   return (
@@ -626,9 +783,16 @@ export default function CustomerDuesPage() {
                       <>
                         <button
                           type="button"
-                          onClick={() => sendWhatsAppReminder(account)}
+                          onClick={() =>
+                            void sendWhatsAppReminder(account)
+                          }
+                          disabled={
+                            whatsAppSendingAccountId !== null
+                          }
                         >
-                          WhatsApp Reminder
+                          {whatsAppSendingAccountId === account.id
+                            ? "Sending..."
+                            : "WhatsApp PDF Reminder"}
                         </button>
 
                         <button
@@ -743,9 +907,16 @@ export default function CustomerDuesPage() {
               <div className="modalActions">
                 <button
                   type="button"
-                  onClick={() => sendWhatsAppReminder(selectedAccount)}
+                  onClick={() =>
+                    void sendWhatsAppReminder(selectedAccount)
+                  }
+                  disabled={
+                    whatsAppSendingAccountId !== null
+                  }
                 >
-                  Send WhatsApp Reminder
+                  {whatsAppSendingAccountId === selectedAccount.id
+                    ? "Sending..."
+                    : "Send WhatsApp PDF Reminder"}
                 </button>
 
                 <button
