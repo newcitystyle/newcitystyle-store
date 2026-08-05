@@ -525,7 +525,7 @@ export default function BarcodesPage() {
         displayValue: true,
         font: "Arial",
         fontOptions: "bold",
-        fontSize: 15,
+        fontSize: 13,
         textMargin: 3,
         margin: 4,
         background: "#FFFFFF",
@@ -690,7 +690,7 @@ export default function BarcodesPage() {
       displayValue: true,
       font: "Arial",
       fontOptions: "bold",
-      fontSize: 15,
+      fontSize: 13,
       textMargin: 3,
       margin: 4,
       background: "#FFFFFF",
@@ -910,16 +910,10 @@ export default function BarcodesPage() {
             .barcode svg text {
               fill: #000000 !important;
               font-family: Arial, Helvetica, sans-serif !important;
-              font-size: 15px !important;
+              font-size: 13px !important;
               font-weight: 900 !important;
               letter-spacing: 0.55px;
               opacity: 1 !important;
-            }
-
-            .barcode svg rect {
-              fill: #000000 !important;
-              opacity: 1 !important;
-              shape-rendering: crispEdges;
             }
 
             .priceRow {
@@ -2024,17 +2018,12 @@ export default function BarcodesPage() {
         .barcodePreview svg text {
           fill: #000000 !important;
           font-family: Arial, Helvetica, sans-serif !important;
-          font-size: 15px !important;
+          font-size: 13px !important;
           font-weight: 900 !important;
           letter-spacing: 0.55px;
           opacity: 1 !important;
         }
 
-        .barcodePreview svg rect {
-          fill: #000000 !important;
-          opacity: 1 !important;
-          shape-rendering: crispEdges;
-        }
 
         .previewCopies {
           display: grid;
