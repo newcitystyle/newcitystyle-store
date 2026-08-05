@@ -523,7 +523,10 @@ export default function BarcodesPage() {
         width: 2,
         height: 48,
         displayValue: true,
-        fontSize: 12,
+        font: "Arial",
+        fontOptions: "bold",
+        fontSize: 15,
+        textMargin: 3,
         margin: 4,
         background: "#FFFFFF",
         lineColor: "#000000",
@@ -685,7 +688,10 @@ export default function BarcodesPage() {
       width: 2,
       height: 48,
       displayValue: true,
-      fontSize: 12,
+      font: "Arial",
+      fontOptions: "bold",
+      fontSize: 15,
+      textMargin: 3,
       margin: 4,
       background: "#FFFFFF",
       lineColor: "#000000",
@@ -893,8 +899,27 @@ export default function BarcodesPage() {
 
             .barcode svg {
               width: 100%;
-              height: ${selectedSize.pageHeight <= 25 ? 10 : 11.5}mm;
+              height: ${selectedSize.pageHeight <= 25 ? 10.8 : 12.3}mm;
               display: block;
+              overflow: visible;
+              shape-rendering: crispEdges;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            .barcode svg text {
+              fill: #000000 !important;
+              font-family: Arial, Helvetica, sans-serif !important;
+              font-size: 15px !important;
+              font-weight: 900 !important;
+              letter-spacing: 0.55px;
+              opacity: 1 !important;
+            }
+
+            .barcode svg rect {
+              fill: #000000 !important;
+              opacity: 1 !important;
+              shape-rendering: crispEdges;
             }
 
             .priceRow {
@@ -1992,6 +2017,23 @@ export default function BarcodesPage() {
         .barcodePreview svg {
           width: 100%;
           height: auto;
+          overflow: visible;
+          shape-rendering: crispEdges;
+        }
+
+        .barcodePreview svg text {
+          fill: #000000 !important;
+          font-family: Arial, Helvetica, sans-serif !important;
+          font-size: 15px !important;
+          font-weight: 900 !important;
+          letter-spacing: 0.55px;
+          opacity: 1 !important;
+        }
+
+        .barcodePreview svg rect {
+          fill: #000000 !important;
+          opacity: 1 !important;
+          shape-rendering: crispEdges;
         }
 
         .previewCopies {
