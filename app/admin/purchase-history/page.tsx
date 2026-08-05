@@ -221,6 +221,7 @@ export default function PurchaseHistoryPage() {
     useState<PurchaseItemRow | null>(null);
   const [savingItemEdit, setSavingItemEdit] =
     useState(false);
+  const [itemEditError, setItemEditError] = useState("");
 
   const [showAddItemModal, setShowAddItemModal] =
     useState(false);
@@ -701,9 +702,10 @@ export default function PurchaseHistoryPage() {
 
   function openItemEditModal(item: PurchaseItemRow) {
     setEditingItem(item);
+    setItemEditError("");
     setItemEditForm({
       productName: item.product_name || "",
-      brand: item.brand || "",
+      brand: item.brand?.trim() || "NEW CITY STYLE",
       size: item.size || "",
       color: item.color || "",
       sku: item.sku || "",
@@ -724,6 +726,7 @@ export default function PurchaseHistoryPage() {
   function updateItemEditField<
     K extends keyof PurchaseItemEditForm,
   >(field: K, value: PurchaseItemEditForm[K]) {
+    setItemEditError("");
     setItemEditForm((current) => ({
       ...current,
       [field]: value,
@@ -752,23 +755,25 @@ export default function PurchaseHistoryPage() {
       Math.trunc(toNumber(itemEditForm.onlineQuantity)),
     );
 
+    setItemEditError("");
+
     if (!itemEditForm.productName.trim()) {
-      setNotice("Product name is required.");
+      setItemEditError("Product name is required.");
       return;
     }
 
-    if (!itemEditForm.brand.trim()) {
-      setNotice("Brand is required.");
-      return;
-    }
+    const safeBrand =
+      itemEditForm.brand.trim() ||
+      editingItem.brand?.trim() ||
+      "NEW CITY STYLE";
 
     if (quantity <= 0) {
-      setNotice("Quantity must be greater than zero.");
+      setItemEditError("Quantity must be greater than zero.");
       return;
     }
 
     if (onlineQuantity > quantity) {
-      setNotice(
+      setItemEditError(
         "Online quantity cannot be greater than total quantity.",
       );
       return;
@@ -777,28 +782,21 @@ export default function PurchaseHistoryPage() {
     setSavingItemEdit(true);
 
     try {
-      const oldBrand = normalize(editingItem.brand);
-      const newBrand = normalize(itemEditForm.brand);
+      const oldBrand = normalize(
+        editingItem.brand || "NEW CITY STYLE",
+      );
+      const newBrand = normalize(safeBrand);
 
       if (oldBrand !== newBrand) {
         const { error: brandMoveError } = await supabase.rpc(
           "ncs_move_purchase_item_brand_v1",
           {
             p_item_id: editingItem.id,
-            p_new_brand: itemEditForm.brand.trim(),
+            p_new_brand: safeBrand,
           },
         );
 
         if (brandMoveError) throw brandMoveError;
-      }
-
-      const nextMrp = Math.max(
-        0,
-        toNumber(itemEditForm.mrp),
-      );
-
-      if (nextMrp <= 0) {
-        throw new Error("MRP must be greater than zero.");
       }
 
       const { error } = await supabase.rpc(
@@ -822,7 +820,10 @@ export default function PurchaseHistoryPage() {
             0,
             toNumber(itemEditForm.sellingPrice),
           ),
-          p_mrp: nextMrp,
+          p_mrp: Math.max(
+            0,
+            toNumber(itemEditForm.mrp),
+          ),
           p_tax_percent: Math.max(
             0,
             toNumber(itemEditForm.taxPercent),
@@ -839,86 +840,27 @@ export default function PurchaseHistoryPage() {
 
       if (error) throw error;
 
-      /*
-       * Some older versions of ncs_edit_purchase_item_v2 update
-       * purchase totals and stock correctly but do not propagate
-       * the edited MRP to all linked catalogue rows. Re-read the
-       * item after the RPC (brand move may change product/variant)
-       * and save the same MRP everywhere.
-       */
-      const {
-        data: refreshedItem,
-        error: refreshedItemError,
-      } = await supabase
-        .from("purchase_items")
-        .select("id,product_id,variant_id")
-        .eq("id", editingItem.id)
-        .single();
-
-      if (refreshedItemError) {
-        throw refreshedItemError;
-      }
-
-      const { error: purchaseItemMrpError } =
-        await supabase
-          .from("purchase_items")
-          .update({
-            mrp: nextMrp,
-          })
-          .eq("id", editingItem.id);
-
-      if (purchaseItemMrpError) {
-        throw purchaseItemMrpError;
-      }
-
-      const refreshedProductId = Number(
-        refreshedItem?.product_id || 0,
-      );
-      const refreshedVariantId = Number(
-        refreshedItem?.variant_id || 0,
-      );
-
-      if (refreshedVariantId > 0) {
-        const { error: variantMrpError } =
-          await supabase
-            .from("product_variants")
-            .update({
-              mrp: nextMrp,
-            })
-            .eq("id", refreshedVariantId);
-
-        if (variantMrpError) {
-          throw variantMrpError;
-        }
-      }
-
-      if (refreshedProductId > 0) {
-        const { error: productMrpError } =
-          await supabase
-            .from("products")
-            .update({
-              mrp: nextMrp,
-            })
-            .eq("id", refreshedProductId);
-
-        if (productMrpError) {
-          throw productMrpError;
-        }
-      }
+      await loadData(true);
 
       setShowItemEditModal(false);
       setEditingItem(null);
-      setSelectedPurchase(null);
-      setNotice("Purchase item updated successfully.");
-      window.setTimeout(() => setNotice(""), 3500);
-      await loadData(true);
+     setItemEditError("");
+
+setNotice(
+  `Item updated successfully. New MRP: ${formatCurrency(
+    Math.max(0, toNumber(itemEditForm.mrp)),
+  )}`,
+);
+
+window.setTimeout(() => setNotice(""), 4500);
     } catch (error) {
       console.error("Purchase item edit error:", error);
-      setNotice(
+      const message =
         error instanceof Error
           ? error.message
-          : "Unable to update purchase item.",
-      );
+          : "Unable to update purchase item.";
+      setItemEditError(message);
+      setNotice(message);
       window.setTimeout(() => setNotice(""), 4500);
     } finally {
       setSavingItemEdit(false);
@@ -2214,6 +2156,7 @@ export default function PurchaseHistoryPage() {
                   if (!savingItemEdit) {
                     setShowItemEditModal(false);
                     setEditingItem(null);
+                    setItemEditError("");
                   }
                 }}
                 aria-label="Close item edit form"
@@ -2230,6 +2173,13 @@ export default function PurchaseHistoryPage() {
                 the stock difference. Purchase totals, tax, supplier due and
                 ledger balance are recalculated automatically.
               </p>
+
+              {itemEditError && (
+                <div className="itemEditInlineError">
+                  <strong>Unable to update</strong>
+                  <span>{itemEditError}</span>
+                </div>
+              )}
 
               <div className="editPurchaseGrid">
                 {[
@@ -3638,6 +3588,23 @@ export default function PurchaseHistoryPage() {
           min-height: 88px;
           padding: 10px;
           resize: vertical;
+        }
+
+        .itemEditInlineError {
+          display: grid;
+          gap: 3px;
+          margin: 12px 0;
+          padding: 11px 13px;
+          border: 1px solid #fecdca;
+          border-radius: 10px;
+          background: #fef3f2;
+          color: #b42318;
+          font-size: 10px;
+        }
+
+        .itemEditInlineError strong {
+          font-size: 11px;
+          font-weight: 900;
         }
 
         .editModalActions {
