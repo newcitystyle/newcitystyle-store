@@ -729,12 +729,8 @@ async function sendInvoiceTemplate({
   templateLanguage: string;
 }) {
   /*
-   * The approved NEW CITY STYLE WhatsApp template uses a TEXT header.
-   * Sending a document parameter here causes Meta error #132012:
-   * "expected TEXT, received DOCUMENT".
-   *
-   * The invoice number is sent as the dynamic header text. The six
-   * existing body variables remain unchanged.
+   * The approved NEW CITY STYLE message template has no header.
+   * Send only the six approved body variables.
    */
   const payload = {
     messaging_product: "whatsapp",
@@ -747,15 +743,6 @@ async function sendInvoiceTemplate({
         code: templateLanguage,
       },
       components: [
-        {
-          type: "header",
-          parameters: [
-            {
-              type: "text",
-              text: billNumber,
-            },
-          ],
-        },
         {
           type: "body",
           parameters: [
