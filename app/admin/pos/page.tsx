@@ -1074,6 +1074,50 @@ export default function PosPage() {
     setLoadingProducts(true);
     setLoadError("");
 
+    /*
+     * IMPORTANT:
+     * When the browser is offline, do not wait for Supabase to fail.
+     * Load the saved IndexedDB product catalogue immediately.
+     */
+    if (!isBrowserOnline()) {
+      setIsOnline(false);
+
+      try {
+        const cachedProducts = await getCachedPosProducts();
+
+        if (cachedProducts.length > 0) {
+          setProducts(
+            cachedProducts.map(
+              ({ cachedAt: _cachedAt, ...item }) => item,
+            ),
+          );
+          setLoadError("");
+          showNotice(
+            `OFFLINE MODE: ${cachedProducts.length} cached product variant(s) loaded.`,
+            "info",
+          );
+        } else {
+          setProducts([]);
+          setLoadError(
+            "Offline product cache is empty. Connect to the internet, open POS once, and press Refresh Stock.",
+          );
+        }
+      } catch (cacheError) {
+        console.error(
+          "Unable to load offline product cache:",
+          cacheError,
+        );
+        setProducts([]);
+        setLoadError(
+          "Unable to open the saved offline product catalogue.",
+        );
+      } finally {
+        setLoadingProducts(false);
+      }
+
+      return;
+    }
+
     try {
       const { data: productRows, error: productsError } =
         await supabase
