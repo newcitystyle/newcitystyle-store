@@ -4148,10 +4148,138 @@ if (!variantsError) {
       }
 
       /*
-       * Credit balance is already handled by the complete_pos_sale RPC /
-       * database credit flow. Do not call saveCustomerCredit here again,
-       * otherwise the same due is added twice to customer_credit_accounts.
+       * complete_pos_sale currently creates credit sales with paid_amount=0
+       * and due_amount=the full bill. Apply the cashier's "Paid Now" amount
+       * immediately after the RPC without adding the credit sale twice.
        */
+      if (
+        paymentMethod === "credit" &&
+        result.sale_id
+      ) {
+        const saleId = String(result.sale_id);
+        const now = new Date().toISOString();
+
+        const { error: posSaleAmountsError } =
+          await supabase
+            .from("pos_sales")
+            .update({
+              paid_amount: safeCreditPaidNow,
+              due_amount: creditDueAmount,
+              updated_at: now,
+            })
+            .eq("id", saleId);
+
+        if (posSaleAmountsError) {
+          throw new Error(
+            `Credit paid/due could not be saved: ${posSaleAmountsError.message}`,
+          );
+        }
+
+        /*
+         * Keep the legacy sales mirror aligned when the row exists.
+         * A missing mirror row must not block POS billing.
+         */
+        const { error: legacySaleAmountsError } =
+          await supabase
+            .from("sales")
+            .update({
+              paid_amount: safeCreditPaidNow,
+              due_amount: creditDueAmount,
+            })
+            .eq("id", saleId);
+
+        if (legacySaleAmountsError) {
+          console.info(
+            "Legacy sales paid/due mirror was not updated:",
+            legacySaleAmountsError.message,
+          );
+        }
+
+        if (
+          safeCreditPaidNow > 0 &&
+          customerPhone.trim()
+        ) {
+          const { data: creditAccount, error: creditLoadError } =
+            await supabase
+              .from("customer_credit_accounts")
+              .select(
+                "id,customer_id,current_balance,total_credit_paid",
+              )
+              .eq("customer_phone", customerPhone.trim())
+              .maybeSingle();
+
+          if (creditLoadError) {
+            throw new Error(
+              `Customer credit account could not be loaded: ${creditLoadError.message}`,
+            );
+          }
+
+          if (creditAccount?.id) {
+            const balanceBefore = Math.max(
+              0,
+              toNumber(creditAccount.current_balance),
+            );
+            const balanceAfter = Math.max(
+              0,
+              balanceBefore - safeCreditPaidNow,
+            );
+
+            const { error: creditUpdateError } =
+              await supabase
+                .from("customer_credit_accounts")
+                .update({
+                  total_credit_paid:
+                    Math.max(
+                      0,
+                      toNumber(creditAccount.total_credit_paid),
+                    ) + safeCreditPaidNow,
+                  current_balance: balanceAfter,
+                  last_payment_date: now,
+                  updated_at: now,
+                })
+                .eq("id", creditAccount.id);
+
+            if (creditUpdateError) {
+              throw new Error(
+                `Customer credit balance could not be corrected: ${creditUpdateError.message}`,
+              );
+            }
+
+            const { error: paymentTransactionError } =
+              await supabase
+                .from("customer_credit_transactions")
+                .insert({
+                  credit_account_id: creditAccount.id,
+                  customer_id:
+                    creditAccount.customer_id || null,
+                  customer_phone: customerPhone.trim(),
+                  sale_id: saleId,
+                  transaction_type: "payment",
+                  amount_change: -safeCreditPaidNow,
+                  balance_before: balanceBefore,
+                  balance_after: balanceAfter,
+                  payment_method: "cash",
+                  reference_number: invoiceNumber,
+                  due_date: creditDueDate,
+                  description:
+                    `Advance payment received for ${invoiceNumber}`,
+                  notes:
+                    `Paid now ${formatCurrency(safeCreditPaidNow)}; due ${formatCurrency(creditDueAmount)}`,
+                  received_by: null,
+                  created_at: now,
+                });
+
+            if (paymentTransactionError) {
+              throw new Error(
+                `Credit payment transaction could not be saved: ${paymentTransactionError.message}`,
+              );
+            }
+          }
+        }
+
+        result.paid_amount = safeCreditPaidNow;
+        result.due_amount = creditDueAmount;
+      }
 
       const saleSnapshot: CompletedSale = {
         saleId: result.sale_id || "",
@@ -4195,14 +4323,20 @@ if (!variantsError) {
           result.total_amount,
           finalPayable
         ),
-        paidAmount: toNumber(
-          result.paid_amount,
-          safeCreditPaidNow
-        ),
-        dueAmount: toNumber(
-          result.due_amount,
-          creditDueAmount
-        ),
+        paidAmount:
+          paymentMethod === "credit"
+            ? safeCreditPaidNow
+            : toNumber(
+                result.paid_amount,
+                finalPayable,
+              ),
+        dueAmount:
+          paymentMethod === "credit"
+            ? creditDueAmount
+            : toNumber(
+                result.due_amount,
+                0,
+              ),
         paymentMethod,
         completedAt: new Date().toISOString(),
       };
