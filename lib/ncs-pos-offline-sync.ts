@@ -104,7 +104,12 @@ function normalizePhone(rawPhone: string) {
 }
 
 function createQuickSku() {
-  return `OFF-QUICK-${Date.now()}-${Math.random()
+  /*
+   * Use the same QUICK- prefix as normal online POS quick items.
+   * The Products page already treats this prefix as a temporary
+   * billing item and does not show it in the normal catalogue.
+   */
+  return `QUICK-${Date.now()}-${Math.random()
     .toString(36)
     .slice(2, 8)
     .toUpperCase()}`;
@@ -174,7 +179,7 @@ async function prepareQuickItem(
       .from("product_variants")
       .insert({
         product_id: productId,
-        variant_name: "Offline Quick Item",
+        variant_name: "Quick Item",
         size: item.size.trim() || null,
         color: item.color.trim() || null,
         sku,
