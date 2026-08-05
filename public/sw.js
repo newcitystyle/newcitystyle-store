@@ -1,4 +1,4 @@
-const NCS_CACHE_VERSION = "ncs-pos-pwa-v1";
+const NCS_CACHE_VERSION = "ncs-pos-pwa-v2-rsc-safe";
 const NCS_STATIC_CACHE = `${NCS_CACHE_VERSION}-static`;
 const NCS_PAGE_CACHE = `${NCS_CACHE_VERSION}-pages`;
 
@@ -40,6 +40,57 @@ function isPosPage(url) {
   );
 }
 
+function isNextRscRequest(request, url) {
+  return (
+    url.searchParams.has("_rsc") ||
+    request.headers.get("RSC") === "1" ||
+    request.headers.has("Next-Router-State-Tree") ||
+    request.headers.has("Next-Router-Prefetch") ||
+    request.headers.has("Next-Url")
+  );
+}
+
+function isHtmlResponse(response) {
+  const contentType =
+    response.headers.get("content-type") || "";
+
+  return contentType
+    .toLowerCase()
+    .includes("text/html");
+}
+
+function getNavigationCacheKey(url) {
+  return url.pathname;
+}
+
+async function fetchHtmlNavigation(request) {
+  const response = await fetch(request, {
+    cache: "no-store",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    return response;
+  }
+
+  if (!isHtmlResponse(response)) {
+    throw new Error(
+      "Navigation response was not HTML.",
+    );
+  }
+
+  return response;
+}
+
+async function cacheHtmlPage(cache, key, response) {
+  if (
+    response.ok &&
+    isHtmlResponse(response)
+  ) {
+    await cache.put(key, response.clone());
+  }
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
@@ -47,14 +98,25 @@ self.addEventListener("install", (event) => {
       .then(async (cache) => {
         for (const url of PRECACHE_URLS) {
           try {
-            const response = await fetch(url, {
-              cache: "no-store",
+            const request = new Request(url, {
+              method: "GET",
               credentials: "include",
+              cache: "no-store",
+              headers: {
+                Accept: "text/html",
+              },
             });
 
-            if (response.ok) {
-              await cache.put(url, response.clone());
-            }
+            const response =
+              await fetchHtmlNavigation(request);
+
+            await cacheHtmlPage(
+              cache,
+              getNavigationCacheKey(
+                new URL(url, self.location.origin),
+              ),
+              response,
+            );
           } catch {
             // One URL failed అయినా service worker install ఆగకూడదు.
           }
@@ -101,17 +163,44 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  /*
+   * Next.js App Router RSC / Flight requests must never be stored
+   * in the HTML page cache. Returning an RSC payload as a document
+   * causes raw "$react.fragment" text to appear in the browser.
+   */
+  if (isNextRscRequest(request, url)) {
+    event.respondWith(
+      fetch(request, {
+        cache: "no-store",
+        credentials: "include",
+      }).catch(
+        () =>
+          new Response("", {
+            status: 503,
+            statusText: "Offline",
+            headers: {
+              "Cache-Control": "no-store",
+            },
+          }),
+      ),
+    );
+
+    return;
+  }
+
   if (isStaticAsset(request, url)) {
     event.respondWith(
       caches.open(NCS_STATIC_CACHE).then(async (cache) => {
-        const cachedResponse = await cache.match(request);
+        const cachedResponse =
+          await cache.match(request);
 
         if (cachedResponse) {
           return cachedResponse;
         }
 
         try {
-          const networkResponse = await fetch(request);
+          const networkResponse =
+            await fetch(request);
 
           if (networkResponse.ok) {
             await cache.put(
@@ -143,52 +232,56 @@ self.addEventListener("fetch", (event) => {
           NCS_PAGE_CACHE,
         );
 
+        const navigationKey =
+          getNavigationCacheKey(url);
+
         try {
-          const networkResponse = await fetch(request, {
-            cache: "no-store",
-            credentials: "include",
-          });
+          const networkResponse =
+            await fetchHtmlNavigation(request);
 
-          if (
-            networkResponse.ok &&
-            (
-              isPosPage(url) ||
-              request.mode === "navigate"
-            )
-          ) {
-            await cache.put(
-              request,
-              networkResponse.clone(),
+          await cacheHtmlPage(
+            cache,
+            navigationKey,
+            networkResponse,
+          );
+
+          if (isPosPage(url)) {
+            await cacheHtmlPage(
+              cache,
+              "/admin/pos",
+              networkResponse,
             );
-
-            if (isPosPage(url)) {
-              await cache.put(
-                "/admin/pos",
-                networkResponse.clone(),
-              );
-            }
           }
 
           return networkResponse;
         } catch {
           const exactCachedResponse =
-            await cache.match(request);
+            await cache.match(navigationKey);
 
-          if (exactCachedResponse) {
+          if (
+            exactCachedResponse &&
+            isHtmlResponse(exactCachedResponse)
+          ) {
             return exactCachedResponse;
           }
 
           const cachedPosPage =
             await cache.match("/admin/pos");
 
-          if (cachedPosPage) {
+          if (
+            cachedPosPage &&
+            isHtmlResponse(cachedPosPage)
+          ) {
             return cachedPosPage;
           }
 
           const cachedHomePage =
             await cache.match("/");
 
-          if (cachedHomePage) {
+          if (
+            cachedHomePage &&
+            isHtmlResponse(cachedHomePage)
+          ) {
             return cachedHomePage;
           }
 
@@ -316,24 +409,36 @@ self.addEventListener("message", (event) => {
         .open(NCS_PAGE_CACHE)
         .then(async (cache) => {
           try {
-            const response = await fetch(
+            const request = new Request(
               "/admin/pos",
               {
+                method: "GET",
                 cache: "no-store",
                 credentials: "include",
+                headers: {
+                  Accept: "text/html",
+                },
               },
             );
 
-            if (response.ok) {
-              await cache.put(
-                "/admin/pos",
-                response.clone(),
-              );
-            }
+            const response =
+              await fetchHtmlNavigation(request);
+
+            await cacheHtmlPage(
+              cache,
+              "/admin/pos",
+              response,
+            );
           } catch {
             // Existing cached POS pageను అలాగే ఉంచాలి.
           }
         }),
+    );
+  }
+
+  if (event.data?.type === "CLEAR_PAGE_CACHE") {
+    event.waitUntil(
+      caches.delete(NCS_PAGE_CACHE),
     );
   }
 });
