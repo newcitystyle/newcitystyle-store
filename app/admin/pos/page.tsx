@@ -11,6 +11,20 @@ import {
 } from "react";
 import { supabase } from "@/lib/supabase";
 import jsPDF from "jspdf";
+import {
+  cachePosProducts,
+  countPendingOfflineSales,
+  createOfflineClientTransactionId,
+  createOfflineInvoiceNumber,
+  getCachedPosProducts,
+  getAllOfflineSales,
+  isBrowserOnline,
+  saveOfflineSale,
+} from "@/lib/ncs-pos-offline";
+import {
+  installOfflineAutoSync,
+  syncPendingOfflineSales,
+} from "@/lib/ncs-pos-offline-sync";
 
 type ProductRow = {
   id: number;
@@ -211,6 +225,7 @@ const CHARCOAL = "#2C2C2C";
 const HELD_BILLS_STORAGE_KEY = "ncs_pos_held_bills_v1";
 const POS_RECENT_PRODUCTS_KEY = "ncs_pos_recent_products_v1";
 const POS_POPULAR_PRODUCTS_KEY = "ncs_pos_popular_products_v1";
+const POS_OVERVIEW_CACHE_KEY = "ncs_pos_overview_cache_v1";
 
 function toNumber(
   value: number | string | null | undefined,
@@ -552,6 +567,9 @@ export default function PosPage() {
   const [isCompletingSale, setIsCompletingSale] = useState(false);
   const [completedSale, setCompletedSale] =
     useState<CompletedSale | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
+  const [pendingOfflineBills, setPendingOfflineBills] = useState(0);
+  const [syncingOfflineBills, setSyncingOfflineBills] = useState(false);
 
   const [showQuickItem, setShowQuickItem] = useState(false);
   const [quickItemForm, setQuickItemForm] =
@@ -572,8 +590,157 @@ export default function PosPage() {
     []
   );
 
+  useEffect(() => {
+    const refreshPendingCount = async () => {
+      try {
+        setPendingOfflineBills(
+          await countPendingOfflineSales(),
+        );
+      } catch (error) {
+        console.info(
+          "Unable to read pending offline bills:",
+          error,
+        );
+      }
+    };
+
+    const updateNetworkState = () => {
+      setIsOnline(isBrowserOnline());
+      void refreshPendingCount();
+    };
+
+    updateNetworkState();
+
+    window.addEventListener("online", updateNetworkState);
+    window.addEventListener("offline", updateNetworkState);
+
+    const uninstallAutoSync = installOfflineAutoSync({
+      onStart: (pendingCount) => {
+        if (pendingCount > 0) {
+          setSyncingOfflineBills(true);
+        }
+      },
+      onComplete: (summary) => {
+        setSyncingOfflineBills(false);
+        void refreshPendingCount();
+
+        if (summary.synced > 0) {
+          showNotice(
+            `${summary.synced} offline bill(s) synced successfully.`,
+            summary.failed > 0 ? "info" : "success",
+          );
+          void loadProducts();
+          void loadPosOverview();
+        }
+      },
+    });
+
+    return () => {
+      window.removeEventListener("online", updateNetworkState);
+      window.removeEventListener("offline", updateNetworkState);
+      uninstallAutoSync();
+    };
+  }, [showNotice]);
+
+  async function syncOfflineBillsNow() {
+    if (!isBrowserOnline()) {
+      showNotice(
+        "Internet is not available. Bills remain safely stored offline.",
+        "info",
+      );
+      return;
+    }
+
+    setSyncingOfflineBills(true);
+
+    try {
+      const summary = await syncPendingOfflineSales();
+      setPendingOfflineBills(
+        await countPendingOfflineSales(),
+      );
+
+      if (summary.total === 0) {
+        showNotice("No pending offline bills.", "info");
+      } else if (summary.failed > 0) {
+        showNotice(
+          `${summary.synced} synced, ${summary.failed} failed. They will retry automatically.`,
+          "info",
+        );
+      } else {
+        showNotice(
+          `${summary.synced} offline bill(s) synced successfully.`,
+          "success",
+        );
+      }
+
+      await Promise.all([loadProducts(), loadPosOverview()]);
+    } catch (error) {
+      showNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to sync offline bills.",
+        "error",
+      );
+    } finally {
+      setSyncingOfflineBills(false);
+    }
+  }
+
   const loadPosOverview = useCallback(async () => {
     setLoadingOverview(true);
+
+    const readCachedOverview = (): PosOverview => {
+      try {
+        const raw = window.localStorage.getItem(
+          POS_OVERVIEW_CACHE_KEY,
+        );
+
+        if (!raw) {
+          return {
+            todaySales: 0,
+            todayBills: 0,
+            todayCash: 0,
+            todayDigital: 0,
+            customerCredit: 0,
+            creditCustomers: 0,
+          };
+        }
+
+        const parsed = JSON.parse(raw) as Partial<PosOverview>;
+
+        return {
+          todaySales: Math.max(0, toNumber(parsed.todaySales)),
+          todayBills: Math.max(0, Math.trunc(toNumber(parsed.todayBills))),
+          todayCash: Math.max(0, toNumber(parsed.todayCash)),
+          todayDigital: Math.max(0, toNumber(parsed.todayDigital)),
+          customerCredit: Math.max(0, toNumber(parsed.customerCredit)),
+          creditCustomers: Math.max(
+            0,
+            Math.trunc(toNumber(parsed.creditCustomers)),
+          ),
+        };
+      } catch {
+        return {
+          todaySales: 0,
+          todayBills: 0,
+          todayCash: 0,
+          todayDigital: 0,
+          customerCredit: 0,
+          creditCustomers: 0,
+        };
+      }
+    };
+
+    const writeCachedOverview = (overview: PosOverview) => {
+      try {
+        window.localStorage.setItem(
+          POS_OVERVIEW_CACHE_KEY,
+          JSON.stringify(overview),
+        );
+      } catch (error) {
+        console.info("Unable to cache POS overview:", error);
+      }
+    };
 
     try {
       const now = new Date();
@@ -596,107 +763,227 @@ export default function PosPage() {
         0,
       );
 
-      const [salesResponse, creditResponse] = await Promise.all([
-        supabase
-          .from("pos_sales")
-          .select(
-            "total_amount,paid_amount,due_amount,payment_method,sale_status,created_at",
-          )
-          .gte("created_at", startOfDay.toISOString())
-          .lt("created_at", endOfDay.toISOString()),
+      const cached = readCachedOverview();
 
-        supabase
-          .from("customer_credit_accounts")
-          .select("current_balance,is_active")
-          .eq("is_active", true),
-      ]);
+      let baseOverview: PosOverview = {
+        ...cached,
+      };
 
-      let todaySales = 0;
-      let todayCash = 0;
-      let todayDigital = 0;
-      let todayBills = 0;
+      let salesLoadedFromCloud = false;
+      let creditLoadedFromCloud = false;
+      const cloudCreditPhones = new Set<string>();
 
-      if (!salesResponse.error) {
-        const saleRows = (salesResponse.data || []) as Array<{
-          total_amount?: number | string | null;
-          paid_amount?: number | string | null;
-          due_amount?: number | string | null;
-          payment_method?: string | null;
-          sale_status?: string | null;
-        }>;
+      if (isBrowserOnline()) {
+        const [salesResponse, creditResponse] = await Promise.all([
+          supabase
+            .from("pos_sales")
+            .select(
+              "total_amount,paid_amount,due_amount,payment_method,sale_status,created_at",
+            )
+            .gte("created_at", startOfDay.toISOString())
+            .lt("created_at", endOfDay.toISOString()),
 
-        const completedSaleRows = saleRows.filter((sale) => {
-          const status = normalizeText(sale.sale_status || "completed");
-          return !["cancelled", "void", "refunded"].includes(status);
-        });
+          supabase
+            .from("customer_credit_accounts")
+            .select("current_balance,is_active,customer_phone")
+            .eq("is_active", true),
+        ]);
 
-        todayBills = completedSaleRows.length;
+        if (!salesResponse.error) {
+          let todaySales = 0;
+          let todayBills = 0;
+          let todayCash = 0;
+          let todayDigital = 0;
 
-        completedSaleRows.forEach((sale) => {
-          const total = Math.max(0, toNumber(sale.total_amount));
+          const saleRows = (salesResponse.data || []) as Array<{
+            total_amount?: number | string | null;
+            paid_amount?: number | string | null;
+            due_amount?: number | string | null;
+            payment_method?: string | null;
+            sale_status?: string | null;
+          }>;
+
+          const completedSaleRows = saleRows.filter((sale) => {
+            const status = normalizeText(
+              sale.sale_status || "completed",
+            );
+
+            return !["cancelled", "void", "refunded"].includes(
+              status,
+            );
+          });
+
+          todayBills = completedSaleRows.length;
+
+          completedSaleRows.forEach((sale) => {
+            const total = Math.max(
+              0,
+              toNumber(sale.total_amount),
+            );
+            const paid = Math.max(
+              0,
+              toNumber(sale.paid_amount, total),
+            );
+            const method = normalizeText(
+              sale.payment_method,
+            );
+
+            todaySales += total;
+
+            if (method === "cash") {
+              todayCash += paid;
+            } else if (
+              method === "upi" ||
+              method === "card" ||
+              method === "bank" ||
+              method === "bank_transfer"
+            ) {
+              todayDigital += paid;
+            }
+          });
+
+          baseOverview = {
+            ...baseOverview,
+            todaySales,
+            todayBills,
+            todayCash,
+            todayDigital,
+          };
+          salesLoadedFromCloud = true;
+        } else {
+          console.info(
+            "Today sales overview is using the last saved value:",
+            salesResponse.error.message,
+          );
+        }
+
+        if (!creditResponse.error) {
+          let customerCredit = 0;
+          let creditCustomers = 0;
+
+          const creditRows = (creditResponse.data || []) as Array<{
+            current_balance?: number | string | null;
+            is_active?: boolean | null;
+            customer_phone?: string | null;
+          }>;
+
+          creditRows.forEach((account) => {
+            const balance = Math.max(
+              0,
+              toNumber(account.current_balance),
+            );
+
+            if (balance > 0) {
+              customerCredit += balance;
+              creditCustomers += 1;
+
+              const phone = (account.customer_phone || "")
+                .replace(/\D/g, "")
+                .slice(-10);
+
+              if (phone) {
+                cloudCreditPhones.add(phone);
+              }
+            }
+          });
+
+          baseOverview = {
+            ...baseOverview,
+            customerCredit,
+            creditCustomers,
+          };
+          creditLoadedFromCloud = true;
+        } else {
+          console.info(
+            "Customer credit overview is using the last saved value:",
+            creditResponse.error.message,
+          );
+        }
+
+        if (salesLoadedFromCloud || creditLoadedFromCloud) {
+          writeCachedOverview(baseOverview);
+        }
+      }
+
+      let finalOverview: PosOverview = {
+        ...baseOverview,
+      };
+
+      const offlineSales = await getAllOfflineSales();
+      const offlineCreditPhones = new Set<string>();
+
+      offlineSales
+        .filter((sale) => {
+          if (
+            !["PENDING", "ERROR", "SYNCING"].includes(
+              sale.syncStatus,
+            )
+          ) {
+            return false;
+          }
+
+          const createdAt = new Date(sale.createdAt);
+
+          return (
+            createdAt >= startOfDay &&
+            createdAt < endOfDay
+          );
+        })
+        .forEach((sale) => {
+          const total = Math.max(
+            0,
+            toNumber(sale.finalPayable),
+          );
           const paid = Math.max(
             0,
-            toNumber(sale.paid_amount, total),
+            toNumber(sale.paidAmount),
           );
-          const method = normalizeText(sale.payment_method);
 
-          todaySales += total;
+          finalOverview.todaySales += total;
+          finalOverview.todayBills += 1;
 
-          if (method === "cash") {
-            todayCash += paid;
+          if (sale.paymentMethod === "cash") {
+            finalOverview.todayCash += paid;
           } else if (
-            method === "upi" ||
-            method === "card" ||
-            method === "bank" ||
-            method === "bank_transfer"
+            sale.paymentMethod === "upi" ||
+            sale.paymentMethod === "card"
           ) {
-            todayDigital += paid;
+            finalOverview.todayDigital += paid;
+          }
+
+          if (
+            sale.paymentMethod === "credit" &&
+            sale.dueAmount > 0
+          ) {
+            finalOverview.customerCredit += Math.max(
+              0,
+              toNumber(sale.dueAmount),
+            );
+
+            const phone = sale.customerPhone
+              .replace(/\D/g, "")
+              .slice(-10);
+
+            if (phone) {
+              offlineCreditPhones.add(phone);
+            }
           }
         });
-      } else {
-        console.info(
-          "Today sales overview is unavailable:",
-          salesResponse.error.message,
-        );
-      }
 
-      let customerCredit = 0;
-      let creditCustomers = 0;
-
-      if (!creditResponse.error) {
-        const creditRows = (creditResponse.data || []) as Array<{
-          current_balance?: number | string | null;
-          is_active?: boolean | null;
-        }>;
-
-        creditRows.forEach((account) => {
-          const balance = Math.max(
-            0,
-            toNumber(account.current_balance),
-          );
-
-          if (balance > 0) {
-            customerCredit += balance;
-            creditCustomers += 1;
-          }
-        });
-      } else {
-        console.info(
-          "Customer credit overview is unavailable:",
-          creditResponse.error.message,
-        );
-      }
-
-      setPosOverview({
-        todaySales,
-        todayBills,
-        todayCash,
-        todayDigital,
-        customerCredit,
-        creditCustomers,
+      offlineCreditPhones.forEach((phone) => {
+        if (!cloudCreditPhones.has(phone)) {
+          finalOverview.creditCustomers += 1;
+        }
       });
+
+      setPosOverview(finalOverview);
     } catch (error) {
-      console.error("Unable to load POS overview:", error);
+      console.info(
+        "POS overview is using saved offline values:",
+        error,
+      );
+
+      setPosOverview(readCachedOverview());
     } finally {
       setLoadingOverview(false);
     }
@@ -954,6 +1241,37 @@ if (!variantsError) {
       });
 
       setProducts(mappedProducts);
+      setIsOnline(true);
+
+      try {
+        await cachePosProducts(
+          mappedProducts
+            .filter((item) => !item.isQuickItem)
+            .map((item) => ({
+              key: item.key,
+              productId: item.productId,
+              variantId: item.variantId,
+              name: item.name,
+              category: item.category,
+              subcategory: item.subcategory,
+              brand: item.brand,
+              price: item.price,
+              mrp: item.mrp,
+              stock: item.stock,
+              sku: item.sku,
+              barcode: item.barcode,
+              imageUrl: item.imageUrl,
+              size: item.size,
+              color: item.color,
+              taxPercent: item.taxPercent,
+            })),
+        );
+      } catch (cacheError) {
+        console.info(
+          "Products loaded online, but offline cache update failed:",
+          cacheError,
+        );
+      }
 
       const validProductIds = new Set(
         mappedProducts.map((item) => String(item.productId))
@@ -989,13 +1307,41 @@ if (!variantsError) {
         return next;
       });
     } catch (error) {
-      console.error("Unable to load POS products:", error);
+      if (isBrowserOnline()) {
+        console.error("Unable to load POS products:", error);
+      } else {
+        console.info("Internet unavailable. Loading cached POS products.");
+      }
+      setIsOnline(isBrowserOnline());
 
-      setLoadError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load products."
-      );
+      try {
+        const cachedProducts = await getCachedPosProducts();
+
+        if (cachedProducts.length > 0) {
+          setProducts(
+            cachedProducts.map(({ cachedAt: _cachedAt, ...item }) => item),
+          );
+          setLoadError("");
+          showNotice(
+            "OFFLINE MODE: Cached products loaded. Billing is available.",
+            "info",
+          );
+        } else {
+          setLoadError(
+            "No internet and no offline product cache is available. Connect once to download stock.",
+          );
+        }
+      } catch (cacheError) {
+        console.error(
+          "Unable to load offline product cache:",
+          cacheError,
+        );
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load products.",
+        );
+      }
     } finally {
       setLoadingProducts(false);
     }
@@ -1085,6 +1431,21 @@ if (!variantsError) {
         return;
       }
 
+      /*
+       * Reward lookup requires Supabase. In offline mode, skip the
+       * network request completely so billing continues without a
+       * Next.js console issue. Rewards will be checked again after
+       * the connection returns.
+       */
+      if (!isBrowserOnline()) {
+        setRewardCustomerId(null);
+        setAvailableRewardPoints(0);
+        setRewardPointsToUse(0);
+        setRewardCustomerFound(false);
+        setRewardLookupLoading(false);
+        return;
+      }
+
       setRewardLookupLoading(true);
 
       try {
@@ -1122,7 +1483,7 @@ if (!variantsError) {
           setCustomerName(customer.full_name.trim());
         }
       } catch (error) {
-        console.error("Unable to load customer rewards:", error);
+        console.info("Customer rewards are temporarily unavailable:", error);
         setRewardCustomerId(null);
         setAvailableRewardPoints(0);
         setRewardPointsToUse(0);
@@ -3449,12 +3810,124 @@ if (!variantsError) {
 
     try {
       const clientTransactionId =
-        typeof crypto !== "undefined" &&
-        "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `POS-${Date.now()}-${Math.random()
-              .toString(36)
-              .slice(2, 10)}`;
+        isBrowserOnline()
+          ? typeof crypto !== "undefined" &&
+              "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `POS-${Date.now()}-${Math.random()
+                .toString(36)
+                .slice(2, 10)}`
+          : createOfflineClientTransactionId();
+
+      if (!isBrowserOnline()) {
+        const offlineInvoiceNumber =
+          createOfflineInvoiceNumber();
+        const completedAt = new Date().toISOString();
+
+        const pendingSale = await saveOfflineSale({
+          clientTransactionId,
+          offlineInvoiceNumber,
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim(),
+          customerWhatsAppOptIn,
+          items: cartItems.map((item) => ({ ...item })),
+          subtotal,
+          taxAmount: itemTax,
+          billDiscountPercent: safeBillDiscountPercent,
+          billDiscountAmount,
+          rewardPointsUsed: safeRewardPointsToUse,
+          rewardDiscountAmount,
+          roundOffAmount: safeRoundOffAmount,
+          finalPayable,
+          paidAmount: safeCreditPaidNow,
+          dueAmount: creditDueAmount,
+          paymentMethod,
+          creditDueDate:
+            paymentMethod === "credit"
+              ? creditDueDate
+              : undefined,
+          createdAt: completedAt,
+          updatedAt: completedAt,
+          whatsappStatus: customerPhone.trim()
+            ? "PENDING"
+            : "NOT_REQUIRED",
+          whatsappError: null,
+        });
+
+        const offlineSaleSnapshot: CompletedSale = {
+          saleId: pendingSale.id,
+          invoiceNumber: offlineInvoiceNumber,
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim(),
+          items: cartItems.map((item) => ({ ...item })),
+          subtotal,
+          taxAmount: itemTax,
+          billDiscount: billDiscountAmount,
+          rewardPointsUsed: safeRewardPointsToUse,
+          rewardDiscount: rewardDiscountAmount,
+          rewardPointsEarned: 0,
+          rewardClosingBalance: Math.max(
+            0,
+            availableRewardPoints - safeRewardPointsToUse,
+          ),
+          roundOff: safeRoundOffAmount,
+          totalAmount: finalPayable,
+          paidAmount: safeCreditPaidNow,
+          dueAmount: creditDueAmount,
+          paymentMethod,
+          completedAt,
+        };
+
+        setCompletedSale(offlineSaleSnapshot);
+        setProducts((current) =>
+          current.map((product) => {
+            const soldItem = cartItems.find(
+              (item) =>
+                !item.isQuickItem && item.key === product.key,
+            );
+
+            return soldItem
+              ? {
+                  ...product,
+                  stock: Math.max(
+                    0,
+                    product.stock - soldItem.quantity,
+                  ),
+                }
+              : product;
+          }),
+        );
+
+        setCartItems([]);
+        setBillDiscountPercent(0);
+        setRoundOffAmount(0);
+        setCustomerName("");
+        setCustomerPhone("");
+        setCustomerWhatsAppOptIn(false);
+        setRewardCustomerId(null);
+        setAvailableRewardPoints(0);
+        setRewardPointsToUse(0);
+        setRewardCustomerFound(false);
+        setPaymentMethod("cash");
+        setCreditPaidNow(0);
+        setCreditDueDate(getDefaultCreditDueDate());
+        setMobileCartOpen(false);
+        setSearchQuery("");
+        setPendingOfflineBills(
+          await countPendingOfflineSales(),
+        );
+        await loadPosOverview();
+
+        showNotice(
+          `${offlineInvoiceNumber} saved safely offline. It will sync and send WhatsApp after internet returns.`,
+          "success",
+        );
+
+        window.setTimeout(() => {
+          searchInputRef.current?.focus();
+        }, 100);
+        return;
+      }
 
       const rpcItems: Array<{
         product_id: number;
@@ -3785,6 +4258,38 @@ if (!variantsError) {
           <p>{notice}</p>
         </div>
       )}
+
+      <section
+        className={`ncsOfflineStatusBar ${
+          isOnline ? "online" : "offline"
+        }`}
+      >
+        <div>
+          <span className="ncsOfflineStatusDot" />
+          <strong>
+            {isOnline ? "ONLINE" : "OFFLINE MODE"}
+          </strong>
+          <small>
+            {isOnline
+              ? pendingOfflineBills > 0
+                ? `${pendingOfflineBills} bill(s) waiting to sync`
+                : "Cloud connection available"
+              : "Billing works locally. Data will sync automatically."}
+          </small>
+        </div>
+
+        {pendingOfflineBills > 0 && (
+          <button
+            type="button"
+            onClick={() => void syncOfflineBillsNow()}
+            disabled={!isOnline || syncingOfflineBills}
+          >
+            {syncingOfflineBills
+              ? "Syncing..."
+              : `Sync ${pendingOfflineBills} Bill(s)`}
+          </button>
+        )}
+      </section>
 
       <section className="ncsPosHeader">
         <div>
@@ -5518,6 +6023,81 @@ if (!variantsError) {
           color: ${CHARCOAL};
           font-family:
             Poppins, Inter, Arial, sans-serif;
+        }
+
+        .ncsOfflineStatusBar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          margin: 0 0 14px;
+          padding: 12px 16px;
+          border: 1px solid rgba(10, 46, 115, 0.16);
+          border-radius: 14px;
+          background: #ffffff;
+          box-shadow: 0 8px 22px rgba(3, 21, 63, 0.08);
+        }
+
+        .ncsOfflineStatusBar > div {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          min-width: 0;
+        }
+
+        .ncsOfflineStatusDot {
+          width: 10px;
+          height: 10px;
+          flex: 0 0 auto;
+          border-radius: 50%;
+        }
+
+        .ncsOfflineStatusBar.online .ncsOfflineStatusDot {
+          background: #16834a;
+          box-shadow: 0 0 0 5px rgba(22, 131, 74, 0.12);
+        }
+
+        .ncsOfflineStatusBar.offline {
+          border-color: rgba(180, 35, 24, 0.26);
+          background: #fff5f3;
+        }
+
+        .ncsOfflineStatusBar.offline .ncsOfflineStatusDot {
+          background: #b42318;
+          box-shadow: 0 0 0 5px rgba(180, 35, 24, 0.12);
+        }
+
+        .ncsOfflineStatusBar strong {
+          color: #0a2e73;
+          font-size: 12px;
+          font-weight: 950;
+          letter-spacing: 0.5px;
+        }
+
+        .ncsOfflineStatusBar small {
+          overflow: hidden;
+          color: #667085;
+          font-size: 11px;
+          font-weight: 700;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .ncsOfflineStatusBar button {
+          min-height: 38px;
+          padding: 0 14px;
+          border: 0;
+          border-radius: 10px;
+          background: #0a2e73;
+          color: #ffffff;
+          font-size: 11px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .ncsOfflineStatusBar button:disabled {
+          cursor: not-allowed;
+          opacity: 0.55;
         }
 
         .ncsPosHeader {

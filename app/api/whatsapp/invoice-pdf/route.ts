@@ -703,8 +703,6 @@ async function uploadPdfToWhatsApp({
 
 async function sendInvoiceTemplate({
   recipientPhone,
-  mediaId,
-  fileName,
   customerName,
   billNumber,
   billAmount,
@@ -718,8 +716,6 @@ async function sendInvoiceTemplate({
   templateLanguage,
 }: {
   recipientPhone: string;
-  mediaId: string;
-  fileName: string;
   customerName: string;
   billNumber: string;
   billAmount: number;
@@ -732,6 +728,14 @@ async function sendInvoiceTemplate({
   templateName: string;
   templateLanguage: string;
 }) {
+  /*
+   * The approved NEW CITY STYLE WhatsApp template uses a TEXT header.
+   * Sending a document parameter here causes Meta error #132012:
+   * "expected TEXT, received DOCUMENT".
+   *
+   * The invoice number is sent as the dynamic header text. The six
+   * existing body variables remain unchanged.
+   */
   const payload = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -747,11 +751,8 @@ async function sendInvoiceTemplate({
           type: "header",
           parameters: [
             {
-              type: "document",
-              document: {
-                id: mediaId,
-                filename: fileName,
-              },
+              type: "text",
+              text: billNumber,
             },
           ],
         },
@@ -892,9 +893,11 @@ export async function POST(request: NextRequest) {
       process.env.WHATSAPP_API_VERSION?.trim() ||
       "v25.0";
     const templateName =
+      process.env.WHATSAPP_TEXT_TEMPLATE_NAME?.trim() ||
       process.env.WHATSAPP_PDF_TEMPLATE_NAME?.trim() ||
-      "new_city_style_invoice_pdf";
+      "new_city_style_bill_message";
     const templateLanguage =
+      process.env.WHATSAPP_TEXT_TEMPLATE_LANGUAGE?.trim() ||
       process.env.WHATSAPP_PDF_TEMPLATE_LANGUAGE?.trim() ||
       "en_US";
 
@@ -912,30 +915,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const uploadResult = await uploadPdfToWhatsApp({
-      pdfBytes: invoice.pdfBytes,
-      fileName: invoice.fileName,
-      accessToken,
-      phoneNumberId,
-      apiVersion,
-    });
-
-    if (!uploadResult.success) {
-      return NextResponse.json(
-        {
-          whatsappPdfSent: false,
-          ...uploadResult,
-        },
-        {
-          status: uploadResult.status,
-        },
-      );
-    }
-
     const sendResult = await sendInvoiceTemplate({
       recipientPhone,
-      mediaId: uploadResult.mediaId,
-      fileName: invoice.fileName,
       customerName: invoice.customerName,
       billNumber: invoice.billNumber,
       billAmount: invoice.billAmount,
@@ -953,7 +934,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           whatsappPdfSent: false,
-          mediaId: uploadResult.mediaId,
+          whatsappTextSent: false,
           templateName,
           templateLanguage,
           ...sendResult,
@@ -967,13 +948,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: true,
+        /*
+         * Keep whatsappPdfSent=true for compatibility with the existing
+         * offline-sync caller, while the actual approved delivery is the
+         * message-only TEXT template.
+         */
         whatsappPdfSent: true,
+        whatsappTextSent: true,
         message:
-          "NEW CITY STYLE PDF invoice sent to WhatsApp successfully.",
+          "NEW CITY STYLE bill message sent to WhatsApp successfully.",
         billNumber: invoice.billNumber,
         fileName: invoice.fileName,
         recipientPhone,
-        mediaId: uploadResult.mediaId,
+        messageMode: "TEXT_TEMPLATE",
         whatsappMessageId: sendResult.messageId,
         messageStatus: sendResult.messageStatus,
         recipientWhatsAppId:
@@ -1015,10 +1002,13 @@ export async function GET() {
     message:
       "NEW CITY STYLE premium PDF invoice generator and WhatsApp sender is ready.",
     templateName:
+      process.env.WHATSAPP_TEXT_TEMPLATE_NAME ||
       process.env.WHATSAPP_PDF_TEMPLATE_NAME ||
-      "new_city_style_invoice_pdf",
+      "new_city_style_bill_message",
     templateLanguage:
+      process.env.WHATSAPP_TEXT_TEMPLATE_LANGUAGE ||
       process.env.WHATSAPP_PDF_TEMPLATE_LANGUAGE ||
       "en_US",
+    whatsappMode: "TEXT_TEMPLATE",
   });
 }

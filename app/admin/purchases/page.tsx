@@ -8,6 +8,21 @@ import {
   useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  cachePurchaseProducts,
+  cachePurchaseSuppliers,
+  countPendingOfflinePurchases,
+  createOfflinePurchaseClientTransactionId,
+  createOfflinePurchaseNumber,
+  getCachedPurchaseProducts,
+  getCachedPurchaseSuppliers,
+  isPurchaseBrowserOnline,
+  saveOfflinePurchase,
+} from "@/lib/ncs-purchase-offline";
+import {
+  installOfflinePurchaseAutoSync,
+  syncPendingOfflinePurchases,
+} from "@/lib/ncs-purchase-offline-sync";
 
 type TaxType = "intra_state" | "inter_state" | "non_gst";
 type PaymentMethod =
@@ -355,6 +370,11 @@ export default function PurchasesPage() {
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [isOnline, setIsOnline] = useState(true);
+  const [pendingOfflinePurchases, setPendingOfflinePurchases] =
+    useState(0);
+  const [syncingOfflinePurchases, setSyncingOfflinePurchases] =
+    useState(false);
 
   const [supplierSearch, setSupplierSearch] = useState("");
   const [showSupplierResults, setShowSupplierResults] = useState(false);
@@ -410,9 +430,98 @@ export default function PurchasesPage() {
     [],
   );
 
+  const refreshPendingOfflineCount = useCallback(async () => {
+    try {
+      const count = await countPendingOfflinePurchases();
+      setPendingOfflinePurchases(count);
+    } catch (error) {
+      console.info(
+        "Offline purchase count is temporarily unavailable:",
+        error,
+      );
+    }
+  }, []);
+
+  const loadCachedPurchaseData = useCallback(async () => {
+    const [cachedSuppliers, cachedProducts] = await Promise.all([
+      getCachedPurchaseSuppliers(),
+      getCachedPurchaseProducts(),
+    ]);
+
+    setSuppliers(
+      cachedSuppliers.map((supplier) => ({
+        id: supplier.id,
+        supplier_name: supplier.supplierName,
+        phone: supplier.phone || null,
+        gst_number: supplier.gstNumber || null,
+        state: supplier.state || null,
+        state_code: supplier.stateCode || null,
+        place_of_supply: supplier.placeOfSupply || null,
+        current_balance: supplier.currentBalance,
+        is_active: supplier.isActive,
+      })),
+    );
+
+    setProducts(
+      cachedProducts.map((product) => ({
+        key: product.key,
+        productId: product.productId,
+        variantId: product.variantId,
+        name: product.name,
+        category: product.category,
+        subcategory: product.subcategory,
+        brand: product.brand,
+        size: product.size,
+        color: product.color,
+        sku: product.sku,
+        barcode: product.barcode,
+        stock: product.stock,
+        purchasePrice: product.purchasePrice,
+        onlineSellingPrice: product.onlineSellingPrice,
+        mrp: product.mrp,
+        taxPercent: product.taxPercent,
+        cessPercent: product.cessPercent,
+        sellOnline: product.sellOnline,
+        onlineQuantity: product.onlineQuantity,
+        imageUrl: product.imageUrl,
+        designCode: product.designCode,
+      })),
+    );
+
+    return {
+      suppliersCount: cachedSuppliers.length,
+      productsCount: cachedProducts.length,
+    };
+  }, []);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setLoadError("");
+
+    if (!isPurchaseBrowserOnline()) {
+      try {
+        const cached = await loadCachedPurchaseData();
+
+        if (
+          cached.suppliersCount === 0 &&
+          cached.productsCount === 0
+        ) {
+          setLoadError(
+            "Offline cache is empty. Open Purchase Stock once while internet is available.",
+          );
+        }
+      } catch (error) {
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load cached purchase data.",
+        );
+      } finally {
+        setLoading(false);
+      }
+
+      return;
+    }
 
     try {
       const [supplierResponse, productResponse, variantResponse] =
@@ -483,6 +592,24 @@ export default function PurchasesPage() {
       const safeVariants = (variantResponse.data || []) as unknown as VariantRow[];
 
       setSuppliers(safeSuppliers);
+
+      await cachePurchaseSuppliers(
+        safeSuppliers.map((supplier) => ({
+          id: Number(supplier.id),
+          supplierName: supplier.supplier_name?.trim() || "Supplier",
+          phone: supplier.phone?.trim() || "",
+          gstNumber: supplier.gst_number?.trim() || "",
+          state: supplier.state?.trim() || "",
+          stateCode: supplier.state_code?.trim() || "",
+          placeOfSupply:
+            supplier.place_of_supply?.trim() || "",
+          currentBalance: Math.max(
+            0,
+            toNumber(supplier.current_balance),
+          ),
+          isActive: supplier.is_active !== false,
+        })),
+      );
 
       const variantsByProduct = new Map<number, VariantRow[]>();
 
@@ -586,21 +713,124 @@ export default function PurchasesPage() {
       });
 
       setProducts(mapped);
-    } catch (error) {
-      console.error(error);
-      setLoadError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load purchase data.",
+
+      await cachePurchaseProducts(
+        mapped.map((product) => ({
+          key: product.key,
+          productId: product.productId,
+          variantId: product.variantId,
+          name: product.name,
+          category: product.category,
+          subcategory: product.subcategory,
+          brand: product.brand,
+          size: product.size,
+          color: product.color,
+          sku: product.sku,
+          barcode: product.barcode,
+          stock: product.stock,
+          purchasePrice: product.purchasePrice,
+          onlineSellingPrice: product.onlineSellingPrice,
+          mrp: product.mrp,
+          taxPercent: product.taxPercent,
+          cessPercent: product.cessPercent,
+          sellOnline: product.sellOnline,
+          onlineQuantity: product.onlineQuantity,
+          imageUrl: product.imageUrl,
+          designCode: product.designCode,
+        })),
       );
+    } catch (error) {
+      console.info(
+        "Online purchase data is unavailable; using cache:",
+        error,
+      );
+
+      try {
+        const cached = await loadCachedPurchaseData();
+
+        if (
+          cached.suppliersCount === 0 &&
+          cached.productsCount === 0
+        ) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load purchase data.",
+          );
+        }
+      } catch (cacheError) {
+        setLoadError(
+          cacheError instanceof Error
+            ? cacheError.message
+            : "Unable to load purchase data.",
+        );
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadCachedPurchaseData]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    setIsOnline(isPurchaseBrowserOnline());
+    void loadData();
+    void refreshPendingOfflineCount();
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      void loadData();
+      void refreshPendingOfflineCount();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      void loadCachedPurchaseData();
+      void refreshPendingOfflineCount();
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    const removeAutoSync =
+      installOfflinePurchaseAutoSync({
+        onStart: (pendingCount) => {
+          if (pendingCount > 0) {
+            setSyncingOfflinePurchases(true);
+          }
+        },
+        onComplete: async (summary) => {
+          setSyncingOfflinePurchases(false);
+          await refreshPendingOfflineCount();
+
+          if (summary.synced > 0) {
+            showNotice(
+              `${summary.synced} offline purchase${
+                summary.synced === 1 ? "" : "s"
+              } synced successfully.`,
+              "success",
+            );
+            await loadData();
+          }
+
+          if (summary.failed > 0) {
+            showNotice(
+              `${summary.failed} offline purchase sync failed. It will retry automatically.`,
+              "error",
+            );
+          }
+        },
+      });
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      removeAutoSync();
+    };
+  }, [
+    loadCachedPurchaseData,
+    loadData,
+    refreshPendingOfflineCount,
+    showNotice,
+  ]);
 
   const filteredSuppliers = useMemo(() => {
     const query = normalizeText(supplierSearch);
@@ -1231,6 +1461,90 @@ export default function PurchasesPage() {
           };
         });
 
+      if (!isPurchaseBrowserOnline()) {
+        const offlinePurchaseNumber =
+          createOfflinePurchaseNumber();
+
+        const pendingPurchase =
+          await saveOfflinePurchase({
+            clientTransactionId:
+              createOfflinePurchaseClientTransactionId(),
+            offlinePurchaseNumber,
+            selectedSupplierId,
+            supplierName: supplierName.trim(),
+            supplierPhone: supplierPhone.trim(),
+            supplierGstin: supplierGstin.trim(),
+            supplierState: supplierState.trim(),
+            supplierStateCode:
+              supplierStateCode.trim(),
+            placeOfSupply: placeOfSupply.trim(),
+            previousSupplierBalance,
+            supplierInvoiceNumber:
+              supplierInvoiceNumber.trim(),
+            purchaseDate,
+            dueDate,
+            taxType,
+            items: resolvedItems,
+            payments,
+            discountAmount,
+            transportCharge,
+            otherCharge,
+            notes: notes.trim(),
+            subtotal,
+            taxAmount,
+            cessAmount,
+            totalAmount,
+            totalPaid: safePaid,
+            currentPurchaseDue,
+            closingSupplierBalance,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+
+        setSuccessPurchase({
+          success: true,
+          purchase_id: pendingPurchase.id,
+          purchase_number:
+            pendingPurchase.offlinePurchaseNumber,
+          supplier_id:
+            pendingPurchase.selectedSupplierId || undefined,
+          previous_supplier_balance:
+            previousSupplierBalance,
+          current_purchase_due:
+            currentPurchaseDue,
+          closing_supplier_balance:
+            closingSupplierBalance,
+          taxable_amount: subtotal,
+          cgst_amount: cgstAmount,
+          sgst_amount: sgstAmount,
+          igst_amount: igstAmount,
+          cess_amount: cessAmount,
+          tax_amount: taxAmount,
+          total_amount: totalAmount,
+          paid_amount: safePaid,
+          due_amount: currentPurchaseDue,
+          payment_status:
+            currentPurchaseDue > 0
+              ? safePaid > 0
+                ? "partially_paid"
+                : "credit"
+              : "paid",
+          message:
+            "Purchase saved offline and will sync automatically.",
+        });
+
+        resetForm();
+        await loadCachedPurchaseData();
+        await refreshPendingOfflineCount();
+
+        showNotice(
+          `${offlinePurchaseNumber} saved offline. It will sync automatically when internet returns.`,
+          "success",
+        );
+
+        return;
+      }
+
       const rpcItems = resolvedItems.flatMap((item) => {
         const quantity = Math.max(
           1,
@@ -1387,6 +1701,54 @@ export default function PurchasesPage() {
 
   return (
     <main className="ncsPurchasePage">
+      <section
+        className={`ncsPurchaseNetworkBar ${
+          isOnline ? "online" : "offline"
+        }`}
+      >
+        <div>
+          <span className="ncsPurchaseNetworkDot" />
+          <strong>
+            {isOnline
+              ? syncingOfflinePurchases
+                ? "ONLINE • Syncing Offline Purchases"
+                : "ONLINE • Cloud Connected"
+              : "OFFLINE MODE • Purchase Stock Works Locally"}
+          </strong>
+        </div>
+
+        <div>
+          <span>
+            Pending: {pendingOfflinePurchases}
+          </span>
+
+          {isOnline && pendingOfflinePurchases > 0 && (
+            <button
+              type="button"
+              onClick={async () => {
+                setSyncingOfflinePurchases(true);
+
+                try {
+                  await syncPendingOfflinePurchases({
+                    onComplete: async () => {
+                      await refreshPendingOfflineCount();
+                      await loadData();
+                    },
+                  });
+                } finally {
+                  setSyncingOfflinePurchases(false);
+                }
+              }}
+              disabled={syncingOfflinePurchases}
+            >
+              {syncingOfflinePurchases
+                ? "Syncing..."
+                : "Sync Now"}
+            </button>
+          )}
+        </div>
+      </section>
+
       {notice && (
         <div
           className={`ncsNotice ncsNotice-${noticeType}`}
@@ -2801,8 +3163,11 @@ export default function PurchasesPage() {
             <span>PURCHASE COMPLETED</span>
             <h2>{successPurchase.purchase_number}</h2>
             <p>
-              Stock, supplier ledger and online availability
-              were updated successfully.
+              {successPurchase.purchase_number?.startsWith(
+                "OFF-PUR-",
+              )
+                ? "Purchase saved safely on this device. Stock and supplier balance will sync automatically when internet returns."
+                : "Stock, supplier ledger and online availability were updated successfully."}
             </p>
 
             <div className="ncsSuccessGrid">
@@ -2880,6 +3245,65 @@ export default function PurchasesPage() {
             ${IVORY};
           color: ${CHARCOAL};
           font-family: Poppins, Inter, Arial, sans-serif;
+        }
+
+        .ncsPurchaseNetworkBar {
+          position: sticky;
+          z-index: 90;
+          top: 0;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          margin: -24px -24px 18px;
+          padding: 12px 24px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+          color: #ffffff;
+          box-shadow: 0 10px 26px rgba(3, 21, 63, 0.18);
+        }
+
+        .ncsPurchaseNetworkBar.online {
+          background: linear-gradient(135deg, #0f7a3d, #16a05a);
+        }
+
+        .ncsPurchaseNetworkBar.offline {
+          background: linear-gradient(135deg, #8a4b00, #c56f00);
+        }
+
+        .ncsPurchaseNetworkBar > div {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .ncsPurchaseNetworkBar strong,
+        .ncsPurchaseNetworkBar span {
+          font-size: 12px;
+          font-weight: 900;
+        }
+
+        .ncsPurchaseNetworkDot {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background: #ffffff;
+          box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18);
+        }
+
+        .ncsPurchaseNetworkBar button {
+          min-height: 34px;
+          padding: 0 13px;
+          border: 1px solid rgba(255, 255, 255, 0.72);
+          border-radius: 9px;
+          background: rgba(255, 255, 255, 0.12);
+          color: #ffffff;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .ncsPurchaseNetworkBar button:disabled {
+          opacity: 0.65;
+          cursor: wait;
         }
 
         .ncsHero {
@@ -4244,6 +4668,18 @@ export default function PurchasesPage() {
         }
 
         @media (max-width: 820px) {
+          .ncsPurchaseNetworkBar {
+            align-items: flex-start;
+            flex-direction: column;
+            margin: -14px -9px 16px;
+            padding: 11px 13px;
+          }
+
+          .ncsPurchaseNetworkBar > div:last-child {
+            width: 100%;
+            justify-content: space-between;
+          }
+
           .ncsPurchasePage {
             padding: 14px 9px 36px;
           }
