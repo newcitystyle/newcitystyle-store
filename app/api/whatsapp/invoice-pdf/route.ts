@@ -946,7 +946,7 @@ export async function POST(request: NextRequest) {
       process.env.WHATSAPP_API_VERSION?.trim() ||
       "v25.0";
     const templateName =
-      "new_city_style_bill_message";
+      "new_city_style_invoice_document_v2";
     const templateLanguage =
       "en_US";
 
@@ -1076,7 +1076,7 @@ export async function GET() {
     message:
       "NEW CITY STYLE premium PDF invoice generator and WhatsApp sender is ready.",
     templateName:
-      "new_city_style_bill_message",
+      "new_city_style_invoice_document_v2",
     templateLanguage:
       "en_US",
     whatsappMode: "DOCUMENT_TEMPLATE",
