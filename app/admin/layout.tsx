@@ -11,6 +11,32 @@ import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 const ADMIN_EMAIL = "badri.nsv@gmail.com";
+const OFFLINE_POS_SESSION_KEY = "ncs_offline_pos_session_v1";
+
+function isBrowserOnline() {
+  return typeof navigator === "undefined" ? true : navigator.onLine;
+}
+
+function hasOfflinePosSession() {
+  if (typeof window === "undefined") return false;
+
+  try {
+    const raw = window.sessionStorage.getItem(
+      OFFLINE_POS_SESSION_KEY,
+    );
+
+    if (!raw) return false;
+
+    const parsed = JSON.parse(raw) as {
+      access?: string;
+      unlockedAt?: string;
+    };
+
+    return parsed.access === "pos-only";
+  } catch {
+    return false;
+  }
+}
 
 type AdminLayoutProps = {
   children: ReactNode;
@@ -595,6 +621,8 @@ export default function AdminLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [adminEmail, setAdminEmail] = useState("");
+  const [offlinePosAccess, setOfflinePosAccess] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
 
   const isLoginPage = pathname === "/admin/login";
 
@@ -607,8 +635,28 @@ export default function AdminLayout({
 
     let active = true;
 
+    const allowOfflinePosIfPossible = () => {
+      const offlineAllowed =
+        pathname === "/admin/pos" && hasOfflinePosSession();
+
+      if (offlineAllowed) {
+        setOfflinePosAccess(true);
+        setAdminEmail("Offline POS");
+        setHasAdminAccess(true);
+        setCheckingAccess(false);
+        return true;
+      }
+
+      return false;
+    };
+
     async function checkAccess() {
       setCheckingAccess(true);
+      setIsOnline(isBrowserOnline());
+
+      if (!isBrowserOnline() && allowOfflinePosIfPossible()) {
+        return;
+      }
 
       try {
         const {
@@ -619,6 +667,11 @@ export default function AdminLayout({
         if (!active) return;
 
         if (error || !session?.user) {
+          if (allowOfflinePosIfPossible()) {
+            return;
+          }
+
+          setOfflinePosAccess(false);
           setHasAdminAccess(false);
           router.replace("/admin/login");
           return;
@@ -632,18 +685,31 @@ export default function AdminLayout({
 
           if (!active) return;
 
+          if (allowOfflinePosIfPossible()) {
+            return;
+          }
+
+          setOfflinePosAccess(false);
           setHasAdminAccess(false);
           router.replace("/admin/login");
           return;
         }
 
+        setOfflinePosAccess(false);
         setAdminEmail(email);
         setHasAdminAccess(true);
       } catch (error) {
-        console.error("Admin access check error:", error);
+        if (isBrowserOnline()) {
+          console.error("Admin access check error:", error);
+        }
 
         if (!active) return;
 
+        if (allowOfflinePosIfPossible()) {
+          return;
+        }
+
+        setOfflinePosAccess(false);
         setHasAdminAccess(false);
         router.replace("/admin/login");
       } finally {
@@ -653,7 +719,23 @@ export default function AdminLayout({
       }
     }
 
-    checkAccess();
+    const handleNetworkChange = () => {
+      setIsOnline(isBrowserOnline());
+
+      if (!isBrowserOnline()) {
+        if (!allowOfflinePosIfPossible()) {
+          router.replace("/admin/login");
+        }
+        return;
+      }
+
+      void checkAccess();
+    };
+
+    void checkAccess();
+
+    window.addEventListener("online", handleNetworkChange);
+    window.addEventListener("offline", handleNetworkChange);
 
     const {
       data: { subscription },
@@ -664,14 +746,16 @@ export default function AdminLayout({
         session?.user?.email?.trim().toLowerCase() || "";
 
       if (session?.user && email === ADMIN_EMAIL) {
+        setOfflinePosAccess(false);
         setAdminEmail(email);
         setHasAdminAccess(true);
         setCheckingAccess(false);
         return;
       }
 
-      if (!session) {
+      if (!session && !allowOfflinePosIfPossible()) {
         setAdminEmail("");
+        setOfflinePosAccess(false);
         setHasAdminAccess(false);
         setCheckingAccess(false);
         router.replace("/admin/login");
@@ -680,9 +764,11 @@ export default function AdminLayout({
 
     return () => {
       active = false;
+      window.removeEventListener("online", handleNetworkChange);
+      window.removeEventListener("offline", handleNetworkChange);
       subscription.unsubscribe();
     };
-  }, [isLoginPage, router]);
+  }, [isLoginPage, pathname, router]);
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -690,6 +776,17 @@ export default function AdminLayout({
 
   async function handleLogout() {
     try {
+      window.sessionStorage.removeItem(OFFLINE_POS_SESSION_KEY);
+
+      if (offlinePosAccess || !isBrowserOnline()) {
+        setAdminEmail("");
+        setOfflinePosAccess(false);
+        setHasAdminAccess(false);
+        setSidebarOpen(false);
+        window.location.replace("/admin/login");
+        return;
+      }
+
       const { error } = await supabase.auth.signOut({
         scope: "local",
       });
@@ -871,7 +968,10 @@ export default function AdminLayout({
         </div>
 
         <nav className="ncsMenu">
-          {menuItems.map((item) => (
+          {(offlinePosAccess
+            ? menuItems.filter((item) => item.href === "/admin/pos")
+            : menuItems
+          ).map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -892,15 +992,25 @@ export default function AdminLayout({
             <div className="ncsAdminAvatar">N</div>
 
             <div className="ncsAdminText">
-              <strong>Administrator</strong>
-              <span>{adminEmail}</span>
+              <strong>
+                {offlinePosAccess ? "Offline POS Operator" : "Administrator"}
+              </strong>
+              <span>
+                {offlinePosAccess
+                  ? isOnline
+                    ? "Internet restored — sync will start"
+                    : "POS-only local access"
+                  : adminEmail}
+              </span>
             </div>
           </div>
 
-          <Link href="/" className="ncsViewStoreButton">
-            <span>🏪</span>
-            View Store
-          </Link>
+          {!offlinePosAccess && (
+            <Link href="/" className="ncsViewStoreButton">
+              <span>🏪</span>
+              View Store
+            </Link>
+          )}
 
           <button
             type="button"
@@ -914,7 +1024,19 @@ export default function AdminLayout({
       </aside>
 
       <main className="ncsAdminContent">
-        <BusinessAlertTicker />
+        {!offlinePosAccess && <BusinessAlertTicker />}
+
+        {offlinePosAccess && (
+          <div className="ncsOfflinePosBanner">
+            <span>● OFFLINE POS</span>
+            <strong>Cached stock billing is active</strong>
+            <small>
+              Bills are saved safely on this computer and will sync
+              automatically when internet returns.
+            </small>
+          </div>
+        )}
+
         <div className="ncsAdminPageContent">{children}</div>
       </main>
 
@@ -1226,6 +1348,46 @@ export default function AdminLayout({
     transform: scale(1.08);
   }
 }
+        .ncsOfflinePosBanner {
+          position: sticky;
+          z-index: 85;
+          top: 0;
+          min-height: 54px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          padding: 10px 18px;
+          border-top: 1px solid #d4af37;
+          border-bottom: 1px solid #d4af37;
+          background:
+            radial-gradient(
+              circle at 12% 20%,
+              rgba(212, 175, 55, 0.18),
+              transparent 24%
+            ),
+            linear-gradient(90deg, #fff8df, #fffdf7);
+          color: #0a2e73;
+          box-shadow: 0 8px 22px rgba(3, 21, 63, 0.12);
+          text-align: center;
+        }
+
+        .ncsOfflinePosBanner span {
+          color: #b8890b;
+          font-size: 9px;
+          font-weight: 950;
+          letter-spacing: 0.8px;
+        }
+
+        .ncsOfflinePosBanner strong {
+          font-size: 11px;
+        }
+
+        .ncsOfflinePosBanner small {
+          color: #667085;
+          font-size: 9px;
+        }
+
         .ncsSidebar {
           position: fixed;
           z-index: 100;
@@ -1579,6 +1741,17 @@ export default function AdminLayout({
         }
 
         @media (max-width: 900px) {
+          .ncsOfflinePosBanner {
+            position: fixed;
+            right: 0;
+            left: 0;
+            top: 0;
+            min-height: 82px;
+            flex-direction: column;
+            gap: 4px;
+            padding: 10px 70px 10px 70px;
+          }
+
           .ncsBusinessTicker {
             position: fixed;
             right: 0;

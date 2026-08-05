@@ -5,6 +5,40 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 const ADMIN_EMAIL = "badri.nsv@gmail.com";
+const OFFLINE_PIN_HASH_KEY = "ncs_offline_pos_pin_hash_v1";
+const OFFLINE_PIN_SALT_KEY = "ncs_offline_pos_pin_salt_v1";
+const OFFLINE_POS_SESSION_KEY = "ncs_offline_pos_session_v1";
+
+function isBrowserOnline() {
+  return typeof navigator === "undefined" ? true : navigator.onLine;
+}
+
+function bytesToHex(bytes: Uint8Array) {
+  return Array.from(bytes)
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function hashOfflinePin(pin: string, salt: string) {
+  const data = new TextEncoder().encode(`${salt}:${pin}`);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return bytesToHex(new Uint8Array(digest));
+}
+
+function createOfflinePinSalt() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return bytesToHex(bytes);
+}
+
+function hasOfflinePinConfigured() {
+  if (typeof window === "undefined") return false;
+
+  return Boolean(
+    window.localStorage.getItem(OFFLINE_PIN_HASH_KEY) &&
+      window.localStorage.getItem(OFFLINE_PIN_SALT_KEY),
+  );
+}
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -15,9 +49,29 @@ export default function AdminLoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isOnline, setIsOnline] = useState(true);
+  const [offlinePinConfigured, setOfflinePinConfigured] =
+    useState(false);
+  const [offlinePin, setOfflinePin] = useState("");
+  const [showOfflinePin, setShowOfflinePin] = useState(false);
+  const [offlineUnlocking, setOfflineUnlocking] = useState(false);
 
   useEffect(() => {
-    checkExistingSession();
+    const updateNetworkState = () => {
+      setIsOnline(isBrowserOnline());
+      setOfflinePinConfigured(hasOfflinePinConfigured());
+    };
+
+    updateNetworkState();
+    void checkExistingSession();
+
+    window.addEventListener("online", updateNetworkState);
+    window.addEventListener("offline", updateNetworkState);
+
+    return () => {
+      window.removeEventListener("online", updateNetworkState);
+      window.removeEventListener("offline", updateNetworkState);
+    };
   }, []);
 
   async function checkExistingSession() {
@@ -38,16 +92,136 @@ export default function AdminLoginPage() {
         await supabase.auth.signOut({ scope: "local" });
       }
     } catch (error) {
-      console.error("Admin session check error:", error);
+      if (isBrowserOnline()) {
+        console.error("Admin session check error:", error);
+      }
     } finally {
       setCheckingSession(false);
     }
+  }
+
+  async function ensureOfflinePinConfigured() {
+    if (hasOfflinePinConfigured()) {
+      setOfflinePinConfigured(true);
+      return;
+    }
+
+    const firstPin = window.prompt(
+      "Create a 4 to 6 digit Offline POS PIN for this trusted shop computer.",
+    );
+
+    if (firstPin === null) return;
+
+    const cleanPin = firstPin.trim();
+
+    if (!/^\d{4,6}$/.test(cleanPin)) {
+      alert("Offline POS PIN must contain 4 to 6 digits.");
+      return;
+    }
+
+    const confirmPin = window.prompt(
+      "Enter the same Offline POS PIN again.",
+    );
+
+    if (confirmPin?.trim() !== cleanPin) {
+      alert("Offline POS PIN confirmation did not match.");
+      return;
+    }
+
+    const salt = createOfflinePinSalt();
+    const hash = await hashOfflinePin(cleanPin, salt);
+
+    window.localStorage.setItem(OFFLINE_PIN_SALT_KEY, salt);
+    window.localStorage.setItem(OFFLINE_PIN_HASH_KEY, hash);
+    setOfflinePinConfigured(true);
+
+    alert(
+      "Offline POS PIN saved on this computer. Keep this device and PIN secure.",
+    );
+  }
+
+  async function handleOfflineUnlock(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    setErrorMessage("");
+
+    if (!offlinePinConfigured) {
+      setErrorMessage(
+        "Offline POS PIN is not configured yet. Connect to the internet and login once to create it.",
+      );
+      return;
+    }
+
+    const cleanPin = offlinePin.trim();
+
+    if (!/^\d{4,6}$/.test(cleanPin)) {
+      setErrorMessage("Enter your 4 to 6 digit Offline POS PIN.");
+      return;
+    }
+
+    setOfflineUnlocking(true);
+
+    try {
+      const savedSalt =
+        window.localStorage.getItem(OFFLINE_PIN_SALT_KEY) || "";
+      const savedHash =
+        window.localStorage.getItem(OFFLINE_PIN_HASH_KEY) || "";
+
+      const enteredHash = await hashOfflinePin(cleanPin, savedSalt);
+
+      if (!savedSalt || !savedHash || enteredHash !== savedHash) {
+        throw new Error("Offline POS PIN is incorrect.");
+      }
+
+      window.sessionStorage.setItem(
+        OFFLINE_POS_SESSION_KEY,
+        JSON.stringify({
+          unlockedAt: new Date().toISOString(),
+          access: "pos-only",
+        }),
+      );
+
+      window.location.replace("/admin/pos");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to unlock Offline POS.",
+      );
+    } finally {
+      setOfflineUnlocking(false);
+    }
+  }
+
+  function forgetOfflinePin() {
+    const confirmed = window.confirm(
+      "Remove the Offline POS PIN from this computer?",
+    );
+
+    if (!confirmed) return;
+
+    window.localStorage.removeItem(OFFLINE_PIN_HASH_KEY);
+    window.localStorage.removeItem(OFFLINE_PIN_SALT_KEY);
+    window.sessionStorage.removeItem(OFFLINE_POS_SESSION_KEY);
+    setOfflinePinConfigured(false);
+    setOfflinePin("");
+    setErrorMessage("Offline POS PIN removed from this computer.");
   }
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setErrorMessage("");
+
+    if (!isBrowserOnline()) {
+      setErrorMessage(
+        offlinePinConfigured
+          ? "Internet is unavailable. Use Offline POS PIN below."
+          : "Internet is unavailable and Offline POS PIN is not configured.",
+      );
+      return;
+    }
 
     const cleanEmail = email.trim().toLowerCase();
 
@@ -97,6 +271,8 @@ export default function AdminLoginPage() {
         );
       }
 
+      await ensureOfflinePinConfigured();
+      window.sessionStorage.removeItem(OFFLINE_POS_SESSION_KEY);
       window.location.replace("/admin/dashboard");
     } catch (error) {
       console.error("Admin password login error:", error);
@@ -115,6 +291,16 @@ export default function AdminLoginPage() {
       ) {
         setErrorMessage(
           "Please confirm the admin email before logging in."
+        );
+      } else if (
+        message.toLowerCase().includes("failed to fetch") ||
+        message.toLowerCase().includes("network")
+      ) {
+        setIsOnline(false);
+        setErrorMessage(
+          offlinePinConfigured
+            ? "Internet is unavailable. Unlock Offline POS with your PIN below."
+            : "Internet is unavailable. Connect once and login to create an Offline POS PIN.",
         );
       } else {
         setErrorMessage(message);
@@ -269,6 +455,22 @@ export default function AdminLoginPage() {
             </div>
           )}
 
+          <div
+            className={
+              isOnline
+                ? "networkStatus networkOnline"
+                : "networkStatus networkOffline"
+            }
+          >
+            <span>{isOnline ? "●" : "●"}</span>
+            <strong>{isOnline ? "ONLINE" : "OFFLINE MODE"}</strong>
+            <small>
+              {isOnline
+                ? "Cloud login and sync are available."
+                : "Cloud login is unavailable. POS can use cached stock."}
+            </small>
+          </div>
+
           <div className="field">
             <label htmlFor="admin-email">Admin Email</label>
 
@@ -343,6 +545,78 @@ export default function AdminLoginPage() {
           >
             ← Return to Store
           </button>
+
+          <div className="offlineDivider">
+            <span>OFFLINE POS ACCESS</span>
+          </div>
+
+          <form className="offlineUnlockBox" onSubmit={handleOfflineUnlock}>
+            <div>
+              <strong>
+                {offlinePinConfigured
+                  ? "Unlock Billing / POS"
+                  : "Offline PIN Not Configured"}
+              </strong>
+              <p>
+                {offlinePinConfigured
+                  ? "Use this only when internet is unavailable. Access is limited to Billing / POS."
+                  : "Login online once on this computer to create your Offline POS PIN."}
+              </p>
+            </div>
+
+            {offlinePinConfigured && (
+              <>
+                <div className="inputWrap offlinePinWrap">
+                  <span>🔢</span>
+
+                  <input
+                    type={showOfflinePin ? "text" : "password"}
+                    value={offlinePin}
+                    onChange={(event) =>
+                      setOfflinePin(
+                        event.target.value
+                          .replace(/\D/g, "")
+                          .slice(0, 6),
+                      )
+                    }
+                    placeholder="4 to 6 digit PIN"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    disabled={offlineUnlocking}
+                  />
+
+                  <button
+                    type="button"
+                    className="showButton"
+                    onClick={() =>
+                      setShowOfflinePin((current) => !current)
+                    }
+                  >
+                    {showOfflinePin ? "Hide" : "Show"}
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  className="offlineUnlockButton"
+                  disabled={offlineUnlocking}
+                >
+                  {offlineUnlocking
+                    ? "Unlocking..."
+                    : "Open Offline Billing / POS"}
+                </button>
+
+                <button
+                  type="button"
+                  className="forgetPinButton"
+                  onClick={forgetOfflinePin}
+                  disabled={offlineUnlocking}
+                >
+                  Remove Offline PIN
+                </button>
+              </>
+            )}
+          </form>
 
           <div className="securityNote">
             <span>🔐</span>
@@ -621,6 +895,111 @@ export default function AdminLoginPage() {
         input:disabled {
           cursor: not-allowed;
           opacity: 0.65;
+        }
+
+        .networkStatus {
+          display: grid;
+          grid-template-columns: auto auto minmax(0, 1fr);
+          align-items: center;
+          gap: 8px;
+          margin-top: 16px;
+          padding: 11px 13px;
+          border-radius: 11px;
+          font-size: 10px;
+        }
+
+        .networkStatus span {
+          font-size: 13px;
+        }
+
+        .networkStatus strong {
+          font-size: 10px;
+          letter-spacing: 0.6px;
+        }
+
+        .networkStatus small {
+          color: inherit;
+          opacity: 0.75;
+        }
+
+        .networkOnline {
+          border: 1px solid #abefc6;
+          background: #ecfdf3;
+          color: #067647;
+        }
+
+        .networkOffline {
+          border: 1px solid #fedf89;
+          background: #fffaeb;
+          color: #93370d;
+        }
+
+        .offlineDivider {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-top: 22px;
+          color: #b8890b;
+          font-size: 9px;
+          font-weight: 950;
+          letter-spacing: 1px;
+        }
+
+        .offlineDivider::before,
+        .offlineDivider::after {
+          content: "";
+          height: 1px;
+          flex: 1;
+          background: #e7d59a;
+        }
+
+        .offlineUnlockBox {
+          display: grid;
+          gap: 11px;
+          margin-top: 12px;
+          padding: 14px;
+          border: 1px solid #e7d59a;
+          border-radius: 13px;
+          background: linear-gradient(145deg, #fffdf7, #fff8e4);
+        }
+
+        .offlineUnlockBox strong {
+          display: block;
+          color: #0a2e73;
+          font-size: 12px;
+        }
+
+        .offlineUnlockBox p {
+          margin: 4px 0 0;
+          color: #667085;
+          font-size: 10px;
+          line-height: 1.5;
+        }
+
+        .offlinePinWrap {
+          min-height: 46px;
+        }
+
+        .offlineUnlockButton,
+        .forgetPinButton {
+          width: 100%;
+          min-height: 44px;
+          border-radius: 10px;
+          font-weight: 850;
+          cursor: pointer;
+        }
+
+        .offlineUnlockButton {
+          border: 0;
+          background: linear-gradient(135deg, #d4af37, #f1d26a);
+          color: #0a2e73;
+        }
+
+        .forgetPinButton {
+          border: 1px solid #d0d5dd;
+          background: #ffffff;
+          color: #667085;
+          font-size: 10px;
         }
 
         .securityNote {
