@@ -67,6 +67,7 @@ type PosSale = {
   total_amount?: number | string | null;
   paid_amount?: number | string | null;
   due_amount?: number | string | null;
+  is_deleted?: boolean | null;
   created_at?: string | null;
 };
 
@@ -229,8 +230,20 @@ function dateKey(date: Date) {
 }
 
 function isSuccessfulSale(sale: PosSale) {
-  const status = (sale.sale_status || "completed").toLowerCase();
-  return !["cancelled", "void", "refunded"].includes(status);
+  if (sale.is_deleted === true) {
+    return false;
+  }
+
+  const status = (sale.sale_status || "completed")
+    .trim()
+    .toLowerCase();
+
+  return ![
+    "cancelled",
+    "void",
+    "refunded",
+    "deleted",
+  ].includes(status);
 }
 
 function salePaidAmount(sale: PosSale) {
@@ -346,8 +359,9 @@ export default function AdminDashboardPage() {
           supabase
             .from("pos_sales")
             .select(
-              "id,invoice_number,customer_name,customer_phone,sale_status,payment_method,total_amount,paid_amount,due_amount,created_at",
+              "id,invoice_number,customer_name,customer_phone,sale_status,payment_method,total_amount,paid_amount,due_amount,is_deleted,created_at",
             )
+            .eq("is_deleted", false)
             .order("created_at", { ascending: false })
             .limit(5000),
 

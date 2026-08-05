@@ -778,8 +778,9 @@ export default function PosPage() {
           supabase
             .from("pos_sales")
             .select(
-              "total_amount,paid_amount,due_amount,payment_method,sale_status,created_at",
+              "total_amount,paid_amount,due_amount,payment_method,sale_status,is_deleted,created_at",
             )
+            .eq("is_deleted", false)
             .gte("created_at", startOfDay.toISOString())
             .lt("created_at", endOfDay.toISOString()),
 
@@ -801,16 +802,24 @@ export default function PosPage() {
             due_amount?: number | string | null;
             payment_method?: string | null;
             sale_status?: string | null;
+            is_deleted?: boolean | null;
           }>;
 
           const completedSaleRows = saleRows.filter((sale) => {
+            if (sale.is_deleted === true) {
+              return false;
+            }
+
             const status = normalizeText(
               sale.sale_status || "completed",
             );
 
-            return !["cancelled", "void", "refunded"].includes(
-              status,
-            );
+            return ![
+              "cancelled",
+              "void",
+              "refunded",
+              "deleted",
+            ].includes(status);
           });
 
           todayBills = completedSaleRows.length;
@@ -902,6 +911,20 @@ export default function PosPage() {
 
         if (salesLoadedFromCloud || creditLoadedFromCloud) {
           writeCachedOverview(baseOverview);
+        }
+
+        if (salesLoadedFromCloud) {
+          try {
+            window.localStorage.setItem(
+              POS_OVERVIEW_CACHE_KEY,
+              JSON.stringify(baseOverview),
+            );
+          } catch (error) {
+            console.info(
+              "Unable to refresh the POS overview cache:",
+              error,
+            );
+          }
         }
       }
 
