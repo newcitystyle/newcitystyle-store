@@ -3042,7 +3042,7 @@ if (!variantsError) {
   async function shareCustomerInvoicePdf(sale: CompletedSale) {
     try {
       showNotice("Sending PDF invoice directly to WhatsApp...", "info");
-      await sendInvoicePdfViaWhatsApp(sale);
+      await sendInvoiceMessageViaWhatsApp(sale);
       showNotice("PDF invoice sent directly on WhatsApp.", "success");
     } catch (error) {
       console.error("Unable to send PDF invoice:", error);
@@ -3107,7 +3107,7 @@ if (!variantsError) {
       .join("\n");
   }
 
-  async function sendInvoicePdfViaWhatsApp(
+  async function sendInvoiceMessageViaWhatsApp(
     sale: CompletedSale
   ) {
     const digits = sale.customerPhone.replace(/\D/g, "");
@@ -3121,53 +3121,45 @@ if (!variantsError) {
       recipientPhone.length > 15
     ) {
       throw new Error(
-        "A valid customer mobile number is required for WhatsApp PDF invoice."
+        "A valid customer mobile number is required for WhatsApp bill message."
       );
     }
 
+    const formData = new FormData();
+
+    formData.append("to", recipientPhone);
+    formData.append(
+      "customerName",
+      sale.customerName.trim() || "Customer",
+    );
+    formData.append("billNumber", sale.invoiceNumber);
+    formData.append(
+      "billAmount",
+      String(sale.totalAmount),
+    );
+    formData.append(
+      "paidAmount",
+      String(sale.paidAmount),
+    );
+    formData.append(
+      "dueAmount",
+      String(sale.dueAmount),
+    );
+    formData.append(
+      "paymentMethod",
+      sale.paymentMethod.toUpperCase(),
+    );
+
     const response = await fetch(
-      "/api/whatsapp/invoice-pdf",
+      "/api/whatsapp/invoice",
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          to: recipientPhone,
-          sendWhatsApp: true,
-          customerName:
-            sale.customerName.trim() || "Customer",
-          customerPhone: sale.customerPhone,
-          billNumber: sale.invoiceNumber,
-          billDate: new Date(
-            sale.completedAt,
-          ).toLocaleString("en-IN"),
-          paymentMethod:
-            sale.paymentMethod.toUpperCase(),
-          subtotal: sale.subtotal,
-          discountAmount: sale.billDiscount,
-          taxAmount: sale.taxAmount,
-          roundOff: sale.roundOff,
-          billAmount: sale.totalAmount,
-          paidAmount: sale.paidAmount,
-          dueAmount: sale.dueAmount,
-          items: sale.items.map((item) => ({
-            name: item.name,
-            quantity: item.quantity,
-            mrp: item.mrp,
-            price: item.price,
-            discountPercent: Math.max(0, item.discountPercent || 0),
-            total: item.price * item.quantity,
-            size: item.size,
-            color: item.color,
-          })),
-        }),
+        body: formData,
       },
     );
 
     const result = (await response.json()) as {
       success?: boolean;
-      whatsappPdfSent?: boolean;
       message?: string;
       error?: string;
       stage?: string;
@@ -3178,8 +3170,7 @@ if (!variantsError) {
 
     if (
       !response.ok ||
-      result.success !== true ||
-      result.whatsappPdfSent !== true
+      result.success !== true
     ) {
       const stageMessage = result.stage
         ? ` (${result.stage})`
@@ -3190,7 +3181,7 @@ if (!variantsError) {
         : "";
 
       throw new Error(
-        `${result.error || "WhatsApp PDF invoice could not be sent."}${stageMessage}${detailMessage}`,
+        `${result.error || "WhatsApp bill message could not be sent."}${stageMessage}${detailMessage}`,
       );
     }
 
@@ -3199,9 +3190,9 @@ if (!variantsError) {
 
   async function shareCompletedSaleOnWhatsApp(sale: CompletedSale) {
     try {
-      showNotice("Sending invoice directly to WhatsApp...", "info");
-      await sendInvoicePdfViaWhatsApp(sale);
-      showNotice("Invoice sent directly on WhatsApp.", "success");
+      showNotice("Sending bill message to WhatsApp...", "info");
+      await sendInvoiceMessageViaWhatsApp(sale);
+      showNotice("Bill message sent on WhatsApp.", "success");
     } catch (error) {
       console.error("Unable to send WhatsApp invoice:", error);
       showNotice(
@@ -4222,7 +4213,7 @@ if (!variantsError) {
 
       if (saleSnapshot.customerPhone.trim()) {
         try {
-          await sendInvoicePdfViaWhatsApp(
+          await sendInvoiceMessageViaWhatsApp(
             saleSnapshot
           );
         } catch (whatsappError) {
@@ -4274,7 +4265,7 @@ if (!variantsError) {
         completionWarnings.length > 0
           ? `${invoiceNumber} completed. ${completionWarnings.join(" ")}`
           : saleSnapshot.customerPhone.trim()
-            ? `${invoiceNumber} completed and WhatsApp PDF invoice sent.`
+            ? `${invoiceNumber} completed and WhatsApp bill message sent.`
             : `${invoiceNumber} completed successfully.`,
         completionWarnings.length > 0
           ? "info"

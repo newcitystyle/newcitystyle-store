@@ -709,6 +709,8 @@ async function sendInvoiceTemplate({
   paidAmount,
   dueAmount,
   paymentMethod,
+  mediaId,
+  fileName,
   accessToken,
   phoneNumberId,
   apiVersion,
@@ -722,16 +724,14 @@ async function sendInvoiceTemplate({
   paidAmount: number;
   dueAmount: number;
   paymentMethod: string;
+  mediaId: string;
+  fileName: string;
   accessToken: string;
   phoneNumberId: string;
   apiVersion: string;
   templateName: string;
   templateLanguage: string;
 }) {
-  /*
-   * The approved NEW CITY STYLE message template has no header.
-   * Send only the six approved body variables.
-   */
   const payload = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -743,6 +743,18 @@ async function sendInvoiceTemplate({
         code: templateLanguage,
       },
       components: [
+        {
+          type: "header",
+          parameters: [
+            {
+              type: "document",
+              document: {
+                id: mediaId,
+                filename: fileName,
+              },
+            },
+          ],
+        },
         {
           type: "body",
           parameters: [
@@ -824,12 +836,66 @@ export async function POST(request: NextRequest) {
     let body: InvoiceRequest;
 
     try {
-      body = (await request.json()) as InvoiceRequest;
+      const contentType =
+        request.headers.get("content-type") || "";
+
+      if (contentType.includes("multipart/form-data")) {
+        const formData = await request.formData();
+
+        body = {
+          to: String(formData.get("to") || ""),
+          sendWhatsApp: true,
+          customerName: String(
+            formData.get("customerName") || "",
+          ),
+          customerPhone: String(
+            formData.get("customerPhone") ||
+              formData.get("to") ||
+              "",
+          ),
+          billNumber: String(
+            formData.get("billNumber") || "",
+          ),
+          billDate: String(
+            formData.get("billDate") || "",
+          ),
+          paymentMethod: String(
+            formData.get("paymentMethod") || "Cash",
+          ),
+          subtotal: String(
+            formData.get("subtotal") ||
+              formData.get("billAmount") ||
+              "0",
+          ),
+          discountAmount: String(
+            formData.get("discountAmount") || "0",
+          ),
+          taxAmount: String(
+            formData.get("taxAmount") || "0",
+          ),
+          roundOff: String(
+            formData.get("roundOff") || "0",
+          ),
+          billAmount: String(
+            formData.get("billAmount") || "0",
+          ),
+          paidAmount: String(
+            formData.get("paidAmount") || "0",
+          ),
+          dueAmount: String(
+            formData.get("dueAmount") || "0",
+          ),
+          items: [],
+        };
+      } else {
+        body = (await request.json()) as InvoiceRequest;
+      }
     } catch {
       return NextResponse.json(
         {
           success: false,
-          error: "Request body must be valid JSON.",
+          error:
+            "Request body must be valid JSON or multipart form data.",
         },
         {
           status: 400,
@@ -880,12 +946,8 @@ export async function POST(request: NextRequest) {
       process.env.WHATSAPP_API_VERSION?.trim() ||
       "v25.0";
     const templateName =
-      process.env.WHATSAPP_TEXT_TEMPLATE_NAME?.trim() ||
-      process.env.WHATSAPP_PDF_TEMPLATE_NAME?.trim() ||
       "new_city_style_bill_message";
     const templateLanguage =
-      process.env.WHATSAPP_TEXT_TEMPLATE_LANGUAGE?.trim() ||
-      process.env.WHATSAPP_PDF_TEMPLATE_LANGUAGE?.trim() ||
       "en_US";
 
     if (!accessToken || !phoneNumberId) {
@@ -902,6 +964,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const uploadResult = await uploadPdfToWhatsApp({
+      pdfBytes: invoice.pdfBytes,
+      fileName: invoice.fileName,
+      accessToken,
+      phoneNumberId,
+      apiVersion,
+    });
+
+    if (!uploadResult.success) {
+      return NextResponse.json(
+        {
+          ...uploadResult,
+          whatsappPdfSent: false,
+          whatsappTextSent: false,
+          templateName,
+          templateLanguage,
+        },
+        {
+          status: uploadResult.status,
+        },
+      );
+    }
+
     const sendResult = await sendInvoiceTemplate({
       recipientPhone,
       customerName: invoice.customerName,
@@ -910,6 +995,8 @@ export async function POST(request: NextRequest) {
       paidAmount: invoice.paidAmount,
       dueAmount: invoice.dueAmount,
       paymentMethod: invoice.paymentMethod,
+      mediaId: uploadResult.mediaId,
+      fileName: invoice.fileName,
       accessToken,
       phoneNumberId,
       apiVersion,
@@ -943,11 +1030,11 @@ export async function POST(request: NextRequest) {
         whatsappPdfSent: true,
         whatsappTextSent: true,
         message:
-          "NEW CITY STYLE bill message sent to WhatsApp successfully.",
+          "NEW CITY STYLE invoice PDF sent to WhatsApp successfully.",
         billNumber: invoice.billNumber,
         fileName: invoice.fileName,
         recipientPhone,
-        messageMode: "TEXT_TEMPLATE",
+        messageMode: "DOCUMENT_TEMPLATE",
         whatsappMessageId: sendResult.messageId,
         messageStatus: sendResult.messageStatus,
         recipientWhatsAppId:
@@ -984,18 +1071,14 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     success: true,
-    route: "/api/whatsapp/invoice",
+    route: "/api/whatsapp/invoice-pdf",
     method: "POST",
     message:
       "NEW CITY STYLE premium PDF invoice generator and WhatsApp sender is ready.",
     templateName:
-      process.env.WHATSAPP_TEXT_TEMPLATE_NAME ||
-      process.env.WHATSAPP_PDF_TEMPLATE_NAME ||
       "new_city_style_bill_message",
     templateLanguage:
-      process.env.WHATSAPP_TEXT_TEMPLATE_LANGUAGE ||
-      process.env.WHATSAPP_PDF_TEMPLATE_LANGUAGE ||
       "en_US",
-    whatsappMode: "TEXT_TEMPLATE",
+    whatsappMode: "DOCUMENT_TEMPLATE",
   });
 }
