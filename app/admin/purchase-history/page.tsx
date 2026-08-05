@@ -792,6 +792,15 @@ export default function PurchaseHistoryPage() {
         if (brandMoveError) throw brandMoveError;
       }
 
+      const nextMrp = Math.max(
+        0,
+        toNumber(itemEditForm.mrp),
+      );
+
+      if (nextMrp <= 0) {
+        throw new Error("MRP must be greater than zero.");
+      }
+
       const { error } = await supabase.rpc(
         "ncs_edit_purchase_item_v2",
         {
@@ -813,10 +822,7 @@ export default function PurchaseHistoryPage() {
             0,
             toNumber(itemEditForm.sellingPrice),
           ),
-          p_mrp: Math.max(
-            0,
-            toNumber(itemEditForm.mrp),
-          ),
+          p_mrp: nextMrp,
           p_tax_percent: Math.max(
             0,
             toNumber(itemEditForm.taxPercent),
@@ -832,6 +838,73 @@ export default function PurchaseHistoryPage() {
       );
 
       if (error) throw error;
+
+      /*
+       * Some older versions of ncs_edit_purchase_item_v2 update
+       * purchase totals and stock correctly but do not propagate
+       * the edited MRP to all linked catalogue rows. Re-read the
+       * item after the RPC (brand move may change product/variant)
+       * and save the same MRP everywhere.
+       */
+      const {
+        data: refreshedItem,
+        error: refreshedItemError,
+      } = await supabase
+        .from("purchase_items")
+        .select("id,product_id,variant_id")
+        .eq("id", editingItem.id)
+        .single();
+
+      if (refreshedItemError) {
+        throw refreshedItemError;
+      }
+
+      const { error: purchaseItemMrpError } =
+        await supabase
+          .from("purchase_items")
+          .update({
+            mrp: nextMrp,
+          })
+          .eq("id", editingItem.id);
+
+      if (purchaseItemMrpError) {
+        throw purchaseItemMrpError;
+      }
+
+      const refreshedProductId = Number(
+        refreshedItem?.product_id || 0,
+      );
+      const refreshedVariantId = Number(
+        refreshedItem?.variant_id || 0,
+      );
+
+      if (refreshedVariantId > 0) {
+        const { error: variantMrpError } =
+          await supabase
+            .from("product_variants")
+            .update({
+              mrp: nextMrp,
+            })
+            .eq("id", refreshedVariantId);
+
+        if (variantMrpError) {
+          throw variantMrpError;
+        }
+      }
+
+      if (refreshedProductId > 0) {
+        const { error: productMrpError } =
+          await supabase
+            .from("products")
+            .update({
+              mrp: nextMrp,
+            })
+            .eq("id", refreshedProductId);
+
+        if (productMrpError) {
+          throw productMrpError;
+        }
+      }
 
       setShowItemEditModal(false);
       setEditingItem(null);
