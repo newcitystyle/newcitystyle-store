@@ -3165,6 +3165,25 @@ if (!variantsError) {
   async function sendInvoiceMessageViaWhatsApp(
     sale: CompletedSale
   ) {
+    const exactTotal = Number(
+      Math.max(0, toNumber(sale.totalAmount)).toFixed(2),
+    );
+    const exactPaid = Number(
+      Math.min(
+        exactTotal,
+        Math.max(0, toNumber(sale.paidAmount)),
+      ).toFixed(2),
+    );
+    const exactDue = Number(
+      Math.max(0, exactTotal - exactPaid).toFixed(2),
+    );
+
+    if (exactTotal <= 0) {
+      throw new Error(
+        "WhatsApp invoice was stopped because the final bill total is zero. Reopen the bill and verify the amount.",
+      );
+    }
+
     const digits = sale.customerPhone.replace(/\D/g, "");
     const recipientPhone =
       digits.length === 10
@@ -3190,15 +3209,15 @@ if (!variantsError) {
     formData.append("billNumber", sale.invoiceNumber);
     formData.append(
       "billAmount",
-      String(sale.totalAmount),
+      exactTotal.toFixed(2),
     );
     formData.append(
       "paidAmount",
-      String(sale.paidAmount),
+      exactPaid.toFixed(2),
     );
     formData.append(
       "dueAmount",
-      String(sale.dueAmount),
+      exactDue.toFixed(2),
     );
     formData.append(
       "paymentMethod",
@@ -4107,6 +4126,134 @@ if (!variantsError) {
       const invoiceNumber =
         result.invoice_number || "Invoice created";
 
+      /*
+       * IMPORTANT — one source of truth for every saved bill:
+       * The RPC calculates from catalogue prices, but the cashier may change
+       * each item's selling price/discount in the POS. Therefore immediately
+       * overwrite the saved sale header and sale-item amounts with the exact
+       * values currently shown in the POS before customer sync or WhatsApp.
+       */
+      if (result.sale_id) {
+        const saleId = String(result.sale_id);
+        const authoritativePaidAmount =
+          paymentMethod === "credit"
+            ? safeCreditPaidNow
+            : finalPayable;
+        const authoritativeDueAmount =
+          paymentMethod === "credit"
+            ? creditDueAmount
+            : 0;
+        const authoritativeDiscount =
+          billDiscountAmount + rewardDiscountAmount;
+        const now = new Date().toISOString();
+
+        const { error: saleTotalsError } = await supabase
+          .from("pos_sales")
+          .update({
+            subtotal,
+            tax_amount: itemTax,
+            bill_discount: authoritativeDiscount,
+            round_off: safeRoundOffAmount,
+            total_amount: finalPayable,
+            paid_amount: authoritativePaidAmount,
+            due_amount: authoritativeDueAmount,
+            payment_method: paymentMethod,
+            updated_at: now,
+          })
+          .eq("id", saleId);
+
+        if (saleTotalsError) {
+          throw new Error(
+            `Final bill amounts could not be saved: ${saleTotalsError.message}`,
+          );
+        }
+
+        const { data: savedSaleItems, error: saleItemsLoadError } =
+          await supabase
+            .from("pos_sale_items")
+            .select("id,product_id,variant_id,quantity")
+            .eq("sale_id", saleId);
+
+        if (saleItemsLoadError) {
+          throw new Error(
+            `Saved bill items could not be verified: ${saleItemsLoadError.message}`,
+          );
+        }
+
+        const unmatchedCartItems = [...cartItems];
+
+        for (const savedItem of savedSaleItems || []) {
+          const savedProductId = Number(savedItem.product_id || 0);
+          const savedVariantId =
+            savedItem.variant_id == null
+              ? null
+              : Number(savedItem.variant_id);
+
+          let cartIndex = unmatchedCartItems.findIndex(
+            (item) =>
+              Number(item.productId) === savedProductId &&
+              (item.variantId == null
+                ? savedVariantId == null
+                : Number(item.variantId) === savedVariantId),
+          );
+
+          if (cartIndex < 0 && unmatchedCartItems.length === 1) {
+            cartIndex = 0;
+          }
+
+          if (cartIndex < 0) {
+            continue;
+          }
+
+          const cartItem = unmatchedCartItems[cartIndex];
+          unmatchedCartItems.splice(cartIndex, 1);
+
+          const quantity = Math.max(
+            1,
+            Number(savedItem.quantity || cartItem.quantity || 1),
+          );
+          const taxableValue = Math.max(
+            0,
+            cartItem.price * quantity,
+          );
+          const taxAmountForItem =
+            (taxableValue * Math.max(0, cartItem.taxPercent)) / 100;
+          const lineTotal = taxableValue + taxAmountForItem;
+          const itemDiscount = Math.max(
+            0,
+            (cartItem.mrp - cartItem.price) * quantity,
+          );
+
+          const { error: saleItemUpdateError } = await supabase
+            .from("pos_sale_items")
+            .update({
+              unit_price: cartItem.price,
+              mrp: cartItem.mrp,
+              discount_amount: itemDiscount,
+              tax_percent: Math.max(0, cartItem.taxPercent),
+              tax_amount: taxAmountForItem,
+              line_total: lineTotal,
+              updated_at: now,
+            })
+            .eq("id", savedItem.id);
+
+          if (saleItemUpdateError) {
+            throw new Error(
+              `Final price for ${cartItem.name} could not be saved: ${saleItemUpdateError.message}`,
+            );
+          }
+        }
+
+        result.subtotal = subtotal;
+        result.tax_amount = itemTax;
+        result.bill_discount = authoritativeDiscount;
+        result.round_off = safeRoundOffAmount;
+        result.total_amount = finalPayable;
+        result.paid_amount = authoritativePaidAmount;
+        result.due_amount = authoritativeDueAmount;
+        result.payment_method = paymentMethod;
+      }
+
       let syncedCustomerId: number | null = null;
       let customerSyncWarning = "";
 
@@ -4230,26 +4377,6 @@ if (!variantsError) {
           );
         }
 
-        /*
-         * Keep the legacy sales mirror aligned when the row exists.
-         * A missing mirror row must not block POS billing.
-         */
-        const { error: legacySaleAmountsError } =
-          await supabase
-            .from("sales")
-            .update({
-              paid_amount: safeCreditPaidNow,
-              due_amount: creditDueAmount,
-            })
-            .eq("id", saleId);
-
-        if (legacySaleAmountsError) {
-          console.info(
-            "Legacy sales paid/due mirror was not updated:",
-            legacySaleAmountsError.message,
-          );
-        }
-
         if (
           safeCreditPaidNow > 0 &&
           customerPhone.trim()
@@ -4342,8 +4469,8 @@ if (!variantsError) {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         items: cartItems.map((item) => ({ ...item })),
-        subtotal: toNumber(result.subtotal, subtotal),
-        taxAmount: toNumber(result.tax_amount, itemTax),
+        subtotal,
+        taxAmount: itemTax,
         billDiscount: billDiscountAmount,
         rewardPointsUsed: toNumber(
           rewardResult.points_used,
@@ -4370,28 +4497,16 @@ if (!variantsError) {
                 : Math.floor(finalPayable / 100)),
           ),
         ),
-        roundOff: toNumber(
-          result.round_off,
-          safeRoundOffAmount
-        ),
-        totalAmount: toNumber(
-          result.total_amount,
-          finalPayable
-        ),
+        roundOff: safeRoundOffAmount,
+        totalAmount: finalPayable,
         paidAmount:
           paymentMethod === "credit"
             ? safeCreditPaidNow
-            : toNumber(
-                result.paid_amount,
-                finalPayable,
-              ),
+            : finalPayable,
         dueAmount:
           paymentMethod === "credit"
             ? creditDueAmount
-            : toNumber(
-                result.due_amount,
-                0,
-              ),
+            : 0,
         paymentMethod,
         completedAt: new Date().toISOString(),
       };
