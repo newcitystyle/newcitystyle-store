@@ -5227,11 +5227,21 @@ if (!variantsError) {
                   )
                 }
               />
-              <span>
-                Customer agreed to receive WhatsApp offers
+
+              <span className="ncsPosMarketingConsentCopy">
+                <strong>Customer agreed to receive WhatsApp offers</strong>
                 <small>
                   Existing opted-in customers are selected automatically.
                 </small>
+              </span>
+
+              <span className="ncsPosOfferTicker" aria-label="Current store offers">
+                <span className="ncsPosOfferTickerTrack">
+                  <b>🎁 Shop ₹3,000 • Get an umbrella free</b>
+                  <b>🪙 Every purchase earns reward coins</b>
+                  <b>✨ Members receive exclusive offers</b>
+                  <b>🎁 Shop ₹3,000 • Get an umbrella free</b>
+                </span>
               </span>
             </label>
           </div>
@@ -9961,6 +9971,209 @@ if (!variantsError) {
           }
         }
 
+        /* PREMIUM BILL VISIBILITY + LIVE OFFER STRIP */
+        .ncsPosBillPanel {
+          max-height: none;
+          overflow: visible;
+        }
+
+        .ncsPosCartItems {
+          flex: 0 1 auto;
+          min-height: 92px;
+          max-height: 270px;
+          overflow-y: auto;
+        }
+
+        .ncsPosSummary {
+          max-height: none;
+          overflow: visible;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 8px 10px;
+          padding: 14px;
+          background:
+            radial-gradient(circle at 92% 0%, rgba(212,175,55,.13), transparent 34%),
+            linear-gradient(180deg, #ffffff, #f8faff);
+        }
+
+        .ncsPosSummaryLine {
+          min-height: 48px;
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          justify-content: center;
+          gap: 4px;
+          padding: 8px 10px;
+          border: 1px solid rgba(10,46,115,.10);
+          border-radius: 11px;
+          background: #ffffff;
+          box-shadow: 0 5px 14px rgba(3,21,63,.035);
+        }
+
+        .ncsPosSummaryLine span {
+          color: #69758a;
+          font-size: 8px;
+          font-weight: 850;
+          text-transform: uppercase;
+          letter-spacing: .04em;
+        }
+
+        .ncsPosSummaryLine strong {
+          color: #03153f;
+          font-size: 12px;
+          font-weight: 950;
+        }
+
+        .ncsPosDiscountField,
+        .ncsPosRoundOffField {
+          grid-column: span 2;
+          min-height: 48px;
+          margin: 0;
+          padding: 7px 10px;
+          border: 1px solid rgba(10,46,115,.10);
+          border-radius: 11px;
+          background: #fff;
+        }
+
+        .ncsPosTotalLine {
+          grid-column: 1 / -1;
+          min-height: 76px;
+          margin: 2px 0 0;
+          padding: 12px 16px;
+          border: 1px solid rgba(212,175,55,.65);
+          border-radius: 15px;
+          background:
+            radial-gradient(circle at 90% 10%, rgba(255,255,255,.18), transparent 30%),
+            linear-gradient(135deg, #061b4f, #0a2e73 68%, #234f91);
+          box-shadow: 0 12px 28px rgba(3,21,63,.17);
+        }
+
+        .ncsPosTotalLine span {
+          color: #f4d65c;
+          font-size: 13px;
+        }
+
+        .ncsPosTotalLine small {
+          color: rgba(255,255,255,.70);
+          font-size: 8px;
+        }
+
+        .ncsPosTotalLine > strong {
+          color: #ffffff;
+          font-size: 27px;
+          text-shadow: 0 2px 12px rgba(0,0,0,.18);
+        }
+
+        .ncsPosQuantityTableCell > div {
+          grid-template-columns: 38px minmax(42px, 1fr) 38px;
+          height: 38px;
+          border-color: rgba(10,46,115,.20);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,.7);
+        }
+
+        .ncsPosQuantityTableCell button {
+          width: 38px;
+          height: 38px;
+          font-size: 20px;
+          line-height: 1;
+        }
+
+        .ncsPosQuantityTableCell button:first-child {
+          background: linear-gradient(180deg, #eef3fb, #dfe8f7);
+          color: #0a2e73;
+          border-right: 1px solid rgba(10,46,115,.12);
+        }
+
+        .ncsPosQuantityTableCell button:last-child {
+          background: linear-gradient(180deg, #f7d95c, #d4af37);
+          color: #03153f;
+          border-left: 1px solid rgba(10,46,115,.12);
+        }
+
+        .ncsPosQuantityTableCell input {
+          height: 38px;
+          font-size: 13px;
+          background: #fff;
+        }
+
+        .ncsPosMarketingConsent {
+          position: relative;
+          display: grid;
+          grid-template-columns: 22px minmax(205px, .85fr) minmax(280px, 1.4fr);
+          align-items: center;
+          gap: 10px;
+          overflow: hidden;
+          padding: 10px 12px;
+          border-color: rgba(212,175,55,.48);
+          background:
+            linear-gradient(100deg, #f3fff7 0%, #ffffff 42%, #fff8dc 100%);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,.8);
+        }
+
+        .ncsPosMarketingConsent input {
+          width: 17px;
+          height: 17px;
+          margin: 0;
+        }
+
+        .ncsPosMarketingConsentCopy strong,
+        .ncsPosMarketingConsentCopy small {
+          display: block;
+        }
+
+        .ncsPosMarketingConsentCopy strong {
+          color: #12683b;
+          font-size: 9px;
+          font-weight: 950;
+        }
+
+        .ncsPosOfferTicker {
+          min-width: 0;
+          overflow: hidden;
+          border-left: 1px solid rgba(212,175,55,.35);
+          border-radius: 9px;
+          background: rgba(255,255,255,.72);
+        }
+
+        .ncsPosOfferTickerTrack {
+          width: max-content;
+          display: flex;
+          align-items: center;
+          gap: 22px;
+          padding: 8px 0;
+          animation: ncsPosOfferTickerMove 19s linear infinite;
+        }
+
+        .ncsPosOfferTickerTrack b {
+          color: #7a5a00;
+          font-size: 9px;
+          font-weight: 950;
+          white-space: nowrap;
+        }
+
+        .ncsPosMarketingConsent:hover .ncsPosOfferTickerTrack {
+          animation-play-state: paused;
+        }
+
+        @keyframes ncsPosOfferTickerMove {
+          from { transform: translateX(0); }
+          to { transform: translateX(-50%); }
+        }
+
+        @media (max-width: 1450px) {
+          .ncsPosSummary {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+
+          .ncsPosDiscountField,
+          .ncsPosRoundOffField {
+            grid-column: span 1;
+          }
+
+          .ncsPosMarketingConsent {
+            grid-template-columns: 22px minmax(190px, .8fr) minmax(220px, 1.2fr);
+          }
+        }
+
         @media (max-width: 820px) {
           .ncsPosSearchPanel {
             flex-wrap: wrap;
@@ -10816,6 +11029,31 @@ if (!variantsError) {
           .ncsPosRoundOffField,
           .ncsPosTotalLine {
             grid-column: auto;
+          }
+        }
+
+        @media (max-width: 820px) {
+          .ncsPosSummary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .ncsPosDiscountField,
+          .ncsPosRoundOffField {
+            grid-column: span 1;
+          }
+
+          .ncsPosMarketingConsent {
+            grid-template-columns: 22px minmax(0, 1fr);
+          }
+
+          .ncsPosOfferTicker {
+            grid-column: 1 / -1;
+            border-left: 0;
+            border-top: 1px solid rgba(212,175,55,.3);
+          }
+
+          .ncsPosCartItems {
+            max-height: none;
           }
         }
 
