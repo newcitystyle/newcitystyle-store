@@ -2152,6 +2152,61 @@ if (!variantsError) {
     );
   }
 
+  function updateItemSellingPrice(
+    itemKey: string,
+    rawSellingPrice: number
+  ) {
+    setCartItems((currentItems) =>
+      currentItems.map((item) => {
+        if (item.key !== itemKey) {
+          return item;
+        }
+
+        const sellingPrice = Math.min(
+          Math.max(0, toNumber(rawSellingPrice)),
+          Math.max(0, item.mrp)
+        );
+        const discountPercent =
+          item.mrp > 0
+            ? ((item.mrp - sellingPrice) / item.mrp) * 100
+            : 0;
+
+        return {
+          ...item,
+          price: Number(sellingPrice.toFixed(2)),
+          discountPercent: Number(
+            Math.max(0, discountPercent).toFixed(2)
+          ),
+        };
+      })
+    );
+  }
+
+  function updateItemQuantity(
+    itemKey: string,
+    rawQuantity: number
+  ) {
+    setCartItems((currentItems) =>
+      currentItems
+        .map((item) => {
+          if (item.key !== itemKey) {
+            return item;
+          }
+
+          const maxQuantity = item.isQuickItem
+            ? Number.MAX_SAFE_INTEGER
+            : Math.max(1, Math.floor(item.stock));
+          const quantity = Math.min(
+            maxQuantity,
+            Math.max(0, Math.floor(toNumber(rawQuantity)))
+          );
+
+          return { ...item, quantity };
+        })
+        .filter((item) => item.quantity > 0)
+    );
+  }
+
   function increaseQuantity(itemKey: string) {
     setCartItems((currentItems) =>
       currentItems.map((item) => {
@@ -5181,58 +5236,90 @@ if (!variantsError) {
             </label>
           </div>
 
+          <div className="ncsPosCartTableHeader" aria-hidden="true">
+            <span>Item</span>
+            <span>MRP</span>
+            <span>Sell</span>
+            <span>Qty</span>
+            <span>Disc %</span>
+            <span>Total</span>
+            <span />
+          </div>
+
           <div className="ncsPosCartItems">
             {cartItems.length === 0 ? (
               <div className="ncsPosEmptyCart">
                 <div>🛍️</div>
                 <h3>Bill is empty</h3>
-                <p>
-                  Scan a barcode or select a product.
-                </p>
+                <p>Scan a barcode or select a product.</p>
               </div>
             ) : (
-              cartItems.map((item) => (
+              cartItems.map((item, itemIndex) => (
                 <article
                   key={item.key}
-                  className="ncsPosCartItem"
+                  className="ncsPosCartItem ncsPosCartItemTableRow"
                 >
-                  <div className="ncsPosCartItemTop">
+                  <div className="ncsPosCartProductCell">
                     <div className="ncsPosCartThumbnail">
                       {item.imageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={item.imageUrl}
-                          alt={item.name}
-                        />
+                        <img src={item.imageUrl} alt={item.name} />
                       ) : (
                         <span>NCS</span>
                       )}
                     </div>
 
                     <div className="ncsPosCartProductInfo">
-                      <h3>
+                      <small className="ncsPosItemSerial">
+                        {String(itemIndex + 1).padStart(2, "0")}
+                      </small>
+                      <h3 title={item.name}>
                         {item.name}
                         {item.isQuickItem && (
-                          <span className="ncsPosQuickItemBadge">
-                            QUICK
-                          </span>
+                          <span className="ncsPosQuickItemBadge">QUICK</span>
                         )}
                       </h3>
-
                       <p>
                         {[item.size, item.color]
                           .filter(Boolean)
-                          .join(" • ") ||
-                          item.category}
+                          .join(" • ") || item.category}
+                        {!item.isQuickItem && (
+                          <em>Stock {item.stock}</em>
+                        )}
                       </p>
-
-                      <div className="ncsPosItemPriceLine">
-                        <span>MRP {formatCurrency(item.mrp)}</span>
-                        <strong>Sell {formatCurrency(item.price)}</strong>
-                      </div>
                     </div>
+                  </div>
 
-                    <div className="ncsPosQuantityControl">
+                  <div className="ncsPosTableMoneyCell">
+                    <span className="ncsPosMobileCellLabel">MRP</span>
+                    <strong>{formatCurrency(item.mrp)}</strong>
+                  </div>
+
+                  <label className="ncsPosInlineMoneyInput">
+                    <span className="ncsPosMobileCellLabel">Sell</span>
+                    <div>
+                      <b>₹</b>
+                      <input
+                        type="number"
+                        min="0"
+                        max={item.mrp}
+                        step="0.01"
+                        value={item.price}
+                        onChange={(event) =>
+                          updateItemSellingPrice(
+                            item.key,
+                            toNumber(event.target.value)
+                          )
+                        }
+                        inputMode="decimal"
+                        aria-label={`${item.name} selling price`}
+                      />
+                    </div>
+                  </label>
+
+                  <div className="ncsPosQuantityControl ncsPosQuantityTableCell">
+                    <span className="ncsPosMobileCellLabel">Qty</span>
+                    <div>
                       <button
                         type="button"
                         onClick={() => decreaseQuantity(item.key)}
@@ -5240,9 +5327,20 @@ if (!variantsError) {
                       >
                         −
                       </button>
-
-                      <span>{item.quantity}</span>
-
+                      <input
+                        type="number"
+                        min="1"
+                        max={item.isQuickItem ? undefined : item.stock}
+                        value={item.quantity}
+                        onChange={(event) =>
+                          updateItemQuantity(
+                            item.key,
+                            toNumber(event.target.value)
+                          )
+                        }
+                        inputMode="numeric"
+                        aria-label={`${item.name} quantity`}
+                      />
                       <button
                         type="button"
                         onClick={() => increaseQuantity(item.key)}
@@ -5251,53 +5349,59 @@ if (!variantsError) {
                         +
                       </button>
                     </div>
-
-                    <label className="ncsPosItemDiscountField">
-                      <span>Discount</span>
-                      <div>
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.01"
-                          value={
-                            item.discountPercent === 0 ||
-                            item.discountPercent == null
-                              ? ""
-                              : item.discountPercent
-                          }
-                          onChange={(event) =>
-                            updateItemDiscount(
-                              item.key,
-                              toNumber(event.target.value)
-                            )
-                          }
-                          placeholder="0"
-                          inputMode="decimal"
-                          aria-label={`${item.name} discount percentage`}
-                        />
-                        <b>%</b>
-                      </div>
-                    </label>
-
-                    <div className="ncsPosItemLineTotal">
-                      <span>Line Total</span>
-                      <strong>
-                        {formatCurrency(item.price * item.quantity)}
-                      </strong>
-                    </div>
-
-                    <button
-                      type="button"
-                      className="ncsPosRemoveItem"
-                      onClick={() =>
-                        removeCartItem(item.key)
-                      }
-                      aria-label={`Remove ${item.name}`}
-                    >
-                      ×
-                    </button>
                   </div>
+
+                  <label className="ncsPosItemDiscountField">
+                    <span className="ncsPosMobileCellLabel">Discount</span>
+                    <div>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={
+                          item.discountPercent === 0 ||
+                          item.discountPercent == null
+                            ? ""
+                            : item.discountPercent
+                        }
+                        onChange={(event) =>
+                          updateItemDiscount(
+                            item.key,
+                            toNumber(event.target.value)
+                          )
+                        }
+                        placeholder="0"
+                        inputMode="decimal"
+                        aria-label={`${item.name} discount percentage`}
+                      />
+                      <b>%</b>
+                    </div>
+                  </label>
+
+                  <div className="ncsPosItemLineTotal">
+                    <span className="ncsPosMobileCellLabel">Total</span>
+                    <strong>
+                      {formatCurrency(item.price * item.quantity)}
+                    </strong>
+                    {item.mrp > item.price && (
+                      <small>
+                        Saved {formatCurrency(
+                          (item.mrp - item.price) * item.quantity
+                        )}
+                      </small>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="ncsPosRemoveItem"
+                    onClick={() => removeCartItem(item.key)}
+                    aria-label={`Remove ${item.name}`}
+                    title="Remove item"
+                  >
+                    ×
+                  </button>
                 </article>
               ))
             )}
@@ -10387,6 +10491,331 @@ if (!variantsError) {
 
           .ncsPosVariantList {
             grid-template-columns: 1fr;
+          }
+        }
+
+
+        /* 2026 INTERNATIONAL HIGH-SPEED POS BILLING LAYOUT */
+        .ncsPosWorkspace {
+          grid-template-columns: minmax(360px, 0.78fr) minmax(720px, 1.42fr);
+          gap: 16px;
+        }
+
+        .ncsPosBillPanel {
+          position: sticky;
+          top: 12px;
+          max-height: calc(100vh - 24px);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          border-radius: 22px;
+          box-shadow: 0 24px 60px rgba(3, 21, 63, 0.18);
+        }
+
+        .ncsPosCustomerSection,
+        .ncsPosBillHeader {
+          flex: 0 0 auto;
+        }
+
+        .ncsPosCartTableHeader {
+          display: grid;
+          grid-template-columns: minmax(230px, 1.8fr) 92px 104px 132px 100px 120px 34px;
+          align-items: center;
+          gap: 8px;
+          flex: 0 0 auto;
+          padding: 9px 14px;
+          border-top: 1px solid rgba(10, 46, 115, 0.08);
+          border-bottom: 1px solid rgba(10, 46, 115, 0.12);
+          background: linear-gradient(180deg, #f8faff, #eef3fb);
+          color: #65718a;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .ncsPosCartItems {
+          min-height: 220px;
+          max-height: min(42vh, 430px);
+          padding: 8px 10px 12px;
+          background: #f7f9fc;
+          overscroll-behavior: contain;
+        }
+
+        .ncsPosCartItemTableRow {
+          display: grid;
+          grid-template-columns: minmax(230px, 1.8fr) 92px 104px 132px 100px 120px 34px;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 6px;
+          border: 1px solid rgba(10, 46, 115, 0.09);
+          border-radius: 12px;
+          background: #fff;
+          box-shadow: 0 5px 14px rgba(10, 46, 115, 0.045);
+        }
+
+        .ncsPosCartItemTableRow:hover {
+          border-color: rgba(212, 175, 55, 0.72);
+          box-shadow: 0 8px 18px rgba(10, 46, 115, 0.08);
+        }
+
+        .ncsPosCartProductCell {
+          min-width: 0;
+          display: grid;
+          grid-template-columns: 42px minmax(0, 1fr);
+          align-items: center;
+          gap: 9px;
+        }
+
+        .ncsPosCartThumbnail {
+          width: 42px;
+          height: 48px;
+          border-radius: 9px;
+        }
+
+        .ncsPosItemSerial {
+          display: inline-block;
+          margin-bottom: 2px;
+          color: #a58a2c;
+          font-size: 7px;
+          font-weight: 950;
+        }
+
+        .ncsPosCartProductInfo h3 {
+          font-size: 10px;
+          line-height: 1.2;
+        }
+
+        .ncsPosCartProductInfo p {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin: 3px 0 0;
+          font-size: 8px;
+        }
+
+        .ncsPosCartProductInfo p em {
+          padding: 2px 5px;
+          border-radius: 999px;
+          background: #edf7f1;
+          color: #16834a;
+          font-size: 7px;
+          font-style: normal;
+          font-weight: 900;
+        }
+
+        .ncsPosTableMoneyCell,
+        .ncsPosItemLineTotal {
+          min-width: 0;
+        }
+
+        .ncsPosTableMoneyCell strong,
+        .ncsPosItemLineTotal strong {
+          display: block;
+          color: #0a2e73;
+          font-size: 10px;
+          font-weight: 950;
+          white-space: nowrap;
+        }
+
+        .ncsPosItemLineTotal small {
+          display: block;
+          margin-top: 2px;
+          color: #16834a;
+          font-size: 7px;
+          font-weight: 850;
+          white-space: nowrap;
+        }
+
+        .ncsPosInlineMoneyInput,
+        .ncsPosItemDiscountField {
+          width: 100%;
+          min-width: 0;
+        }
+
+        .ncsPosInlineMoneyInput > div,
+        .ncsPosItemDiscountField > div {
+          height: 34px;
+          display: flex;
+          align-items: center;
+          overflow: hidden;
+          border: 1px solid #dce2ec;
+          border-radius: 9px;
+          background: #fff;
+        }
+
+        .ncsPosInlineMoneyInput b,
+        .ncsPosItemDiscountField b {
+          padding: 0 7px;
+          color: #927611;
+          font-size: 9px;
+        }
+
+        .ncsPosInlineMoneyInput input,
+        .ncsPosItemDiscountField input {
+          width: 100%;
+          min-width: 0;
+          height: 100%;
+          border: 0;
+          outline: 0;
+          background: transparent;
+          color: #03153f;
+          font-family: inherit;
+          font-size: 10px;
+          font-weight: 900;
+          text-align: right;
+        }
+
+        .ncsPosQuantityTableCell {
+          display: block;
+          width: 100%;
+        }
+
+        .ncsPosQuantityTableCell > div {
+          display: grid;
+          grid-template-columns: 32px minmax(38px, 1fr) 32px;
+          align-items: center;
+          height: 34px;
+          overflow: hidden;
+          border: 1px solid #dce2ec;
+          border-radius: 9px;
+          background: #fff;
+        }
+
+        .ncsPosQuantityTableCell button {
+          width: 32px;
+          height: 32px;
+          border: 0;
+          background: #edf2fb;
+          color: #0a2e73;
+          font-weight: 950;
+          cursor: pointer;
+        }
+
+        .ncsPosQuantityTableCell input {
+          width: 100%;
+          height: 32px;
+          border: 0;
+          outline: 0;
+          color: #03153f;
+          font-family: inherit;
+          font-size: 10px;
+          font-weight: 950;
+          text-align: center;
+        }
+
+        .ncsPosRemoveItem {
+          width: 30px;
+          height: 30px;
+          border-radius: 9px;
+        }
+
+        .ncsPosMobileCellLabel {
+          display: none;
+        }
+
+        .ncsPosSummary {
+          flex: 0 0 auto;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          column-gap: 16px;
+          max-height: 210px;
+          overflow-y: auto;
+          padding: 12px 14px;
+          border-top: 1px solid rgba(10, 46, 115, 0.1);
+          background: #fff;
+        }
+
+        .ncsPosDiscountField,
+        .ncsPosRoundOffField,
+        .ncsPosTotalLine {
+          grid-column: 1 / -1;
+        }
+
+        .ncsPosPaymentSection {
+          flex: 0 0 auto;
+          padding: 11px 14px 14px;
+          border-top: 1px solid rgba(10, 46, 115, 0.1);
+          background: linear-gradient(180deg, #ffffff, #f7f9fd);
+        }
+
+        .ncsPosPaymentGrid {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .ncsPosCompleteButton {
+          min-height: 58px;
+          margin-top: 10px;
+        }
+
+        @media (max-width: 1450px) {
+          .ncsPosWorkspace {
+            grid-template-columns: minmax(330px, 0.7fr) minmax(650px, 1.3fr);
+          }
+
+          .ncsPosCartTableHeader,
+          .ncsPosCartItemTableRow {
+            grid-template-columns: minmax(205px, 1.65fr) 78px 92px 118px 88px 104px 30px;
+            gap: 6px;
+          }
+        }
+
+        @media (max-width: 1180px) {
+          .ncsPosWorkspace {
+            grid-template-columns: 1fr;
+          }
+
+          .ncsPosBillPanel {
+            position: relative;
+            top: auto;
+            max-height: none;
+          }
+        }
+
+        @media (max-width: 820px) {
+          .ncsPosCartTableHeader {
+            display: none;
+          }
+
+          .ncsPosCartItems {
+            max-height: none;
+          }
+
+          .ncsPosCartItemTableRow {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 9px;
+            padding: 11px;
+          }
+
+          .ncsPosCartProductCell {
+            grid-column: 1 / -1;
+          }
+
+          .ncsPosMobileCellLabel {
+            display: block;
+            margin-bottom: 4px;
+            color: #7d8798;
+            font-size: 7px;
+            font-weight: 950;
+            letter-spacing: .05em;
+            text-transform: uppercase;
+          }
+
+          .ncsPosRemoveItem {
+            grid-column: 2;
+            justify-self: end;
+          }
+
+          .ncsPosSummary {
+            grid-template-columns: 1fr;
+            max-height: none;
+          }
+
+          .ncsPosDiscountField,
+          .ncsPosRoundOffField,
+          .ncsPosTotalLine {
+            grid-column: auto;
           }
         }
 
