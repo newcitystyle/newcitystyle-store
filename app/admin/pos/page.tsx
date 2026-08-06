@@ -4135,8 +4135,38 @@ if (!variantsError) {
        * overwrite the saved sale header and sale-item amounts with the exact
        * values currently shown in the POS before customer sync or WhatsApp.
        */
-      if (result.sale_id) {
-        const saleId = String(result.sale_id);
+      let resolvedSaleId =
+        result.sale_id ? String(result.sale_id) : "";
+
+      if (!resolvedSaleId && result.invoice_number) {
+        const { data: savedSaleRow, error: savedSaleLookupError } =
+          await supabase
+            .from("pos_sales")
+            .select("id")
+            .eq("invoice_number", result.invoice_number)
+            .maybeSingle();
+
+        if (savedSaleLookupError) {
+          throw new Error(
+            `Saved bill could not be located: ${savedSaleLookupError.message}`,
+          );
+        }
+
+        resolvedSaleId = savedSaleRow?.id
+          ? String(savedSaleRow.id)
+          : "";
+      }
+
+      if (!resolvedSaleId) {
+        throw new Error(
+          "Sale was created, but its database ID was not returned. Final negotiated price was not saved. Do not press Complete Sale again.",
+        );
+      }
+
+      result.sale_id = resolvedSaleId;
+
+      {
+        const saleId = resolvedSaleId;
         const authoritativePaidAmount =
           paymentMethod === "credit"
             ? safeCreditPaidNow
@@ -4149,7 +4179,10 @@ if (!variantsError) {
           billDiscountAmount + rewardDiscountAmount;
         const now = new Date().toISOString();
 
-        const { error: saleTotalsError } = await supabase
+        const {
+          data: updatedSaleRows,
+          error: saleTotalsError,
+        } = await supabase
           .from("pos_sales")
           .update({
             subtotal,
@@ -4162,11 +4195,18 @@ if (!variantsError) {
             payment_method: paymentMethod,
             updated_at: now,
           })
-          .eq("id", saleId);
+          .eq("id", saleId)
+          .select("id");
 
         if (saleTotalsError) {
           throw new Error(
             `Final bill amounts could not be saved: ${saleTotalsError.message}`,
+          );
+        }
+
+        if (!updatedSaleRows || updatedSaleRows.length === 0) {
+          throw new Error(
+            "Final bill amount update matched no sale row. Do not press Complete Sale again.",
           );
         }
 
@@ -4226,7 +4266,10 @@ if (!variantsError) {
             (cartItem.mrp - cartItem.price) * quantity,
           );
 
-          const { error: saleItemUpdateError } = await supabase
+          const {
+            data: updatedItemRows,
+            error: saleItemUpdateError,
+          } = await supabase
             .from("pos_sale_items")
             .update({
               unit_price: cartItem.price,
@@ -4236,13 +4279,55 @@ if (!variantsError) {
               tax_amount: taxAmountForItem,
               line_total: lineTotal,
             })
-            .eq("id", savedItem.id);
+            .eq("id", savedItem.id)
+            .select("id");
 
           if (saleItemUpdateError) {
             throw new Error(
               `Final price for ${cartItem.name} could not be saved: ${saleItemUpdateError.message}`,
             );
           }
+
+          if (!updatedItemRows || updatedItemRows.length === 0) {
+            throw new Error(
+              `Final price update matched no saved item for ${cartItem.name}.`,
+            );
+          }
+        }
+
+        const { data: verifiedSale, error: verifySaleError } =
+          await supabase
+            .from("pos_sales")
+            .select(
+              "subtotal,tax_amount,bill_discount,round_off,total_amount,paid_amount,due_amount,payment_method",
+            )
+            .eq("id", saleId)
+            .single();
+
+        if (verifySaleError) {
+          throw new Error(
+            `Final bill verification failed: ${verifySaleError.message}`,
+          );
+        }
+
+        const verifiedTotal = toNumber(verifiedSale.total_amount);
+        const verifiedPaid = toNumber(verifiedSale.paid_amount);
+        const verifiedDue = toNumber(verifiedSale.due_amount);
+
+        if (
+          Math.abs(verifiedTotal - finalPayable) > 0.01 ||
+          Math.abs(
+            verifiedPaid - authoritativePaidAmount,
+          ) > 0.01 ||
+          Math.abs(
+            verifiedDue - authoritativeDueAmount,
+          ) > 0.01
+        ) {
+          throw new Error(
+            `Final bill verification mismatch. Expected ${formatCurrency(
+              finalPayable,
+            )}, but database saved ${formatCurrency(verifiedTotal)}. Do not press Complete Sale again.`,
+          );
         }
 
         result.subtotal = subtotal;
