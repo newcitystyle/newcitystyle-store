@@ -497,6 +497,7 @@ function GroupedProductCard({
 
 export default function PosPage() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const saleSubmissionLockRef = useRef(false);
 
   const [products, setProducts] = useState<PosProduct[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
@@ -3868,7 +3869,7 @@ if (!variantsError) {
   }
 
   async function handleCompleteSale() {
-    if (isCompletingSale) {
+    if (saleSubmissionLockRef.current || isCompletingSale) {
       return;
     }
 
@@ -3938,6 +3939,7 @@ if (!variantsError) {
       return;
     }
 
+    saleSubmissionLockRef.current = true;
     setIsCompletingSale(true);
 
     try {
@@ -4233,7 +4235,6 @@ if (!variantsError) {
               tax_percent: Math.max(0, cartItem.taxPercent),
               tax_amount: taxAmountForItem,
               line_total: lineTotal,
-              updated_at: now,
             })
             .eq("id", savedItem.id);
 
@@ -4598,6 +4599,7 @@ if (!variantsError) {
 
       await loadProducts();
     } finally {
+      saleSubmissionLockRef.current = false;
       setIsCompletingSale(false);
     }
   }
