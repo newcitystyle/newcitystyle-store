@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
@@ -417,6 +418,11 @@ export default function PurchasesPage() {
   >("info");
   const [successPurchase, setSuccessPurchase] =
     useState<PurchaseResult | null>(null);
+  const intelligencePrefillAppliedRef = useRef(false);
+  const [intelligencePrefill, setIntelligencePrefill] =
+    useState<ProductOption | null>(null);
+  const [intelligenceSuggestedQuantity, setIntelligenceSuggestedQuantity] =
+    useState(0);
 
   const showNotice = useCallback(
     (
@@ -831,6 +837,123 @@ export default function PurchasesPage() {
     refreshPendingOfflineCount,
     showNotice,
   ]);
+
+  useEffect(() => {
+    if (
+      intelligencePrefillAppliedRef.current ||
+      products.length === 0 ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const source = params.get("source");
+
+    if (source !== "stock-intelligence") {
+      return;
+    }
+
+    const productId = Number(params.get("productId"));
+    const variantIdRaw = params.get("variantId");
+    const variantId =
+      variantIdRaw && variantIdRaw !== "null"
+        ? Number(variantIdRaw)
+        : null;
+    const suggestedQuantity = Math.max(
+      1,
+      Math.floor(Number(params.get("quantity") || 1)),
+    );
+
+    if (!Number.isFinite(productId) || productId <= 0) {
+      intelligencePrefillAppliedRef.current = true;
+      showNotice(
+        "Stock Intelligence reorder details are incomplete.",
+        "error",
+      );
+      return;
+    }
+
+    const matchedProduct =
+      products.find(
+        (product) =>
+          product.productId === productId &&
+          (variantId === null || product.variantId === variantId),
+      ) ||
+      products.find((product) => product.productId === productId);
+
+    intelligencePrefillAppliedRef.current = true;
+
+    if (!matchedProduct) {
+      showNotice(
+        "Recommended product is not available in the current purchase catalogue.",
+        "error",
+      );
+      return;
+    }
+
+    const prefilledItem: PurchaseItem = {
+      rowId: newId("item"),
+      productId: matchedProduct.productId,
+      variantId: matchedProduct.variantId,
+      productName: matchedProduct.name,
+      category: matchedProduct.category,
+      subcategory: matchedProduct.subcategory,
+      brand: matchedProduct.brand,
+      size: matchedProduct.size,
+      color: matchedProduct.color,
+      sku: matchedProduct.sku,
+      barcode: matchedProduct.barcode,
+      barcodeMode:
+        matchedProduct.variantId !== null ||
+        Boolean(matchedProduct.size) ||
+        Boolean(matchedProduct.color)
+          ? "variant"
+          : "bulk",
+      quantity: suggestedQuantity,
+      purchasePrice: matchedProduct.purchasePrice,
+      purchaseDiscount: 0,
+      mrp: matchedProduct.mrp,
+      taxPercent: matchedProduct.taxPercent,
+      cessPercent: matchedProduct.cessPercent,
+      sellOnline: false,
+      onlineQuantity: 0,
+      onlineSellingPrice: matchedProduct.onlineSellingPrice,
+      currentStock: matchedProduct.stock,
+      designCode:
+        matchedProduct.designCode || createAutoDesignCode(),
+    };
+
+    setItems([prefilledItem]);
+    setProductSearch("");
+    setActiveProductRowId(null);
+    setIntelligencePrefill(matchedProduct);
+    setIntelligenceSuggestedQuantity(suggestedQuantity);
+    setNotes((current) =>
+      current.trim()
+        ? current
+        : `Stock Intelligence reorder • ${matchedProduct.name}${
+            matchedProduct.size
+              ? ` • Size ${matchedProduct.size}`
+              : ""
+          }${
+            matchedProduct.color
+              ? ` • ${matchedProduct.color}`
+              : ""
+          } • Suggested ${suggestedQuantity}`,
+    );
+
+    showNotice(
+      `${matchedProduct.name} prefilled from Stock Intelligence.`,
+      "success",
+    );
+
+    window.setTimeout(() => {
+      document
+        .getElementById("ncs-purchase-items-section")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 250);
+  }, [products, showNotice]);
 
   const filteredSuppliers = useMemo(() => {
     const query = normalizeText(supplierSearch);
@@ -1764,6 +1887,50 @@ export default function PurchasesPage() {
         </div>
       )}
 
+      {intelligencePrefill && (
+        <section className="ncsIntelligencePrefillBanner">
+          <div className="ncsIntelligencePrefillIcon">🧠</div>
+
+          <div className="ncsIntelligencePrefillText">
+            <span>STOCK INTELLIGENCE REORDER</span>
+            <strong>{intelligencePrefill.name}</strong>
+            <p>
+              {intelligencePrefill.brand || "NEW CITY STYLE"}
+              {intelligencePrefill.size
+                ? ` • Size ${intelligencePrefill.size}`
+                : ""}
+              {intelligencePrefill.color
+                ? ` • ${intelligencePrefill.color}`
+                : ""}
+              {" • "}Current stock {intelligencePrefill.stock}
+              {" • "}Suggested quantity {intelligenceSuggestedQuantity}
+            </p>
+          </div>
+
+          <div className="ncsIntelligencePrefillActions">
+            <a href="/admin/stock-intelligence">
+              ← Back to Intelligence
+            </a>
+            <button
+              type="button"
+              onClick={() => {
+                setIntelligencePrefill(null);
+                setIntelligenceSuggestedQuantity(0);
+                setItems([createBlankItem()]);
+                setNotes("");
+                window.history.replaceState(
+                  {},
+                  "",
+                  "/admin/purchases",
+                );
+              }}
+            >
+              Clear Recommendation
+            </button>
+          </div>
+        </section>
+      )}
+
       <section className="ncsHero">
         <div>
           <span>NEW CITY STYLE • PURCHASE MANAGEMENT</span>
@@ -2035,7 +2202,7 @@ export default function PurchasesPage() {
             </div>
           </article>
 
-          <article className="ncsCard">
+          <article className="ncsCard" id="ncs-purchase-items-section">
             <header className="ncsCardHeader">
               <div>
                 <span>STEP 2</span>
@@ -4745,6 +4912,170 @@ export default function PurchasesPage() {
             grid-template-columns: 1fr 1fr;
           }
         }
+
+        .ncsIntelligencePrefillBanner {
+          position: relative;
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 15px;
+          margin: 16px 0;
+          padding: 16px 18px;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.72);
+          border-radius: 18px;
+          background:
+            radial-gradient(
+              circle at 88% 12%,
+              rgba(212, 175, 55, 0.2),
+              transparent 25%
+            ),
+            linear-gradient(135deg, #03153f, #0a2e73 65%, #174fa8);
+          color: #ffffff;
+          box-shadow:
+            0 16px 35px rgba(3, 21, 63, 0.2),
+            inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        }
+
+        .ncsIntelligencePrefillBanner::after {
+          content: "";
+          position: absolute;
+          top: -140%;
+          left: -25%;
+          width: 30%;
+          height: 380%;
+          transform: rotate(24deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.32),
+            transparent
+          );
+          animation: ncsIntelligenceBannerShine 5.5s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .ncsIntelligencePrefillIcon {
+          position: relative;
+          z-index: 2;
+          width: 50px;
+          height: 50px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(241, 213, 110, 0.7);
+          border-radius: 15px;
+          background: rgba(212, 175, 55, 0.13);
+          font-size: 23px;
+          box-shadow: 0 0 22px rgba(212, 175, 55, 0.16);
+        }
+
+        .ncsIntelligencePrefillText {
+          position: relative;
+          z-index: 2;
+          min-width: 0;
+        }
+
+        .ncsIntelligencePrefillText span,
+        .ncsIntelligencePrefillText strong,
+        .ncsIntelligencePrefillText p {
+          display: block;
+        }
+
+        .ncsIntelligencePrefillText span {
+          color: #f1d56e;
+          font-size: 9px;
+          font-weight: 950;
+          letter-spacing: 0.9px;
+        }
+
+        .ncsIntelligencePrefillText strong {
+          margin-top: 4px;
+          color: #ffffff;
+          font-size: 16px;
+          font-weight: 950;
+        }
+
+        .ncsIntelligencePrefillText p {
+          margin: 4px 0 0;
+          color: rgba(255, 255, 255, 0.72);
+          font-size: 10px;
+          font-weight: 700;
+        }
+
+        .ncsIntelligencePrefillActions {
+          position: relative;
+          z-index: 2;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .ncsIntelligencePrefillActions a,
+        .ncsIntelligencePrefillActions button {
+          min-height: 38px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 12px;
+          border-radius: 10px;
+          font: inherit;
+          font-size: 9px;
+          font-weight: 900;
+          text-decoration: none;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+
+        .ncsIntelligencePrefillActions a {
+          border: 1px solid #f1d56e;
+          background: linear-gradient(135deg, #d4af37, #f1d56e);
+          color: #061d4a;
+        }
+
+        .ncsIntelligencePrefillActions button {
+          border: 1px solid rgba(255, 255, 255, 0.24);
+          background: rgba(255, 255, 255, 0.08);
+          color: #ffffff;
+        }
+
+        @keyframes ncsIntelligenceBannerShine {
+          0%,
+          68% {
+            left: -30%;
+            opacity: 0;
+          }
+          76% {
+            opacity: 1;
+          }
+          90%,
+          100% {
+            left: 125%;
+            opacity: 0;
+          }
+        }
+
+        @media (max-width: 780px) {
+          .ncsIntelligencePrefillBanner {
+            grid-template-columns: auto minmax(0, 1fr);
+          }
+
+          .ncsIntelligencePrefillActions {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .ncsIntelligencePrefillBanner {
+            padding: 14px;
+          }
+
+          .ncsIntelligencePrefillActions {
+            grid-template-columns: 1fr;
+          }
+        }
+
       `}</style>
     </main>
   );
