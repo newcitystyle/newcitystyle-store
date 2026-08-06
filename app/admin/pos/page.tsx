@@ -11057,7 +11057,95 @@ if (!variantsError) {
           }
         }
 
-      `}</style>
+        /* FINAL FULL BILL VIEW: no internal bill/summary scroll */
+        @media (min-width: 1081px) {
+          .ncsPosBillPanel {
+            position: static !important;
+            top: auto !important;
+            max-height: none !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+
+          .ncsPosCustomerCard,
+          .ncsPosCartTableHeader,
+          .ncsPosSummary,
+          .ncsPosPaymentSection {
+            flex-shrink: 0 !important;
+          }
+
+          .ncsPosCartItems {
+            flex: none !important;
+            min-height: 110px !important;
+            max-height: none !important;
+            height: auto !important;
+            overflow-x: auto !important;
+            overflow-y: visible !important;
+          }
+
+          .ncsPosSummary {
+            display: grid !important;
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            max-height: none !important;
+            height: auto !important;
+            overflow: visible !important;
+            padding: 16px !important;
+            gap: 10px !important;
+          }
+
+          .ncsPosDiscountField,
+          .ncsPosRoundOffField {
+            grid-column: span 2 !important;
+            min-height: 56px !important;
+          }
+
+          .ncsPosSummaryLine {
+            min-height: 56px !important;
+            padding: 10px 12px !important;
+          }
+
+          .ncsPosRoundOffLine,
+          .ncsPosRewardDiscountLine,
+          .ncsPosDiscountLine {
+            display: flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+          }
+
+          .ncsPosTotalLine {
+            grid-column: 1 / -1 !important;
+            min-height: 88px !important;
+            margin-top: 4px !important;
+          }
+
+          .ncsPosPaymentSection {
+            position: static !important;
+            overflow: visible !important;
+            padding: 14px 16px 18px !important;
+          }
+
+          .ncsPosWorkspace {
+            align-items: start !important;
+          }
+        }
+
+        @media (min-width: 1081px) and (max-height: 850px) {
+          .ncsPosBillPanel,
+          .ncsPosCartItems,
+          .ncsPosSummary,
+          .ncsPosPaymentSection {
+            max-height: none !important;
+            overflow-y: visible !important;
+          }
+
+          .ncsPosCartItems {
+            flex: none !important;
+            min-height: 110px !important;
+            height: auto !important;
+          }
+        }
+      `}
+</style>
     </main>
   );
 }
