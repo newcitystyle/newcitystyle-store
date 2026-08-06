@@ -116,28 +116,26 @@ export default function StockIntelligencePage() {
     setErrorText("");
 
     try {
-      const schema = supabase.schema("ncs_intelligence");
-
       const [summaryResult, variantsResult, sizeResult, colourResult, brandResult] =
         await Promise.all([
-          schema.from("owner_summary_v2").select("*").maybeSingle(),
-          schema
-            .from("variant_intelligence_v2")
+          supabase.from("ncs_owner_summary_v2").select("*").maybeSingle(),
+          supabase
+            .from("ncs_variant_intelligence_v2")
             .select("*")
             .order("fast_moving_score", { ascending: false })
             .limit(500),
-          schema
-            .from("size_demand")
+          supabase
+            .from("ncs_size_demand")
             .select("*")
             .order("demand_share_percent", { ascending: false })
             .limit(30),
-          schema
-            .from("colour_demand")
+          supabase
+            .from("ncs_colour_demand")
             .select("*")
             .order("demand_share_percent", { ascending: false })
             .limit(30),
-          schema
-            .from("brand_performance")
+          supabase
+            .from("ncs_brand_performance")
             .select("*")
             .order("revenue_30d", { ascending: false })
             .limit(30),

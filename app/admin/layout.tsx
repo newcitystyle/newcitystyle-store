@@ -88,6 +88,11 @@ const menuItems = [
     icon: "▥",
   },
   {
+    label: "Stock Intelligence",
+    href: "/admin/stock-intelligence",
+    icon: "🧠",
+  },
+  {
     label: "Low Stock Report",
     href: "/admin/low-stock-report",
     icon: "⚠️",
