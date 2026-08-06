@@ -1972,12 +1972,14 @@ if (!variantsError) {
         category: item.category || "Others",
         subcategory: null,
         brand: "NEW CITY STYLE",
-        price: item.price,
-        mrp: Math.max(item.mrp, item.price),
+        price: Math.round(item.price),
+        mrp: Math.round(Math.max(item.mrp, item.price)),
         stock: totalStock,
         sku: quickSku,
         barcode: null,
-        tax_percent: item.taxPercent,
+        tax_percent: Number(
+          Math.max(0, item.taxPercent).toFixed(2),
+        ),
         is_active: item.quickSaveAsProduct === true,
         status:
           item.quickSaveAsProduct === true
@@ -2005,12 +2007,14 @@ if (!variantsError) {
         color: null,
         sku: quickSku,
         barcode: null,
-        purchase_price: Math.max(
-          0,
-          toNumber(item.quickPurchasePrice),
+        purchase_price: Math.round(
+          Math.max(
+            0,
+            toNumber(item.quickPurchasePrice),
+          ),
         ),
-        selling_price: item.price,
-        mrp: Math.max(item.mrp, item.price),
+        selling_price: Math.round(item.price),
+        mrp: Math.round(Math.max(item.mrp, item.price)),
         stock: totalStock,
         reserved_stock: 0,
         low_stock_limit: 0,
