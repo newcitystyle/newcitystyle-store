@@ -701,7 +701,7 @@ export default function BarcodesPage() {
   }
 
   function printItems(selectedItems: BarcodeItem[], copyCount: number) {
-    const printableItems = selectedItems.filter((item) => item.barcode);
+    const printableItems = selectedItems.filter((item) => item.barcode.trim());
 
     if (printableItems.length === 0) {
       setNotice("Select at least one item with a barcode.");
@@ -716,6 +716,7 @@ export default function BarcodesPage() {
         pageHeight: number;
         labelWidth: number;
         columns: number;
+        gap: number;
       }
     > = {
       "38x25": {
@@ -723,45 +724,65 @@ export default function BarcodesPage() {
         pageHeight: 25,
         labelWidth: 38,
         columns: 1,
+        gap: 0,
       },
       "50x25": {
         pageWidth: 50,
         pageHeight: 25,
         labelWidth: 50,
         columns: 1,
+        gap: 0,
       },
       "50x30": {
         pageWidth: 50,
         pageHeight: 30,
         labelWidth: 50,
         columns: 1,
+        gap: 0,
       },
       "60x40": {
         pageWidth: 60,
         pageHeight: 40,
         labelWidth: 60,
         columns: 1,
+        gap: 0,
       },
       "tsc-te244-2up": {
         pageWidth: 100,
         pageHeight: 30,
         labelWidth: 49,
         columns: 2,
+        gap: 2,
       },
     };
 
     const selectedSize =
       labelSizes[labelSize] || labelSizes["tsc-te244-2up"];
-    const safeCopies = Math.max(1, Math.min(500, Math.floor(copyCount)));
 
-    const labelList = printableItems.flatMap((item) =>
-      Array.from({ length: safeCopies }, () => {
+    const safeCopies = Math.max(
+      1,
+      Math.min(500, Math.floor(copyCount || 1)),
+    );
+
+    /*
+     * Build the exact physical label queue first.
+     * Example:
+     * 2 selected rows × 1 copy = 2 physical labels.
+     * 3 selected rows × 2 copies = 6 physical labels.
+     *
+     * Keeping a flat queue avoids browser/React selection-order surprises.
+     */
+    const physicalLabels: string[] = [];
+
+    printableItems.forEach((item) => {
+      for (let copyIndex = 0; copyIndex < safeCopies; copyIndex += 1) {
         const variantText = [item.size, item.color]
           .filter(Boolean)
           .join(" • ");
+
         const svg = buildBarcodeSvg(item.barcode);
 
-        return `
+        physicalLabels.push(`
           <div class="label">
             <p class="store">NEW CITY STYLE</p>
             <p class="product">${escapeHtml(item.name)}</p>
@@ -779,33 +800,35 @@ export default function BarcodesPage() {
               }
             </div>
           </div>
-        `;
-      }),
-    );
+        `);
+      }
+    });
 
-    const sheets: string[] = [];
+    const pages: string[] = [];
 
     for (
       let index = 0;
-      index < labelList.length;
+      index < physicalLabels.length;
       index += selectedSize.columns
     ) {
-      const rowLabels = labelList.slice(
+      const pageLabels = physicalLabels.slice(
         index,
         index + selectedSize.columns,
       );
 
-      while (rowLabels.length < selectedSize.columns) {
-        rowLabels.push('<div class="label emptyLabel"></div>');
+      while (pageLabels.length < selectedSize.columns) {
+        pageLabels.push('<div class="label emptyLabel"></div>');
       }
 
-      sheets.push(`<div class="sheet">${rowLabels.join("")}</div>`);
+      pages.push(
+        `<section class="printPage">${pageLabels.join("")}</section>`,
+      );
     }
 
     const printWindow = window.open(
       "",
       "_blank",
-      "width=760,height=760",
+      "width=900,height=760",
     );
 
     if (!printWindow) {
@@ -814,10 +837,14 @@ export default function BarcodesPage() {
       return;
     }
 
+    const totalPhysicalLabels = physicalLabels.length;
+
+    printWindow.document.open();
     printWindow.document.write(`
       <!doctype html>
       <html>
         <head>
+          <meta charset="utf-8" />
           <title>NEW CITY STYLE Barcodes</title>
           <style>
             @page {
@@ -825,51 +852,74 @@ export default function BarcodesPage() {
               margin: 0;
             }
 
-            * { box-sizing: border-box; }
-
-            html, body {
-              margin: 0;
-              padding: 0;
-              background: #fff;
-              font-family: Arial, sans-serif;
+            * {
+              box-sizing: border-box;
             }
 
-            .sheet {
+            html,
+            body {
+              margin: 0 !important;
+              padding: 0 !important;
+              width: ${selectedSize.pageWidth}mm;
+              background: #ffffff;
+              font-family: Arial, Helvetica, sans-serif;
+            }
+
+            .printPage {
               width: ${selectedSize.pageWidth}mm;
               height: ${selectedSize.pageHeight}mm;
-              display: flex;
-              align-items: stretch;
-              gap: ${selectedSize.columns === 2 ? 2 : 0}mm;
+              display: grid;
+              grid-template-columns: repeat(
+                ${selectedSize.columns},
+                ${selectedSize.labelWidth}mm
+              );
+              grid-template-rows: ${selectedSize.pageHeight}mm;
+              column-gap: ${selectedSize.gap}mm;
+              row-gap: 0;
+              margin: 0;
+              padding: 0;
               overflow: hidden;
-              page-break-after: always;
               break-after: page;
+              page-break-after: always;
+              break-inside: avoid;
+              page-break-inside: avoid;
             }
 
-            .sheet:last-child {
-              page-break-after: auto;
+            .printPage:last-child {
               break-after: auto;
+              page-break-after: auto;
             }
 
             .label {
               width: ${selectedSize.labelWidth}mm;
               height: ${selectedSize.pageHeight}mm;
+              min-width: ${selectedSize.labelWidth}mm;
+              max-width: ${selectedSize.labelWidth}mm;
+              min-height: ${selectedSize.pageHeight}mm;
+              max-height: ${selectedSize.pageHeight}mm;
               display: flex;
-              flex: 0 0 ${selectedSize.labelWidth}mm;
               flex-direction: column;
               align-items: center;
               justify-content: center;
+              margin: 0;
               padding: 0.7mm 1mm;
               overflow: hidden;
               text-align: center;
+              break-inside: avoid;
+              page-break-inside: avoid;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
             }
 
-            .emptyLabel { visibility: hidden; }
+            .emptyLabel {
+              visibility: hidden;
+            }
 
             .store {
-              margin: 0 0 .25mm;
+              margin: 0 0 0.25mm;
               font-size: 8px;
               font-weight: 900;
-              letter-spacing: .7px;
+              letter-spacing: 0.7px;
             }
 
             .product {
@@ -884,17 +934,19 @@ export default function BarcodesPage() {
             }
 
             .variant {
-              margin: .2mm 0 0;
-              padding: .3mm 1mm;
+              margin: 0.2mm 0 0;
+              padding: 0.3mm 1mm;
               border: 1px solid #000;
               border-radius: 1mm;
               font-size: 7px;
               font-weight: 900;
+              line-height: 1;
             }
 
             .barcode {
               width: 100%;
-              margin-top: .15mm;
+              margin-top: 0.15mm;
+              overflow: hidden;
             }
 
             .barcode svg {
@@ -921,36 +973,73 @@ export default function BarcodesPage() {
               display: flex;
               align-items: center;
               justify-content: center;
-              margin-top: .1mm;
-              padding-bottom: .4mm;
+              margin-top: 0.1mm;
+              padding-bottom: 0.4mm;
               font-size: 11px;
               font-weight: 950;
               line-height: 1;
               white-space: nowrap;
             }
+
+            @media screen {
+              body::before {
+                content: "${totalPhysicalLabels} label(s) ready • ${selectedSize.columns}-up layout";
+                display: block;
+                padding: 8px 10px;
+                background: #0A2E73;
+                color: white;
+                font: 700 12px Arial, sans-serif;
+              }
+
+              .printPage {
+                outline: 1px dashed #bbbbbb;
+              }
+            }
+
+            @media print {
+              body::before {
+                display: none !important;
+                content: none !important;
+              }
+            }
           </style>
         </head>
+
         <body>
-          ${sheets.join("")}
+          ${pages.join("")}
+
           <script>
-            window.onload = function () {
-              window.print();
+            window.addEventListener("load", function () {
+              requestAnimationFrame(function () {
+                requestAnimationFrame(function () {
+                  setTimeout(function () {
+                    window.focus();
+                    window.print();
+                  }, 180);
+                });
+              });
+
               window.onafterprint = function () {
                 window.close();
               };
-            };
+            });
           </script>
         </body>
       </html>
     `);
 
     printWindow.document.close();
+
+    setNotice(
+      `${totalPhysicalLabels} barcode label(s) prepared for printing.`,
+    );
+    window.setTimeout(() => setNotice(""), 3000);
   }
 
   function printSelected() {
-    const selectedItems = currentItems.filter((item) =>
-      selectedKeys.includes(item.key),
-    );
+    const selectedItems = selectedKeys
+      .map((key) => currentItems.find((item) => item.key === key))
+      .filter((item): item is BarcodeItem => Boolean(item));
 
     printItems(selectedItems, copies);
   }
