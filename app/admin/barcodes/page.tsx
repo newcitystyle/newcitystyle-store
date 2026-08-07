@@ -592,6 +592,33 @@ export default function BarcodesPage() {
     filteredItems.length > 0 &&
     filteredItems.every((item) => selectedKeys.includes(item.key));
 
+  const selectedLabelCount = useMemo(() => {
+    const selectedItems = selectedKeys
+      .map((key) => currentItems.find((item) => item.key === key))
+      .filter((item): item is BarcodeItem => Boolean(item));
+
+    if (viewMode === "purchases") {
+      return selectedItems.reduce(
+        (total, item) =>
+          total +
+          Math.max(
+            1,
+            item.availableQuantity ||
+              item.purchaseQuantity ||
+              1,
+          ),
+        0,
+      );
+    }
+
+    const safeCopies = Math.max(
+      1,
+      Math.min(500, Math.floor(copies || 1)),
+    );
+
+    return selectedItems.length * safeCopies;
+  }, [selectedKeys, currentItems, viewMode, copies]);
+
   const statistics = useMemo(
     () => ({
       purchaseBatches: purchaseItems.length,
@@ -1263,9 +1290,19 @@ export default function BarcodesPage() {
             onClick={printSelected}
             disabled={selectedKeys.length === 0}
           >
-            🖨 Print Selected ({selectedKeys.length})
+            🖨 Print Selected — {selectedLabelCount} Label{selectedLabelCount === 1 ? "" : "s"}
           </button>
         </div>
+
+        {selectedKeys.length > 0 && (
+          <div className="selectedPrintHint">
+            <strong>{selectedKeys.length} row{selectedKeys.length === 1 ? "" : "s"} selected</strong>
+            <span>
+              Total stickers ready: {selectedLabelCount}. Use the blue
+              “Print Selected” button to print all selected quantities together.
+            </span>
+          </div>
+        )}
 
         {loading ? (
           <div className="loadingState">
@@ -1407,7 +1444,7 @@ export default function BarcodesPage() {
                         onClick={() => printSingle(item)}
                         disabled={!item.barcode}
                       >
-                        🖨 Print{" "}
+                        🖨 Print This Item{" "}
                         {viewMode === "purchases"
                           ? `(${Math.max(
                               1,
@@ -1803,6 +1840,30 @@ export default function BarcodesPage() {
         button:disabled {
           opacity: 0.5;
           cursor: not-allowed;
+        }
+
+        .selectedPrintHint {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          padding: 10px 15px;
+          border-bottom: 1px solid #edf0f4;
+          background: #eef4ff;
+          color: #0A2E73;
+          font-size: 9px;
+        }
+
+        .selectedPrintHint strong {
+          font-size: 10px;
+          font-weight: 950;
+          white-space: nowrap;
+        }
+
+        .selectedPrintHint span {
+          color: #475467;
+          font-weight: 750;
+          text-align: right;
         }
 
         .selectAll {
