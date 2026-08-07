@@ -250,6 +250,7 @@ export default function EditProductPage() {
   }>>([]);
 
   const [form, setForm] = useState<ProductForm>(initialForm);
+  const [originalBrand, setOriginalBrand] = useState("");
   const [collections, setCollections] = useState<CollectionOption[]>([]);
 
   const [saving, setSaving] = useState(false);
@@ -364,6 +365,13 @@ export default function EditProductPage() {
       if (error) throw error;
 
       const row = data as Record<string, unknown>;
+
+      const loadedBrand =
+        normalizeBrandName(asString(row.brand)) ||
+        "NEW CITY STYLE";
+
+      setOriginalBrand(loadedBrand);
+
       const existingSpecs = asSpecifications(row.technical_specifications);
       const existingFaqs = asFaqs(row.faqs);
       const sellOnline = row.sell_online === true;
@@ -429,7 +437,7 @@ export default function EditProductPage() {
         category: asString(row.category),
         subcategory: asString(row.subcategory),
         collectionId: row.collection_id ? String(row.collection_id) : "",
-        brand: asString(row.brand) || "NEW CITY STYLE",
+        brand: loadedBrand,
         gender: asString(row.gender),
         ageGroup: asString(row.age_group),
         shortDescription: asString(row.short_description),
@@ -505,6 +513,13 @@ export default function EditProductPage() {
       .replace(/['"]/g, "")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
+  }
+
+  function normalizeBrandName(value: string) {
+    return value
+      .trim()
+      .replace(/\s+/g, " ")
+      .toUpperCase();
   }
 
   function setField<K extends keyof ProductForm>(
@@ -1133,7 +1148,7 @@ export default function EditProductPage() {
       category: form.category.trim() || null,
       subcategory: form.subcategory.trim() || null,
       collection_id: form.collectionId ? Number(form.collectionId) : null,
-      brand: form.brand.trim() || null,
+      brand: normalizeBrandName(form.brand) || null,
       gender: form.gender || null,
       age_group: form.ageGroup || null,
       mrp: getOptionalNumber(form.mrp, 0),
@@ -1191,6 +1206,29 @@ export default function EditProductPage() {
     };
 
     try {
+      const normalizedNewBrand =
+        normalizeBrandName(form.brand);
+      const normalizedOldBrand =
+        normalizeBrandName(originalBrand);
+
+      if (
+        normalizedOldBrand &&
+        normalizedNewBrand &&
+        normalizedOldBrand !== normalizedNewBrand
+      ) {
+        const { error: brandRenameError } =
+          await supabase.rpc("ncs_rename_brand_v1", {
+            p_old_brand: normalizedOldBrand,
+            p_new_brand: normalizedNewBrand,
+          });
+
+        if (brandRenameError) {
+          throw new Error(
+            `Brand rename failed: ${brandRenameError.message}`,
+          );
+        }
+      }
+
       const { error } = await supabase
         .from("products")
         .update(productData)
@@ -1249,6 +1287,10 @@ export default function EditProductPage() {
           return;
         }
       }
+
+      setOriginalBrand(
+        normalizeBrandName(form.brand),
+      );
 
       alert(
         form.sellOnline
@@ -1481,9 +1523,26 @@ export default function EditProductPage() {
                       onChange={(event) =>
                         setField("brand", event.target.value)
                       }
+                      onBlur={() =>
+                        setField(
+                          "brand",
+                          normalizeBrandName(form.brand),
+                        )
+                      }
                       placeholder="NEW CITY STYLE"
                       style={inputStyle}
                     />
+                    <small
+                      style={{
+                        display: "block",
+                        marginTop: "7px",
+                        color: "#667085",
+                        fontSize: "12px",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Changing this brand name updates every product using the old brand name.
+                    </small>
                   </Field>
 
                   <Field label="Gender">

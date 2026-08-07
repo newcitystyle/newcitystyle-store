@@ -8,6 +8,7 @@ const ADMIN_EMAIL = "badri.nsv@gmail.com";
 const OFFLINE_PIN_HASH_KEY = "ncs_offline_pos_pin_hash_v1";
 const OFFLINE_PIN_SALT_KEY = "ncs_offline_pos_pin_salt_v1";
 const OFFLINE_POS_SESSION_KEY = "ncs_offline_pos_session_v1";
+const CANONICAL_PRODUCTION_HOST = "www.newcitystyle.store";
 
 function isBrowserOnline() {
   return typeof navigator === "undefined" ? true : navigator.onLine;
@@ -34,10 +35,61 @@ function createOfflinePinSalt() {
 function hasOfflinePinConfigured() {
   if (typeof window === "undefined") return false;
 
-  return Boolean(
-    window.localStorage.getItem(OFFLINE_PIN_HASH_KEY) &&
-      window.localStorage.getItem(OFFLINE_PIN_SALT_KEY),
-  );
+  try {
+    return Boolean(
+      window.localStorage.getItem(OFFLINE_PIN_HASH_KEY) &&
+        window.localStorage.getItem(OFFLINE_PIN_SALT_KEY),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function enforceCanonicalProductionOrigin() {
+  if (typeof window === "undefined") return false;
+
+  const { hostname, protocol, pathname, search, hash } =
+    window.location;
+
+  if (
+    protocol === "https:" &&
+    hostname === "newcitystyle.store"
+  ) {
+    window.location.replace(
+      `https://${CANONICAL_PRODUCTION_HOST}${pathname}${search}${hash}`,
+    );
+    return true;
+  }
+
+  return false;
+}
+
+async function cacheOfflineShellNow() {
+  if (
+    typeof window === "undefined" ||
+    !("serviceWorker" in navigator)
+  ) {
+    return;
+  }
+
+  try {
+    const registration =
+      await navigator.serviceWorker.ready;
+
+    const worker =
+      registration.active ||
+      registration.waiting ||
+      registration.installing;
+
+    worker?.postMessage({
+      type: "CACHE_OFFLINE_SHELL_NOW",
+    });
+  } catch (error) {
+    console.info(
+      "Offline shell cache request was not completed:",
+      error,
+    );
+  }
 }
 
 export default function AdminLoginPage() {
@@ -57,6 +109,10 @@ export default function AdminLoginPage() {
   const [offlineUnlocking, setOfflineUnlocking] = useState(false);
 
   useEffect(() => {
+    if (enforceCanonicalProductionOrigin()) {
+      return;
+    }
+
     const updateNetworkState = () => {
       setIsOnline(isBrowserOnline());
       setOfflinePinConfigured(hasOfflinePinConfigured());
@@ -84,6 +140,20 @@ export default function AdminLoginPage() {
         session?.user?.email?.trim().toLowerCase() || "";
 
       if (session?.user && sessionEmail === ADMIN_EMAIL) {
+        if (isBrowserOnline()) {
+          const pinReady =
+            await ensureOfflinePinConfigured();
+
+          if (!pinReady) {
+            setErrorMessage(
+              "Create the Offline POS PIN once to finish trusted-computer setup.",
+            );
+            return;
+          }
+
+          await cacheOfflineShellNow();
+        }
+
         router.replace("/admin/dashboard");
         return;
       }
@@ -100,23 +170,23 @@ export default function AdminLoginPage() {
     }
   }
 
-  async function ensureOfflinePinConfigured() {
+  async function ensureOfflinePinConfigured(): Promise<boolean> {
     if (hasOfflinePinConfigured()) {
       setOfflinePinConfigured(true);
-      return;
+      return true;
     }
 
     const firstPin = window.prompt(
       "Create a 4 to 6 digit Offline POS PIN for this trusted shop computer.",
     );
 
-    if (firstPin === null) return;
+    if (firstPin === null) return false;
 
     const cleanPin = firstPin.trim();
 
     if (!/^\d{4,6}$/.test(cleanPin)) {
       alert("Offline POS PIN must contain 4 to 6 digits.");
-      return;
+      return false;
     }
 
     const confirmPin = window.prompt(
@@ -125,19 +195,50 @@ export default function AdminLoginPage() {
 
     if (confirmPin?.trim() !== cleanPin) {
       alert("Offline POS PIN confirmation did not match.");
-      return;
+      return false;
     }
 
     const salt = createOfflinePinSalt();
     const hash = await hashOfflinePin(cleanPin, salt);
 
-    window.localStorage.setItem(OFFLINE_PIN_SALT_KEY, salt);
-    window.localStorage.setItem(OFFLINE_PIN_HASH_KEY, hash);
+    try {
+      window.localStorage.setItem(
+        OFFLINE_PIN_SALT_KEY,
+        salt,
+      );
+      window.localStorage.setItem(
+        OFFLINE_PIN_HASH_KEY,
+        hash,
+      );
+
+      const savedSalt =
+        window.localStorage.getItem(
+          OFFLINE_PIN_SALT_KEY,
+        );
+      const savedHash =
+        window.localStorage.getItem(
+          OFFLINE_PIN_HASH_KEY,
+        );
+
+      if (savedSalt !== salt || savedHash !== hash) {
+        throw new Error(
+          "Browser did not preserve Offline PIN storage.",
+        );
+      }
+    } catch {
+      alert(
+        "Offline PIN could not be saved. Use the normal browser window, allow site storage, and do not use Incognito mode.",
+      );
+      return false;
+    }
+
     setOfflinePinConfigured(true);
 
     alert(
-      "Offline POS PIN saved on this computer. Keep this device and PIN secure.",
+      "Offline POS PIN saved permanently on this trusted computer.",
     );
+
+    return true;
   }
 
   async function handleOfflineUnlock(
@@ -271,8 +372,21 @@ export default function AdminLoginPage() {
         );
       }
 
-      await ensureOfflinePinConfigured();
-      window.sessionStorage.removeItem(OFFLINE_POS_SESSION_KEY);
+      const pinReady =
+        await ensureOfflinePinConfigured();
+
+      if (!pinReady) {
+        setErrorMessage(
+          "Offline POS PIN setup was not completed. Create it once so billing can open without internet.",
+        );
+        return;
+      }
+
+      await cacheOfflineShellNow();
+
+      window.sessionStorage.removeItem(
+        OFFLINE_POS_SESSION_KEY,
+      );
       window.location.replace("/admin/dashboard");
     } catch (error) {
       console.error("Admin password login error:", error);

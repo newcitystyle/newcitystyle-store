@@ -1,10 +1,10 @@
-const NCS_CACHE_VERSION = "ncs-pos-pwa-v2-rsc-safe";
+const NCS_CACHE_VERSION = "ncs-pos-pwa-v3-offline-startup";
 const NCS_STATIC_CACHE = `${NCS_CACHE_VERSION}-static`;
 const NCS_PAGE_CACHE = `${NCS_CACHE_VERSION}-pages`;
 
 const PRECACHE_URLS = [
   "/",
-  "/admin/pos",
+  "/admin/login",
   "/manifest.webmanifest",
 ];
 
@@ -82,13 +82,57 @@ async function fetchHtmlNavigation(request) {
   return response;
 }
 
-async function cacheHtmlPage(cache, key, response) {
-  if (
-    response.ok &&
-    isHtmlResponse(response)
-  ) {
-    await cache.put(key, response.clone());
+async function cacheHtmlPage(
+  cache,
+  key,
+  response,
+  expectedPath,
+) {
+  if (!response.ok || !isHtmlResponse(response)) {
+    return false;
   }
+
+  if (expectedPath) {
+    const finalUrl = new URL(
+      response.url,
+      self.location.origin,
+    );
+
+    if (
+      response.redirected ||
+      finalUrl.pathname !== expectedPath
+    ) {
+      return false;
+    }
+  }
+
+  await cache.put(key, response.clone());
+  return true;
+}
+
+async function fetchAndCachePage(
+  cache,
+  path,
+  expectedPath = path,
+) {
+  const request = new Request(path, {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+    headers: {
+      Accept: "text/html",
+    },
+  });
+
+  const response =
+    await fetchHtmlNavigation(request);
+
+  return cacheHtmlPage(
+    cache,
+    path,
+    response,
+    expectedPath,
+  );
 }
 
 self.addEventListener("install", (event) => {
@@ -116,9 +160,10 @@ self.addEventListener("install", (event) => {
                 new URL(url, self.location.origin),
               ),
               response,
+              new URL(url, self.location.origin).pathname,
             );
           } catch {
-            // One URL failed అయినా service worker install ఆగకూడదు.
+            // One URL failed అయినా install ఆగదు.
           }
         }
       })
@@ -164,9 +209,8 @@ self.addEventListener("fetch", (event) => {
   }
 
   /*
-   * Next.js App Router RSC / Flight requests must never be stored
-   * in the HTML page cache. Returning an RSC payload as a document
-   * causes raw "$react.fragment" text to appear in the browser.
+   * Next.js RSC / Flight requestsను HTML cacheలో
+   * ఎప్పుడూ save చేయకూడదు.
    */
   if (isNextRscRequest(request, url)) {
     event.respondWith(
@@ -243,6 +287,7 @@ self.addEventListener("fetch", (event) => {
             cache,
             navigationKey,
             networkResponse,
+            url.pathname,
           );
 
           if (isPosPage(url)) {
@@ -250,6 +295,7 @@ self.addEventListener("fetch", (event) => {
               cache,
               "/admin/pos",
               networkResponse,
+              "/admin/pos",
             );
           }
 
@@ -263,6 +309,18 @@ self.addEventListener("fetch", (event) => {
             isHtmlResponse(exactCachedResponse)
           ) {
             return exactCachedResponse;
+          }
+
+          if (url.pathname === "/admin/login") {
+            const cachedLoginPage =
+              await cache.match("/admin/login");
+
+            if (
+              cachedLoginPage &&
+              isHtmlResponse(cachedLoginPage)
+            ) {
+              return cachedLoginPage;
+            }
           }
 
           const cachedPosPage =
@@ -403,34 +461,32 @@ self.addEventListener("message", (event) => {
     self.skipWaiting();
   }
 
-  if (event.data?.type === "CACHE_POS_NOW") {
+  if (
+    event.data?.type === "CACHE_POS_NOW" ||
+    event.data?.type === "CACHE_OFFLINE_SHELL_NOW"
+  ) {
     event.waitUntil(
       caches
         .open(NCS_PAGE_CACHE)
         .then(async (cache) => {
           try {
-            const request = new Request(
-              "/admin/pos",
-              {
-                method: "GET",
-                cache: "no-store",
-                credentials: "include",
-                headers: {
-                  Accept: "text/html",
-                },
-              },
-            );
-
-            const response =
-              await fetchHtmlNavigation(request);
-
-            await cacheHtmlPage(
+            await fetchAndCachePage(
               cache,
-              "/admin/pos",
-              response,
+              "/admin/login",
+              "/admin/login",
             );
           } catch {
-            // Existing cached POS pageను అలాగే ఉంచాలి.
+            // Existing cached login page remains available.
+          }
+
+          try {
+            await fetchAndCachePage(
+              cache,
+              "/admin/pos",
+              "/admin/pos",
+            );
+          } catch {
+            // Existing cached POS page remains available.
           }
         }),
     );

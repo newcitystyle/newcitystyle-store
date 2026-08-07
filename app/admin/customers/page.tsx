@@ -78,6 +78,9 @@ export default function CustomersPage() {
     useState<number | null>(null);
   const [bulkSending, setBulkSending] = useState(false);
   const [bulkProgress, setBulkProgress] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [customersPerPage, setCustomersPerPage] = useState(20);
+  const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
 
   useEffect(() => {
     loadCustomers();
@@ -321,6 +324,29 @@ export default function CustomersPage() {
       return matchesSearch && matchesStatus && matchesMarketing;
     });
   }, [customers, search, statusFilter, marketingFilter]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredCustomers.length / customersPerPage)
+  );
+
+  const paginatedCustomers = useMemo(() => {
+    const startIndex = (currentPage - 1) * customersPerPage;
+    return filteredCustomers.slice(
+      startIndex,
+      startIndex + customersPerPage
+    );
+  }, [filteredCustomers, currentPage, customersPerPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter, marketingFilter, customersPerPage]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const activeCustomers = customers.filter(
     (customer) => !customer.is_blocked
@@ -1252,425 +1278,638 @@ export default function CustomersPage() {
                 No customers were found.
               </div>
             ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(300px, 1fr))",
-                  gap: "18px",
-                }}
-              >
-                {filteredCustomers.map((customer) => (
-                  <article
-                    key={customer.id}
-                    className="customer-card"
+              <>
+                <div
+                  className="customer-table-wrap"
+                  style={{
+                    width: "100%",
+                    overflowX: "auto",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "14px",
+                    background: "#FFFFFF",
+                  }}
+                >
+                  <table
+                    className="customer-table"
                     style={{
-                      border: customer.is_blocked
-                        ? "1px solid rgba(239,68,68,0.38)"
-                        : "1px solid rgba(212,175,55,0.22)",
-                      borderRadius: "18px",
-                      padding: "20px",
-                      background: customer.is_blocked
-                        ? "linear-gradient(180deg,#FFF7F7,#FFFFFF)"
-                        : "linear-gradient(180deg,#FFFFFF,#F8FAFD)",
-                      boxShadow:
-                        "0 8px 24px rgba(3,21,63,0.07)",
+                      width: "100%",
+                      minWidth: "1080px",
+                      borderCollapse: "collapse",
                     }}
                   >
-                    <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        marginBottom: "12px",
-                        color: customer.whatsapp_opt_in
-                          ? "#166534"
-                          : "#9CA3AF",
-                        fontSize: "12px",
-                        fontWeight: 800,
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedCustomerIds.includes(
-                          customer.id
-                        )}
-                        disabled={
-                          !customer.whatsapp_opt_in ||
-                          !customer.phone ||
-                          customer.is_blocked
-                        }
-                        onChange={() =>
-                          toggleCustomerSelection(customer.id)
-                        }
-                      />
-                      {customer.whatsapp_opt_in
-                        ? "WhatsApp offers allowed"
-                        : "No WhatsApp consent"}
-                    </label>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent:
-                          "space-between",
-                        alignItems: "flex-start",
-                        gap: "14px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "13px",
-                          alignItems: "center",
-                          minWidth: 0,
-                        }}
-                      >
-                        <div
+                    <thead>
+                      <tr>
+                        <th style={tableHeadStyle}>Select</th>
+                        <th style={tableHeadStyle}>Customer</th>
+                        <th style={tableHeadStyle}>Mobile</th>
+                        <th style={tableHeadStyle}>Orders</th>
+                        <th style={tableHeadStyle}>Total Spent</th>
+                        <th style={tableHeadStyle}>WhatsApp</th>
+                        <th style={tableHeadStyle}>Status</th>
+                        <th
                           style={{
-                            width: "52px",
-                            height: "52px",
-                            flexShrink: 0,
-                            borderRadius: "50%",
-                            background:
-                              "linear-gradient(135deg, #0A2E73, #164CA8)",
-                            color: "#FFFFFF",
-                            display: "flex",
-                            justifyContent: "center",
-                            alignItems: "center",
-                            fontSize: "21px",
-                            fontWeight: 800,
+                            ...tableHeadStyle,
+                            textAlign: "right",
                           }}
                         >
-                          {customer.full_name
-                            .charAt(0)
-                            .toUpperCase()}
-                        </div>
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
 
-                        <div
-                          style={{
-                            minWidth: 0,
-                          }}
-                        >
-                          <h3
+                    <tbody>
+                      {paginatedCustomers.map((customer) => {
+                        const isEligible =
+                          customer.whatsapp_opt_in === true &&
+                          Boolean(customer.phone) &&
+                          !customer.is_blocked;
+
+                        return (
+                          <tr
+                            key={customer.id}
+                            className="customer-row"
                             style={{
-                              color: "#0A2E73",
-                              margin: "0 0 4px",
-                              fontSize: "20px",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
+                              background: customer.is_blocked
+                                ? "#FFF8F8"
+                                : "#FFFFFF",
                             }}
                           >
-                            {customer.full_name}
-                          </h3>
+                            <td style={tableCellStyle}>
+                              <input
+                                type="checkbox"
+                                checked={selectedCustomerIds.includes(
+                                  customer.id
+                                )}
+                                disabled={!isEligible}
+                                onChange={() =>
+                                  toggleCustomerSelection(customer.id)
+                                }
+                                aria-label={`Select ${customer.full_name}`}
+                              />
+                            </td>
 
-                          <p
-                            style={{
-                              color: "#777",
-                              fontSize: "13px",
-                              margin: 0,
-                            }}
-                          >
-                            Customer #{customer.id}
-                          </p>
-                        </div>
-                      </div>
+                            <td style={tableCellStyle}>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "10px",
+                                  minWidth: 0,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    width: "36px",
+                                    height: "36px",
+                                    flexShrink: 0,
+                                    borderRadius: "50%",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    background:
+                                      "linear-gradient(135deg, #0A2E73, #164CA8)",
+                                    color: "#FFFFFF",
+                                    fontWeight: 900,
+                                  }}
+                                >
+                                  {customer.full_name
+                                    .charAt(0)
+                                    .toUpperCase()}
+                                </div>
 
-                      <span
-                        style={{
-                          background: customer.is_blocked
-                            ? "#FEE2E2"
-                            : "#DCFCE7",
-                          color: customer.is_blocked
-                            ? "#B91C1C"
-                            : "#166534",
-                          padding: "7px 10px",
-                          borderRadius: "999px",
-                          fontSize: "12px",
-                          fontWeight: 800,
-                        }}
-                      >
-                        {customer.is_blocked
-                          ? "Blocked"
-                          : "Active"}
-                      </span>
-                    </div>
+                                <div style={{ minWidth: 0 }}>
+                                  <strong
+                                    title={customer.full_name}
+                                    style={{
+                                      display: "block",
+                                      color: "#0A2E73",
+                                      fontSize: "14px",
+                                      whiteSpace: "nowrap",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      maxWidth: "210px",
+                                    }}
+                                  >
+                                    {customer.full_name}
+                                  </strong>
+                                  <span
+                                    style={{
+                                      color: "#6B7280",
+                                      fontSize: "11px",
+                                    }}
+                                  >
+                                    Customer #{customer.id}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
 
-                    <div
+                            <td style={tableCellStyle}>
+                              <span
+                                style={{
+                                  color: "#374151",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {customer.phone || "Not added"}
+                              </span>
+                            </td>
+
+                            <td style={tableCellStyle}>
+                              <strong style={{ color: "#0A2E73" }}>
+                                {customer.total_orders || 0}
+                              </strong>
+                            </td>
+
+                            <td style={tableCellStyle}>
+                              <strong style={{ color: "#0A2E73" }}>
+                                ₹
+                                {Number(
+                                  customer.total_spent || 0
+                                ).toLocaleString("en-IN")}
+                              </strong>
+                              {Number(customer.total_spent || 0) >=
+                                10000 && (
+                                <span
+                                  style={{
+                                    display: "block",
+                                    marginTop: "2px",
+                                    color: "#92400E",
+                                    fontSize: "10px",
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  👑 High Value
+                                </span>
+                              )}
+                            </td>
+
+                            <td style={tableCellStyle}>
+                              <span
+                                style={{
+                                  display: "inline-flex",
+                                  padding: "5px 8px",
+                                  borderRadius: "999px",
+                                  background: customer.whatsapp_opt_in
+                                    ? "#DCFCE7"
+                                    : "#F3F4F6",
+                                  color: customer.whatsapp_opt_in
+                                    ? "#166534"
+                                    : "#6B7280",
+                                  fontSize: "11px",
+                                  fontWeight: 800,
+                                }}
+                              >
+                                {customer.whatsapp_opt_in
+                                  ? "Allowed"
+                                  : "Not allowed"}
+                              </span>
+                            </td>
+
+                            <td style={tableCellStyle}>
+                              <span
+                                style={{
+                                  display: "inline-flex",
+                                  padding: "5px 9px",
+                                  borderRadius: "999px",
+                                  background: customer.is_blocked
+                                    ? "#FEE2E2"
+                                    : "#DCFCE7",
+                                  color: customer.is_blocked
+                                    ? "#B91C1C"
+                                    : "#166534",
+                                  fontSize: "11px",
+                                  fontWeight: 800,
+                                }}
+                              >
+                                {customer.is_blocked
+                                  ? "Blocked"
+                                  : "Active"}
+                              </span>
+                            </td>
+
+                            <td
+                              style={{
+                                ...tableCellStyle,
+                                textAlign: "right",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "flex-end",
+                                  gap: "6px",
+                                  flexWrap: "nowrap",
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setViewingCustomer(customer)
+                                  }
+                                  className="compact-action-button view"
+                                >
+                                  View
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    startEditing(customer)
+                                  }
+                                  className="compact-action-button edit"
+                                >
+                                  Edit
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void sendOfferForCustomer(customer)
+                                  }
+                                  disabled={
+                                    !isEligible ||
+                                    sendingCustomerId !== null ||
+                                    bulkSending
+                                  }
+                                  className="compact-action-button whatsapp"
+                                >
+                                  {sendingCustomerId === customer.id
+                                    ? "Sending..."
+                                    : "WhatsApp"}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    toggleBlocked(customer)
+                                  }
+                                  className="compact-action-button block"
+                                >
+                                  {customer.is_blocked
+                                    ? "Unblock"
+                                    : "Block"}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    deleteCustomer(customer)
+                                  }
+                                  className="compact-action-button delete"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div
+                  className="customer-pagination"
+                  style={{
+                    marginTop: "18px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "14px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "9px",
+                      color: "#4B5563",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    <span>Customers per page</span>
+                    <select
+                      value={customersPerPage}
+                      onChange={(event) =>
+                        setCustomersPerPage(
+                          Number(event.target.value)
+                        )
+                      }
                       style={{
-                        background: "#F8FAFC",
-                        borderRadius: "11px",
-                        padding: "14px",
-                        marginTop: "16px",
-                        display: "grid",
-                        gap: "8px",
+                        ...inputStyle,
+                        width: "78px",
+                        padding: "8px 9px",
                       }}
                     >
-                      <CustomerDetail
-                        icon="✉️"
-                        value={
-                          customer.email ||
-                          "Email not added"
-                        }
-                      />
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
 
-                      <CustomerDetail
-                        icon="📞"
-                        value={
-                          customer.phone ||
-                          "Phone not added"
-                        }
-                      />
+                  <div
+                    style={{
+                      color: "#6B7280",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Showing{" "}
+                    {(currentPage - 1) * customersPerPage + 1}–
+                    {Math.min(
+                      currentPage * customersPerPage,
+                      filteredCustomers.length
+                    )}{" "}
+                    of {filteredCustomers.length}
+                  </div>
 
-                      <CustomerDetail
-                        icon="📍"
-                        value={
-                          [
-                            customer.city,
-                            customer.state,
-                            customer.pincode,
-                          ]
-                            .filter(Boolean)
-                            .join(", ") ||
-                          "Address not added"
-                        }
-                      />
-                    </div>
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: "10px",
-                        marginTop: "15px",
-                      }}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "7px",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      disabled={currentPage === 1}
+                      onClick={() =>
+                        setCurrentPage((page) =>
+                          Math.max(1, page - 1)
+                        )
+                      }
+                      className="pagination-button"
                     >
-                      <div style={statBoxStyle}>
-                        <p style={statLabelStyle}>
-                          Total Orders
-                        </p>
+                      Previous
+                    </button>
 
-                        <strong style={statValueStyle}>
-                          {customer.total_orders || 0}
-                        </strong>
-                      </div>
+                    {Array.from(
+                      { length: totalPages },
+                      (_, index) => index + 1
+                    )
+                      .filter(
+                        (page) =>
+                          page === 1 ||
+                          page === totalPages ||
+                          Math.abs(page - currentPage) <= 1
+                      )
+                      .map((page, index, visiblePages) => {
+                        const previousPage =
+                          visiblePages[index - 1];
 
-                      <div style={statBoxStyle}>
-                        <p style={statLabelStyle}>
-                          Total Spent
-                        </p>
-
-                        <strong style={statValueStyle}>
-                          ₹
-                          {Number(
-                            customer.total_spent || 0
-                          ).toLocaleString("en-IN")}
-                        </strong>
-                      </div>
-                    </div>
-
-                    {Number(customer.total_spent || 0) >=
-                      10000 && (
-                      <div
-                        style={{
-                          marginTop: "12px",
-                          background: "#FEF3C7",
-                          color: "#92400E",
-                          padding: "9px 12px",
-                          borderRadius: "9px",
-                          fontWeight: 800,
-                          fontSize: "13px",
-                          textAlign: "center",
-                        }}
-                      >
-                        👑 High Value Customer
-                      </div>
-                    )}
-
-                    {(customer.marketing_tags || []).length > 0 && (
-                      <div
-                        style={{
-                          display: "flex",
-                          flexWrap: "wrap",
-                          gap: "6px",
-                          marginTop: "12px",
-                        }}
-                      >
-                        {(customer.marketing_tags || []).map((tag) => (
+                        return (
                           <span
-                            key={tag}
+                            key={page}
                             style={{
-                              padding: "5px 8px",
-                              borderRadius: "999px",
-                              background: "#EEF2FF",
-                              color: "#3730A3",
-                              fontSize: "11px",
-                              fontWeight: 800,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "7px",
                             }}
                           >
-                            {tag}
+                            {previousPage &&
+                              page - previousPage > 1 && (
+                                <span
+                                  style={{
+                                    color: "#9CA3AF",
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  …
+                                </span>
+                              )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCurrentPage(page)
+                              }
+                              className={`pagination-button ${
+                                currentPage === page
+                                  ? "active"
+                                  : ""
+                              }`}
+                            >
+                              {page}
+                            </button>
                           </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {customer.last_marketing_message_at && (
-                      <p
-                        style={{
-                          margin: "10px 0 0",
-                          color: "#166534",
-                          fontSize: "11px",
-                          fontWeight: 700,
-                        }}
-                      >
-                        Last offer opened:{" "}
-                        {new Date(
-                          customer.last_marketing_message_at
-                        ).toLocaleString("en-IN")}
-                      </p>
-                    )}
-
-                    <p
-                      style={{
-                        color: "#888",
-                        fontSize: "12px",
-                        margin: "13px 0 0",
-                      }}
-                    >
-                      Joined on{" "}
-                      {new Date(
-                        customer.created_at
-                      ).toLocaleDateString()}
-                    </p>
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: "9px",
-                        marginTop: "16px",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          startEditing(customer)
-                        }
-                        style={{
-                          background:
-                            "linear-gradient(135deg, #03153F, #0A2E73)",
-                          color: "#FFFFFF",
-                          border:
-                            "1px solid rgba(212,175,55,0.75)",
-                          padding: "10px",
-                          borderRadius: "8px",
-                          cursor: "pointer",
-                          fontWeight: 700,
-                        }}
-                      >
-                        Edit
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          toggleBlocked(customer)
-                        }
-                        style={{
-                          background: customer.is_blocked
-                            ? "#16A34A"
-                            : "#F59E0B",
-                          color: "#FFFFFF",
-                          border: "none",
-                          padding: "10px",
-                          borderRadius: "8px",
-                          cursor: "pointer",
-                          fontWeight: 700,
-                        }}
-                      >
-                        {customer.is_blocked
-                          ? "Unblock"
-                          : "Block"}
-                      </button>
-                    </div>
+                        );
+                      })}
 
                     <button
                       type="button"
+                      disabled={currentPage === totalPages}
                       onClick={() =>
-                        void sendOfferForCustomer(customer)
+                        setCurrentPage((page) =>
+                          Math.min(totalPages, page + 1)
+                        )
                       }
-                      disabled={
-                        !customer.whatsapp_opt_in ||
-                        !customer.phone ||
-                        customer.is_blocked ||
-                        sendingCustomerId !== null ||
-                        bulkSending
-                      }
-                      style={{
-                        width: "100%",
-                        marginTop: "9px",
-                        background:
-                          customer.whatsapp_opt_in &&
-                          customer.phone &&
-                          !customer.is_blocked &&
-                          sendingCustomerId === null &&
-                          !bulkSending
-                            ? "#16A34A"
-                            : "#E5E7EB",
-                        color:
-                          customer.whatsapp_opt_in &&
-                          customer.phone &&
-                          !customer.is_blocked &&
-                          sendingCustomerId === null &&
-                          !bulkSending
-                            ? "#FFFFFF"
-                            : "#9CA3AF",
-                        border: "none",
-                        padding: "10px",
-                        borderRadius: "8px",
-                        cursor:
-                          customer.whatsapp_opt_in &&
-                          customer.phone &&
-                          !customer.is_blocked &&
-                          sendingCustomerId === null &&
-                          !bulkSending
-                            ? "pointer"
-                            : "not-allowed",
-                        fontWeight: 800,
-                      }}
+                      className="pagination-button"
                     >
-                      {sendingCustomerId === customer.id
-                        ? "Sending..."
-                        : "Send WhatsApp Offer"}
+                      Next
                     </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        deleteCustomer(customer)
-                      }
-                      style={{
-                        width: "100%",
-                        marginTop: "9px",
-                        background: "#FFFFFF",
-                        color: "#DC2626",
-                        border: "1px solid #FCA5A5",
-                        padding: "10px",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontWeight: 700,
-                      }}
-                    >
-                      Delete Customer
-                    </button>
-                  </article>
-                ))}
-              </div>
+                  </div>
+                </div>
+              </>
             )}
           </section>
         </div>
       </div>
+
+      {viewingCustomer && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Customer details"
+          className="customer-modal-backdrop"
+          onClick={() => setViewingCustomer(null)}
+        >
+          <div
+            className="customer-detail-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: "16px",
+                marginBottom: "18px",
+              }}
+            >
+              <div>
+                <p
+                  style={{
+                    margin: "0 0 5px",
+                    color: "#D4AF37",
+                    fontSize: "12px",
+                    fontWeight: 900,
+                    letterSpacing: "0.7px",
+                  }}
+                >
+                  CUSTOMER DETAILS
+                </p>
+                <h2
+                  style={{
+                    margin: 0,
+                    color: "#0A2E73",
+                  }}
+                >
+                  {viewingCustomer.full_name}
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setViewingCustomer(null)}
+                className="modal-close-button"
+                aria-label="Close customer details"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="customer-detail-grid">
+              <CustomerDetailBox
+                label="Customer ID"
+                value={`#${viewingCustomer.id}`}
+              />
+              <CustomerDetailBox
+                label="Mobile"
+                value={viewingCustomer.phone || "Not added"}
+              />
+              <CustomerDetailBox
+                label="Email"
+                value={viewingCustomer.email || "Not added"}
+              />
+              <CustomerDetailBox
+                label="Total Orders"
+                value={String(viewingCustomer.total_orders || 0)}
+              />
+              <CustomerDetailBox
+                label="Total Spent"
+                value={`₹${Number(
+                  viewingCustomer.total_spent || 0
+                ).toLocaleString("en-IN")}`}
+              />
+              <CustomerDetailBox
+                label="Status"
+                value={
+                  viewingCustomer.is_blocked
+                    ? "Blocked"
+                    : "Active"
+                }
+              />
+              <CustomerDetailBox
+                label="WhatsApp Consent"
+                value={
+                  viewingCustomer.whatsapp_opt_in
+                    ? "Allowed"
+                    : "Not allowed"
+                }
+              />
+              <CustomerDetailBox
+                label="Joined"
+                value={new Date(
+                  viewingCustomer.created_at
+                ).toLocaleDateString("en-IN")}
+              />
+            </div>
+
+            <div
+              style={{
+                marginTop: "14px",
+                padding: "14px",
+                borderRadius: "11px",
+                background: "#F8FAFC",
+              }}
+            >
+              <strong
+                style={{
+                  display: "block",
+                  marginBottom: "5px",
+                  color: "#0A2E73",
+                }}
+              >
+                Address
+              </strong>
+              <span
+                style={{
+                  color: "#4B5563",
+                  lineHeight: 1.6,
+                }}
+              >
+                {[
+                  viewingCustomer.address,
+                  viewingCustomer.city,
+                  viewingCustomer.state,
+                  viewingCustomer.pincode,
+                ]
+                  .filter(Boolean)
+                  .join(", ") || "Address not added"}
+              </span>
+            </div>
+
+            {(viewingCustomer.marketing_tags || []).length >
+              0 && (
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "7px",
+                  marginTop: "14px",
+                }}
+              >
+                {(viewingCustomer.marketing_tags || []).map(
+                  (tag) => (
+                    <span
+                      key={tag}
+                      style={{
+                        padding: "6px 9px",
+                        borderRadius: "999px",
+                        background: "#EEF2FF",
+                        color: "#3730A3",
+                        fontSize: "11px",
+                        fontWeight: 800,
+                      }}
+                    >
+                      {tag}
+                    </span>
+                  )
+                )}
+              </div>
+            )}
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "9px",
+                marginTop: "20px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  startEditing(viewingCustomer);
+                  setViewingCustomer(null);
+                }}
+                className="modal-edit-button"
+              >
+                Edit Customer
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewingCustomer(null)}
+                className="modal-done-button"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx global>{`
         .customer-summary-card {
@@ -1869,9 +2108,164 @@ export default function CustomersPage() {
           }
         }
 
+        .customer-table th,
+        .customer-table td {
+          white-space: nowrap;
+        }
+
+        .customer-row {
+          border-bottom: 1px solid #EEF2F7;
+          transition:
+            background 0.18s ease,
+            box-shadow 0.18s ease;
+        }
+
+        .customer-row:hover {
+          background: #F8FAFC !important;
+          box-shadow: inset 4px 0 0 #D4AF37;
+        }
+
+        .compact-action-button {
+          min-height: 32px;
+          padding: 0 9px;
+          border-radius: 7px;
+          border: 1px solid transparent;
+          font-size: 11px;
+          font-weight: 800;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+
+        .compact-action-button.view {
+          background: #F8F4EC;
+          color: #7C5C00;
+          border-color: #E8D492;
+        }
+
+        .compact-action-button.edit {
+          background: #0A2E73;
+          color: #FFFFFF;
+          border-color: #D4AF37;
+        }
+
+        .compact-action-button.whatsapp {
+          background: #16A34A;
+          color: #FFFFFF;
+        }
+
+        .compact-action-button.block {
+          background: #F59E0B;
+          color: #FFFFFF;
+        }
+
+        .compact-action-button.delete {
+          background: #FFFFFF;
+          color: #DC2626;
+          border-color: #FCA5A5;
+        }
+
+        .compact-action-button:disabled {
+          background: #E5E7EB;
+          color: #9CA3AF;
+          cursor: not-allowed;
+        }
+
+        .pagination-button {
+          min-width: 36px;
+          min-height: 36px;
+          padding: 0 11px;
+          border: 1px solid #D1D5DB;
+          border-radius: 8px;
+          background: #FFFFFF;
+          color: #0A2E73;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .pagination-button.active {
+          background: #0A2E73;
+          color: #FFFFFF;
+          border-color: #D4AF37;
+        }
+
+        .pagination-button:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+
+        .customer-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          background: rgba(3, 21, 63, 0.62);
+          backdrop-filter: blur(4px);
+        }
+
+        .customer-detail-modal {
+          width: min(680px, 100%);
+          max-height: 88vh;
+          overflow-y: auto;
+          padding: 24px;
+          border: 1px solid rgba(212, 175, 55, 0.55);
+          border-radius: 18px;
+          background: #FFFFFF;
+          box-shadow: 0 24px 70px rgba(3, 21, 63, 0.3);
+        }
+
+        .customer-detail-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 11px;
+        }
+
+        .modal-close-button {
+          width: 36px;
+          height: 36px;
+          border: 1px solid #E5E7EB;
+          border-radius: 50%;
+          background: #FFFFFF;
+          color: #0A2E73;
+          font-size: 24px;
+          line-height: 1;
+          cursor: pointer;
+        }
+
+        .modal-edit-button,
+        .modal-done-button {
+          min-height: 40px;
+          padding: 0 15px;
+          border-radius: 9px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .modal-edit-button {
+          border: 1px solid #D4AF37;
+          background: #0A2E73;
+          color: #FFFFFF;
+        }
+
+        .modal-done-button {
+          border: 1px solid #D1D5DB;
+          background: #FFFFFF;
+          color: #0A2E73;
+        }
+
         @media (max-width: 1000px) {
           .customers-layout {
             grid-template-columns: 1fr !important;
+          }
+
+          .customer-detail-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .customer-pagination {
+            justify-content: center !important;
           }
         }
       `}</style>
@@ -1917,6 +2311,66 @@ const statValueStyle: CSSProperties = {
   color: "#0A2E73",
   fontSize: "19px",
 };
+
+const tableHeadStyle: CSSProperties = {
+  padding: "12px 10px",
+  background: "#F8F4EC",
+  color: "#0A2E73",
+  borderBottom: "1px solid #E5E7EB",
+  textAlign: "left",
+  fontSize: "11px",
+  fontWeight: 900,
+  letterSpacing: "0.35px",
+  textTransform: "uppercase",
+};
+
+const tableCellStyle: CSSProperties = {
+  padding: "10px",
+  borderBottom: "1px solid #EEF2F7",
+  color: "#374151",
+  fontSize: "13px",
+  verticalAlign: "middle",
+};
+
+function CustomerDetailBox({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: "12px",
+        border: "1px solid #E5E7EB",
+        borderRadius: "10px",
+        background: "#FFFFFF",
+      }}
+    >
+      <span
+        style={{
+          display: "block",
+          marginBottom: "4px",
+          color: "#6B7280",
+          fontSize: "11px",
+          fontWeight: 800,
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </span>
+      <strong
+        style={{
+          color: "#0A2E73",
+          overflowWrap: "anywhere",
+        }}
+      >
+        {value}
+      </strong>
+    </div>
+  );
+}
 
 function FormField({
   label,

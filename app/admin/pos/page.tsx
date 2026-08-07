@@ -1604,6 +1604,12 @@ if (!variantsError) {
       .filter(Boolean);
 
     return products.filter((product) => {
+      // Keep zero-stock records in Supabase for history and reports,
+      // but do not show them in the active POS product finder.
+      if (getAvailableStock(product) <= 0) {
+        return false;
+      }
+
       const matchesCategory =
         selectedCategory === "All" ||
         product.category === selectedCategory;

@@ -19,6 +19,7 @@ type Product = {
   mrp?: number | string | null;
   sale_price?: number | string | null;
   offer_price?: number | string | null;
+  sell_online?: boolean | null;
   stock?: number | string | null;
   quantity?: number | string | null;
   image_url?: string | null;
@@ -87,24 +88,40 @@ function getProductImage(product: Product) {
   return "";
 }
 
-function getProductPrice(product: Product) {
-  const value =
-    product.offer_price ??
-    product.sale_price ??
-    product.price ??
-    product.mrp ??
-    0;
-
+function toPositiveNumber(value: unknown) {
   const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0
+    ? numberValue
+    : 0;
+}
 
-  return Number.isFinite(numberValue) ? numberValue : 0;
+function getProductOnlinePrice(product: Product) {
+  if (product.sell_online !== true) return 0;
+
+  return (
+    toPositiveNumber(product.offer_price) ||
+    toPositiveNumber(product.sale_price) ||
+    toPositiveNumber(product.price)
+  );
 }
 
 function getProductMrp(product: Product) {
-  const value = product.mrp ?? product.price ?? getProductPrice(product);
-  const numberValue = Number(value);
+  return (
+    toPositiveNumber(product.mrp) ||
+    getProductOnlinePrice(product)
+  );
+}
 
-  return Number.isFinite(numberValue) ? numberValue : 0;
+function getProductSortPrice(product: Product) {
+  return getProductOnlinePrice(product) || getProductMrp(product);
+}
+
+function normalizeBrandDisplay(value: unknown) {
+  const clean = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  return clean ? clean.toUpperCase() : "";
 }
 
 function getProductStock(product: Product) {
@@ -299,8 +316,8 @@ export default function AdminProductsPage() {
     return [...result].sort((a, b) => {
       const nameA = getProductName(a).toLowerCase();
       const nameB = getProductName(b).toLowerCase();
-      const priceA = getProductPrice(a);
-      const priceB = getProductPrice(b);
+      const priceA = getProductSortPrice(a);
+      const priceB = getProductSortPrice(b);
       const stockA = getProductStock(a);
       const stockB = getProductStock(b);
       const dateA = new Date(a.created_at || 0).getTime();
@@ -891,7 +908,7 @@ export default function AdminProductsPage() {
                     {filteredProducts.map((product) => {
                       const productName = getProductName(product);
                       const imageUrl = getProductImage(product);
-                      const sellingPrice = getProductPrice(product);
+                      const sellingPrice = getProductOnlinePrice(product);
                       const mrp = getProductMrp(product);
                       const stock = getProductStock(product);
                       const status = getProductStatus(product);
@@ -961,7 +978,7 @@ export default function AdminProductsPage() {
                                 </span>
 
                                 {product.brand && (
-                                  <span>{String(product.brand)}</span>
+                                  <span>{normalizeBrandDisplay(product.brand)}</span>
                                 )}
                               </div>
                             </div>
@@ -981,12 +998,24 @@ export default function AdminProductsPage() {
 
                           <td>
                             <div className="price-cell">
-                              <strong>
-                                {formatCurrency(sellingPrice)}
-                              </strong>
-
-                              {mrp > sellingPrice && (
-                                <span>{formatCurrency(mrp)}</span>
+                              {sellingPrice > 0 ? (
+                                <>
+                                  <strong>{formatCurrency(sellingPrice)}</strong>
+                                  {mrp > sellingPrice && (
+                                    <span>{formatCurrency(mrp)}</span>
+                                  )}
+                                  <small>Online price</small>
+                                </>
+                              ) : mrp > 0 ? (
+                                <>
+                                  <strong>{formatCurrency(mrp)}</strong>
+                                  <small>MRP • Flexible billing price</small>
+                                </>
+                              ) : (
+                                <>
+                                  <strong>Price not set</strong>
+                                  <small>Add MRP in product edit</small>
+                                </>
                               )}
                             </div>
                           </td>
@@ -1108,7 +1137,7 @@ export default function AdminProductsPage() {
                 {filteredProducts.map((product) => {
                   const productName = getProductName(product);
                   const imageUrl = getProductImage(product);
-                  const sellingPrice = getProductPrice(product);
+                  const sellingPrice = getProductOnlinePrice(product);
                   const mrp = getProductMrp(product);
                   const stock = getProductStock(product);
                   const status = getProductStatus(product);
@@ -1180,12 +1209,24 @@ export default function AdminProductsPage() {
                           </span>
 
                           <div className="mobile-price">
-                            <strong>
-                              {formatCurrency(sellingPrice)}
-                            </strong>
-
-                            {mrp > sellingPrice && (
-                              <span>{formatCurrency(mrp)}</span>
+                            {sellingPrice > 0 ? (
+                              <>
+                                <strong>{formatCurrency(sellingPrice)}</strong>
+                                {mrp > sellingPrice && (
+                                  <span>{formatCurrency(mrp)}</span>
+                                )}
+                                <small>Online price</small>
+                              </>
+                            ) : mrp > 0 ? (
+                              <>
+                                <strong>{formatCurrency(mrp)}</strong>
+                                <small>MRP • Flexible billing</small>
+                              </>
+                            ) : (
+                              <>
+                                <strong>Price not set</strong>
+                                <small>Add MRP</small>
+                              </>
                             )}
                           </div>
                         </div>
@@ -2043,6 +2084,16 @@ export default function AdminProductsPage() {
           display: block;
           color: #0a2e73;
           font-size: 14px;
+        }
+
+        .price-cell small,
+        .mobile-price small {
+          display: block;
+          margin-top: 4px;
+          color: #667085;
+          font-size: 10px;
+          font-weight: 750;
+          white-space: nowrap;
         }
 
         .price-cell span {

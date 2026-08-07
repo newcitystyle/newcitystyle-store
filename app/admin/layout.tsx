@@ -117,6 +117,11 @@ const menuItems = [
   { label: "Reviews", href: "/admin/reviews", icon: "⭐" },
   { label: "Coupons", href: "/admin/coupons", icon: "🎟️" },
   { label: "Marketing", href: "/admin/marketing", icon: "📣" },
+  {
+    label: "Digital Card Studio",
+    href: "/admin/digital-card-studio",
+    icon: "🪄",
+  },
   { label: "Home Preview", href: "/admin/home-preview", icon: "🖥️" },
   { label: "Branding", href: "/admin/branding", icon: "🎨" },
   { label: "Payments", href: "/admin/payments", icon: "💳" },
