@@ -1041,6 +1041,41 @@ export default function BarcodesPage() {
       .map((key) => currentItems.find((item) => item.key === key))
       .filter((item): item is BarcodeItem => Boolean(item));
 
+    if (selectedItems.length === 0) {
+      setNotice("Select at least one item with a barcode.");
+      window.setTimeout(() => setNotice(""), 3000);
+      return;
+    }
+
+    /*
+     * Purchase Batches:
+     * print the exact remaining label quantity for EACH selected row.
+     *
+     * Example:
+     * row A Labels Available = 3
+     * row B Labels Available = 1
+     * total physical labels = 4
+     *
+     * Product Master:
+     * keep using the manual "Copies per selected row" value.
+     */
+    if (viewMode === "purchases") {
+      const expandedItems = selectedItems.flatMap((item) => {
+        const rowCopies = Math.max(
+          1,
+          item.availableQuantity || item.purchaseQuantity || 1,
+        );
+
+        return Array.from(
+          { length: rowCopies },
+          () => item,
+        );
+      });
+
+      printItems(expandedItems, 1);
+      return;
+    }
+
     printItems(selectedItems, copies);
   }
 
