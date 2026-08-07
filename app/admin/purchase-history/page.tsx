@@ -201,6 +201,7 @@ export default function PurchaseHistoryPage() {
 
   const [selectedPurchase, setSelectedPurchase] =
     useState<PurchaseRow | null>(null);
+  const [detailsItemSearch, setDetailsItemSearch] = useState("");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState("cash");
@@ -474,6 +475,16 @@ export default function PurchaseHistoryPage() {
     } finally {
       setSavingPayment(false);
     }
+  }
+
+  function openPurchaseDetails(purchase: PurchaseRow) {
+    setDetailsItemSearch("");
+    setSelectedPurchase(purchase);
+  }
+
+  function closePurchaseDetails() {
+    setDetailsItemSearch("");
+    setSelectedPurchase(null);
   }
 
   function openPaymentModal(purchase: PurchaseRow) {
@@ -1531,7 +1542,7 @@ window.setTimeout(() => setNotice(""), 4500);
 
                     <button
                       type="button"
-                      onClick={() => setSelectedPurchase(purchase)}
+                      onClick={() => openPurchaseDetails(purchase)}
                     >
                       View Details
                     </button>
@@ -1561,16 +1572,47 @@ window.setTimeout(() => setNotice(""), 4500);
       </section>
 
       {selectedPurchase && !showPaymentModal && (
-        <div className="modalOverlay">
+        <div
+          className="modalOverlay"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closePurchaseDetails();
+            }
+          }}
+        >
           <section className="detailsModal">
-            <button
-              type="button"
-              className="closeButton"
-              onClick={() => setSelectedPurchase(null)}
-              aria-label="Close purchase details"
-            >
-              ✕
-            </button>
+            <div className="detailsQuickToolbar">
+              <div className="detailsQuickSearch">
+                <span>⌕</span>
+                <input
+                  value={detailsItemSearch}
+                  onChange={(event) =>
+                    setDetailsItemSearch(event.target.value)
+                  }
+                  placeholder="Find item, brand, size, colour, barcode or SKU..."
+                  autoFocus
+                />
+                {detailsItemSearch && (
+                  <button
+                    type="button"
+                    className="detailsClearSearch"
+                    onClick={() => setDetailsItemSearch("")}
+                    aria-label="Clear item search"
+                  >
+                    CLEAR
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                className="detailsCloseSticky"
+                onClick={closePurchaseDetails}
+                aria-label="Close purchase details"
+              >
+                ✕ CLOSE
+              </button>
+            </div>
 
             <span>PURCHASE DETAILS</span>
             <h2>{selectedPurchase.purchase_number}</h2>
@@ -1639,7 +1681,24 @@ window.setTimeout(() => setNotice(""), 4500);
             </div>
 
             <div className="detailsItems">
-              {(itemsByPurchase[selectedPurchase.id] || []).map((item) => (
+              {(itemsByPurchase[selectedPurchase.id] || [])
+                .filter((item) => {
+                  const query = normalize(detailsItemSearch);
+                  if (!query) return true;
+
+                  return [
+                    item.product_name,
+                    item.brand,
+                    item.size,
+                    item.color,
+                    item.barcode,
+                    item.sku,
+                  ]
+                    .join(" ")
+                    .toLowerCase()
+                    .includes(query);
+                })
+                .map((item) => (
                 <article key={item.id} className="detailsItemFull">
                   <div className="detailsItemName">
                     <strong>{item.product_name || "Product"}</strong>
@@ -1697,6 +1756,27 @@ window.setTimeout(() => setNotice(""), 4500);
                   </div>
                 </article>
               ))}
+
+              {(itemsByPurchase[selectedPurchase.id] || []).filter((item) => {
+                const query = normalize(detailsItemSearch);
+                if (!query) return true;
+
+                return [
+                  item.product_name,
+                  item.brand,
+                  item.size,
+                  item.color,
+                  item.barcode,
+                  item.sku,
+                ]
+                  .join(" ")
+                  .toLowerCase()
+                  .includes(query);
+              }).length === 0 && (
+                <div className="detailsNoResults">
+                  No purchase items match “{detailsItemSearch}”.
+                </div>
+              )}
             </div>
 
             <div className="purchaseTotalsDetailed">
@@ -3137,6 +3217,92 @@ window.setTimeout(() => setNotice(""), 4500);
           box-shadow: 0 28px 70px rgba(3, 21, 63, 0.28);
         }
 
+        .detailsModal {
+          width: min(1120px, 96vw);
+          height: min(880px, 92vh);
+          max-height: 92vh;
+          padding: 0 18px 22px;
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          scrollbar-gutter: stable;
+        }
+
+        .detailsQuickToolbar {
+          position: sticky;
+          z-index: 20;
+          top: 0;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 10px;
+          align-items: center;
+          margin: 0 -18px 16px;
+          padding: 12px 18px;
+          border-bottom: 1px solid rgba(10, 46, 115, 0.12);
+          background: rgba(255, 255, 255, 0.98);
+          box-shadow: 0 8px 18px rgba(3, 21, 63, 0.08);
+          backdrop-filter: blur(10px);
+        }
+
+        .detailsQuickSearch {
+          min-width: 0;
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr) auto;
+          gap: 8px;
+          align-items: center;
+          min-height: 44px;
+          padding: 0 12px;
+          border: 1px solid rgba(10, 46, 115, 0.18);
+          border-radius: 13px;
+          background: #f8fafc;
+        }
+
+        .detailsQuickSearch > span {
+          color: ${GOLD};
+          font-size: 20px;
+          font-weight: 950;
+        }
+
+        .detailsQuickSearch input {
+          min-width: 0;
+          width: 100%;
+          border: 0;
+          outline: 0;
+          background: transparent;
+          color: #1f2937;
+          font-size: 13px;
+          font-weight: 700;
+        }
+
+        .detailsQuickSearch input::placeholder {
+          color: #98a2b3;
+          font-weight: 600;
+        }
+
+        .detailsClearSearch,
+        .detailsCloseSticky {
+          min-height: 38px;
+          border-radius: 11px;
+          cursor: pointer;
+          font-size: 10px;
+          font-weight: 950;
+        }
+
+        .detailsClearSearch {
+          padding: 0 10px;
+          border: 1px solid rgba(10, 46, 115, 0.14);
+          background: #ffffff;
+          color: ${ROYAL_BLUE};
+        }
+
+        .detailsCloseSticky {
+          min-width: 104px;
+          padding: 0 14px;
+          border: 1px solid ${GOLD};
+          background: ${ROYAL_BLUE};
+          color: #ffffff;
+          box-shadow: 0 8px 18px rgba(3, 21, 63, 0.16);
+        }
+
         .paymentModal {
           width: min(440px, 100%);
         }
@@ -3203,19 +3369,55 @@ window.setTimeout(() => setNotice(""), 4500);
 
         .detailsItemFull {
           display: grid !important;
-          grid-template-columns: minmax(220px, 1fr) minmax(0, 1.7fr);
+          grid-template-columns:
+            minmax(250px, 1.35fr)
+            minmax(430px, 2fr)
+            112px;
+          grid-template-areas: "name numbers edit";
+          gap: 10px;
           align-items: center;
+          padding: 9px 10px !important;
+          border-radius: 12px !important;
+        }
+
+        .detailsItemName {
+          grid-area: name;
+          min-width: 0;
+        }
+
+        .detailsItemName > strong {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 11px !important;
+        }
+
+        .detailsItemName > span {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          margin-top: 2px !important;
+          font-size: 7px !important;
+        }
+
+        .editItemButton {
+          grid-area: edit;
+          width: 100%;
+          min-height: 38px;
+          align-self: center;
         }
 
         .detailsItemNumbers {
+          grid-area: numbers;
           display: grid;
           grid-template-columns: repeat(6, minmax(0, 1fr));
-          gap: 6px;
+          gap: 5px;
         }
 
         .detailsItemNumbers p {
           margin: 0;
-          padding: 8px;
+          min-width: 0;
+          padding: 6px;
           border-radius: 8px;
           background: #f8fafc;
         }
@@ -3718,6 +3920,17 @@ window.setTimeout(() => setNotice(""), 4500);
           font-size: 8px;
         }
 
+        .detailsNoResults {
+          padding: 28px 16px;
+          border: 1px dashed rgba(10, 46, 115, 0.22);
+          border-radius: 14px;
+          background: #f8fafc;
+          color: #667085;
+          text-align: center;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
         .modalActions {
           display: flex;
           justify-content: flex-end;
@@ -3836,7 +4049,10 @@ window.setTimeout(() => setNotice(""), 4500);
           }
 
           .detailsItemFull {
-            grid-template-columns: 1fr;
+            grid-template-columns: minmax(0, 1fr) 110px;
+            grid-template-areas:
+              "name edit"
+              "numbers numbers";
           }
 
           .detailsItemNumbers {
@@ -3845,6 +4061,34 @@ window.setTimeout(() => setNotice(""), 4500);
         }
 
         @media (max-width: 560px) {
+          .detailsModal {
+            width: 100%;
+            height: 94vh;
+            max-height: 94vh;
+            padding-left: 12px;
+            padding-right: 12px;
+          }
+
+          .detailsQuickToolbar {
+            grid-template-columns: 1fr;
+            margin-left: -12px;
+            margin-right: -12px;
+            padding-left: 12px;
+            padding-right: 12px;
+          }
+
+          .detailsCloseSticky {
+            width: 100%;
+          }
+
+          .detailsItemFull {
+            grid-template-columns: 1fr;
+            grid-template-areas:
+              "name"
+              "numbers"
+              "edit";
+          }
+
           .purchaseCard footer,
           .modalActions {
             display: grid;
