@@ -7,6 +7,8 @@ import { supabase } from "@/lib/supabase";
 type ProductRow = {
   category?: string | null;
   subcategory?: string | null;
+  sell_online?: boolean | null;
+  is_active?: boolean | null;
 };
 
 type CategoryRow = Record<string, unknown> & {
@@ -271,7 +273,11 @@ export default function Categories() {
     try {
       const [categoriesResult, productsResult] = await Promise.all([
         supabase.from("categories").select("*"),
-        supabase.from("products").select("category,subcategory"),
+        supabase
+          .from("products")
+          .select("category,subcategory,sell_online,is_active")
+          .eq("sell_online", true)
+          .eq("is_active", true),
       ]);
 
       if (categoriesResult.error) {

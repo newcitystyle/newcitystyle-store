@@ -15,6 +15,9 @@ type Product = {
   price?: number | string | null;
   mrp?: number | string | null;
   stock?: number | string | null;
+  online_stock_limit?: number | string | null;
+  sell_online?: boolean | null;
+  is_active?: boolean | null;
   image?: string | null;
   image_url?: string | null;
   images?: string[] | string | null;
@@ -110,8 +113,16 @@ function getMrp(product: Product) {
 }
 
 function getStock(product: Product) {
-  const value = Number(product.stock ?? 0);
-  return Number.isFinite(value) ? value : 0;
+  const physicalStock = Number(product.stock ?? 0);
+  const onlineStock = Number(product.online_stock_limit ?? 0);
+
+  const safePhysicalStock =
+    Number.isFinite(physicalStock) ? Math.max(0, physicalStock) : 0;
+
+  const safeOnlineStock =
+    Number.isFinite(onlineStock) ? Math.max(0, onlineStock) : 0;
+
+  return Math.min(safePhysicalStock, safeOnlineStock);
 }
 
 function getDiscount(product: Product) {
@@ -194,6 +205,8 @@ function SearchPageContent() {
       const { data, error } = await supabase
         .from("products")
         .select("*")
+        .eq("sell_online", true)
+        .eq("is_active", true)
         .order("id", { ascending: false });
 
       if (error) throw error;
