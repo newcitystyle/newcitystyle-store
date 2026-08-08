@@ -29,6 +29,7 @@ type InvoiceRequest = {
   billAmount?: number | string;
   paidAmount?: number | string;
   dueAmount?: number | string;
+  whatsappLanguage?: "en" | "te" | "english" | "telugu" | string;
   items?: InvoiceItem[];
 };
 
@@ -123,6 +124,38 @@ function normalizePhone(value: unknown): string {
   }
 
   return digits;
+}
+
+function resolveInvoiceTemplate(languageValue: unknown) {
+  const normalized = String(languageValue ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (
+    normalized === "te" ||
+    normalized === "telugu" ||
+    normalized === "te_in"
+  ) {
+    return {
+      templateName:
+        process.env.WHATSAPP_INVOICE_TEMPLATE_TELUGU?.trim() ||
+        "new_city_style_bill_telugu",
+      templateLanguage:
+        process.env.WHATSAPP_INVOICE_TEMPLATE_TELUGU_LANGUAGE?.trim() ||
+        "te",
+      selectedLanguage: "telugu" as const,
+    };
+  }
+
+  return {
+    templateName:
+      process.env.WHATSAPP_INVOICE_TEMPLATE_ENGLISH?.trim() ||
+      "new_city_style_invoice_document_v2",
+    templateLanguage:
+      process.env.WHATSAPP_INVOICE_TEMPLATE_ENGLISH_LANGUAGE?.trim() ||
+      "en_US",
+    selectedLanguage: "english" as const,
+  };
 }
 
 function buildMetaError(metaData: MetaErrorResponse) {
@@ -885,6 +918,11 @@ export async function POST(request: NextRequest) {
           dueAmount: String(
             formData.get("dueAmount") || "0",
           ),
+          whatsappLanguage: String(
+            formData.get("whatsappLanguage") ||
+              formData.get("language") ||
+              "english",
+          ),
           items: [],
         };
       } else {
@@ -945,10 +983,11 @@ export async function POST(request: NextRequest) {
     const apiVersion =
       process.env.WHATSAPP_API_VERSION?.trim() ||
       "v25.0";
-    const templateName =
-      "new_city_style_invoice_document_v2";
-    const templateLanguage =
-      "en_US";
+    const {
+      templateName,
+      templateLanguage,
+      selectedLanguage,
+    } = resolveInvoiceTemplate(body.whatsappLanguage);
 
     if (!accessToken || !phoneNumberId) {
       return NextResponse.json(
@@ -980,6 +1019,7 @@ export async function POST(request: NextRequest) {
           whatsappTextSent: false,
           templateName,
           templateLanguage,
+          selectedLanguage,
         },
         {
           status: uploadResult.status,
@@ -1011,6 +1051,7 @@ export async function POST(request: NextRequest) {
           whatsappTextSent: false,
           templateName,
           templateLanguage,
+          selectedLanguage,
           ...sendResult,
         },
         {
@@ -1041,6 +1082,7 @@ export async function POST(request: NextRequest) {
           sendResult.recipientWhatsAppId,
         templateName,
         templateLanguage,
+        selectedLanguage,
       },
       {
         status: 200,
@@ -1075,10 +1117,18 @@ export async function GET() {
     method: "POST",
     message:
       "NEW CITY STYLE premium PDF invoice generator and WhatsApp sender is ready.",
-    templateName:
+    englishTemplateName:
+      process.env.WHATSAPP_INVOICE_TEMPLATE_ENGLISH?.trim() ||
       "new_city_style_invoice_document_v2",
-    templateLanguage:
+    englishTemplateLanguage:
+      process.env.WHATSAPP_INVOICE_TEMPLATE_ENGLISH_LANGUAGE?.trim() ||
       "en_US",
+    teluguTemplateName:
+      process.env.WHATSAPP_INVOICE_TEMPLATE_TELUGU?.trim() ||
+      "new_city_style_bill_telugu",
+    teluguTemplateLanguage:
+      process.env.WHATSAPP_INVOICE_TEMPLATE_TELUGU_LANGUAGE?.trim() ||
+      "te",
     whatsappMode: "DOCUMENT_TEMPLATE",
   });
 }
