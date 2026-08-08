@@ -3216,8 +3216,10 @@ if (!variantsError) {
       sale.paymentMethod.toUpperCase(),
     );
 
+    formData.append("whatsappLanguage", "telugu");
+
     const response = await fetch(
-      "/api/whatsapp/invoice",
+      "/api/whatsapp/invoice-pdf",
       {
         method: "POST",
         body: formData,
