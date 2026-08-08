@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
 import VisitorTracker from "../components/VisitorTracker";
+import NcsAiAssistant from "../components/NcsAiAssistant";
 type SeoSettings = {
   site_title: string;
   site_description: string;
@@ -521,6 +522,25 @@ export default async function RootLayout({
           {`
             if ("serviceWorker" in navigator) {
               window.addEventListener("load", function () {
+                var isLocalhost =
+                  window.location.hostname === "localhost" ||
+                  window.location.hostname === "127.0.0.1";
+
+                if (isLocalhost) {
+                  navigator.serviceWorker
+                    .getRegistrations()
+                    .then(function (registrations) {
+                      registrations.forEach(function (registration) {
+                        registration.unregister();
+                      });
+                    })
+                    .catch(function () {
+                      // Local development must continue even if cleanup fails.
+                    });
+
+                  return;
+                }
+
                 navigator.serviceWorker
                   .register("/sw.js", {
                     scope: "/",
@@ -568,6 +588,7 @@ export default async function RootLayout({
         )}
 
         {children}
+        <NcsAiAssistant />
       </body>
     </html>
   );

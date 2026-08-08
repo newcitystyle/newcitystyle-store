@@ -611,7 +611,7 @@ export default function ProductPage() {
         <div className="loader" />
         <h2>Loading product...</h2>
 
-        <style jsx>{`
+        <style>{`
           .statePage {
             min-height: 70vh;
             display: flex;
@@ -647,7 +647,7 @@ export default function ProductPage() {
       <main className="statePage">
         <h2>Product Not Found</h2>
 
-        <style jsx>{`
+        <style>{`
           .statePage {
             min-height: 70vh;
             display: flex;
@@ -1205,12 +1205,12 @@ export default function ProductPage() {
         </div>
       )}
 
-      <style jsx>{`
-        :global(*) {
+      <style>{`
+        * {
           box-sizing: border-box;
         }
 
-        :global(body) {
+        body {
           margin: 0;
           background: #f8f4ec;
           color: #172033;

@@ -20,17 +20,17 @@ type HeroSlide = {
 const slides: HeroSlide[] = [
   {
     id: 1,
-    eyebrow: "NEW SEASON • PREMIUM FAMILY FASHION",
-    title: "Style That Brings",
-    highlight: "Every Family Together",
+    eyebrow: "SMART FAMILY SHOPPING • LIVE ONLINE COLLECTION",
+    title: "Fashion For",
+    highlight: "Every Family Member",
     description:
-      "Discover premium fashion for men, women and kids—carefully selected for comfort, quality and confidence.",
-    primaryLabel: "Shop New Arrivals",
-    primaryPath: "/search?newArrival=true",
+      "Shop men, women and kids fashion in one place with live stock, smart recommendations and trusted NEW CITY STYLE value.",
+    primaryLabel: "Start Shopping",
+    primaryPath: "/search",
     secondaryLabel: "Explore Collections",
     secondaryPath: "/collections",
     image:
-      "https://images.unsplash.com/photo-1609220136736-443140cffec6?auto=format&fit=crop&w=2200&q=90",
+      "https://www.bls.gov/opub/btn/volume-6/images/hispanic-household-spending-in-2015_cover_image.jpg",
     position: "center 38%",
   },
   {
@@ -214,22 +214,22 @@ export default function Hero() {
                 <div className="floatingCard">
                   <span className="floatingLabel">NEW CITY STYLE</span>
                   <strong>Style for Every Family</strong>
-                  <p>Premium fashion. Trusted quality. Honest value.</p>
+                  <p>Premium fashion. Live stock. Smart shopping assistance.</p>
 
                   <div className="floatingStats">
                     <div>
                       <b>Men</b>
-                      <small>Modern essentials</small>
+                      <small>Live online picks</small>
                     </div>
 
                     <div>
                       <b>Women</b>
-                      <small>Elegant collections</small>
+                      <small>Smart recommendations</small>
                     </div>
 
                     <div>
                       <b>Kids</b>
-                      <small>Comfort with style</small>
+                      <small>Family-ready fashion</small>
                     </div>
                   </div>
                 </div>

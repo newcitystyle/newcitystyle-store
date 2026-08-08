@@ -310,15 +310,15 @@ export async function POST(
             },
             {
               type: "text",
-              text: normalizeAmount(
-                body.remainingDue,
+              text: normalizeText(
+                body.paymentMethod,
+                "Payment",
               ),
             },
             {
               type: "text",
-              text: normalizeText(
-                body.paymentMethod,
-                "Payment",
+              text: normalizeAmount(
+                body.remainingDue,
               ),
             },
           ];

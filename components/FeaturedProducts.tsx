@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { CSSProperties, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
@@ -21,8 +21,11 @@ export default function FeaturedProducts() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+
     async function loadProducts() {
       setLoading(true);
 
@@ -58,53 +61,47 @@ export default function FeaturedProducts() {
     loadProducts();
   }, []);
 
-  if (loading) {
+  if (!mounted || loading) {
     return (
-      <section className="featuredSection">
-        <h2>Featured Products</h2>
+      <section style={styles.featuredSection}>
+        <div style={styles.headingArea}>
+          <span style={styles.eyebrow}>NEW CITY STYLE</span>
+          <h2 style={styles.heading}>Featured Products</h2>
+          <p style={styles.headingText}>
+            Premium fashion selected for every member of the family.
+          </p>
+        </div>
 
-        <p className="statusText">
-          Loading products...
-        </p>
-
-        <style jsx>{styles}</style>
+        <p style={styles.statusText}>Loading products...</p>
       </section>
     );
   }
 
   return (
-    <section className="featuredSection">
-      <div className="headingArea">
-        <span>NEW CITY STYLE</span>
-
-        <h2>Featured Products</h2>
-
-        <p>
+    <section style={styles.featuredSection}>
+      <div style={styles.headingArea}>
+        <span style={styles.eyebrow}>NEW CITY STYLE</span>
+        <h2 style={styles.heading}>Featured Products</h2>
+        <p style={styles.headingText}>
           Premium fashion selected for every member of the family.
         </p>
       </div>
 
       {products.length === 0 ? (
-        <p className="statusText">
-          No online products available.
-        </p>
+        <p style={styles.statusText}>No online products available.</p>
       ) : (
-        <div className="productGrid">
+        <div style={styles.productGrid}>
           {products.map((item) => {
-            const imageSource =
-              item.image_url || item.image || "";
+            const imageSource = item.image_url || item.image || "";
+            const productName = item.name || "Premium Product";
 
-            const productName =
-              item.name || "Premium Product";
-
-            const totalStock =
-              Number(item.stock || 0);
+            const totalStock = Number(item.stock || 0);
+            const onlineLimit = Number(item.online_stock_limit || 0);
 
             const onlineQuantity =
-              Math.min(
-                Number(item.online_stock_limit || 0),
-                totalStock
-              );
+              onlineLimit > 0
+                ? Math.min(onlineLimit, totalStock)
+                : totalStock;
 
             const isAvailableOnline =
               onlineQuantity > 0 && totalStock > 0;
@@ -112,45 +109,36 @@ export default function FeaturedProducts() {
             return (
               <article
                 key={item.id}
-                className="productCard"
-                onClick={() =>
-                  router.push(`/product/${item.id}`)
-                }
+                style={styles.productCard}
+                onClick={() => router.push(`/product/${item.id}`)}
               >
-                <div className="imageArea">
+                <div style={styles.imageArea}>
                   {imageSource ? (
                     <img
                       src={imageSource}
                       alt={productName}
                       loading="lazy"
+                      style={styles.image}
                     />
                   ) : (
-                    <div className="imageFallback">
-                      NCS
-                    </div>
+                    <div style={styles.imageFallback}>NCS</div>
                   )}
 
-                  <span className="newBadge">
-                    NEW
-                  </span>
+                  <span style={styles.newBadge}>NEW</span>
                 </div>
 
-                <div className="productContent">
-                  <h3>{productName}</h3>
+                <div style={styles.productContent}>
+                  <h3 style={styles.productName}>{productName}</h3>
 
-                  <div className="price">
-                    ₹
-                    {Number(item.price || 0).toLocaleString(
-                      "en-IN"
-                    )}
+                  <div style={styles.price}>
+                    ₹{Number(item.price || 0).toLocaleString("en-IN")}
                   </div>
 
                   <div
-                    className={
-                      isAvailableOnline
-                        ? "stock available"
-                        : "stock unavailable"
-                    }
+                    style={{
+                      ...styles.stock,
+                      color: isAvailableOnline ? "#067647" : "#b42318",
+                    }}
                   >
                     {isAvailableOnline
                       ? `${onlineQuantity} available online`
@@ -159,16 +147,14 @@ export default function FeaturedProducts() {
 
                   <button
                     type="button"
+                    style={styles.button}
                     onClick={(event) => {
                       event.stopPropagation();
-
-                      router.push(
-                        `/product/${item.id}`
-                      );
+                      router.push(`/product/${item.id}`);
                     }}
                   >
-                    View Product
-                    <span>→</span>
+                    <span>View Product</span>
+                    <span style={styles.arrow}>→</span>
                   </button>
                 </div>
               </article>
@@ -176,267 +162,132 @@ export default function FeaturedProducts() {
           })}
         </div>
       )}
-
-      <style jsx>{styles}</style>
     </section>
   );
 }
 
-const styles = `
-  .featuredSection {
-    padding: 65px 20px;
-    background: #f8f9fc;
-  }
-
-  .headingArea {
-    max-width: 850px;
-    margin: 0 auto 38px;
-    text-align: center;
-  }
-
-  .headingArea > span {
-    color: #d4af37;
-    font-size: 12px;
-    font-weight: 900;
-    letter-spacing: 2px;
-  }
-
-  h2 {
-    margin: 10px 0 0;
-    color: #0a2e73;
-    font-size: clamp(34px, 4vw, 48px);
-    font-weight: 900;
-    line-height: 1.1;
-  }
-
-  .headingArea p {
-    margin: 13px 0 0;
-    color: #697386;
-    font-size: 15px;
-  }
-
-  .productGrid {
-    width: min(1400px, 100%);
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 22px;
-    margin: 0 auto;
-  }
-
-  .productCard {
-    overflow: hidden;
-    border: 1px solid #e7e9ef;
-    border-radius: 18px;
-    background: #ffffff;
-    cursor: pointer;
-    box-shadow: 0 10px 28px rgba(7, 29, 73, 0.09);
-    transition:
-      transform 0.28s ease,
-      box-shadow 0.28s ease;
-  }
-
-  .productCard:hover {
-    transform: translateY(-7px);
-    box-shadow: 0 20px 42px rgba(7, 29, 73, 0.16);
-  }
-
-  .imageArea {
-    position: relative;
-    overflow: hidden;
-    aspect-ratio: 4 / 5;
-    background: #edf1f8;
-  }
-
-  .imageArea img {
-    width: 100%;
-    height: 100%;
-    display: block;
-    object-fit: cover;
-    transition: transform 0.4s ease;
-  }
-
-  .productCard:hover img {
-    transform: scale(1.05);
-  }
-
-  .imageFallback {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #d4af37;
-    font-size: 28px;
-    font-weight: 900;
-    background:
-      linear-gradient(
-        145deg,
-        #0a2e73,
-        #174ba9
-      );
-  }
-
-  .newBadge {
-    position: absolute;
-    top: 12px;
-    left: 12px;
-    padding: 6px 10px;
-    border-radius: 999px;
-    background: #d4af37;
-    color: #0a2e73;
-    font-size: 10px;
-    font-weight: 900;
-  }
-
-  .productContent {
-    padding: 17px;
-  }
-
-  .productContent h3 {
-    min-height: 48px;
-    display: -webkit-box;
-    overflow: hidden;
-    margin: 0;
-    color: #0a2e73;
-    font-size: 18px;
-    font-weight: 800;
-    line-height: 1.35;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-
-  .price {
-    margin-top: 12px;
-    color: #d4af37;
-    font-size: 24px;
-    font-weight: 900;
-  }
-
-  .stock {
-    margin-top: 7px;
-    font-size: 12px;
-    font-weight: 700;
-  }
-
-  .stock.available {
-    color: #067647;
-  }
-
-  .stock.unavailable {
-    color: #b42318;
-  }
-
-  .productContent button {
-    width: 100%;
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 9px;
-    margin-top: 15px;
-    border: 0;
-    border-radius: 11px;
-    background:
-      linear-gradient(
-        90deg,
-        #0a2e73,
-        #1548a6
-      );
-    color: #ffffff;
-    font-size: 12px;
-    font-weight: 850;
-    cursor: pointer;
-  }
-
-  .productContent button span {
-    font-size: 17px;
-  }
-
-  .statusText {
-    margin: 35px 0;
-    color: #687385;
-    text-align: center;
-  }
-
-  @media (max-width: 1050px) {
-    .productGrid {
-      grid-template-columns:
-        repeat(3, minmax(0, 1fr));
-    }
-  }
-
-  @media (max-width: 700px) {
-    .featuredSection {
-      padding: 45px 10px;
-    }
-
-    .headingArea {
-      margin-bottom: 25px;
-    }
-
-    .headingArea > span {
-      font-size: 9px;
-      letter-spacing: 1.4px;
-    }
-
-    h2 {
-      font-size: 32px;
-    }
-
-    .headingArea p {
-      font-size: 12px;
-    }
-
-    .productGrid {
-      grid-template-columns:
-        repeat(2, minmax(0, 1fr));
-      gap: 10px;
-    }
-
-    .productCard {
-      border-radius: 14px;
-    }
-
-    .newBadge {
-      top: 8px;
-      left: 8px;
-      padding: 5px 8px;
-      font-size: 8px;
-    }
-
-    .productContent {
-      padding: 11px;
-    }
-
-    .productContent h3 {
-      min-height: 38px;
-      font-size: 14px;
-      line-height: 1.3;
-    }
-
-    .price {
-      margin-top: 8px;
-      font-size: 19px;
-    }
-
-    .stock {
-      margin-top: 5px;
-      font-size: 10px;
-    }
-
-    .productContent button {
-      min-height: 38px;
-      margin-top: 11px;
-      border-radius: 9px;
-      font-size: 10px;
-    }
-
-    .productCard:hover {
-      transform: none;
-    }
-
-    .productCard:hover img {
-      transform: none;
-    }
-  }
-`;
+const styles: Record<string, CSSProperties> = {
+  featuredSection: {
+    padding: "65px 20px",
+    background: "#f8f9fc",
+  },
+  headingArea: {
+    maxWidth: 850,
+    margin: "0 auto 38px",
+    textAlign: "center",
+  },
+  eyebrow: {
+    color: "#d4af37",
+    fontSize: 12,
+    fontWeight: 900,
+    letterSpacing: 2,
+  },
+  heading: {
+    margin: "10px 0 0",
+    color: "#0a2e73",
+    fontSize: "clamp(34px, 4vw, 48px)",
+    fontWeight: 900,
+    lineHeight: 1.1,
+  },
+  headingText: {
+    margin: "13px 0 0",
+    color: "#697386",
+    fontSize: 15,
+  },
+  productGrid: {
+    width: "min(1400px, 100%)",
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    gap: 22,
+    margin: "0 auto",
+  },
+  productCard: {
+    overflow: "hidden",
+    border: "1px solid #e7e9ef",
+    borderRadius: 18,
+    background: "#ffffff",
+    cursor: "pointer",
+    boxShadow: "0 10px 28px rgba(7, 29, 73, 0.09)",
+  },
+  imageArea: {
+    position: "relative",
+    overflow: "hidden",
+    aspectRatio: "4 / 5",
+    background: "#edf1f8",
+  },
+  image: {
+    width: "100%",
+    height: "100%",
+    display: "block",
+    objectFit: "cover",
+  },
+  imageFallback: {
+    width: "100%",
+    height: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#d4af37",
+    fontSize: 28,
+    fontWeight: 900,
+    background: "linear-gradient(145deg, #0a2e73, #174ba9)",
+  },
+  newBadge: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    padding: "6px 10px",
+    borderRadius: 999,
+    background: "#d4af37",
+    color: "#0a2e73",
+    fontSize: 10,
+    fontWeight: 900,
+  },
+  productContent: {
+    padding: 17,
+  },
+  productName: {
+    minHeight: 48,
+    margin: 0,
+    overflow: "hidden",
+    color: "#0a2e73",
+    fontSize: 18,
+    fontWeight: 800,
+    lineHeight: 1.35,
+  },
+  price: {
+    marginTop: 12,
+    color: "#d4af37",
+    fontSize: 24,
+    fontWeight: 900,
+  },
+  stock: {
+    marginTop: 7,
+    fontSize: 12,
+    fontWeight: 700,
+  },
+  button: {
+    width: "100%",
+    minHeight: 44,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 9,
+    marginTop: 15,
+    border: 0,
+    borderRadius: 11,
+    background: "linear-gradient(90deg, #0a2e73, #1548a6)",
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: 850,
+    cursor: "pointer",
+  },
+  arrow: {
+    fontSize: 17,
+  },
+  statusText: {
+    margin: "35px 0",
+    color: "#687385",
+    textAlign: "center",
+  },
+};
