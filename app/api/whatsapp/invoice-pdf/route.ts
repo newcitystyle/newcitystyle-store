@@ -132,29 +132,30 @@ function resolveInvoiceTemplate(languageValue: unknown) {
     .toLowerCase();
 
   if (
-    normalized === "te" ||
-    normalized === "telugu" ||
-    normalized === "te_in"
+    normalized === "en" ||
+    normalized === "english" ||
+    normalized === "en_us" ||
+    normalized === "en-us"
   ) {
     return {
       templateName:
-        process.env.WHATSAPP_INVOICE_TEMPLATE_TELUGU?.trim() ||
-        "new_city_style_bill_telugu",
+        process.env.WHATSAPP_INVOICE_TEMPLATE_ENGLISH?.trim() ||
+        "new_city_style_invoice_document_v2",
       templateLanguage:
-        process.env.WHATSAPP_INVOICE_TEMPLATE_TELUGU_LANGUAGE?.trim() ||
-        "te",
-      selectedLanguage: "telugu" as const,
+        process.env.WHATSAPP_INVOICE_TEMPLATE_ENGLISH_LANGUAGE?.trim() ||
+        "en_US",
+      selectedLanguage: "english" as const,
     };
   }
 
   return {
     templateName:
-      process.env.WHATSAPP_INVOICE_TEMPLATE_ENGLISH?.trim() ||
-      "new_city_style_invoice_document_v2",
+      process.env.WHATSAPP_INVOICE_TEMPLATE_TELUGU?.trim() ||
+      "new_city_style_bill_telugu",
     templateLanguage:
-      process.env.WHATSAPP_INVOICE_TEMPLATE_ENGLISH_LANGUAGE?.trim() ||
-      "en_US",
-    selectedLanguage: "english" as const,
+      process.env.WHATSAPP_INVOICE_TEMPLATE_TELUGU_LANGUAGE?.trim() ||
+      "te",
+    selectedLanguage: "telugu" as const,
   };
 }
 
@@ -921,7 +922,7 @@ export async function POST(request: NextRequest) {
           whatsappLanguage: String(
             formData.get("whatsappLanguage") ||
               formData.get("language") ||
-              "english",
+              "telugu",
           ),
           items: [],
         };
