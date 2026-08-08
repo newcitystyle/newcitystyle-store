@@ -279,7 +279,8 @@ export default function CustomerDuesPage() {
   async function savePayment() {
     if (!selectedAccount || savingPayment) return;
 
-    const currentBalance = toNumber(selectedAccount.current_balance);
+    const paymentAccount = selectedAccount;
+    const currentBalance = toNumber(paymentAccount.current_balance);
     const amount = Math.round(Math.max(0, paymentAmount) * 100) / 100;
 
     if (amount <= 0) {
@@ -304,7 +305,7 @@ export default function CustomerDuesPage() {
       const { data, error } = await supabase.rpc(
         "receive_customer_credit_payment",
         {
-          p_credit_account_id: selectedAccount.id,
+          p_credit_account_id: paymentAccount.id,
           p_amount: amount,
           p_payment_method: paymentMethod,
           p_reference_number: referenceNumber.trim() || null,
@@ -325,21 +326,98 @@ export default function CustomerDuesPage() {
         throw new Error(result.message || "Unable to save customer payment.");
       }
 
+      const remainingDue = Math.max(
+        0,
+        toNumber(result.balance_after, currentBalance - amount),
+      );
+
+      let whatsAppConfirmationSent = false;
+      let whatsAppConfirmationError = "";
+
+      const digits = (paymentAccount.customer_phone || "").replace(/\D/g, "");
+      const recipientPhone =
+        digits.length === 10 ? `91${digits}` : digits;
+
+      if (recipientPhone.length >= 10 && recipientPhone.length <= 15) {
+        try {
+          const whatsAppResponse = await fetch(
+            "/api/whatsapp/customer-message",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                type: "PAYMENT_RECEIVED",
+                to: recipientPhone,
+                customerName:
+                  paymentAccount.customer_name || "Customer",
+                amount,
+                remainingDue,
+                paymentMethod: paymentMethod.toUpperCase(),
+              }),
+            },
+          );
+
+          const whatsAppResult = (await whatsAppResponse.json()) as {
+            success?: boolean;
+            directWhatsAppSent?: boolean;
+            error?: string;
+            metaErrorMessage?: string | null;
+            metaErrorDetails?: string | null;
+          };
+
+          if (
+            whatsAppResponse.ok &&
+            whatsAppResult.success === true &&
+            whatsAppResult.directWhatsAppSent === true
+          ) {
+            whatsAppConfirmationSent = true;
+          } else {
+            whatsAppConfirmationError =
+              whatsAppResult.error ||
+              whatsAppResult.metaErrorDetails ||
+              whatsAppResult.metaErrorMessage ||
+              "WhatsApp payment confirmation could not be sent.";
+          }
+        } catch (whatsAppError) {
+          console.error(
+            "Payment saved, but WhatsApp confirmation failed:",
+            whatsAppError,
+          );
+          whatsAppConfirmationError =
+            whatsAppError instanceof Error
+              ? whatsAppError.message
+              : "WhatsApp payment confirmation could not be sent.";
+        }
+      } else {
+        whatsAppConfirmationError =
+          "customer phone number is missing or invalid";
+      }
+
       setShowPaymentModal(false);
       setSelectedAccount(null);
       setPaymentAmount(0);
       setReferenceNumber("");
       setPaymentNotes("");
 
+      const paymentSavedMessage = result.fully_settled
+        ? "Customer due fully settled successfully."
+        : `Partial payment saved. Remaining due: ${formatCurrency(
+            remainingDue,
+          )}.`;
+
       setNotice(
-        result.fully_settled
-          ? "Customer due fully settled successfully."
-          : `Partial payment saved. Remaining due: ${formatCurrency(
-              toNumber(result.balance_after),
-            )}.`,
+        whatsAppConfirmationSent
+          ? `${paymentSavedMessage} Telugu WhatsApp payment confirmation sent.`
+          : `${paymentSavedMessage} WhatsApp confirmation not sent${
+              whatsAppConfirmationError
+                ? `: ${whatsAppConfirmationError}`
+                : "."
+            }`,
       );
 
-      window.setTimeout(() => setNotice(""), 4000);
+      window.setTimeout(() => setNotice(""), 6000);
       await loadData(true);
     } catch (error) {
       console.error("Customer payment error:", error);
@@ -412,105 +490,45 @@ export default function CustomerDuesPage() {
       return;
     }
 
-    const accountTransactions = transactions.filter(
-      (transaction) =>
-        transaction.credit_account_id === account.id ||
-        (account.customer_id &&
-          transaction.customer_id === account.customer_id),
-    );
-
-    const latestCreditTransaction = accountTransactions.find(
-      (transaction) =>
-        normalize(transaction.transaction_type) !== "payment" &&
-        toNumber(transaction.amount_change) > 0,
-    );
-
-    const invoiceNumber =
-      latestCreditTransaction?.reference_number?.trim() ||
-      `DUE-${account.id}-${new Date()
-        .toISOString()
-        .slice(0, 10)
-        .replace(/-/g, "")}`;
-
-    const totalCreditGiven = Math.max(
-      balance,
-      toNumber(account.total_credit_given),
-    );
-    const totalCreditPaid = Math.max(
-      0,
-      toNumber(account.total_credit_paid),
-    );
-
     setWhatsAppSendingAccountId(account.id);
     setNotice("");
 
     try {
       const response = await fetch(
-        "/api/whatsapp/invoice",
+        "/api/whatsapp/customer-message",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            type: "DUE_REMINDER",
             to: recipientPhone,
-            sendWhatsApp: true,
             customerName:
               account.customer_name || "Customer",
-            customerPhone:
-              account.customer_phone || "",
-            billNumber: invoiceNumber,
-            billDate: new Date().toLocaleString("en-IN"),
-            paymentMethod: "CREDIT DUE REMINDER",
-            subtotal: totalCreditGiven,
-            discountAmount: 0,
-            taxAmount: 0,
-            roundOff: 0,
-            billAmount: totalCreditGiven,
-            paidAmount: totalCreditPaid,
-            dueAmount: balance,
-            items: [
-              {
-                name: "Outstanding Credit Balance",
-                quantity: 1,
-                mrp: balance,
-                price: balance,
-                total: balance,
-                size: account.next_due_date
-                  ? `Due: ${formatDate(account.next_due_date)}`
-                  : "",
-                color: "",
-              },
-            ],
+            currentDue: balance,
           }),
         },
       );
 
       const result = (await response.json()) as {
         success?: boolean;
-        whatsappPdfSent?: boolean;
+        directWhatsAppSent?: boolean;
         error?: string;
-        stage?: string;
-        errorDetails?: string | null;
+        metaErrorMessage?: string | null;
+        metaErrorDetails?: string | null;
       };
 
       if (
         !response.ok ||
         result.success !== true ||
-        result.whatsappPdfSent !== true
+        result.directWhatsAppSent !== true
       ) {
-        const stageText = result.stage
-          ? ` (${result.stage})`
-          : "";
-        const detailText = result.errorDetails
-          ? ` - ${result.errorDetails}`
-          : "";
-
         throw new Error(
-          `${
-            result.error ||
-            "WhatsApp due reminder PDF could not be sent."
-          }${stageText}${detailText}`,
+          result.error ||
+            result.metaErrorDetails ||
+            result.metaErrorMessage ||
+            "WhatsApp due reminder could not be sent.",
         );
       }
 
@@ -520,7 +538,7 @@ export default function CustomerDuesPage() {
         account.next_due_date
           ? `Due date: ${formatDate(account.next_due_date)}`
           : "",
-        `Reference: ${invoiceNumber}`,
+        "Template: new_city_style_due_reminder_telugu",
       ]
         .filter(Boolean)
         .join(" • ");
@@ -536,7 +554,7 @@ export default function CustomerDuesPage() {
             account.customer_phone || null,
           outstanding_balance: balance,
           due_date: account.next_due_date || null,
-          reminder_type: "WHATSAPP_PDF",
+          reminder_type: "WHATSAPP_TEMPLATE",
           reminder_status: "SENT",
           message_text: reminderMessage,
           sent_by: "WEBSITE_ADMIN",
@@ -552,7 +570,7 @@ export default function CustomerDuesPage() {
       }
 
       setNotice(
-        `WhatsApp due reminder PDF sent directly to ${
+        `Telugu WhatsApp due reminder sent directly to ${
           account.customer_name || "customer"
         }.`,
       );
@@ -560,13 +578,13 @@ export default function CustomerDuesPage() {
       await loadData(true);
     } catch (error) {
       console.error(
-        "Unable to send WhatsApp due reminder PDF:",
+        "Unable to send WhatsApp due reminder:",
         error,
       );
       setNotice(
         error instanceof Error
           ? error.message
-          : "Unable to send WhatsApp due reminder PDF.",
+          : "Unable to send WhatsApp due reminder.",
       );
       window.setTimeout(() => setNotice(""), 5000);
     } finally {
@@ -792,7 +810,7 @@ export default function CustomerDuesPage() {
                         >
                           {whatsAppSendingAccountId === account.id
                             ? "Sending..."
-                            : "WhatsApp PDF Reminder"}
+                            : "WhatsApp Due Reminder"}
                         </button>
 
                         <button
@@ -916,7 +934,7 @@ export default function CustomerDuesPage() {
                 >
                   {whatsAppSendingAccountId === selectedAccount.id
                     ? "Sending..."
-                    : "Send WhatsApp PDF Reminder"}
+                    : "Send WhatsApp Due Reminder"}
                 </button>
 
                 <button

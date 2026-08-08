@@ -497,6 +497,7 @@ function GroupedProductCard({
 
 export default function PosPage() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const quickItemNameInputRef = useRef<HTMLInputElement | null>(null);
   const saleSubmissionLockRef = useRef(false);
 
   const [products, setProducts] = useState<PosProduct[]>([]);
@@ -1953,12 +1954,22 @@ if (!variantsError) {
     };
 
     setCartItems((current) => [...current, quickItem]);
-    setShowQuickItem(false);
-    resetQuickItemForm();
-    setMobileCartOpen(true);
+
+    // Multi-add Quick Item workflow:
+    // Keep the modal open so the cashier can enter the next unregistered item.
+    // Preserve the selected category to speed up repeated entry.
+    setQuickItemForm({
+      ...EMPTY_QUICK_ITEM_FORM,
+      category,
+    });
+
+    window.requestAnimationFrame(() => {
+      quickItemNameInputRef.current?.focus();
+      quickItemNameInputRef.current?.select();
+    });
 
     showNotice(
-      `${name} added as a quick item.`,
+      `${name} added to the bill. Enter the next quick item or close when finished.`,
       "success",
     );
   }
@@ -5802,8 +5813,8 @@ if (!variantsError) {
                 <span>FAST MIGRATION BILLING</span>
                 <h2 id="ncs-quick-item-title">Add Quick Item</h2>
                 <p>
-                  Bill an old unregistered product immediately without delaying
-                  the customer.
+                  Add unregistered products one by one. Each Add to Bill keeps
+                  this window open; close it only after all quick items are entered.
                 </p>
               </div>
 
@@ -5821,6 +5832,7 @@ if (!variantsError) {
                 <label className="ncsPosQuickWide">
                   <span>Item Name *</span>
                   <input
+                    ref={quickItemNameInputRef}
                     autoFocus
                     value={quickItemForm.name}
                     placeholder="Example: Men Shirt"
@@ -6011,7 +6023,7 @@ if (!variantsError) {
                   className="ncsPosQuickCancel"
                   onClick={() => setShowQuickItem(false)}
                 >
-                  Cancel
+                  Done / Close
                 </button>
 
                 <button

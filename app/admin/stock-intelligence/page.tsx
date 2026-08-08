@@ -131,32 +131,91 @@ function purchaseListKey(row: VariantRow) {
   ].join("|");
 }
 
-function buyingDecision(row: VariantRow): BuyingDecision {
+type SmartInsight = {
+  score: number;
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  decision: BuyingDecision;
+  suggestedQty: number;
+  coverDays: number | null;
+  trendPercent: number | null;
+  marginPercent: number | null;
+  reason: string;
+};
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+function smartInsight(row: VariantRow): SmartInsight {
+  const stock = Math.max(0, Number(row.current_stock || 0));
+  const sold7 = Math.max(0, Number(row.sold_7d || 0));
+  const sold30 = Math.max(0, Number(row.sold_30d || 0));
+  const sold90 = Math.max(0, Number(row.sold_90d || 0));
+  const age = Math.max(0, Number(row.stock_age_days || 0));
+  const deadRisk = clamp(Number(row.adjusted_dead_stock_risk_score || 0), 0, 100);
+  const fastScore = clamp(Number(row.fast_moving_score || 0), 0, 100);
+  const purchaseCost = Math.max(0, Number(row.weighted_purchase_cost || 0));
+  const mrp = Math.max(0, Number(row.current_mrp || 0));
+
+  const daily7 = sold7 / 7;
+  const daily30 = sold30 / 30;
+  const daily90 = sold90 / 90;
+  const baselineDaily = daily90 > 0 ? daily90 : daily30;
+  const recentDaily = daily7 > 0 ? daily7 : daily30;
+  const calculatedCover =
+    recentDaily > 0 ? stock / recentDaily : null;
+  const coverDays =
+    row.stock_cover_days == null
+      ? calculatedCover
+      : Math.max(0, Number(row.stock_cover_days));
+
+  const trendPercent =
+    baselineDaily > 0
+      ? ((recentDaily - baselineDaily) / baselineDaily) * 100
+      : recentDaily > 0
+        ? 100
+        : null;
+
+  const marginPercent =
+    mrp > 0 && purchaseCost > 0
+      ? ((mrp - purchaseCost) / mrp) * 100
+      : null;
+
+  let score = 20;
+
+  if (stock === 0) score += 38;
+  else if (coverDays != null && coverDays <= 7) score += 30;
+  else if (coverDays != null && coverDays <= 14) score += 24;
+  else if (coverDays != null && coverDays <= 30) score += 14;
+  else if (coverDays != null && coverDays >= 90) score -= 12;
+
+  score += Math.min(18, sold30 * 2.2);
+  score += Math.min(10, sold7 * 2.5);
+  score += Math.min(10, fastScore / 10);
+
+  if (trendPercent != null) {
+    if (trendPercent >= 50) score += 12;
+    else if (trendPercent >= 20) score += 8;
+    else if (trendPercent <= -50) score -= 10;
+    else if (trendPercent <= -20) score -= 5;
+  }
+
+  if (marginPercent != null) {
+    if (marginPercent >= 45) score += 8;
+    else if (marginPercent >= 30) score += 5;
+    else if (marginPercent < 15) score -= 5;
+  }
+
+  score -= Math.min(30, deadRisk * 0.3);
+
+  if (age >= 180 && sold30 === 0) score -= 24;
+  else if (age >= 120 && sold30 === 0) score -= 16;
+  else if (age <= 30 && sold7 > 0) score += 5;
+
   const status = String(row.final_stock_status || "").toUpperCase();
   const action = String(row.final_recommended_action || "").toUpperCase();
-  const reorderQty = Math.max(0, Number(row.final_reorder_quantity || 0));
 
-  if (
-    reorderQty > 0 &&
-    (
-      status.includes("OUT_OF_STOCK") ||
-      status.includes("URGENT") ||
-      action.includes("BUY NOW")
-    )
-  ) {
-    return "BUY_NOW";
-  }
-
-  if (
-    reorderQty > 0 &&
-    (
-      status.includes("REORDER") ||
-      action.includes("REORDER")
-    )
-  ) {
-    return "REORDER_SOON";
-  }
-
+  if (status.includes("OUT_OF_STOCK") || status.includes("URGENT")) score += 12;
+  if (status.includes("REORDER") || action.includes("REORDER")) score += 8;
   if (
     status.includes("CRITICAL_DEAD") ||
     status.includes("DEAD_STOCK") ||
@@ -164,10 +223,90 @@ function buyingDecision(row: VariantRow): BuyingDecision {
     action.includes("DONT BUY") ||
     action.includes("DO NOT BUY")
   ) {
-    return "DONT_BUY";
+    score -= 28;
   }
 
-  return "HOLD";
+  score = Math.round(clamp(score, 0, 100));
+
+  const targetDays =
+    score >= 78 ? 35 :
+    score >= 62 ? 28 :
+    21;
+
+  const demandDaily = Math.max(daily7, daily30, daily90);
+  const calculatedQty =
+    demandDaily > 0
+      ? Math.ceil(demandDaily * targetDays - stock)
+      : 0;
+  const databaseQty = Math.max(0, Number(row.final_reorder_quantity || 0));
+  const suggestedQty = Math.max(
+    0,
+    Math.round(Math.max(databaseQty, calculatedQty)),
+  );
+
+  let decision: BuyingDecision = "HOLD";
+
+  const strongDeadSignal =
+    deadRisk >= 70 ||
+    (age >= 150 && sold30 === 0) ||
+    status.includes("CRITICAL_DEAD") ||
+    status.includes("DEAD_STOCK");
+
+  if (strongDeadSignal && stock > 0) {
+    decision = "DONT_BUY";
+  } else if (
+    suggestedQty > 0 &&
+    (score >= 72 || stock === 0 || (coverDays != null && coverDays <= 7))
+  ) {
+    decision = "BUY_NOW";
+  } else if (
+    suggestedQty > 0 &&
+    (score >= 52 || (coverDays != null && coverDays <= 21))
+  ) {
+    decision = "REORDER_SOON";
+  }
+
+  const evidenceCount = [
+    sold7 > 0,
+    sold30 > 0,
+    sold90 > 0,
+    row.stock_cover_days != null,
+    row.fast_moving_score != null,
+    row.adjusted_dead_stock_risk_score != null,
+    purchaseCost > 0,
+  ].filter(Boolean).length;
+
+  const confidence: SmartInsight["confidence"] =
+    evidenceCount >= 6 ? "HIGH" :
+    evidenceCount >= 3 ? "MEDIUM" :
+    "LOW";
+
+  const reasons: string[] = [];
+  if (stock === 0) reasons.push("out of stock");
+  else if (coverDays != null && coverDays <= 7) reasons.push(`${Math.round(coverDays)}d cover`);
+  else if (coverDays != null && coverDays <= 21) reasons.push("low stock cover");
+
+  if (trendPercent != null && trendPercent >= 20) reasons.push("sales rising");
+  if (sold30 > 0) reasons.push(`${number(sold30)} sold/30d`);
+  if (marginPercent != null && marginPercent >= 30) reasons.push("healthy margin");
+  if (deadRisk >= 60) reasons.push(`dead-risk ${Math.round(deadRisk)}%`);
+  if (age >= 120 && sold30 === 0) reasons.push("old stock, no recent sales");
+  if (reasons.length === 0) reasons.push("insufficient urgency");
+
+  return {
+    score,
+    confidence,
+    decision,
+    suggestedQty,
+    coverDays,
+    trendPercent,
+    marginPercent,
+    reason: reasons.slice(0, 3).join(" • "),
+  };
+}
+
+function buyingDecision(row: VariantRow): BuyingDecision {
+  return smartInsight(row).decision;
 }
 
 function decisionLabel(value: BuyingDecision) {
@@ -192,9 +331,21 @@ export default function StockIntelligencePage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [smartFilter, setSmartFilter] = useState<"ALL" | BuyingDecision>("ALL");
   const [purchaseList, setPurchaseList] = useState<PurchaseListRow[]>([]);
+  const [purchasedList, setPurchasedList] = useState<PurchaseListRow[]>([]);
   const [purchaseSyncing, setPurchaseSyncing] = useState(false);
   const [purchaseSyncMessage, setPurchaseSyncMessage] = useState("");
   const [autoSyncDone, setAutoSyncDone] = useState(false);
+  const [purchaseMode, setPurchaseMode] = useState<"LIST" | "BUYING">("BUYING");
+  const [purchaseTab, setPurchaseTab] = useState<"ACTIVE" | "PURCHASED">("ACTIVE");
+  const [purchaseSearch, setPurchaseSearch] = useState("");
+  const [showManualPurchase, setShowManualPurchase] = useState(false);
+  const [manualBrand, setManualBrand] = useState("NEW CITY STYLE");
+  const [manualProduct, setManualProduct] = useState("");
+  const [manualSize, setManualSize] = useState("");
+  const [manualColour, setManualColour] = useState("");
+  const [manualQty, setManualQty] = useState("1");
+  const [manualStock, setManualStock] = useState("");
+  const [selectedLowStockBrand, setSelectedLowStockBrand] = useState("ALL");
   const rowsPerPage = 15;
 
   async function loadData(showRefresh = false) {
@@ -210,6 +361,7 @@ export default function StockIntelligencePage() {
         colourResult,
         brandResult,
         purchaseListResult,
+        purchasedListResult,
       ] = await Promise.all([
           supabase.from("ncs_owner_summary_v2").select("*").maybeSingle(),
           supabase
@@ -237,6 +389,12 @@ export default function StockIntelligencePage() {
             .select("*")
             .eq("status", "ACTIVE")
             .order("created_at", { ascending: false }),
+          supabase
+            .from("ncs_purchase_list")
+            .select("*")
+            .eq("status", "PURCHASED")
+            .order("updated_at", { ascending: false })
+            .limit(100),
         ]);
 
       const firstError =
@@ -245,7 +403,8 @@ export default function StockIntelligencePage() {
         sizeResult.error ||
         colourResult.error ||
         brandResult.error ||
-        purchaseListResult.error;
+        purchaseListResult.error ||
+        purchasedListResult.error;
 
       if (firstError) throw firstError;
 
@@ -255,6 +414,7 @@ export default function StockIntelligencePage() {
       setColours((colourResult.data as DemandRow[]) || []);
       setBrands((brandResult.data as BrandRow[]) || []);
       setPurchaseList((purchaseListResult.data as PurchaseListRow[]) || []);
+      setPurchasedList((purchasedListResult.data as PurchaseListRow[]) || []);
     } catch (error) {
       console.error("Stock intelligence load error:", error);
       setErrorText(
@@ -287,14 +447,462 @@ export default function StockIntelligencePage() {
     return groups;
   }, [variants]);
 
+  async function addVariantToPurchaseList(
+    row: VariantRow,
+    quantityOverride?: number,
+  ) {
+    if (purchaseSyncing) return;
+
+    const requiredQty = Math.max(
+      1,
+      Math.round(
+        Number(
+          quantityOverride ??
+            row.final_reorder_quantity ??
+            1,
+        ),
+      ),
+    );
+
+    const normalizedKey = purchaseListKey(row);
+    const existing = purchaseList.find(
+      (item) => item.normalized_key === normalizedKey,
+    );
+
+    if (existing) {
+      setPurchaseSyncMessage(
+        `${row.product_name || "Item"} is already in the Purchase List.`,
+      );
+      return;
+    }
+
+    setPurchaseSyncing(true);
+    setPurchaseSyncMessage("");
+
+    try {
+      const decision = buyingDecision(row);
+
+      const { error } = await supabase
+        .from("ncs_purchase_list")
+        .insert({
+          normalized_key: normalizedKey,
+          source_product_id: row.product_id,
+          brand:
+            String(row.brand || "NEW CITY STYLE").trim() ||
+            "NEW CITY STYLE",
+          product_name:
+            String(row.product_name || "Unnamed Product").trim(),
+          size: row.size || null,
+          colour: row.color || null,
+          required_qty: requiredQty,
+          current_stock: Math.max(
+            0,
+            Math.round(Number(row.current_stock || 0)),
+          ),
+          note:
+            decision === "BUY_NOW" ||
+            decision === "REORDER_SOON"
+              ? `${decisionLabel(decision)} • Added from Web Stock Intelligence`
+              : "Added manually from Web Stock Intelligence",
+          source: "STOCK_INTELLIGENCE",
+          status: "ACTIVE",
+          added_by: "WEB_STOCK_INTELLIGENCE",
+        });
+
+      if (error) throw error;
+
+      await refreshPurchaseLists();
+
+      setPurchaseSyncMessage(
+        `${row.product_name || "Item"} added to Purchase List • Qty ${requiredQty}`,
+      );
+    } catch (error) {
+      console.error(
+        "Purchase-list single add error:",
+        error,
+      );
+
+      setPurchaseSyncMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to add item to Purchase List.",
+      );
+    } finally {
+      setPurchaseSyncing(false);
+    }
+  }
+
+  function purchasePriceFor(item: PurchaseListRow) {
+    const byId =
+      item.source_product_id == null
+        ? undefined
+        : variants.find(
+            (row) => row.product_id === item.source_product_id,
+          );
+
+    const byVariant =
+      variants.find(
+        (row) =>
+          purchaseListKey(row) === item.normalized_key,
+      );
+
+    const price =
+      Number(
+        (byId || byVariant)?.weighted_purchase_cost || 0,
+      );
+
+    return price > 0 ? price : null;
+  }
+
+  async function refreshPurchaseLists() {
+    const [activeResult, purchasedResult] =
+      await Promise.all([
+        supabase
+          .from("ncs_purchase_list")
+          .select("*")
+          .eq("status", "ACTIVE")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("ncs_purchase_list")
+          .select("*")
+          .eq("status", "PURCHASED")
+          .order("updated_at", { ascending: false })
+          .limit(100),
+      ]);
+
+    if (activeResult.error) throw activeResult.error;
+    if (purchasedResult.error) throw purchasedResult.error;
+
+    setPurchaseList(
+      (activeResult.data as PurchaseListRow[]) || [],
+    );
+    setPurchasedList(
+      (purchasedResult.data as PurchaseListRow[]) || [],
+    );
+  }
+
+  async function markPurchaseItemPurchased(
+    item: PurchaseListRow,
+  ) {
+    setPurchaseSyncing(true);
+    setPurchaseSyncMessage("");
+
+    try {
+      const { error } = await supabase
+        .from("ncs_purchase_list")
+        .update({ status: "PURCHASED" })
+        .eq("id", item.id);
+
+      if (error) throw error;
+
+      await refreshPurchaseLists();
+      setPurchaseSyncMessage(
+        `${item.product_name} marked purchased.`,
+      );
+    } catch (error) {
+      setPurchaseSyncMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to mark item purchased.",
+      );
+    } finally {
+      setPurchaseSyncing(false);
+    }
+  }
+
+  async function reactivatePurchaseItem(
+    item: PurchaseListRow,
+  ) {
+    setPurchaseSyncing(true);
+    setPurchaseSyncMessage("");
+
+    try {
+      const { error } = await supabase
+        .from("ncs_purchase_list")
+        .update({ status: "ACTIVE" })
+        .eq("id", item.id);
+
+      if (error) throw error;
+
+      await refreshPurchaseLists();
+      setPurchaseSyncMessage(
+        `${item.product_name} moved back to Active.`,
+      );
+    } catch (error) {
+      setPurchaseSyncMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to reactivate item.",
+      );
+    } finally {
+      setPurchaseSyncing(false);
+    }
+  }
+
+  async function markGroupPurchased(
+    items: PurchaseListRow[],
+  ) {
+    if (items.length === 0) return;
+
+    setPurchaseSyncing(true);
+    setPurchaseSyncMessage("");
+
+    try {
+      const ids = items.map((item) => item.id);
+      const { error } = await supabase
+        .from("ncs_purchase_list")
+        .update({ status: "PURCHASED" })
+        .in("id", ids);
+
+      if (error) throw error;
+
+      await refreshPurchaseLists();
+      setPurchaseSyncMessage(
+        `${items.length} item(s) marked purchased.`,
+      );
+    } catch (error) {
+      setPurchaseSyncMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to mark group purchased.",
+      );
+    } finally {
+      setPurchaseSyncing(false);
+    }
+  }
+
+  async function sharePurchaseText(
+    title: string,
+    shareText: string,
+  ) {
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        typeof navigator.share === "function"
+      ) {
+        await navigator.share({
+          title,
+          text: shareText,
+        });
+        return;
+      }
+
+      await navigator.clipboard.writeText(shareText);
+      setPurchaseSyncMessage(
+        "Purchase list copied to clipboard.",
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.name === "AbortError"
+      ) {
+        return;
+      }
+
+      setPurchaseSyncMessage(
+        "Unable to share. Try again.",
+      );
+    }
+  }
+
+  async function shareActivePurchaseList() {
+    const totalUnits = purchaseList.reduce(
+      (sum, item) => sum + Number(item.required_qty || 0),
+      0,
+    );
+
+    const estimatedValue = purchaseList.reduce(
+      (sum, item) =>
+        sum +
+        Number(purchasePriceFor(item) || 0) *
+          Number(item.required_qty || 0),
+      0,
+    );
+
+    const lines = [
+      "NEW CITY STYLE",
+      "ACTIVE PURCHASE LIST",
+      "",
+      ...purchaseList.map((item, index) => {
+        const lineValue =
+          Number(purchasePriceFor(item) || 0) *
+          Number(item.required_qty || 0);
+
+        const detail = [
+          item.brand,
+          item.product_name,
+          item.size ? `Size ${item.size}` : "",
+          item.colour || "",
+        ]
+          .filter(Boolean)
+          .join(" • ");
+
+        return `${index + 1}. ${detail} × ${item.required_qty}${
+          lineValue > 0 ? ` • ${money(lineValue)}` : ""
+        }`;
+      }),
+      "",
+      `Total items: ${purchaseList.length}`,
+      `Total units: ${totalUnits}`,
+      estimatedValue > 0
+        ? `Known estimated buy value: ${money(estimatedValue)}`
+        : "Known estimated buy value: PRICE N/A",
+    ];
+
+    await sharePurchaseText(
+      "NEW CITY STYLE Purchase List",
+      lines.join("\n"),
+    );
+  }
+
+  async function sharePurchaseGroup(
+    brand: string,
+    items: PurchaseListRow[],
+  ) {
+    const totalUnits = items.reduce(
+      (sum, item) => sum + Number(item.required_qty || 0),
+      0,
+    );
+
+    const estimatedValue = items.reduce(
+      (sum, item) =>
+        sum +
+        Number(purchasePriceFor(item) || 0) *
+          Number(item.required_qty || 0),
+      0,
+    );
+
+    const lines = [
+      "NEW CITY STYLE",
+      `${brand.toUpperCase()} BUYING LIST`,
+      "",
+      ...items.map((item, index) => {
+        const lineValue =
+          Number(purchasePriceFor(item) || 0) *
+          Number(item.required_qty || 0);
+
+        const detail = [
+          item.product_name,
+          item.size ? `Size ${item.size}` : "",
+          item.colour || "",
+          item.current_stock != null
+            ? `Stock ${item.current_stock}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" • ");
+
+        return `${index + 1}. ${detail} × ${item.required_qty}${
+          lineValue > 0 ? ` • ${money(lineValue)}` : ""
+        }`;
+      }),
+      "",
+      `Items: ${items.length}`,
+      `Units: ${totalUnits}`,
+      estimatedValue > 0
+        ? `Known estimated value: ${money(estimatedValue)}`
+        : "Known estimated value: PRICE N/A",
+    ];
+
+    await sharePurchaseText(
+      `${brand} Buying List`,
+      lines.join("\n"),
+    );
+  }
+
+  async function addManualPurchaseItem() {
+    const product = manualProduct.trim();
+    const brand =
+      manualBrand.trim() || "NEW CITY STYLE";
+    const qty = Math.max(
+      1,
+      Math.round(Number(manualQty || 1)),
+    );
+
+    if (!product) {
+      setPurchaseSyncMessage(
+        "Enter a product name for the manual item.",
+      );
+      return;
+    }
+
+    const normalizedKey = [
+      normalizeKeyPart(brand),
+      normalizeKeyPart(product),
+      normalizeKeyPart(manualSize),
+      normalizeKeyPart(manualColour),
+    ].join("|");
+
+    if (
+      purchaseList.some(
+        (item) => item.normalized_key === normalizedKey,
+      )
+    ) {
+      setPurchaseSyncMessage(
+        `${product} is already in the active Purchase List.`,
+      );
+      return;
+    }
+
+    setPurchaseSyncing(true);
+    setPurchaseSyncMessage("");
+
+    try {
+      const { error } = await supabase
+        .from("ncs_purchase_list")
+        .insert({
+          normalized_key: normalizedKey,
+          source_product_id: null,
+          brand,
+          product_name: product,
+          size: manualSize.trim() || null,
+          colour: manualColour.trim() || null,
+          required_qty: qty,
+          current_stock:
+            manualStock.trim() === ""
+              ? null
+              : Math.max(
+                  0,
+                  Math.round(Number(manualStock || 0)),
+                ),
+          note: "Manual item from Web Stock Intelligence",
+          source: "MANUAL",
+          status: "ACTIVE",
+          added_by: "WEB_STOCK_INTELLIGENCE",
+        });
+
+      if (error) throw error;
+
+      await refreshPurchaseLists();
+      setManualProduct("");
+      setManualSize("");
+      setManualColour("");
+      setManualQty("1");
+      setManualStock("");
+      setShowManualPurchase(false);
+      setPurchaseSyncMessage(
+        `${product} added manually.`,
+      );
+    } catch (error) {
+      setPurchaseSyncMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to add manual purchase item.",
+      );
+    } finally {
+      setPurchaseSyncing(false);
+    }
+  }
+
   async function syncSmartPurchaseList(showMessage = true) {
     if (purchaseSyncing || variants.length === 0) return;
 
     const candidates = variants.filter((row) => {
       const decision = buyingDecision(row);
+      const insight = smartInsight(row);
       return (
         (decision === "BUY_NOW" || decision === "REORDER_SOON") &&
-        Number(row.final_reorder_quantity || 0) > 0
+        insight.suggestedQty > 0
       );
     });
 
@@ -324,9 +932,10 @@ export default function StockIntelligencePage() {
 
       candidates.forEach((row) => {
         const key = purchaseListKey(row);
-        const requiredQty = Math.max(1, Math.round(Number(row.final_reorder_quantity || 1)));
+        const insight = smartInsight(row);
+        const requiredQty = Math.max(1, insight.suggestedQty);
         const current = existingByKey.get(key);
-        const decision = buyingDecision(row);
+        const decision = insight.decision;
 
         if (!current) {
           inserts.push({
@@ -338,7 +947,7 @@ export default function StockIntelligencePage() {
             colour: row.color || null,
             required_qty: requiredQty,
             current_stock: Math.max(0, Math.round(Number(row.current_stock || 0))),
-            note: `${decisionLabel(decision)} • Stock Intelligence auto-sync`,
+            note: `${decisionLabel(decision)} • Smart Score ${insight.score}/100 • ${insight.confidence} confidence`,
             source: "STOCK_INTELLIGENCE",
             status: "ACTIVE",
             added_by: "WEB_STOCK_INTELLIGENCE",
@@ -376,14 +985,7 @@ export default function StockIntelligencePage() {
         await Promise.all(updates);
       }
 
-      const { data: refreshed, error: refreshError } = await supabase
-        .from("ncs_purchase_list")
-        .select("*")
-        .eq("status", "ACTIVE")
-        .order("created_at", { ascending: false });
-
-      if (refreshError) throw refreshError;
-      setPurchaseList((refreshed as PurchaseListRow[]) || []);
+      await refreshPurchaseLists();
 
       if (showMessage) {
         setPurchaseSyncMessage(
@@ -495,6 +1097,176 @@ export default function StockIntelligencePage() {
     safeCurrentPage * rowsPerPage,
     filteredVariants.length,
   );
+
+  const purchaseBuyingGroups = useMemo(() => {
+    return Array.from(
+      purchaseList.reduce((map, item) => {
+        const brand =
+          item.brand.trim() || "NEW CITY STYLE";
+
+        const group = map.get(brand) || [];
+        group.push(item);
+        map.set(brand, group);
+        return map;
+      }, new Map<string, PurchaseListRow[]>()),
+    )
+      .map(([brand, items]) => {
+        const units = items.reduce(
+          (sum, item) =>
+            sum + Number(item.required_qty || 0),
+          0,
+        );
+        const estimatedValue = items.reduce(
+          (sum, item) =>
+            sum +
+            Number(purchasePriceFor(item) || 0) *
+              Number(item.required_qty || 0),
+          0,
+        );
+        const pricedUnits = items.reduce(
+          (sum, item) =>
+            sum +
+            (Number(purchasePriceFor(item) || 0) > 0
+              ? Number(item.required_qty || 0)
+              : 0),
+          0,
+        );
+        const aiCount = items.filter(
+          (item) => item.source === "STOCK_INTELLIGENCE",
+        ).length;
+        const manualCount = items.filter(
+          (item) => item.source === "MANUAL",
+        ).length;
+
+        return {
+          brand,
+          items,
+          units,
+          estimatedValue,
+          pricedUnits,
+          aiCount,
+          manualCount,
+        };
+      })
+      .sort((a, b) => {
+        if (
+          (a.aiCount > 0) !== (b.aiCount > 0)
+        ) {
+          return a.aiCount > 0 ? -1 : 1;
+        }
+
+        if (a.units !== b.units) {
+          return b.units - a.units;
+        }
+
+        return a.brand.localeCompare(b.brand);
+      });
+  }, [purchaseList, variants]);
+
+  const activePurchaseUnits = useMemo(
+    () =>
+      purchaseList.reduce(
+        (sum, item) =>
+          sum + Number(item.required_qty || 0),
+        0,
+      ),
+    [purchaseList],
+  );
+
+  const activePurchaseEstimate = useMemo(
+    () =>
+      purchaseList.reduce(
+        (sum, item) =>
+          sum +
+          Number(purchasePriceFor(item) || 0) *
+            Number(item.required_qty || 0),
+        0,
+      ),
+    [purchaseList, variants],
+  );
+
+  const activePurchasePricedUnits = useMemo(
+    () =>
+      purchaseList.reduce(
+        (sum, item) =>
+          sum +
+          (Number(purchasePriceFor(item) || 0) > 0
+            ? Number(item.required_qty || 0)
+            : 0),
+        0,
+      ),
+    [purchaseList, variants],
+  );
+
+  const purchaseVisibleRows = useMemo(() => {
+    const source =
+      purchaseTab === "ACTIVE"
+        ? purchaseList
+        : purchasedList;
+
+    const q = purchaseSearch.trim().toLowerCase();
+
+    if (!q) return source;
+
+    return source.filter((item) =>
+      [
+        item.brand,
+        item.product_name,
+        item.size,
+        item.colour,
+        item.source,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [
+    purchaseTab,
+    purchaseList,
+    purchasedList,
+    purchaseSearch,
+  ]);
+
+  const lowStockBrandGroups = useMemo(() => {
+    const lowRows = variants.filter((row) => Number(row.current_stock || 0) <= 5);
+    const grouped = lowRows.reduce((map, row) => {
+      const brand = String(row.brand || "NEW CITY STYLE").trim() || "NEW CITY STYLE";
+      const items = map.get(brand) || [];
+      items.push(row);
+      map.set(brand, items);
+      return map;
+    }, new Map<string, VariantRow[]>());
+
+    return Array.from(grouped.entries())
+      .map(([brand, items]) => ({
+        brand,
+        items: items.sort((a, b) => {
+          const stockDiff = Number(a.current_stock || 0) - Number(b.current_stock || 0);
+          if (stockDiff !== 0) return stockDiff;
+          return Number(b.final_reorder_quantity || 0) - Number(a.final_reorder_quantity || 0);
+        }),
+        outOfStock: items.filter((row) => Number(row.current_stock || 0) <= 0).length,
+        critical: items.filter((row) => Number(row.current_stock || 0) <= 2).length,
+        suggestedUnits: items.reduce(
+          (sum, row) => sum + Math.max(1, Math.round(Number(row.final_reorder_quantity || Math.max(1, 8 - Number(row.current_stock || 0))))),
+          0,
+        ),
+      }))
+      .sort((a, b) => {
+        if (a.outOfStock !== b.outOfStock) return b.outOfStock - a.outOfStock;
+        if (a.critical !== b.critical) return b.critical - a.critical;
+        if (a.items.length !== b.items.length) return b.items.length - a.items.length;
+        return a.brand.localeCompare(b.brand);
+      });
+  }, [variants]);
+
+  const visibleLowStockRows = useMemo(() => {
+    if (selectedLowStockBrand === "ALL") {
+      return lowStockBrandGroups.flatMap((group) => group.items);
+    }
+    return lowStockBrandGroups.find((group) => group.brand === selectedLowStockBrand)?.items || [];
+  }, [lowStockBrandGroups, selectedLowStockBrand]);
 
   const activePurchaseKeys = useMemo(
     () => new Set(purchaseList.map((row) => row.normalized_key)),
@@ -701,9 +1473,11 @@ export default function StockIntelligencePage() {
       <section className="siSmartPanel">
         <div className="siSmartHead">
           <div>
-            <span className="siSectionTag">SMART BUYING GUIDE</span>
-            <h2>Search → Decide → Purchase List</h2>
-            <p>BUY NOW and REORDER SOON items are auto-synced to the shared purchase list.</p>
+            <span className="siSectionTag">FREE ADVANCED SMART ENGINE</span>
+            <h2>Score → Explain → Decide → Purchase List</h2>
+            <p>
+              No paid AI API. Uses sales velocity, stock cover, trend, margin, age and dead-stock risk to score every variant.
+            </p>
           </div>
 
           <div className="siSmartActions">
@@ -759,6 +1533,10 @@ export default function StockIntelligencePage() {
             <strong>{smartPurchaseCovered} / {smartPurchaseTotal}</strong>
           </div>
           <div>
+            <span>HIGH PRIORITY</span>
+            <strong>{variants.filter((row) => smartInsight(row).score >= 72).length}</strong>
+          </div>
+          <div>
             <span>AUTO SYNC</span>
             <strong>{purchaseSyncing ? "WORKING" : "ON"}</strong>
           </div>
@@ -766,6 +1544,505 @@ export default function StockIntelligencePage() {
 
         {purchaseSyncMessage && (
           <div className="siPurchaseMessage">{purchaseSyncMessage}</div>
+        )}
+      </section>
+
+      <section className="siBrandLowStock">
+        <div className="siBrandLowStockHead">
+          <div>
+            <span className="siSectionTag">BRAND-WISE LOW STOCK</span>
+            <h2>Low Stock → Add → Mobile Sync</h2>
+            <p>Stock 5 or below is grouped by brand. Every add writes to the shared Supabase purchase list used by mobile.</p>
+          </div>
+          <div className="siBrandLowStockActions">
+            <button
+              type="button"
+              className="gold"
+              onClick={() => {
+                setShowManualPurchase(true);
+                setPurchaseMode("LIST");
+                window.setTimeout(() =>
+                  document.getElementById("purchase-command-centre")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                50);
+              }}
+            >
+              + MANUAL ITEM
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPurchaseMode("LIST");
+                window.setTimeout(() =>
+                  document.getElementById("purchase-command-centre")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                50);
+              }}
+            >
+              OPEN PURCHASE LIST ↓
+            </button>
+          </div>
+        </div>
+
+        <div className="siLowBrandCards">
+          <button
+            type="button"
+            className={selectedLowStockBrand === "ALL" ? "active" : ""}
+            onClick={() => setSelectedLowStockBrand("ALL")}
+          >
+            <span>ALL BRANDS</span>
+            <strong>{lowStockBrandGroups.reduce((sum, group) => sum + group.items.length, 0)}</strong>
+            <small>low-stock variants</small>
+          </button>
+          {lowStockBrandGroups.map((group) => (
+            <button
+              type="button"
+              key={group.brand}
+              className={selectedLowStockBrand === group.brand ? "active" : ""}
+              onClick={() => setSelectedLowStockBrand(group.brand)}
+            >
+              <span>{group.brand.toUpperCase()}</span>
+              <strong>{group.items.length}</strong>
+              <small>{group.outOfStock} out • {group.critical} critical • {group.suggestedUnits} suggested</small>
+            </button>
+          ))}
+        </div>
+
+        <div className="siLowStockRows">
+          {visibleLowStockRows.length === 0 ? (
+            <div className="siEmptyPurchase">No low-stock items for this brand.</div>
+          ) : (
+            visibleLowStockRows.map((row) => {
+              const key = purchaseListKey(row);
+              const alreadyAdded = activePurchaseKeys.has(key);
+              const suggestedQty = Math.max(
+                1,
+                Math.round(Number(row.final_reorder_quantity || Math.max(1, 8 - Number(row.current_stock || 0)))),
+              );
+              return (
+                <div className="siLowStockRow" key={`low-${row.variant_id}`}>
+                  <div className="siLowStockMain">
+                    <strong>{row.product_name || "Unnamed Product"}</strong>
+                    <span>
+                      {[
+                        row.brand || "NEW CITY STYLE",
+                        row.size ? `Size ${row.size}` : "",
+                        row.color || "",
+                        row.barcode || "",
+                      ].filter(Boolean).join(" • ")}
+                    </span>
+                  </div>
+                  <div className={`siLowStockBadge ${Number(row.current_stock || 0) <= 0 ? "out" : Number(row.current_stock || 0) <= 2 ? "critical" : "low"}`}>
+                    Stock {number(row.current_stock)}
+                  </div>
+                  <div className="siLowStockSuggest">
+                    <span>SUGGEST</span>
+                    <strong>+{suggestedQty}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    className={alreadyAdded ? "added" : "gold"}
+                    disabled={alreadyAdded || purchaseSyncing}
+                    onClick={() => void addVariantToPurchaseList(row, suggestedQty)}
+                  >
+                    {alreadyAdded ? "ADDED ✓" : "+ ADD TO PURCHASE LIST"}
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+        <div className="siMobileSyncNote">☁ SHARED CLOUD LIST → Android mobile reads the same ncs_purchase_list data.</div>
+      </section>
+
+      <section className="siPurchaseWorkbench" id="purchase-command-centre">
+        <div className="siPurchaseWorkbenchHead">
+          <div>
+            <span className="siSectionTag">SHARED PURCHASE LIST</span>
+            <h2>Purchase Command Centre</h2>
+            <p>
+              LIST mode + brand-wise BUYING MODE with known purchase-cost estimates.
+            </p>
+          </div>
+
+          <div className="siPurchaseWorkbenchTools">
+            <button
+              type="button"
+              onClick={() => void refreshPurchaseLists()}
+              disabled={purchaseSyncing}
+            >
+              ↻ REFRESH
+            </button>
+            <button
+              type="button"
+              className="gold"
+              onClick={() =>
+                setShowManualPurchase((value) => !value)
+              }
+            >
+              + MANUAL ITEM
+            </button>
+            <button
+              type="button"
+              onClick={() => void shareActivePurchaseList()}
+              disabled={purchaseList.length === 0}
+            >
+              SHARE ACTIVE
+            </button>
+          </div>
+        </div>
+
+        <div className="siPurchaseModeSwitch">
+          <button
+            type="button"
+            className={purchaseMode === "LIST" ? "active" : ""}
+            onClick={() => setPurchaseMode("LIST")}
+          >
+            LIST
+          </button>
+          <button
+            type="button"
+            className={purchaseMode === "BUYING" ? "active" : ""}
+            onClick={() => {
+              setPurchaseMode("BUYING");
+              setPurchaseTab("ACTIVE");
+            }}
+          >
+            BUYING MODE
+          </button>
+        </div>
+
+        {showManualPurchase && (
+          <div className="siManualPurchaseBox">
+            <div className="siManualGrid">
+              <input
+                value={manualBrand}
+                onChange={(event) =>
+                  setManualBrand(event.target.value)
+                }
+                placeholder="Brand"
+              />
+              <input
+                value={manualProduct}
+                onChange={(event) =>
+                  setManualProduct(event.target.value)
+                }
+                placeholder="Product *"
+              />
+              <input
+                value={manualSize}
+                onChange={(event) =>
+                  setManualSize(event.target.value)
+                }
+                placeholder="Size"
+              />
+              <input
+                value={manualColour}
+                onChange={(event) =>
+                  setManualColour(event.target.value)
+                }
+                placeholder="Colour"
+              />
+              <input
+                value={manualQty}
+                onChange={(event) =>
+                  setManualQty(event.target.value)
+                }
+                inputMode="numeric"
+                placeholder="Qty"
+              />
+              <input
+                value={manualStock}
+                onChange={(event) =>
+                  setManualStock(event.target.value)
+                }
+                inputMode="numeric"
+                placeholder="Current stock"
+              />
+            </div>
+            <div className="siManualActions">
+              <button
+                type="button"
+                onClick={() => setShowManualPurchase(false)}
+              >
+                CANCEL
+              </button>
+              <button
+                type="button"
+                className="gold"
+                onClick={() => void addManualPurchaseItem()}
+                disabled={purchaseSyncing}
+              >
+                ADD TO PURCHASE LIST
+              </button>
+            </div>
+          </div>
+        )}
+
+        {purchaseMode === "LIST" ? (
+          <>
+            <div className="siPurchaseListControls">
+              <div className="siPurchaseTabs">
+                <button
+                  type="button"
+                  className={purchaseTab === "ACTIVE" ? "active" : ""}
+                  onClick={() => setPurchaseTab("ACTIVE")}
+                >
+                  ACTIVE {purchaseList.length}
+                </button>
+                <button
+                  type="button"
+                  className={purchaseTab === "PURCHASED" ? "active" : ""}
+                  onClick={() => setPurchaseTab("PURCHASED")}
+                >
+                  PURCHASED {purchasedList.length}
+                </button>
+              </div>
+
+              <input
+                value={purchaseSearch}
+                onChange={(event) =>
+                  setPurchaseSearch(event.target.value)
+                }
+                placeholder="Search purchase item, brand, size..."
+              />
+            </div>
+
+            <div className="siPurchaseListRows">
+              {purchaseVisibleRows.length === 0 ? (
+                <div className="siEmptyPurchase">
+                  No purchase items found.
+                </div>
+              ) : (
+                purchaseVisibleRows.map((item) => {
+                  const unitPrice = purchasePriceFor(item);
+                  const lineValue =
+                    Number(unitPrice || 0) *
+                    Number(item.required_qty || 0);
+
+                  return (
+                    <div className="siPurchaseListRow" key={item.id}>
+                      <div className="siPurchaseListMain">
+                        <strong>{item.product_name}</strong>
+                        <span>
+                          {[
+                            item.brand,
+                            item.size ? `Size ${item.size}` : "",
+                            item.colour || "",
+                            item.current_stock != null
+                              ? `Stock ${item.current_stock}`
+                              : "",
+                            item.source === "STOCK_INTELLIGENCE"
+                              ? "AI"
+                              : "MANUAL",
+                          ]
+                            .filter(Boolean)
+                            .join(" • ")}
+                        </span>
+                      </div>
+
+                      <div className="siPurchaseListQty">
+                        × {item.required_qty}
+                      </div>
+
+                      <div className="siPurchaseListValue">
+                        {lineValue > 0
+                          ? money(lineValue)
+                          : "PRICE N/A"}
+                      </div>
+
+                      {purchaseTab === "ACTIVE" ? (
+                        <button
+                          type="button"
+                          className="purchased"
+                          onClick={() =>
+                            void markPurchaseItemPurchased(item)
+                          }
+                          disabled={purchaseSyncing}
+                        >
+                          PURCHASED ✓
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void reactivatePurchaseItem(item)
+                          }
+                          disabled={purchaseSyncing}
+                        >
+                          REOPEN
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="siBuyingSummary">
+              <div>
+                <span>ACTIVE ITEMS</span>
+                <strong>{purchaseList.length}</strong>
+              </div>
+              <div>
+                <span>TOTAL UNITS</span>
+                <strong>{activePurchaseUnits}</strong>
+              </div>
+              <div>
+                <span>KNOWN EST. BUY VALUE</span>
+                <strong>
+                  {activePurchaseEstimate > 0
+                    ? money(activePurchaseEstimate)
+                    : "PRICE N/A"}
+                </strong>
+              </div>
+              <div>
+                <span>PRICED UNITS</span>
+                <strong>
+                  {activePurchasePricedUnits} / {activePurchaseUnits}
+                </strong>
+              </div>
+              <div>
+                <span>AI PICKS</span>
+                <strong>
+                  {
+                    purchaseList.filter(
+                      (item) =>
+                        item.source === "STOCK_INTELLIGENCE",
+                    ).length
+                  }
+                </strong>
+              </div>
+            </div>
+
+            <div className="siBuyingNote">
+              Supplier field is not stored in the current shared purchase-list schema,
+              so this mirrors the mobile app and groups by Brand as the buying/supplier bucket.
+            </div>
+
+            <div className="siBuyingGroups">
+              {purchaseBuyingGroups.length === 0 ? (
+                <div className="siEmptyPurchase">
+                  No active items in the Purchase List.
+                </div>
+              ) : (
+                purchaseBuyingGroups.map((group, index) => (
+                  <div className="siBuyingGroupCard" key={group.brand}>
+                    <div className="siBuyingGroupHead">
+                      <div className="siBuyingRank">
+                        {index + 1}
+                      </div>
+
+                      <div className="siBuyingGroupTitle">
+                        <strong>{group.brand.toUpperCase()}</strong>
+                        <span>
+                          {group.items.length} item(s) • {group.units} unit(s)
+                        </span>
+                      </div>
+
+                      <div className="siBuyingGroupValue">
+                        <strong>
+                          {group.estimatedValue > 0
+                            ? money(group.estimatedValue)
+                            : "PRICE N/A"}
+                        </strong>
+                        {group.aiCount > 0 && (
+                          <span>{group.aiCount} AI PRIORITY</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {(group.aiCount > 0 ||
+                      group.manualCount > 0) && (
+                      <div className="siBuyingSourceChips">
+                        {group.aiCount > 0 && (
+                          <span className="ai">
+                            AI {group.aiCount}
+                          </span>
+                        )}
+                        {group.manualCount > 0 && (
+                          <span>
+                            MANUAL {group.manualCount}
+                          </span>
+                        )}
+                        <span>
+                          PRICED {group.pricedUnits}/{group.units}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="siBuyingItems">
+                      {group.items.map((item) => {
+                        const unitPrice = purchasePriceFor(item);
+                        const lineValue =
+                          Number(unitPrice || 0) *
+                          Number(item.required_qty || 0);
+
+                        return (
+                          <div className="siBuyingItem" key={item.id}>
+                            <div>
+                              <strong>{item.product_name}</strong>
+                              <span>
+                                {[
+                                  item.size
+                                    ? `Size ${item.size}`
+                                    : "",
+                                  item.colour || "",
+                                  item.current_stock != null
+                                    ? `Stock ${item.current_stock}`
+                                    : "",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" • ") || "Purchase item"}
+                              </span>
+                            </div>
+
+                            <b>× {item.required_qty}</b>
+
+                            <em>
+                              {lineValue > 0
+                                ? money(lineValue)
+                                : "PRICE N/A"}
+                            </em>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="siBuyingGroupActions">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void sharePurchaseGroup(
+                            group.brand,
+                            group.items,
+                          )
+                        }
+                      >
+                        SHARE GROUP
+                      </button>
+                      <button
+                        type="button"
+                        className="purchased"
+                        onClick={() =>
+                          void markGroupPurchased(group.items)
+                        }
+                        disabled={purchaseSyncing}
+                      >
+                        ALL PURCHASED ✓
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+
+        {purchaseSyncMessage && (
+          <div className="siPurchaseWorkbenchMessage">
+            {purchaseSyncMessage}
+          </div>
         )}
       </section>
 
@@ -903,31 +2180,68 @@ export default function StockIntelligencePage() {
                     </span>
                     <p>{row.final_recommended_action || "Maintain current stock policy"}</p>
 
-                    <span className={`siDecisionMini siDecisionMini-${buyingDecision(row).toLowerCase()}`}>
-                      {decisionLabel(buyingDecision(row))}
-                    </span>
+                    {(() => {
+                      const insight = smartInsight(row);
+                      return (
+                        <div className="siSmartInsight">
+                          <div className="siSmartScoreLine">
+                            <span className={`siDecisionMini siDecisionMini-${insight.decision.toLowerCase()}`}>
+                              {decisionLabel(insight.decision)}
+                            </span>
+                            <strong className="siSmartScore">{insight.score}/100</strong>
+                            <span className={`siConfidence siConfidence-${insight.confidence.toLowerCase()}`}>
+                              {insight.confidence}
+                            </span>
+                          </div>
+                          <small>{insight.reason}</small>
+                          <small>
+                            Smart qty: <strong>{number(insight.suggestedQty)}</strong>
+                            {insight.trendPercent == null
+                              ? ""
+                              : ` • Trend ${insight.trendPercent >= 0 ? "+" : ""}${Math.round(insight.trendPercent)}%`}
+                          </small>
+                        </div>
+                      );
+                    })()}
 
-                    {(buyingDecision(row) === "BUY_NOW" || buyingDecision(row) === "REORDER_SOON") &&
-                      Number(row.final_reorder_quantity || 0) > 0 && (
-                        <div className="siPurchaseRowActions">
-                          <span className={activePurchaseKeys.has(purchaseListKey(row)) ? "siListOn" : "siListPending"}>
-                            {activePurchaseKeys.has(purchaseListKey(row))
-                              ? "✓ IN PURCHASE LIST"
-                              : "AUTO-SYNC PENDING"}
-                          </span>
+                    <div className="siPurchaseRowActions">
+                      {activePurchaseKeys.has(purchaseListKey(row)) ? (
+                        <span className="siListOn">
+                          ✓ IN PURCHASE LIST
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="siAddToList"
+                          onClick={() =>
+                            void addVariantToPurchaseList(
+                              row,
+                              smartInsight(row).suggestedQty > 0
+                                ? smartInsight(row).suggestedQty
+                                : 1,
+                            )
+                          }
+                          disabled={purchaseSyncing}
+                        >
+                          + ADD TO PURCHASE LIST
+                        </button>
+                      )}
 
+                      {(buyingDecision(row) === "BUY_NOW" ||
+                        buyingDecision(row) === "REORDER_SOON") &&
+                        smartInsight(row).suggestedQty > 0 && (
                           <a
                             className="siReorderAction"
                             href={`/admin/purchases?source=stock-intelligence&productId=${row.product_id}&variantId=${row.variant_id}&quantity=${Math.max(
                               1,
-                              Number(row.final_reorder_quantity || 1),
+                              smartInsight(row).suggestedQty || 1,
                             )}`}
                           >
                             <span>📥</span>
                             OPEN PURCHASE
                           </a>
-                        </div>
-                      )}
+                        )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1099,10 +2413,23 @@ export default function StockIntelligencePage() {
         .siPurchasePulse{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:12px}.siPurchasePulse>div{padding:11px 12px;border:1px solid rgba(255,255,255,.13);border-radius:12px;background:rgba(255,255,255,.06)}.siPurchasePulse span,.siPurchasePulse strong{display:block}.siPurchasePulse span{color:rgba(255,255,255,.55);font-size:7px;font-weight:900}.siPurchasePulse strong{margin-top:3px;color:#f1d56e;font-size:12px}.siPurchaseMessage{margin-top:10px;padding:9px 11px;border-radius:10px;background:rgba(255,255,255,.08);color:#e9f1ff;font-size:9px}
         .siQuickSearch{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}.siQuickSearch button{min-height:31px;padding:0 10px;border:1px solid rgba(10,46,115,.16);border-radius:999px;background:#fff;color:#0a2e73;font-size:8px;font-weight:900;cursor:pointer}.siQuickSearch button:hover{border-color:#d4af37;background:#fffaf0}
         .siDecisionMini{display:inline-flex!important;width:max-content;margin-top:7px!important;padding:4px 7px;border-radius:999px;font-size:7px!important;font-weight:950!important}.siDecisionMini-buy_now{background:#ffe4e4;color:#9d1d1d!important}.siDecisionMini-reorder_soon{background:#fff0cf;color:#8b6200!important}.siDecisionMini-hold{background:#e5f7ec;color:#12643b!important}.siDecisionMini-dont_buy{background:#edf0f4;color:#59657a!important}
-        .siPurchaseRowActions{display:grid;gap:5px;margin-top:6px}.siListOn,.siListPending{font-size:7px!important;font-weight:900!important}.siListOn{color:#16834a!important}.siListPending{color:#a36a00!important}
-        @media(max-width:1350px){.siMetricGrid{grid-template-columns:repeat(3,minmax(0,1fr))}.siMoneyGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-        @media(max-width:900px){.siPagination{align-items:stretch;flex-direction:column}.siPaginationControls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.siPaginationControls span{grid-column:1/-1;text-align:center;order:-1}.siPaginationControls button{width:100%}.siPage{padding:104px 12px 20px}.siHero{grid-template-columns:1fr;align-items:flex-start;padding:22px}.siHeroCrown{display:none}.siHeroOrbitOne{right:8%}.siRoyalStrip{border-radius:14px}.siHero h1{font-size:27px}.siRefresh{width:100%}.siMetricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.siMoneyGrid,.siInsightGrid{grid-template-columns:1fr}.siFilters{grid-template-columns:1fr}.siPanel{padding:14px;border-radius:17px}.siSmartHead{align-items:stretch;flex-direction:column}.siSmartActions{display:grid;grid-template-columns:1fr 1fr}.siDecisionGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.siPurchasePulse{grid-template-columns:1fr}}
-        @media(max-width:520px){.siMetricGrid{grid-template-columns:1fr}.siMetric{min-height:82px}.siMoneyGrid strong{font-size:20px}.siHero h1{font-size:24px}}
+        .siSmartInsight{display:grid;gap:4px;margin-top:7px;max-width:260px}.siSmartScoreLine{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.siSmartScore{font-size:10px;color:#082b68}.siConfidence{padding:3px 6px;border-radius:999px;font-size:7px;font-weight:950;letter-spacing:.4px}.siConfidence-high{background:#ddf7e8;color:#12643b}.siConfidence-medium{background:#fff1c9;color:#805a00}.siConfidence-low{background:#eef1f5;color:#647084}.siSmartInsight small{font-size:8px!important;line-height:1.4;color:#5f6d85!important}
+        .siPurchaseRowActions{display:grid;gap:5px;margin-top:6px}.siListOn,.siListPending{font-size:7px!important;font-weight:900!important}.siListOn{color:#16834a!important}.siListPending{color:#a36a00!important}.siAddToList{display:inline-flex;align-items:center;justify-content:center;width:max-content;min-height:31px;padding:6px 10px;border:1px solid rgba(212,175,55,.8);border-radius:9px;background:linear-gradient(135deg,#d4af37,#f4dc7b);color:#061d4a;font-size:8px;font-weight:950;cursor:pointer;box-shadow:0 7px 16px rgba(3,21,63,.12);transition:transform .18s ease,box-shadow .18s ease}.siAddToList:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 11px 22px rgba(3,21,63,.18)}.siAddToList:disabled{opacity:.55;cursor:wait}
+        .siBrandLowStock{margin-top:18px;padding:18px;border:1px solid rgba(10,46,115,.14);border-radius:23px;background:linear-gradient(180deg,#fff 0%,#f8fbff 100%);box-shadow:0 16px 38px rgba(3,21,63,.10)}
+        .siBrandLowStockHead{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.siBrandLowStockHead h2{margin:4px 0 2px;color:#061d4a;font-size:19px}.siBrandLowStockHead p{margin:0;color:#667085;font-size:9px}.siBrandLowStockActions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.siBrandLowStockActions button{min-height:35px;padding:0 11px;border:1px solid rgba(10,46,115,.18);border-radius:10px;background:#fff;color:#0a2e73;font-size:8px;font-weight:950;cursor:pointer}.siBrandLowStockActions button.gold{border-color:#d4af37;background:linear-gradient(135deg,#d4af37,#f4dc7b);color:#061d4a}
+        .siLowBrandCards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px}.siLowBrandCards button{padding:11px;text-align:left;border:1px solid rgba(10,46,115,.13);border-radius:13px;background:#fff;color:#0a2e73;cursor:pointer;transition:.18s}.siLowBrandCards button:hover,.siLowBrandCards button.active{transform:translateY(-1px);border-color:#d4af37;box-shadow:0 8px 18px rgba(3,21,63,.08)}.siLowBrandCards span,.siLowBrandCards strong,.siLowBrandCards small{display:block}.siLowBrandCards span{font-size:7px;font-weight:950}.siLowBrandCards strong{margin-top:3px;font-size:18px}.siLowBrandCards small{margin-top:2px;color:#667085;font-size:7px;line-height:1.35}
+        .siLowStockRows{display:grid;gap:8px;margin-top:12px}.siLowStockRow{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:10px;padding:11px;border:1px solid rgba(10,46,115,.10);border-radius:13px;background:#fff}.siLowStockMain strong,.siLowStockMain span{display:block}.siLowStockMain strong{color:#061d4a;font-size:10px}.siLowStockMain span{margin-top:3px;color:#667085;font-size:7px}.siLowStockBadge{min-width:72px;padding:6px 8px;border-radius:999px;text-align:center;font-size:7px;font-weight:950}.siLowStockBadge.out{background:#fde4e2;color:#b3261e}.siLowStockBadge.critical{background:#fff0cf;color:#8b6200}.siLowStockBadge.low{background:#eef3fb;color:#0a2e73}.siLowStockSuggest{text-align:center}.siLowStockSuggest span,.siLowStockSuggest strong{display:block}.siLowStockSuggest span{color:#667085;font-size:6px;font-weight:950}.siLowStockSuggest strong{color:#0a2e73;font-size:11px}.siLowStockRow button{min-height:33px;padding:0 10px;border:1px solid rgba(10,46,115,.18);border-radius:9px;background:#fff;color:#0a2e73;font-size:7px;font-weight:950;cursor:pointer}.siLowStockRow button.gold{border-color:#d4af37;background:linear-gradient(135deg,#d4af37,#f4dc7b);color:#061d4a}.siLowStockRow button.added{border-color:#16834a;background:#e5f7ec;color:#12643b}.siLowStockRow button:disabled{cursor:default;opacity:.8}.siMobileSyncNote{margin-top:10px;padding:9px 11px;border-radius:10px;background:#eaf7ef;color:#12643b;font-size:8px;font-weight:850}
+        .siPurchaseWorkbench{margin-top:18px;padding:18px;border:1px solid rgba(10,46,115,.14);border-radius:23px;background:#fff;box-shadow:0 16px 38px rgba(3,21,63,.10)}
+        .siPurchaseWorkbenchHead{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.siPurchaseWorkbenchHead h2{margin:4px 0 2px;color:#061d4a;font-size:19px}.siPurchaseWorkbenchHead p{margin:0;color:#667085;font-size:9px}.siPurchaseWorkbenchTools{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.siPurchaseWorkbenchTools button,.siManualActions button{min-height:35px;padding:0 11px;border:1px solid rgba(10,46,115,.18);border-radius:10px;background:#fff;color:#0a2e73;font-size:8px;font-weight:950;cursor:pointer}.siPurchaseWorkbenchTools button.gold,.siManualActions button.gold{border-color:#d4af37;background:linear-gradient(135deg,#d4af37,#f4dc7b);color:#061d4a}
+        .siPurchaseModeSwitch{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}.siPurchaseModeSwitch button{min-height:38px;border:1px solid rgba(10,46,115,.18);border-radius:11px;background:#f7f9fc;color:#0a2e73;font-size:9px;font-weight:950;cursor:pointer}.siPurchaseModeSwitch button.active{border-color:#d4af37;background:#0a2e73;color:#fff;box-shadow:inset 0 -3px 0 #d4af37}
+        .siManualPurchaseBox{margin-top:12px;padding:13px;border:1px solid #e8d28a;border-radius:14px;background:#fffaf0}.siManualGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.siManualGrid input,.siPurchaseListControls input{min-height:37px;padding:0 10px;border:1px solid #d9deea;border-radius:10px;background:#fff;color:#1d2939;font-size:9px;outline:none}.siManualGrid input:focus,.siPurchaseListControls input:focus{border-color:#d4af37;box-shadow:0 0 0 3px rgba(212,175,55,.12)}.siManualActions{display:flex;justify-content:flex-end;gap:8px;margin-top:9px}
+        .siPurchaseListControls{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:13px}.siPurchaseTabs{display:flex;gap:7px}.siPurchaseTabs button{min-height:33px;padding:0 11px;border:1px solid rgba(10,46,115,.17);border-radius:999px;background:#fff;color:#0a2e73;font-size:8px;font-weight:950;cursor:pointer}.siPurchaseTabs button.active{background:#0a2e73;color:#fff;border-color:#0a2e73}.siPurchaseListControls input{width:min(360px,100%)}
+        .siPurchaseListRows{display:grid;gap:8px;margin-top:11px}.siPurchaseListRow{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:10px;padding:11px;border:1px solid rgba(10,46,115,.10);border-radius:13px;background:#fbfcff}.siPurchaseListMain strong,.siPurchaseListMain span{display:block}.siPurchaseListMain strong{color:#061d4a;font-size:10px}.siPurchaseListMain span{margin-top:2px;color:#667085;font-size:7px}.siPurchaseListQty{color:#0a2e73;font-size:9px;font-weight:950}.siPurchaseListValue{min-width:74px;text-align:right;color:#16834a;font-size:9px;font-weight:950}.siPurchaseListRow button,.siBuyingGroupActions button{min-height:31px;padding:0 9px;border:1px solid rgba(10,46,115,.18);border-radius:9px;background:#fff;color:#0a2e73;font-size:7px;font-weight:950;cursor:pointer}.siPurchaseListRow button.purchased,.siBuyingGroupActions button.purchased{border-color:#16834a;background:#16834a;color:#fff}
+        .siBuyingSummary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:13px}.siBuyingSummary>div{padding:11px;border-radius:12px;background:#061d4a;color:#fff}.siBuyingSummary span,.siBuyingSummary strong{display:block}.siBuyingSummary span{color:rgba(255,255,255,.58);font-size:7px;font-weight:900}.siBuyingSummary strong{margin-top:3px;color:#f2d675;font-size:12px}.siBuyingNote{margin-top:9px;padding:9px 11px;border-radius:10px;background:#fff8e4;color:#775b08;font-size:8px;line-height:1.45}
+        .siBuyingGroups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin-top:12px}.siBuyingGroupCard{padding:13px;border:1px solid rgba(10,46,115,.12);border-radius:16px;background:#fff;box-shadow:0 8px 20px rgba(3,21,63,.07)}.siBuyingGroupHead{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px}.siBuyingRank{width:31px;height:31px;display:grid;place-items:center;border-radius:999px;background:#d4af37;color:#061d4a;font-size:9px;font-weight:950}.siBuyingGroupTitle strong,.siBuyingGroupTitle span,.siBuyingGroupValue strong,.siBuyingGroupValue span{display:block}.siBuyingGroupTitle strong{color:#061d4a;font-size:10px}.siBuyingGroupTitle span{margin-top:2px;color:#667085;font-size:7px}.siBuyingGroupValue{text-align:right}.siBuyingGroupValue strong{color:#0a2e73;font-size:9px}.siBuyingGroupValue span{margin-top:2px;color:#b3261e;font-size:6px;font-weight:950}.siBuyingSourceChips{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}.siBuyingSourceChips span{padding:4px 7px;border-radius:999px;background:#eef3fb;color:#0a2e73;font-size:6px;font-weight:950}.siBuyingSourceChips span.ai{background:#fde7e5;color:#b3261e}.siBuyingItems{display:grid;gap:6px;margin-top:9px}.siBuyingItem{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:7px 0;border-top:1px dashed rgba(10,46,115,.10)}.siBuyingItem strong,.siBuyingItem span{display:block}.siBuyingItem strong{color:#061d4a;font-size:8px}.siBuyingItem span{margin-top:2px;color:#667085;font-size:6px}.siBuyingItem b{color:#0a2e73;font-size:8px}.siBuyingItem em{min-width:68px;text-align:right;color:#16834a;font-size:7px;font-weight:950;font-style:normal}.siBuyingGroupActions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px}.siEmptyPurchase{padding:18px;border:1px dashed #d0d5dd;border-radius:13px;text-align:center;color:#667085;font-size:9px}.siPurchaseWorkbenchMessage{margin-top:10px;padding:9px 11px;border-radius:10px;background:#eff6ff;color:#0a2e73;font-size:8px;font-weight:800}
+        @media(max-width:1350px){.siLowBrandCards{grid-template-columns:repeat(3,minmax(0,1fr))}.siMetricGrid{grid-template-columns:repeat(3,minmax(0,1fr))}.siMoneyGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        @media(max-width:900px){.siBrandLowStockHead{flex-direction:column}.siBrandLowStockActions{width:100%;display:grid;grid-template-columns:1fr 1fr}.siLowBrandCards{grid-template-columns:repeat(2,minmax(0,1fr))}.siLowStockRow{grid-template-columns:minmax(0,1fr) auto}.siLowStockRow>button{grid-column:1/-1}.siPagination{align-items:stretch;flex-direction:column}.siPaginationControls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.siPaginationControls span{grid-column:1/-1;text-align:center;order:-1}.siPaginationControls button{width:100%}.siPage{padding:104px 12px 20px}.siHero{grid-template-columns:1fr;align-items:flex-start;padding:22px}.siHeroCrown{display:none}.siHeroOrbitOne{right:8%}.siRoyalStrip{border-radius:14px}.siHero h1{font-size:27px}.siRefresh{width:100%}.siMetricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.siMoneyGrid,.siInsightGrid{grid-template-columns:1fr}.siFilters{grid-template-columns:1fr}.siPanel{padding:14px;border-radius:17px}.siSmartHead{align-items:stretch;flex-direction:column}.siSmartActions{display:grid;grid-template-columns:1fr 1fr}.siDecisionGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.siPurchasePulse{grid-template-columns:1fr}.siPurchaseWorkbenchHead{flex-direction:column}.siPurchaseWorkbenchTools{width:100%;display:grid;grid-template-columns:repeat(3,1fr)}.siManualGrid{grid-template-columns:1fr 1fr}.siPurchaseListControls{align-items:stretch;flex-direction:column}.siPurchaseListControls input{width:100%}.siBuyingSummary{grid-template-columns:1fr 1fr}.siBuyingGroups{grid-template-columns:1fr}.siPurchaseListRow{grid-template-columns:minmax(0,1fr) auto}.siPurchaseListValue{text-align:left}.siPurchaseListRow button{grid-column:1/-1}.siBuyingGroupActions{grid-template-columns:1fr 1fr}}
+        @media(max-width:520px){.siBrandLowStockActions{grid-template-columns:1fr}.siLowBrandCards{grid-template-columns:1fr}.siLowStockRow{grid-template-columns:1fr}.siLowStockBadge,.siLowStockSuggest{text-align:left;width:max-content}.siMetricGrid{grid-template-columns:1fr}.siPurchaseWorkbenchTools{grid-template-columns:1fr}.siManualGrid{grid-template-columns:1fr}.siBuyingSummary{grid-template-columns:1fr 1fr}.siBuyingGroupHead{grid-template-columns:auto minmax(0,1fr)}.siBuyingGroupValue{grid-column:2;text-align:left}.siBuyingItem{grid-template-columns:minmax(0,1fr) auto}.siBuyingItem em{grid-column:1/-1;text-align:left}.siBuyingGroupActions{grid-template-columns:1fr}.siMetric{min-height:82px}.siMoneyGrid strong{font-size:20px}.siHero h1{font-size:24px}}
       `}</style>
     </main>
   );
