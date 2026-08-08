@@ -241,10 +241,7 @@ export default function AdminLoginPage() {
     return true;
   }
 
-  async function handleOfflineUnlock(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
+  async function handleOfflineUnlock() {
     setErrorMessage("");
 
     if (!offlinePinConfigured) {
@@ -664,7 +661,7 @@ export default function AdminLoginPage() {
             <span>OFFLINE POS ACCESS</span>
           </div>
 
-          <form className="offlineUnlockBox" onSubmit={handleOfflineUnlock}>
+          <div className="offlineUnlockBox">
             <div>
               <strong>
                 {offlinePinConfigured
@@ -711,8 +708,9 @@ export default function AdminLoginPage() {
                 </div>
 
                 <button
-                  type="submit"
+                  type="button"
                   className="offlineUnlockButton"
+                  onClick={() => void handleOfflineUnlock()}
                   disabled={offlineUnlocking}
                 >
                   {offlineUnlocking
@@ -730,7 +728,7 @@ export default function AdminLoginPage() {
                 </button>
               </>
             )}
-          </form>
+          </div>
 
           <div className="securityNote">
             <span>🔐</span>

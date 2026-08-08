@@ -76,6 +76,24 @@ type BrandRow = {
   suggested_reorder_quantity: number | null;
 };
 
+type PurchaseListRow = {
+  id: string;
+  normalized_key: string;
+  source_product_id: number | null;
+  brand: string;
+  product_name: string;
+  size: string | null;
+  colour: string | null;
+  required_qty: number;
+  current_stock: number | null;
+  note: string | null;
+  source: string;
+  status: "ACTIVE" | "PURCHASED";
+  added_by: string | null;
+};
+
+type BuyingDecision = "BUY_NOW" | "REORDER_SOON" | "HOLD" | "DONT_BUY";
+
 const money = (value: unknown) =>
   new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -97,6 +115,68 @@ function statusClass(status: string | null | undefined) {
   return "neutral";
 }
 
+function normalizeKeyPart(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function purchaseListKey(row: VariantRow) {
+  return [
+    normalizeKeyPart(row.brand || "NEW CITY STYLE"),
+    normalizeKeyPart(row.product_name),
+    normalizeKeyPart(row.size),
+    normalizeKeyPart(row.color),
+  ].join("|");
+}
+
+function buyingDecision(row: VariantRow): BuyingDecision {
+  const status = String(row.final_stock_status || "").toUpperCase();
+  const action = String(row.final_recommended_action || "").toUpperCase();
+  const reorderQty = Math.max(0, Number(row.final_reorder_quantity || 0));
+
+  if (
+    reorderQty > 0 &&
+    (
+      status.includes("OUT_OF_STOCK") ||
+      status.includes("URGENT") ||
+      action.includes("BUY NOW")
+    )
+  ) {
+    return "BUY_NOW";
+  }
+
+  if (
+    reorderQty > 0 &&
+    (
+      status.includes("REORDER") ||
+      action.includes("REORDER")
+    )
+  ) {
+    return "REORDER_SOON";
+  }
+
+  if (
+    status.includes("CRITICAL_DEAD") ||
+    status.includes("DEAD_STOCK") ||
+    action.includes("DON'T BUY") ||
+    action.includes("DONT BUY") ||
+    action.includes("DO NOT BUY")
+  ) {
+    return "DONT_BUY";
+  }
+
+  return "HOLD";
+}
+
+function decisionLabel(value: BuyingDecision) {
+  if (value === "BUY_NOW") return "BUY NOW";
+  if (value === "REORDER_SOON") return "REORDER SOON";
+  if (value === "DONT_BUY") return "DON'T BUY";
+  return "HOLD";
+}
+
 export default function StockIntelligencePage() {
   const [summary, setSummary] = useState<SummaryRow | null>(null);
   const [variants, setVariants] = useState<VariantRow[]>([]);
@@ -110,6 +190,11 @@ export default function StockIntelligencePage() {
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [refreshing, setRefreshing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [smartFilter, setSmartFilter] = useState<"ALL" | BuyingDecision>("ALL");
+  const [purchaseList, setPurchaseList] = useState<PurchaseListRow[]>([]);
+  const [purchaseSyncing, setPurchaseSyncing] = useState(false);
+  const [purchaseSyncMessage, setPurchaseSyncMessage] = useState("");
+  const [autoSyncDone, setAutoSyncDone] = useState(false);
   const rowsPerPage = 15;
 
   async function loadData(showRefresh = false) {
@@ -118,8 +203,14 @@ export default function StockIntelligencePage() {
     setErrorText("");
 
     try {
-      const [summaryResult, variantsResult, sizeResult, colourResult, brandResult] =
-        await Promise.all([
+      const [
+        summaryResult,
+        variantsResult,
+        sizeResult,
+        colourResult,
+        brandResult,
+        purchaseListResult,
+      ] = await Promise.all([
           supabase.from("ncs_owner_summary_v2").select("*").maybeSingle(),
           supabase
             .from("ncs_variant_intelligence_v2")
@@ -141,6 +232,11 @@ export default function StockIntelligencePage() {
             .select("*")
             .order("revenue_30d", { ascending: false })
             .limit(30),
+          supabase
+            .from("ncs_purchase_list")
+            .select("*")
+            .eq("status", "ACTIVE")
+            .order("created_at", { ascending: false }),
         ]);
 
       const firstError =
@@ -148,7 +244,8 @@ export default function StockIntelligencePage() {
         variantsResult.error ||
         sizeResult.error ||
         colourResult.error ||
-        brandResult.error;
+        brandResult.error ||
+        purchaseListResult.error;
 
       if (firstError) throw firstError;
 
@@ -157,6 +254,7 @@ export default function StockIntelligencePage() {
       setSizes((sizeResult.data as DemandRow[]) || []);
       setColours((colourResult.data as DemandRow[]) || []);
       setBrands((brandResult.data as BrandRow[]) || []);
+      setPurchaseList((purchaseListResult.data as PurchaseListRow[]) || []);
     } catch (error) {
       console.error("Stock intelligence load error:", error);
       setErrorText(
@@ -174,6 +272,146 @@ export default function StockIntelligencePage() {
     void loadData();
   }, []);
 
+  const smartGroups = useMemo(() => {
+    const groups: Record<BuyingDecision, VariantRow[]> = {
+      BUY_NOW: [],
+      REORDER_SOON: [],
+      HOLD: [],
+      DONT_BUY: [],
+    };
+
+    variants.forEach((row) => {
+      groups[buyingDecision(row)].push(row);
+    });
+
+    return groups;
+  }, [variants]);
+
+  async function syncSmartPurchaseList(showMessage = true) {
+    if (purchaseSyncing || variants.length === 0) return;
+
+    const candidates = variants.filter((row) => {
+      const decision = buyingDecision(row);
+      return (
+        (decision === "BUY_NOW" || decision === "REORDER_SOON") &&
+        Number(row.final_reorder_quantity || 0) > 0
+      );
+    });
+
+    if (candidates.length === 0) {
+      if (showMessage) {
+        setPurchaseSyncMessage("No BUY NOW / REORDER SOON items need adding.");
+      }
+      return;
+    }
+
+    setPurchaseSyncing(true);
+    if (showMessage) setPurchaseSyncMessage("");
+
+    try {
+      const { data: activeRows, error: listError } = await supabase
+        .from("ncs_purchase_list")
+        .select("*")
+        .eq("status", "ACTIVE");
+
+      if (listError) throw listError;
+
+      const existing = (activeRows as PurchaseListRow[]) || [];
+      const existingByKey = new Map(existing.map((row) => [row.normalized_key, row]));
+
+      const inserts: Array<Record<string, unknown>> = [];
+      const updates: Array<PromiseLike<unknown>> = [];
+
+      candidates.forEach((row) => {
+        const key = purchaseListKey(row);
+        const requiredQty = Math.max(1, Math.round(Number(row.final_reorder_quantity || 1)));
+        const current = existingByKey.get(key);
+        const decision = buyingDecision(row);
+
+        if (!current) {
+          inserts.push({
+            normalized_key: key,
+            source_product_id: row.product_id,
+            brand: String(row.brand || "NEW CITY STYLE").trim() || "NEW CITY STYLE",
+            product_name: String(row.product_name || "Unnamed Product").trim(),
+            size: row.size || null,
+            colour: row.color || null,
+            required_qty: requiredQty,
+            current_stock: Math.max(0, Math.round(Number(row.current_stock || 0))),
+            note: `${decisionLabel(decision)} • Stock Intelligence auto-sync`,
+            source: "STOCK_INTELLIGENCE",
+            status: "ACTIVE",
+            added_by: "WEB_STOCK_INTELLIGENCE",
+          });
+        } else if (
+          current.source === "STOCK_INTELLIGENCE" &&
+          (
+            Number(current.required_qty || 0) !== requiredQty ||
+            Number(current.current_stock || 0) !== Math.max(0, Math.round(Number(row.current_stock || 0)))
+          )
+        ) {
+          updates.push(
+            supabase
+              .from("ncs_purchase_list")
+              .update({
+                required_qty: requiredQty,
+                current_stock: Math.max(0, Math.round(Number(row.current_stock || 0))),
+                note: `${decisionLabel(decision)} • Stock Intelligence auto-sync`,
+              })
+              .eq("id", current.id)
+              .then(() => undefined),
+          );
+        }
+      });
+
+      if (inserts.length > 0) {
+        const { error: insertError } = await supabase
+          .from("ncs_purchase_list")
+          .insert(inserts);
+
+        if (insertError) throw insertError;
+      }
+
+      if (updates.length > 0) {
+        await Promise.all(updates);
+      }
+
+      const { data: refreshed, error: refreshError } = await supabase
+        .from("ncs_purchase_list")
+        .select("*")
+        .eq("status", "ACTIVE")
+        .order("created_at", { ascending: false });
+
+      if (refreshError) throw refreshError;
+      setPurchaseList((refreshed as PurchaseListRow[]) || []);
+
+      if (showMessage) {
+        setPurchaseSyncMessage(
+          `${inserts.length} added • ${updates.length} updated • ${candidates.length} smart-buy items covered`,
+        );
+      }
+    } catch (error) {
+      console.error("Smart purchase-list sync error:", error);
+      if (showMessage) {
+        setPurchaseSyncMessage(
+          error instanceof Error
+            ? error.message
+            : "Unable to sync smart purchase list.",
+        );
+      }
+    } finally {
+      setPurchaseSyncing(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!loading && variants.length > 0 && !autoSyncDone) {
+      setAutoSyncDone(true);
+      void syncSmartPurchaseList(false);
+    }
+  }, [loading, variants, autoSyncDone]);
+
+
   const categories = useMemo(
     () =>
       Array.from(
@@ -188,7 +426,7 @@ export default function StockIntelligencePage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, statusFilter, categoryFilter]);
+  }, [search, statusFilter, categoryFilter, smartFilter]);
 
   const filteredVariants = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -223,13 +461,18 @@ export default function StockIntelligencePage() {
         (statusFilter === "REORDER_UNITS_GROUP" &&
           Number(row.final_reorder_quantity || 0) > 0);
 
+      const matchesSmart =
+        smartFilter === "ALL" ||
+        buyingDecision(row) === smartFilter;
+
       return (
         matchesSearch &&
         matchesStatus &&
+        matchesSmart &&
         (categoryFilter === "ALL" || category === categoryFilter)
       );
     });
-  }, [variants, search, statusFilter, categoryFilter]);
+  }, [variants, search, statusFilter, categoryFilter, smartFilter]);
 
   const totalPages = Math.max(
     1,
@@ -252,6 +495,26 @@ export default function StockIntelligencePage() {
     safeCurrentPage * rowsPerPage,
     filteredVariants.length,
   );
+
+  const activePurchaseKeys = useMemo(
+    () => new Set(purchaseList.map((row) => row.normalized_key)),
+    [purchaseList],
+  );
+
+  const smartPurchaseCovered = useMemo(
+    () =>
+      variants.filter((row) => {
+        const decision = buyingDecision(row);
+        return (
+          (decision === "BUY_NOW" || decision === "REORDER_SOON") &&
+          activePurchaseKeys.has(purchaseListKey(row))
+        );
+      }).length,
+    [variants, activePurchaseKeys],
+  );
+
+  const smartPurchaseTotal =
+    smartGroups.BUY_NOW.length + smartGroups.REORDER_SOON.length;
 
   const summaryCards = [
     {
@@ -435,6 +698,77 @@ export default function StockIntelligencePage() {
         </article>
       </section>
 
+      <section className="siSmartPanel">
+        <div className="siSmartHead">
+          <div>
+            <span className="siSectionTag">SMART BUYING GUIDE</span>
+            <h2>Search → Decide → Purchase List</h2>
+            <p>BUY NOW and REORDER SOON items are auto-synced to the shared purchase list.</p>
+          </div>
+
+          <div className="siSmartActions">
+            <button
+              type="button"
+              className="siSyncPurchase"
+              onClick={() => void syncSmartPurchaseList(true)}
+              disabled={purchaseSyncing}
+            >
+              {purchaseSyncing ? "SYNCING..." : "↻ SYNC PURCHASE LIST"}
+            </button>
+
+            <a className="siOpenPurchaseList" href="/admin/purchases">
+              OPEN PURCHASES →
+            </a>
+          </div>
+        </div>
+
+        <div className="siDecisionGrid">
+          {([
+            ["BUY_NOW", "BUY NOW", smartGroups.BUY_NOW.length, "danger"],
+            ["REORDER_SOON", "REORDER SOON", smartGroups.REORDER_SOON.length, "warning"],
+            ["HOLD", "HOLD", smartGroups.HOLD.length, "success"],
+            ["DONT_BUY", "DON'T BUY", smartGroups.DONT_BUY.length, "neutral"],
+          ] as const).map(([value, label, count, tone]) => (
+            <button
+              key={value}
+              type="button"
+              className={`siDecisionCard siDecision-${tone} ${smartFilter === value ? "active" : ""}`}
+              onClick={() => {
+                setSmartFilter((current) => current === value ? "ALL" : value);
+                window.setTimeout(() => {
+                  document
+                    .getElementById("stock-intelligence-action-centre")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }, 50);
+              }}
+            >
+              <span>{label}</span>
+              <strong>{count}</strong>
+              <small>{smartFilter === value ? "FILTER ACTIVE" : "TAP TO FILTER"}</small>
+            </button>
+          ))}
+        </div>
+
+        <div className="siPurchasePulse">
+          <div>
+            <span>SHARED PURCHASE LIST</span>
+            <strong>{purchaseList.length} active items</strong>
+          </div>
+          <div>
+            <span>SMART ITEMS COVERED</span>
+            <strong>{smartPurchaseCovered} / {smartPurchaseTotal}</strong>
+          </div>
+          <div>
+            <span>AUTO SYNC</span>
+            <strong>{purchaseSyncing ? "WORKING" : "ON"}</strong>
+          </div>
+        </div>
+
+        {purchaseSyncMessage && (
+          <div className="siPurchaseMessage">{purchaseSyncMessage}</div>
+        )}
+      </section>
+
       <section className="siPanel" id="stock-intelligence-action-centre">
         <div className="siPanelHead">
           <div>
@@ -450,6 +784,7 @@ export default function StockIntelligencePage() {
                 setSearch("");
                 setStatusFilter("ALL");
                 setCategoryFilter("ALL");
+                setSmartFilter("ALL");
               }}
             >
               Clear filters
@@ -489,6 +824,25 @@ export default function StockIntelligencePage() {
             <option value="ALL">All categories</option>
             {categories.map((value) => <option key={value} value={value}>{value}</option>)}
           </select>
+        </div>
+
+        <div className="siQuickSearch">
+          <button type="button" onClick={() => setSearch("")}>ALL</button>
+          <button type="button" onClick={() => setSmartFilter("BUY_NOW")}>BUY NOW</button>
+          <button type="button" onClick={() => setSmartFilter("REORDER_SOON")}>REORDER SOON</button>
+          <button type="button" onClick={() => setStatusFilter("REORDER_UNITS_GROUP")}>SUGGESTED UNITS</button>
+          <button type="button" onClick={() => setStatusFilter("SLOW_DEAD_GROUP")}>SLOW / DEAD</button>
+          <button
+            type="button"
+            onClick={() => {
+              setSearch("");
+              setStatusFilter("ALL");
+              setCategoryFilter("ALL");
+              setSmartFilter("ALL");
+            }}
+          >
+            RESET
+          </button>
         </div>
 
         <div className="siTableWrap">
@@ -549,18 +903,31 @@ export default function StockIntelligencePage() {
                     </span>
                     <p>{row.final_recommended_action || "Maintain current stock policy"}</p>
 
-                    <a
-                      className="siReorderAction"
-                      href={`/admin/purchases?source=stock-intelligence&productId=${row.product_id}&variantId=${row.variant_id}&quantity=${Math.max(
-                        1,
-                        Number(row.final_reorder_quantity || 1),
-                      )}`}
-                    >
-                      <span>📥</span>
-                      {Number(row.final_reorder_quantity || 0) > 0
-                        ? `Reorder ${number(row.final_reorder_quantity)}`
-                        : "Open Purchase"}
-                    </a>
+                    <span className={`siDecisionMini siDecisionMini-${buyingDecision(row).toLowerCase()}`}>
+                      {decisionLabel(buyingDecision(row))}
+                    </span>
+
+                    {(buyingDecision(row) === "BUY_NOW" || buyingDecision(row) === "REORDER_SOON") &&
+                      Number(row.final_reorder_quantity || 0) > 0 && (
+                        <div className="siPurchaseRowActions">
+                          <span className={activePurchaseKeys.has(purchaseListKey(row)) ? "siListOn" : "siListPending"}>
+                            {activePurchaseKeys.has(purchaseListKey(row))
+                              ? "✓ IN PURCHASE LIST"
+                              : "AUTO-SYNC PENDING"}
+                          </span>
+
+                          <a
+                            className="siReorderAction"
+                            href={`/admin/purchases?source=stock-intelligence&productId=${row.product_id}&variantId=${row.variant_id}&quantity=${Math.max(
+                              1,
+                              Number(row.final_reorder_quantity || 1),
+                            )}`}
+                          >
+                            <span>📥</span>
+                            OPEN PURCHASE
+                          </a>
+                        </div>
+                      )}
                   </td>
                 </tr>
               ))}
@@ -725,8 +1092,16 @@ export default function StockIntelligencePage() {
         .siPaginationControls button:hover:not(:disabled){transform:translateY(-1px);border-color:#d4af37;background:#fffaf0}
         .siPaginationControls button:disabled{opacity:.42;cursor:not-allowed}
         .siPaginationControls span{padding:0 5px;color:#667085;font-size:9px;white-space:nowrap}
+        .siSmartPanel{margin-top:18px;padding:20px;border:1px solid rgba(10,46,115,.14);border-radius:23px;background:linear-gradient(135deg,#061d4a 0%,#0a2e73 58%,#174fa8 100%);box-shadow:0 18px 42px rgba(3,21,63,.18);color:#fff}
+        .siSmartHead{display:flex;align-items:center;justify-content:space-between;gap:16px}.siSmartHead h2{margin:4px 0 2px;font-size:20px}.siSmartHead p{margin:0;color:rgba(255,255,255,.68);font-size:10px}.siSmartActions{display:flex;gap:8px;align-items:center}
+        .siSyncPurchase,.siOpenPurchaseList{min-height:38px;display:inline-flex;align-items:center;justify-content:center;padding:0 13px;border-radius:11px;font-size:9px;font-weight:950;text-decoration:none;white-space:nowrap}.siSyncPurchase{border:1px solid #f1d56e;background:linear-gradient(135deg,#d4af37,#f2d879);color:#061d4a;cursor:pointer}.siSyncPurchase:disabled{opacity:.65;cursor:wait}.siOpenPurchaseList{border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff}
+        .siDecisionGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:15px}.siDecisionCard{padding:14px;border:1px solid rgba(255,255,255,.18);border-radius:15px;background:rgba(255,255,255,.08);color:#fff;text-align:left;cursor:pointer;transition:transform .18s ease,border-color .18s ease,background .18s ease}.siDecisionCard:hover,.siDecisionCard.active{transform:translateY(-2px);border-color:#f1d56e;background:rgba(255,255,255,.14)}.siDecisionCard span,.siDecisionCard strong,.siDecisionCard small{display:block}.siDecisionCard span{font-size:8px;font-weight:900;letter-spacing:.5px}.siDecisionCard strong{margin-top:3px;font-size:24px}.siDecisionCard small{margin-top:2px;color:rgba(255,255,255,.58);font-size:7px}.siDecision-danger strong{color:#ffb6b6}.siDecision-warning strong{color:#ffd877}.siDecision-success strong{color:#9fe0b8}.siDecision-neutral strong{color:#d9dfeb}
+        .siPurchasePulse{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:12px}.siPurchasePulse>div{padding:11px 12px;border:1px solid rgba(255,255,255,.13);border-radius:12px;background:rgba(255,255,255,.06)}.siPurchasePulse span,.siPurchasePulse strong{display:block}.siPurchasePulse span{color:rgba(255,255,255,.55);font-size:7px;font-weight:900}.siPurchasePulse strong{margin-top:3px;color:#f1d56e;font-size:12px}.siPurchaseMessage{margin-top:10px;padding:9px 11px;border-radius:10px;background:rgba(255,255,255,.08);color:#e9f1ff;font-size:9px}
+        .siQuickSearch{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}.siQuickSearch button{min-height:31px;padding:0 10px;border:1px solid rgba(10,46,115,.16);border-radius:999px;background:#fff;color:#0a2e73;font-size:8px;font-weight:900;cursor:pointer}.siQuickSearch button:hover{border-color:#d4af37;background:#fffaf0}
+        .siDecisionMini{display:inline-flex!important;width:max-content;margin-top:7px!important;padding:4px 7px;border-radius:999px;font-size:7px!important;font-weight:950!important}.siDecisionMini-buy_now{background:#ffe4e4;color:#9d1d1d!important}.siDecisionMini-reorder_soon{background:#fff0cf;color:#8b6200!important}.siDecisionMini-hold{background:#e5f7ec;color:#12643b!important}.siDecisionMini-dont_buy{background:#edf0f4;color:#59657a!important}
+        .siPurchaseRowActions{display:grid;gap:5px;margin-top:6px}.siListOn,.siListPending{font-size:7px!important;font-weight:900!important}.siListOn{color:#16834a!important}.siListPending{color:#a36a00!important}
         @media(max-width:1350px){.siMetricGrid{grid-template-columns:repeat(3,minmax(0,1fr))}.siMoneyGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-        @media(max-width:900px){.siPagination{align-items:stretch;flex-direction:column}.siPaginationControls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.siPaginationControls span{grid-column:1/-1;text-align:center;order:-1}.siPaginationControls button{width:100%}.siPage{padding:104px 12px 20px}.siHero{grid-template-columns:1fr;align-items:flex-start;padding:22px}.siHeroCrown{display:none}.siHeroOrbitOne{right:8%}.siRoyalStrip{border-radius:14px}.siHero h1{font-size:27px}.siRefresh{width:100%}.siMetricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.siMoneyGrid,.siInsightGrid{grid-template-columns:1fr}.siFilters{grid-template-columns:1fr}.siPanel{padding:14px;border-radius:17px}}
+        @media(max-width:900px){.siPagination{align-items:stretch;flex-direction:column}.siPaginationControls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.siPaginationControls span{grid-column:1/-1;text-align:center;order:-1}.siPaginationControls button{width:100%}.siPage{padding:104px 12px 20px}.siHero{grid-template-columns:1fr;align-items:flex-start;padding:22px}.siHeroCrown{display:none}.siHeroOrbitOne{right:8%}.siRoyalStrip{border-radius:14px}.siHero h1{font-size:27px}.siRefresh{width:100%}.siMetricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.siMoneyGrid,.siInsightGrid{grid-template-columns:1fr}.siFilters{grid-template-columns:1fr}.siPanel{padding:14px;border-radius:17px}.siSmartHead{align-items:stretch;flex-direction:column}.siSmartActions{display:grid;grid-template-columns:1fr 1fr}.siDecisionGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.siPurchasePulse{grid-template-columns:1fr}}
         @media(max-width:520px){.siMetricGrid{grid-template-columns:1fr}.siMetric{min-height:82px}.siMoneyGrid strong{font-size:20px}.siHero h1{font-size:24px}}
       `}</style>
     </main>
