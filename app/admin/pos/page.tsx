@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import jsPDF from "jspdf";
 import {
@@ -311,6 +312,683 @@ function formatCurrency(value: number) {
 function normalizeText(value: string | null | undefined) {
   return value?.trim().toLowerCase() || "";
 }
+type PosAiIntent =
+  | "add"
+  | "show"
+  | "remove"
+  | "increase"
+  | "decrease"
+  | "undo";
+
+type PosAiMatch = {
+  product: PosProduct;
+  score: number;
+};
+
+type PosAiCommand = {
+  raw: string;
+  normalized: string;
+  intent: PosAiIntent;
+  quantity: number;
+  searchText: string;
+  tokens: string[];
+};
+
+const POS_AI_ACTION_WORDS = new Set([
+  "add",
+  "put",
+  "cart",
+  "bill",
+  "please",
+  "pls",
+  "qty",
+  "quantity",
+  "piece",
+  "pieces",
+  "pc",
+  "pcs",
+  "show",
+  "find",
+  "search",
+  "remove",
+  "delete",
+  "minus",
+  "increase",
+  "decrease",
+  "undo",
+  "again",
+  "item",
+  "items",
+  "size",
+  "sizes",
+  "colour",
+  "colours",
+  "color",
+  "colors",
+  "brand",
+  "variant",
+  "model",
+  "discount",
+  "percent",
+  "percentage",
+  "off",
+  "stock",
+  "available",
+  "availability",
+  "last",
+  "customer",
+  "payment",
+  "cash",
+  "upi",
+  "card",
+  "credit",
+  "hold",
+  "complete",
+  "total",
+  "how",
+  "much",
+  "entha",
+  "ki",
+  "set",
+  "make",
+  "change",
+  "do",
+  "సైజ్",
+  "కలర్",
+  "రంగు",
+  "డిస్కౌంట్",
+  "స్టాక్",
+  "ఎంత",
+  "కి",
+  "చేయి",
+  "సెట్",
+  "కస్టమర్",
+  "పేమెంట్",
+  "బిల్",
+  "మొత్తం",
+  "పెట్టు",
+  "వేయి",
+  "యాడ్",
+  "చూపు",
+  "చూపించు",
+  "వెతుకు",
+  "తీసేయి",
+  "తొలగించు",
+  "తగ్గించు",
+  "పెంచు",
+  "మళ్ళీ",
+  "మళ్లీ",
+  "ఏవి",
+]);
+
+const POS_AI_QUANTITY_WORDS: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  okati: 1,
+  rendu: 2,
+  moodu: 3,
+  nalugu: 4,
+  aidu: 5,
+  aaru: 6,
+  edu: 7,
+  enimidi: 8,
+  tommidi: 9,
+  padi: 10,
+  ఒకటి: 1,
+  రెండు: 2,
+  మూడు: 3,
+  నాలుగు: 4,
+  ఐదు: 5,
+  ఆరు: 6,
+  ఏడు: 7,
+  ఎనిమిది: 8,
+  తొమ్మిది: 9,
+  పది: 10,
+};
+
+function normalizePosAiText(value: string) {
+  return value
+    .toLocaleLowerCase("en-IN")
+    .replace(/[.,!?;:()[\]{}"'`]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getPosAiIntent(normalized: string): PosAiIntent {
+  if (
+    /\bundo\b/.test(normalized) ||
+    normalized.includes("మళ్ళీ వెనక్కి") ||
+    normalized.includes("మళ్లీ వెనక్కి")
+  ) {
+    return "undo";
+  }
+
+  if (
+    /\b(remove|delete)\b/.test(normalized) ||
+    normalized.includes("తీసేయి") ||
+    normalized.includes("తొలగించు")
+  ) {
+    return "remove";
+  }
+
+  if (
+    /\b(increase|plus)\b/.test(normalized) ||
+    normalized.includes("పెంచు")
+  ) {
+    return "increase";
+  }
+
+  if (
+    /\b(decrease|minus)\b/.test(normalized) ||
+    normalized.includes("తగ్గించు")
+  ) {
+    return "decrease";
+  }
+
+  if (
+    /\b(show|find|search)\b/.test(normalized) ||
+    normalized.includes("చూపు") ||
+    normalized.includes("చూపించు") ||
+    normalized.includes("వెతుకు") ||
+    normalized.includes("ఏవి")
+  ) {
+    return "show";
+  }
+
+  return "add";
+}
+
+function getPosAiQuantity(normalized: string) {
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+
+  for (const token of tokens) {
+    const wordQuantity = POS_AI_QUANTITY_WORDS[token];
+    if (wordQuantity) {
+      return wordQuantity;
+    }
+  }
+
+  const explicitQuantityMatch =
+    normalized.match(/\b(\d{1,2})\s*(?:pcs?|pieces?|qty|quantity)\b/) ||
+    normalized.match(/\b(?:qty|quantity)\s*(\d{1,2})\b/);
+
+  if (explicitQuantityMatch) {
+    return Math.max(
+      1,
+      Math.min(99, Number(explicitQuantityMatch[1]))
+    );
+  }
+
+  const leadingQuantityMatch = normalized.match(
+    /^(\d{1,2})\s+(?=[a-z\u0C00-\u0C7F])/
+  );
+
+  if (leadingQuantityMatch) {
+    return Math.max(
+      1,
+      Math.min(99, Number(leadingQuantityMatch[1]))
+    );
+  }
+
+  return 1;
+}
+
+function buildPosAiCommand(rawCommand: string): PosAiCommand {
+  const normalized = normalizePosAiText(rawCommand);
+  const intent = getPosAiIntent(normalized);
+  const quantity = getPosAiQuantity(normalized);
+
+  const rawTokens = normalized
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const tokens = rawTokens.filter((token, index) => {
+    if (POS_AI_ACTION_WORDS.has(token)) {
+      return false;
+    }
+
+    if (POS_AI_QUANTITY_WORDS[token]) {
+      return false;
+    }
+
+    if (
+      /^\d{1,2}$/.test(token) &&
+      index === 0 &&
+      Number(token) === quantity
+    ) {
+      return false;
+    }
+
+    if (
+      /^\d{1,2}$/.test(token) &&
+      ["pc", "pcs", "piece", "pieces", "qty", "quantity"].includes(
+        rawTokens[index + 1] || ""
+      )
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+
+  return {
+    raw: rawCommand,
+    normalized,
+    intent,
+    quantity,
+    searchText: tokens.join(" "),
+    tokens,
+  };
+}
+
+function posAiLevenshtein(a: string, b: string) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+
+  const previous = Array.from(
+    { length: b.length + 1 },
+    (_, index) => index
+  );
+
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+
+    for (let j = 1; j <= b.length; j += 1) {
+      current[j] = Math.min(
+        current[j - 1] + 1,
+        previous[j] + 1,
+        previous[j - 1] +
+          (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+
+    for (let j = 0; j < current.length; j += 1) {
+      previous[j] = current[j];
+    }
+  }
+
+  return previous[b.length];
+}
+
+function getPosAiTokenScore(
+  queryToken: string,
+  candidateToken: string
+) {
+  if (!queryToken || !candidateToken) {
+    return 0;
+  }
+
+  if (queryToken === candidateToken) {
+    return 12;
+  }
+
+  // Variant sizes such as S / M / L must never behave like fuzzy prefixes.
+  // A one- or two-character command token only matches the exact same token.
+  if (queryToken.length <= 2 || candidateToken.length <= 2) {
+    return 0;
+  }
+
+  if (
+    candidateToken.startsWith(queryToken) ||
+    queryToken.startsWith(candidateToken)
+  ) {
+    return 9;
+  }
+
+  if (
+    candidateToken.includes(queryToken) ||
+    queryToken.includes(candidateToken)
+  ) {
+    return 7;
+  }
+
+  if (
+    queryToken.length >= 4 &&
+    candidateToken.length >= 4
+  ) {
+    const distance = posAiLevenshtein(
+      queryToken,
+      candidateToken
+    );
+
+    if (distance === 1) {
+      return 6;
+    }
+
+    if (
+      distance === 2 &&
+      Math.max(queryToken.length, candidateToken.length) >= 6
+    ) {
+      return 3;
+    }
+  }
+
+  return 0;
+}
+
+function normalizePosAiVariantValue(value: string | null | undefined) {
+  return normalizePosAiText(value || "")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function getPosAiExplicitSize(command: PosAiCommand) {
+  const normalized = command.normalized;
+
+  const labelledMatch =
+    normalized.match(/\bsize\s+([a-z0-9]+)\b/) ||
+    normalized.match(/\b([a-z0-9]+)\s+size\b/) ||
+    normalized.match(/సైజ్\s+([a-z0-9]+)/) ||
+    normalized.match(/([a-z0-9]+)\s+సైజ్/);
+
+  if (labelledMatch?.[1]) {
+    return normalizePosAiVariantValue(labelledMatch[1]);
+  }
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  const standardSize = tokens.find((token) =>
+    /^(?:xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|4xl|5xl|6xl)$/i.test(token)
+  );
+
+  if (standardSize) {
+    return normalizePosAiVariantValue(standardSize);
+  }
+
+  // Numeric apparel/innerwear sizes are treated as strict size constraints
+  // when a variant actually has a size value.
+  const numericSize = tokens.find((token) => {
+    if (!/^\d{2,3}$/.test(token)) return false;
+    const numericValue = Number(token);
+    return numericValue >= 24 && numericValue <= 120;
+  });
+
+  return numericSize
+    ? normalizePosAiVariantValue(numericSize)
+    : "";
+}
+
+function getPosAiExplicitColor(
+  product: PosProduct,
+  command: PosAiCommand
+) {
+  const productColor = normalizePosAiVariantValue(product.color);
+
+  if (!productColor) {
+    return "";
+  }
+
+  const colorTokens = normalizePosAiText(product.color)
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const commandTokens = command.normalized
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const exactColorMentioned = colorTokens.every((colorToken) =>
+    commandTokens.includes(colorToken)
+  );
+
+  return exactColorMentioned ? productColor : "";
+}
+
+function productMatchesPosAiVariantConstraints(
+  product: PosProduct,
+  command: PosAiCommand
+) {
+  const explicitSize = getPosAiExplicitSize(command);
+  const productSize = normalizePosAiVariantValue(product.size);
+
+  if (explicitSize && productSize && productSize !== explicitSize) {
+    return false;
+  }
+
+  if (explicitSize && !productSize) {
+    return false;
+  }
+
+  // If the command explicitly contains this product's colour wording,
+  // require that exact colour. This stays dynamic for all current/future colours.
+  const explicitColor = getPosAiExplicitColor(product, command);
+
+  if (explicitColor) {
+    const productColor = normalizePosAiVariantValue(product.color);
+
+    if (productColor !== explicitColor) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function getPosAiProductScore(
+  product: PosProduct,
+  command: PosAiCommand
+) {
+  if (getAvailableStock(product) <= 0) {
+    return -1;
+  }
+
+  if (!productMatchesPosAiVariantConstraints(product, command)) {
+    return 0;
+  }
+
+  const fullQuery = command.searchText;
+
+  const barcode = normalizeText(product.barcode);
+  const sku = normalizeText(product.sku);
+  const shortCode = normalizeText(getPosShortCode(product));
+  const parentCode = normalizeText(
+    getParentShortCode(product.productId)
+  );
+
+  if (
+    fullQuery &&
+    [barcode, sku, shortCode, parentCode].includes(fullQuery)
+  ) {
+    return 1000;
+  }
+
+  const fields = [
+    { value: product.brand, weight: 28 },
+    { value: product.name, weight: 32 },
+    { value: product.size, weight: 34 },
+    { value: product.color, weight: 24 },
+    { value: product.category, weight: 12 },
+    { value: product.subcategory, weight: 12 },
+    { value: product.sku, weight: 36 },
+    { value: product.barcode, weight: 40 },
+    { value: getPosShortCode(product), weight: 40 },
+    { value: getParentShortCode(product.productId), weight: 30 },
+  ];
+
+  let score = 0;
+  let matchedTokens = 0;
+
+  const explicitSize = getPosAiExplicitSize(command);
+
+  for (const queryToken of command.tokens) {
+    if (
+      explicitSize &&
+      normalizePosAiVariantValue(queryToken) === explicitSize
+    ) {
+      // Size has already been validated exactly above.
+      score += 70;
+      matchedTokens += 1;
+      continue;
+    }
+
+    let bestTokenScore = 0;
+    let bestWeight = 0;
+
+    for (const field of fields) {
+      const fieldTokens = normalizePosAiText(field.value || "")
+        .split(/\s+/)
+        .filter(Boolean);
+
+      for (const candidateToken of fieldTokens) {
+        const tokenScore = getPosAiTokenScore(
+          queryToken,
+          candidateToken
+        );
+
+        if (tokenScore > bestTokenScore) {
+          bestTokenScore = tokenScore;
+          bestWeight = field.weight;
+        }
+      }
+    }
+
+    if (bestTokenScore > 0) {
+      matchedTokens += 1;
+      score += bestTokenScore + bestWeight;
+    }
+  }
+
+  if (command.tokens.length === 0) {
+    return 0;
+  }
+
+  // Every meaningful command token must match the same product.
+  // This prevents a size such as "75" from flooding AI results with
+  // unrelated products when the brand/name token did not match.
+  if (matchedTokens !== command.tokens.length) {
+    return 0;
+  }
+
+  if (
+    fullQuery &&
+    normalizePosAiText(
+      [
+        product.brand,
+        product.name,
+        product.size,
+        product.color,
+      ].join(" ")
+    ).includes(fullQuery)
+  ) {
+    score += 35;
+  }
+
+  return score;
+}
+
+function findPosAiMatches(
+  products: PosProduct[],
+  command: PosAiCommand
+): PosAiMatch[] {
+  const normalizedCommand = ` ${command.normalized} `;
+
+  const mentionedColors = Array.from(
+    new Set(
+      products
+        .map((product) => normalizePosAiText(product.color || ""))
+        .filter(Boolean)
+        .filter((color) => {
+          const colorPhrase = ` ${color} `;
+          if (normalizedCommand.includes(colorPhrase)) return true;
+
+          const colorTokens = color.split(/\s+/).filter(Boolean);
+          return colorTokens.length > 0 &&
+            colorTokens.every((token) =>
+              command.tokens.includes(token)
+            );
+        })
+    )
+  );
+
+  return products
+    .filter((product) => {
+      if (mentionedColors.length === 0) return true;
+      const productColor = normalizePosAiText(product.color || "");
+      return mentionedColors.includes(productColor);
+    })
+    .map((product) => ({
+      product,
+      score: getPosAiProductScore(product, command),
+    }))
+    .filter((match) => match.score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+
+      return (
+        getAvailableStock(b.product) -
+        getAvailableStock(a.product)
+      );
+    });
+}
+
+
+function splitPosAiMultiCommands(rawCommand: string) {
+  const parts = rawCommand
+    .split(/\s*(?:,|;|\n|\bthen\b|తర్వాత)\s*/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length > 1) {
+    return parts;
+  }
+
+  const andParts = rawCommand
+    .split(/\s+(?:and|మరియు)\s+/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (
+    andParts.length > 1 &&
+    andParts.every((part) =>
+      /\b(add|put|remove|delete|increase|decrease)\b|పెట్టు|వేయి|యాడ్|తీసేయి|తొలగించు|పెంచు|తగ్గించు/i.test(part)
+    )
+  ) {
+    return andParts;
+  }
+
+  return [rawCommand.trim()].filter(Boolean);
+}
+
+function getPosAiPercentage(rawCommand: string) {
+  const normalized = normalizePosAiText(rawCommand);
+  const match =
+    normalized.match(/(\d{1,3}(?:\.\d+)?)\s*%/) ||
+    normalized.match(/(\d{1,3}(?:\.\d+)?)\s*(?:percent|percentage)/) ||
+    normalized.match(/(?:discount|డిస్కౌంట్)\s*(\d{1,3}(?:\.\d+)?)/);
+
+  if (!match) return null;
+
+  return Math.min(100, Math.max(0, Number(match[1])));
+}
+
+function getPosAiAssignedQuantity(rawCommand: string) {
+  const normalized = normalizePosAiText(rawCommand);
+  const match =
+    normalized.match(/\b(?:qty|quantity)\s*(\d{1,2})\b/) ||
+    normalized.match(/\b(\d{1,2})\s*(?:qty|quantity)\b/);
+
+  if (!match) return null;
+
+  return Math.max(0, Math.min(99, Number(match[1])));
+}
+
+function stripPosAiModifierWords(rawCommand: string) {
+  return rawCommand
+    .replace(/\b\d{1,3}(?:\.\d+)?\s*%/gi, " ")
+    .replace(/\b(?:discount|percent|percentage|off|stock|available|availability|qty|quantity|set|make|change|do|last|item|customer|payment|hold|complete|total|how|much|entha|ki)\b/gi, " ")
+    .replace(/డిస్కౌంట్|స్టాక్|ఎంత|కి|చేయి|సెట్|కస్టమర్|పేమెంట్|బిల్|మొత్తం/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function cleanDisplayText(
   value: string | null | undefined,
@@ -515,11 +1193,21 @@ export default function PosPage() {
   const [loadingOverview, setLoadingOverview] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] =
-    useState("All");
+const [selectedCategory, setSelectedCategory] =
+  useState("All");
+
+const [posAiCommand, setPosAiCommand] = useState("");
+const [posAiMatches, setPosAiMatches] = useState<PosAiMatch[]>([]);
+const [posAiExpanded, setPosAiExpanded] = useState(false);
+const [posAiLastProductKey, setPosAiLastProductKey] =
+  useState<string | null>(null);
+const [posAiLastAction, setPosAiLastAction] = useState<{
+  productKey: string;
+  previousQuantity: number;
+} | null>(null);
 
   const [productViewMode, setProductViewMode] =
-    useState<ProductViewMode>("smart");
+    useState<ProductViewMode>("brands");
   const [expandedBrand, setExpandedBrand] =
     useState<string | null>(null);
   const [expandedProductId, setExpandedProductId] =
@@ -531,6 +1219,7 @@ export default function PosPage() {
 
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [billDiscountPercent, setBillDiscountPercent] = useState(0);
+
   const [roundOffAmount, setRoundOffAmount] = useState(0);
 
   const [customerName, setCustomerName] = useState("");
@@ -576,6 +1265,23 @@ export default function PosPage() {
   const [showQuickItem, setShowQuickItem] = useState(false);
   const [quickItemForm, setQuickItemForm] =
     useState<QuickItemForm>(EMPTY_QUICK_ITEM_FORM);
+
+  useEffect(() => {
+    if (!expandedBrand) return;
+
+    const handleBrandModalKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setExpandedProductId(null);
+        setExpandedBrand(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleBrandModalKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleBrandModalKeyDown);
+    };
+  }, [expandedBrand]);
 
   const showNotice = useCallback(
     (
@@ -2145,6 +2851,648 @@ if (!variantsError) {
     searchInputRef.current?.focus();
   }
 
+  function getTopPosAiMatches(command: PosAiCommand) {
+    const matches = findPosAiMatches(products, command);
+    const bestScore = matches[0]?.score ?? 0;
+
+    const topMatches = matches
+      .filter((match) =>
+        bestScore >= 1000
+          ? match.score >= 1000
+          : match.score >= Math.max(1, bestScore - 8)
+      )
+      .slice(0, 5);
+
+    const topMatch = matches[0];
+    const secondMatch = matches[1];
+
+    const confident =
+      matches.length === 1 ||
+      (topMatch?.score ?? 0) >= 1000 ||
+      (
+        (topMatch?.score ?? 0) >= 60 &&
+        (
+          !secondMatch ||
+          (topMatch?.score ?? 0) - secondMatch.score >= 12
+        )
+      );
+
+    return { matches, topMatches, confident };
+  }
+
+  function resolvePosAiProduct(
+    rawProductCommand: string,
+    allowCartFallback = false
+  ) {
+    const cleanCommand = stripPosAiModifierWords(rawProductCommand);
+    const command = buildPosAiCommand(cleanCommand || rawProductCommand);
+    const resolution = getTopPosAiMatches(command);
+
+    if (resolution.confident && resolution.matches[0]) {
+      return {
+        product: resolution.matches[0].product,
+        command,
+        resolution,
+      };
+    }
+
+    if (allowCartFallback) {
+      const normalizedSearch = normalizePosAiText(
+        command.searchText || cleanCommand
+      );
+
+      const cartMatch = cartItems.find((item) => {
+        const haystack = normalizePosAiText(
+          [
+            item.brand,
+            item.name,
+            item.size,
+            item.color,
+            item.sku,
+            item.barcode,
+            getPosShortCode(item),
+          ].join(" ")
+        );
+
+        return command.tokens.every((token) =>
+          haystack.split(/\s+/).some((candidate) =>
+            getPosAiTokenScore(token, candidate) > 0
+          )
+        ) || (normalizedSearch && haystack.includes(normalizedSearch));
+      });
+
+      if (cartMatch) {
+        return {
+          product: cartMatch,
+          command,
+          resolution,
+        };
+      }
+    }
+
+    return {
+      product: null,
+      command,
+      resolution,
+    };
+  }
+
+  function showPosAiAmbiguity(
+    command: PosAiCommand,
+    topMatches: PosAiMatch[]
+  ) {
+    setPosAiMatches(topMatches);
+    setSearchQuery(command.searchText);
+    setProductViewMode("brands");
+
+    showNotice(
+      `${topMatches.length} possible matches found. Select the correct variant.`,
+      "info"
+    );
+  }
+
+  function handlePosAiSubmit(
+    event?: FormEvent<HTMLFormElement>
+  ) {
+    event?.preventDefault();
+
+    const rawCommand = posAiCommand.trim();
+
+    if (!rawCommand) {
+      showNotice("Tell NCS AI what to do.", "info");
+      return;
+    }
+
+    const normalized = normalizePosAiText(rawCommand);
+
+    if (/^(?:undo|మళ్ళీ వెనక్కి|మళ్లీ వెనక్కి)$/.test(normalized)) {
+      if (!posAiLastAction) {
+        showNotice("Nothing to undo yet.", "info");
+        return;
+      }
+
+      const product = products.find(
+        (item) => item.key === posAiLastAction.productKey
+      );
+
+      if (!product) {
+        showNotice("Previous product is no longer available.", "error");
+        return;
+      }
+
+      setCartItems((currentItems) => {
+        const withoutProduct = currentItems.filter(
+          (item) => item.key !== product.key
+        );
+
+        if (posAiLastAction.previousQuantity <= 0) {
+          return withoutProduct;
+        }
+
+        return [
+          ...withoutProduct,
+          {
+            ...product,
+            quantity: Math.min(
+              posAiLastAction.previousQuantity,
+              getAvailableStock(product)
+            ),
+            discountPercent: 0,
+          },
+        ];
+      });
+
+      setPosAiLastProductKey(product.key);
+      setPosAiLastAction(null);
+      setPosAiMatches([]);
+      setPosAiCommand("");
+      showNotice("Last AI cart action undone.", "success");
+      return;
+    }
+
+    const billDiscountMatch =
+      normalized.match(/\bbill\s+discount\s+(\d{1,3}(?:\.\d+)?)\s*%?/) ||
+      normalized.match(/\b(\d{1,3}(?:\.\d+)?)\s*%?\s+bill\s+discount\b/);
+
+    if (billDiscountMatch) {
+      const discount = Math.min(100, Math.max(0, Number(billDiscountMatch[1])));
+      setBillDiscountPercent(discount);
+      setPosAiMatches([]);
+      setPosAiCommand("");
+      showNotice(`Bill discount set to ${discount}%.`, "success");
+      return;
+    }
+
+    const paymentMatch = normalized.match(
+      /^(?:payment\s+)?(cash|upi|card|credit)(?:\s+payment)?$/
+    );
+
+    if (paymentMatch) {
+      const method = paymentMatch[1] as PaymentMethod;
+      setPaymentMethod(method);
+      setPosAiMatches([]);
+      setPosAiCommand("");
+      showNotice(`Payment method set to ${method.toUpperCase()}.`, "success");
+      return;
+    }
+
+    const customerPhoneMatch = rawCommand.match(/(\d{10})/);
+    if (
+      customerPhoneMatch &&
+      /^(?:customer|కస్టమర్)\b/i.test(normalized)
+    ) {
+      const phone = customerPhoneMatch[1];
+      const name = rawCommand
+        .replace(/^(?:customer|కస్టమర్)\s*/i, "")
+        .replace(phone, "")
+        .trim();
+
+      setCustomerPhone(phone);
+      if (name) setCustomerName(name);
+      setPosAiMatches([]);
+      setPosAiCommand("");
+      showNotice(
+        name
+          ? `Customer ${name} (${phone}) added to bill.`
+          : `Customer phone ${phone} added to bill.`,
+        "success"
+      );
+      return;
+    }
+
+    if (/^(?:hold\s+bill|bill\s+hold|బిల్\s+హోల్డ్)$/.test(normalized)) {
+      holdCurrentBill();
+      setPosAiMatches([]);
+      setPosAiCommand("");
+      return;
+    }
+
+    if (
+      /^(?:complete\s+(?:bill|sale)|finish\s+(?:bill|sale)|బిల్\s+కంప్లీట్)$/.test(normalized)
+    ) {
+      if (cartItems.length === 0) {
+        showNotice("Current bill is empty.", "info");
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `Complete this bill for ${formatCurrency(finalPayable)}?`
+      );
+
+      if (confirmed) {
+        setPosAiMatches([]);
+        setPosAiCommand("");
+        void handleCompleteSale();
+      }
+      return;
+    }
+
+    if (
+      /^(?:bill\s+total|total|total\s+entha|bill\s+total\s+entha|బిల్\s+మొత్తం|మొత్తం\s+ఎంత)$/.test(normalized)
+    ) {
+      showNotice(
+        `${totalQuantity} item(s) • Total payable ${formatCurrency(finalPayable)}.`,
+        "info"
+      );
+      return;
+    }
+
+    const lastItem =
+      cartItems.length > 0
+        ? cartItems[cartItems.length - 1]
+        : null;
+
+    if (/^last\s+item\b/.test(normalized)) {
+      if (!lastItem) {
+        showNotice("Current bill is empty.", "info");
+        return;
+      }
+
+      const discount = getPosAiPercentage(rawCommand);
+      const assignedQuantity = getPosAiAssignedQuantity(rawCommand);
+
+      if (/\b(remove|delete)\b/.test(normalized)) {
+        setPosAiLastAction({
+          productKey: lastItem.key,
+          previousQuantity: lastItem.quantity,
+        });
+        removeCartItem(lastItem.key);
+        setPosAiLastProductKey(lastItem.key);
+        setPosAiCommand("");
+        showNotice(`${lastItem.name} removed from bill.`, "success");
+        return;
+      }
+
+      if (discount !== null) {
+        updateItemDiscount(lastItem.key, discount);
+        setPosAiLastProductKey(lastItem.key);
+        setPosAiCommand("");
+        showNotice(
+          `${lastItem.name} discount set to ${discount}%.`,
+          "success"
+        );
+        return;
+      }
+
+      if (assignedQuantity !== null) {
+        updateItemQuantity(lastItem.key, assignedQuantity);
+        setPosAiLastProductKey(lastItem.key);
+        setPosAiCommand("");
+        showNotice(
+          `${lastItem.name} quantity set to ${assignedQuantity}.`,
+          "success"
+        );
+        return;
+      }
+    }
+
+    const multiCommands = splitPosAiMultiCommands(rawCommand);
+
+    if (
+      multiCommands.length > 1 &&
+      multiCommands.every((part) =>
+        getPosAiIntent(normalizePosAiText(part)) === "add"
+      )
+    ) {
+      const resolved = multiCommands.map((part) => {
+        const command = buildPosAiCommand(part);
+        const resolution = getTopPosAiMatches(command);
+        return { part, command, resolution };
+      });
+
+      const failed = resolved.find(
+        (entry) =>
+          !entry.resolution.confident ||
+          !entry.resolution.matches[0]
+      );
+
+      if (failed) {
+        if (failed.resolution.matches.length === 0) {
+          setPosAiMatches([]);
+          showNotice(
+            `No product matched "${failed.command.searchText || failed.part}".`,
+            "error"
+          );
+        } else {
+          setPosAiCommand(failed.part);
+          showPosAiAmbiguity(
+            failed.command,
+            failed.resolution.topMatches
+          );
+        }
+        return;
+      }
+
+      const additions = resolved.map((entry) => ({
+        product: entry.resolution.matches[0].product,
+        quantity: Math.max(1, entry.command.quantity),
+      }));
+
+      const finalAddition = additions[additions.length - 1] || null;
+      const finalProduct = finalAddition?.product || null;
+      const finalPreviousQuantity = finalProduct
+        ? cartItems.find((item) => item.key === finalProduct.key)?.quantity || 0
+        : 0;
+      let limitedByStock = false;
+
+      setCartItems((currentItems) => {
+        let nextItems = [...currentItems];
+
+        for (const addition of additions) {
+          const { product, quantity } = addition;
+          const availableStock = getAvailableStock(product);
+          const existing = nextItems.find(
+            (item) => item.key === product.key
+          );
+          const previousQuantity = existing?.quantity || 0;
+          const nextQuantity = Math.min(
+            previousQuantity + quantity,
+            availableStock
+          );
+
+          if (nextQuantity < previousQuantity + quantity) {
+            limitedByStock = true;
+          }
+
+          if (existing) {
+            nextItems = nextItems.map((item) =>
+              item.key === product.key
+                ? { ...item, quantity: nextQuantity }
+                : item
+            );
+          } else if (nextQuantity > 0) {
+            nextItems.push({
+              ...product,
+              quantity: nextQuantity,
+              discountPercent: 0,
+            });
+          }
+
+        }
+
+        return nextItems;
+      });
+
+      additions.forEach(({ product }) =>
+        rememberSelectedProduct(product)
+      );
+
+      if (finalProduct) {
+        setPosAiLastProductKey(finalProduct.key);
+        setPosAiLastAction({
+          productKey: finalProduct.key,
+          previousQuantity: finalPreviousQuantity,
+        });
+      }
+
+      setPosAiMatches([]);
+      setPosAiCommand("");
+
+      const totalAdded = additions.reduce(
+        (sum, item) => sum + item.quantity,
+        0
+      );
+
+      showNotice(
+        limitedByStock
+          ? `${additions.length} product(s) processed; one or more quantities were limited to available stock.`
+          : `${additions.length} product(s), ${totalAdded} item(s) added by NCS AI.`,
+        limitedByStock ? "info" : "success"
+      );
+      return;
+    }
+
+    const requestedDiscount =
+      /\bdiscount\b|డిస్కౌంట్/i.test(rawCommand)
+        ? getPosAiPercentage(rawCommand)
+        : null;
+
+    const assignedQuantity =
+      /\b(?:qty|quantity)\b/i.test(rawCommand)
+        ? getPosAiAssignedQuantity(rawCommand)
+        : null;
+
+    const isStockQuery =
+      /\bstock\b|స్టాక్/i.test(rawCommand) &&
+      (
+        /\b(show|find|available|how|much|entha)\b/i.test(normalized) ||
+        /చూపు|చూపించు|ఎంత/.test(normalized)
+      );
+
+    if (
+      requestedDiscount !== null ||
+      assignedQuantity !== null ||
+      isStockQuery
+    ) {
+      const resolution = resolvePosAiProduct(rawCommand, true);
+
+      if (!resolution.product) {
+        if (resolution.resolution.matches.length === 0) {
+          showNotice("No matching product found.", "error");
+        } else {
+          showPosAiAmbiguity(
+            resolution.command,
+            resolution.resolution.topMatches
+          );
+        }
+        return;
+      }
+
+      const product = resolution.product;
+      const existingItem = cartItems.find(
+        (item) => item.key === product.key
+      );
+
+      if (isStockQuery) {
+        showNotice(
+          `${product.brand} ${product.name} ${product.size || ""} ${product.color || ""}: ${getAvailableStock(product)} in stock.`,
+          "info"
+        );
+        setPosAiMatches([]);
+        return;
+      }
+
+      if (!existingItem) {
+        showNotice(`${product.name} is not in the current bill.`, "info");
+        return;
+      }
+
+      if (requestedDiscount !== null) {
+        updateItemDiscount(product.key, requestedDiscount);
+        setPosAiLastProductKey(product.key);
+        setPosAiCommand("");
+        setPosAiMatches([]);
+        showNotice(
+          `${product.name} discount set to ${requestedDiscount}%.`,
+          "success"
+        );
+        return;
+      }
+
+      if (assignedQuantity !== null) {
+        setPosAiLastAction({
+          productKey: product.key,
+          previousQuantity: existingItem.quantity,
+        });
+        updateItemQuantity(product.key, assignedQuantity);
+        setPosAiLastProductKey(product.key);
+        setPosAiCommand("");
+        setPosAiMatches([]);
+        showNotice(
+          `${product.name} quantity set to ${assignedQuantity}.`,
+          "success"
+        );
+        return;
+      }
+    }
+
+    const command = buildPosAiCommand(rawCommand);
+    const { matches, topMatches, confident } =
+      getTopPosAiMatches(command);
+
+    if (matches.length === 0) {
+      setPosAiMatches([]);
+      showNotice(
+        `No product matched "${command.searchText || rawCommand}".`,
+        "error"
+      );
+      return;
+    }
+
+    if (command.intent === "show") {
+      setPosAiMatches(topMatches);
+      setSearchQuery(command.searchText);
+      setProductViewMode("brands");
+
+      showNotice(
+        `${topMatches.length} AI match${
+          topMatches.length === 1 ? "" : "es"
+        } found.`,
+        "info"
+      );
+      return;
+    }
+
+    if (!confident) {
+      showPosAiAmbiguity(command, topMatches);
+      return;
+    }
+
+    const product = matches[0].product;
+
+    if (command.intent === "remove") {
+      const existingItem = cartItems.find(
+        (item) => item.key === product.key
+      );
+
+      if (!existingItem) {
+        showNotice(`${product.name} is not in the current bill.`, "info");
+        return;
+      }
+
+      setPosAiLastAction({
+        productKey: product.key,
+        previousQuantity: existingItem.quantity,
+      });
+
+      removeCartItem(product.key);
+      setPosAiLastProductKey(product.key);
+      setPosAiMatches([]);
+      setPosAiCommand("");
+      showNotice(`${product.name} removed from bill.`, "success");
+      return;
+    }
+
+    if (
+      command.intent === "increase" ||
+      command.intent === "decrease"
+    ) {
+      const existingItem = cartItems.find(
+        (item) => item.key === product.key
+      );
+
+      if (!existingItem) {
+        showNotice(`${product.name} is not in the current bill.`, "info");
+        return;
+      }
+
+      const changeBy = Math.max(1, command.quantity);
+      const nextQuantity =
+        command.intent === "increase"
+          ? Math.min(
+              existingItem.quantity + changeBy,
+              getAvailableStock(product)
+            )
+          : Math.max(0, existingItem.quantity - changeBy);
+
+      setPosAiLastAction({
+        productKey: product.key,
+        previousQuantity: existingItem.quantity,
+      });
+
+      updateItemQuantity(product.key, nextQuantity);
+      setPosAiLastProductKey(product.key);
+      setPosAiMatches([]);
+      setPosAiCommand("");
+
+      showNotice(
+        nextQuantity > 0
+          ? `${product.name} quantity changed to ${nextQuantity}.`
+          : `${product.name} removed from bill.`,
+        "success"
+      );
+      return;
+    }
+
+    const existingQuantity =
+      cartItems.find(
+        (item) => item.key === product.key
+      )?.quantity || 0;
+
+    const requestedQuantity = Math.max(1, command.quantity);
+    const availableStock = getAvailableStock(product);
+
+    if (existingQuantity >= availableStock) {
+      showNotice(`Only ${availableStock} item(s) available.`, "error");
+      return;
+    }
+
+    setPosAiLastAction({
+      productKey: product.key,
+      previousQuantity: existingQuantity,
+    });
+
+    addProductToCart(product);
+
+    if (requestedQuantity > 1) {
+      setCartItems((currentItems) =>
+        currentItems.map((item) =>
+          item.key === product.key
+            ? {
+                ...item,
+                quantity: Math.min(
+                  existingQuantity + requestedQuantity,
+                  availableStock
+                ),
+              }
+            : item
+        )
+      );
+    }
+
+    setPosAiLastProductKey(product.key);
+    setPosAiMatches([]);
+    setPosAiCommand("");
+
+    showNotice(
+      existingQuantity + requestedQuantity > availableStock
+        ? `${product.name}: quantity limited to ${availableStock} available stock.`
+        : `${product.name} × ${requestedQuantity} added by NCS AI.`,
+      existingQuantity + requestedQuantity > availableStock
+        ? "info"
+        : "success"
+    );
+  }
   function updateItemDiscount(
     itemKey: string,
     rawDiscountPercent: number
@@ -2482,9 +3830,14 @@ if (!variantsError) {
       return;
     }
 
+    if (filteredProducts.length > 1) {
+      setProductViewMode("brands");
+      setExpandedProductId(null);
+    }
+
     showNotice(
       filteredProducts.length > 1
-        ? `${filteredProducts.length} matching products found. Select one.`
+        ? `${filteredProducts.length} matching variant(s) found. Open the brand, then choose the product and exact size / colour.`
         : "No matching product found.",
       filteredProducts.length > 0
         ? "info"
@@ -2497,6 +3850,8 @@ if (!variantsError) {
   ) {
     if (event.key === "Escape") {
       setSearchQuery("");
+      setProductViewMode("brands");
+      setExpandedProductId(null);
     }
   }
 
@@ -3116,13 +4471,34 @@ if (!variantsError) {
     showNotice(`${fileName} downloaded successfully.`, "success");
   }
 
+  function hasValidWhatsAppCustomerPhone(sale: CompletedSale) {
+    const digits = sale.customerPhone.replace(/\D/g, "");
+    const normalizedDigits =
+      digits.length === 10
+        ? `91${digits}`
+        : digits;
+
+    return (
+      normalizedDigits.length >= 10 &&
+      normalizedDigits.length <= 15
+    );
+  }
+
   async function shareCustomerInvoicePdf(sale: CompletedSale) {
+    if (!hasValidWhatsAppCustomerPhone(sale)) {
+      showNotice(
+        "Customer mobile number is required to send the invoice on WhatsApp.",
+        "info",
+      );
+      return;
+    }
+
     try {
       showNotice("Sending PDF invoice directly to WhatsApp...", "info");
       await sendInvoiceMessageViaWhatsApp(sale);
       showNotice("PDF invoice sent directly on WhatsApp.", "success");
     } catch (error) {
-      console.error("Unable to send PDF invoice:", error);
+      console.info("WhatsApp PDF invoice was not sent:", error);
       showNotice(
         error instanceof Error
           ? error.message
@@ -3268,12 +4644,20 @@ if (!variantsError) {
   }
 
   async function shareCompletedSaleOnWhatsApp(sale: CompletedSale) {
+    if (!hasValidWhatsAppCustomerPhone(sale)) {
+      showNotice(
+        "Customer mobile number is required to send the bill on WhatsApp.",
+        "info",
+      );
+      return;
+    }
+
     try {
       showNotice("Sending bill message to WhatsApp...", "info");
       await sendInvoiceMessageViaWhatsApp(sale);
       showNotice("Bill message sent on WhatsApp.", "success");
     } catch (error) {
-      console.error("Unable to send WhatsApp invoice:", error);
+      console.info("WhatsApp text invoice was not sent:", error);
       showNotice(
         error instanceof Error
           ? error.message
@@ -4515,7 +5899,7 @@ if (!variantsError) {
   }
 
   return (
-    <main className="ncsPosPage">
+    <main className={`ncsPosPage ${cartItems.length > 0 ? "ncsPosBillingFocus" : ""}`}>
       {notice && (
         <div
           className={`ncsPosNotice ncsPosNotice-${noticeType}`}
@@ -4746,9 +6130,11 @@ if (!variantsError) {
             <input
               ref={searchInputRef}
               value={searchQuery}
-              onChange={(event) =>
-                setSearchQuery(event.target.value)
-              }
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setProductViewMode("brands");
+                setExpandedProductId(null);
+              }}
               onKeyDown={handleSearchKeyDown}
               placeholder="Scan barcode or search product, SKU, size, colour..."
               autoComplete="off"
@@ -4761,6 +6147,8 @@ if (!variantsError) {
                 className="ncsPosClearSearch"
                 onClick={() => {
                   setSearchQuery("");
+                  setProductViewMode("brands");
+                  setExpandedProductId(null);
                   searchInputRef.current?.focus();
                 }}
                 aria-label="Clear search"
@@ -4784,9 +6172,172 @@ if (!variantsError) {
               <span>＋</span>
               Quick Item
             </button>
-          </form>
+      </form>
 
-          <div className="ncsPosCategoryRow">
+      <section
+        className={`ncsPosAiPanel ${posAiExpanded ? "expanded" : "collapsed"}`}
+      >
+        <button
+          type="button"
+          className="ncsPosAiCompactToggle"
+          onClick={() => setPosAiExpanded((current) => !current)}
+          aria-expanded={posAiExpanded}
+        >
+          <div className="ncsPosAiHeading">
+            <div className="ncsPosAiBadge">✦</div>
+
+            <div>
+              <strong>NCS AI Billing Assistant</strong>
+              <small>
+                {posAiExpanded
+                  ? "Add, edit, discount, stock, customer and payment commands."
+                  : "Tap to open smart billing commands"}
+              </small>
+            </div>
+          </div>
+
+          <div className="ncsPosAiCompactRight">
+            <span className="ncsPosAiLiveDot" />
+            <b>{posAiExpanded ? "Close" : "Open AI"}</b>
+            <em>{posAiExpanded ? "⌃" : "⌄"}</em>
+          </div>
+        </button>
+
+        {posAiExpanded && (
+          <div className="ncsPosAiExpandableBody">
+        <form
+          className="ncsPosAiCommandRow"
+          onSubmit={handlePosAiSubmit}
+        >
+          <div className="ncsPosAiInputShell">
+            <span className="ncsPosAiSpark">✦</span>
+            <input
+              value={posAiCommand}
+              onChange={(event) =>
+                setPosAiCommand(event.target.value)
+              }
+              placeholder="Try: Poomex 80 two add, Dixcy 85 black add • bill discount 5 • cash"
+              autoComplete="off"
+            />
+
+            {posAiCommand && (
+              <button
+                type="button"
+                className="ncsPosAiClearButton"
+                onClick={() => {
+                  setPosAiCommand("");
+                  setPosAiMatches([]);
+                }}
+                aria-label="Clear AI command"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            className="ncsPosAiAddButton"
+          >
+            <span>✦</span>
+            Add with AI
+          </button>
+        </form>
+        <div className="ncsPosAiHintRow">
+          <span>English</span>
+          <span>తెలుగు</span>
+          <span>Mixed commands</span>
+          <small>Multi-item • Qty • Discount • Stock • Customer • Payment • Hold • Total • Voice-ready</small>
+        </div>
+
+
+        {posAiMatches.length > 0 && (
+          <div className="ncsPosAiResults">
+            <div className="ncsPosAiResultsHeader">
+              <div>
+                <strong>Choose the exact variant</strong>
+                <small>
+                  More than one strong match was found, so AI will not guess.
+                </small>
+              </div>
+
+              <span>
+                {posAiMatches.length} match
+                {posAiMatches.length === 1 ? "" : "es"}
+              </span>
+            </div>
+
+            <div className="ncsPosAiResultGrid">
+              {posAiMatches.map(({ product }) => (
+                <button
+                  key={`ai-${product.key}`}
+                  type="button"
+                  className="ncsPosAiResultCard"
+                  onClick={() => {
+                    const command = buildPosAiCommand(posAiCommand);
+                    const requestedQuantity = Math.max(1, command.quantity);
+                    const existingQuantity =
+                      cartItems.find((item) => item.key === product.key)
+                        ?.quantity || 0;
+                    const availableStock = getAvailableStock(product);
+
+                    setPosAiLastAction({
+                      productKey: product.key,
+                      previousQuantity: existingQuantity,
+                    });
+
+                    addProductToCart(product);
+
+                    if (requestedQuantity > 1) {
+                      setCartItems((currentItems) =>
+                        currentItems.map((item) =>
+                          item.key === product.key
+                            ? {
+                                ...item,
+                                quantity: Math.min(
+                                  existingQuantity + requestedQuantity,
+                                  availableStock
+                                ),
+                              }
+                            : item
+                        )
+                      );
+                    }
+
+                    setPosAiLastProductKey(product.key);
+                    setPosAiMatches([]);
+                    setPosAiCommand("");
+                  }}
+                >
+                  <div className="ncsPosAiResultMain">
+                    <span className="ncsPosAiResultIcon">NCS</span>
+                    <div>
+                      <strong>{product.name}</strong>
+                      <span>{product.brand}</span>
+                      <small>
+                        {[product.size, product.color]
+                          .filter(Boolean)
+                          .join(" • ") || "Standard"}
+                      </small>
+                    </div>
+                  </div>
+
+                  <div className="ncsPosAiResultMeta">
+                    <b>{formatCurrency(product.price)}</b>
+                    <small>{product.stock} in stock</small>
+                    <em>Add →</em>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+          </div>
+        )}
+      </section>
+
+      <div className="ncsPosCategoryRow">
             {categories.map((category) => (
               <button
                 key={category}
@@ -4796,9 +6347,12 @@ if (!variantsError) {
                     ? "ncsPosCategoryButton ncsPosCategoryActive"
                     : "ncsPosCategoryButton"
                 }
-                onClick={() =>
-                  setSelectedCategory(category)
-                }
+                onClick={() => {
+                  setSelectedCategory(category);
+                  setProductViewMode("brands");
+                  setExpandedBrand(null);
+                  setExpandedProductId(null);
+                }}
               >
                 {category}
               </button>
@@ -4828,21 +6382,21 @@ if (!variantsError) {
               className={productViewMode === "smart" ? "active" : ""}
               onClick={() => setProductViewMode("smart")}
             >
-              ✨ Smart
+              ✨ Quick View
             </button>
             <button
               type="button"
               className={productViewMode === "brands" ? "active" : ""}
               onClick={() => setProductViewMode("brands")}
             >
-              🏷 Brands
+              🏷 Brands First
             </button>
             <button
               type="button"
               className={productViewMode === "all" ? "active" : ""}
               onClick={() => setProductViewMode("all")}
             >
-              ▦ All Styles
+              ▦ All Items
             </button>
             <span>
               Search example: <strong>royal xxl black</strong> or short code <strong>V1045</strong>
@@ -4983,8 +6537,9 @@ if (!variantsError) {
                           type="button"
                           className="ncsPosBrandSummary"
                           onClick={() => {
-                            setExpandedBrand(brandGroup.brand);
+                            setExpandedProductId(null);
                             setProductViewMode("brands");
+                            setExpandedBrand(brandGroup.brand);
                           }}
                         >
                           <span className="ncsPosBrandMark">
@@ -5005,59 +6560,129 @@ if (!variantsError) {
               )}
 
               {productViewMode === "brands" && (
-                <div className="ncsPosBrandAccordionList">
-                  {brandGroups.map((brandGroup) => {
-                    const isOpen = expandedBrand === brandGroup.brand;
-
-                    return (
-                      <section
+                <>
+                  <div className="ncsPosBrandCompactGrid">
+                    {brandGroups.map((brandGroup) => (
+                      <button
                         key={brandGroup.brand}
-                        className={`ncsPosBrandAccordion ${isOpen ? "open" : ""}`}
+                        type="button"
+                        className="ncsPosBrandCompactCard"
+                        onClick={() => {
+                          setExpandedProductId(null);
+                          setExpandedBrand(brandGroup.brand);
+                        }}
                       >
-                        <button
-                          type="button"
-                          className="ncsPosBrandAccordionHeader"
-                          onClick={() =>
-                            setExpandedBrand(
-                              isOpen ? null : brandGroup.brand
-                            )
-                          }
-                        >
-                          <span className="ncsPosBrandMark">
-                            {brandGroup.brand.slice(0, 2).toUpperCase()}
-                          </span>
-                          <div>
-                            <strong>{brandGroup.brand}</strong>
-                            <small>
-                              {brandGroup.groups.length} styles • {brandGroup.totalVariants} variants • {brandGroup.totalStock} stock
-                            </small>
-                          </div>
-                          <b>{isOpen ? "−" : "+"}</b>
-                        </button>
+                        <span className="ncsPosBrandCompactMark">
+                          {brandGroup.brand.slice(0, 2).toUpperCase()}
+                        </span>
+                        <div>
+                          <strong>{brandGroup.brand}</strong>
+                          <small>
+                            {brandGroup.groups.length} styles • {brandGroup.totalVariants} variants
+                          </small>
+                        </div>
+                        <b>›</b>
+                      </button>
+                    ))}
+                  </div>
 
-                        {isOpen && (
-                          <div className="ncsPosGroupedProductGrid">
-                            {brandGroup.groups.map((group) => (
-                              <GroupedProductCard
-                                key={group.groupKey}
-                                group={group}
-                                expanded={expandedProductId === group.productId}
-                                onToggle={() =>
-                                  setExpandedProductId(
-                                    expandedProductId === group.productId
-                                      ? null
-                                      : group.productId
-                                  )
-                                }
-                                onAddVariant={addProductToCart}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </section>
-                    );
-                  })}
-                </div>
+                  {expandedBrand &&
+                    typeof document !== "undefined" &&
+                    (() => {
+                      const selectedBrandGroup = brandGroups.find(
+                        (brandGroup) => brandGroup.brand === expandedBrand
+                      );
+
+                      if (!selectedBrandGroup) {
+                        return null;
+                      }
+
+                      return createPortal(
+                        <div
+                          className="ncsPosBrandModalBackdrop"
+                          role="presentation"
+                          onMouseDown={(event) => {
+                            if (event.target === event.currentTarget) {
+                              setExpandedProductId(null);
+                              setExpandedBrand(null);
+                            }
+                          }}
+                        >
+                          <section
+                            className={`ncsPosBrandModal ${selectedBrandGroup.groups.length > 8 ? "ncsPosBrandModalDense" : ""}`}
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label={`${selectedBrandGroup.brand} products`}
+                          >
+                            <header className="ncsPosBrandModalHeader">
+                              <div className="ncsPosBrandModalTitle">
+                                <span className="ncsPosBrandCompactMark">
+                                  {selectedBrandGroup.brand.slice(0, 2).toUpperCase()}
+                                </span>
+                                <div>
+                                  <small>SELECT PRODUCT / SIZE / COLOUR</small>
+                                  <h3>{selectedBrandGroup.brand}</h3>
+                                  <p>
+                                    {selectedBrandGroup.groups.length} styles • {selectedBrandGroup.totalVariants} variants • {selectedBrandGroup.totalStock} stock
+                                  </p>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                className="ncsPosBrandModalClose"
+                                onClick={() => {
+                                  setExpandedProductId(null);
+                                  setExpandedBrand(null);
+                                }}
+                                aria-label="Close brand window"
+                              >
+                                ×
+                              </button>
+                            </header>
+
+                            <div className="ncsPosBrandModalBody">
+                              {selectedBrandGroup.groups.map((group) => (
+                                <GroupedProductCard
+                                  key={group.groupKey}
+                                  group={group}
+                                  expanded={expandedProductId === group.productId}
+                                  onToggle={() =>
+                                    setExpandedProductId(
+                                      expandedProductId === group.productId
+                                        ? null
+                                        : group.productId
+                                    )
+                                  }
+                                  onAddVariant={(product) => {
+                                    addProductToCart(product);
+                                    setExpandedProductId(null);
+                                    setExpandedBrand(null);
+                                  }}
+                                />
+                              ))}
+                            </div>
+
+                            <footer className="ncsPosBrandModalFooter">
+                              <span>
+                                Select product → exact size/colour → Add. It goes straight to the active bill.
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedProductId(null);
+                                  setExpandedBrand(null);
+                                }}
+                              >
+                                Back to Brands
+                              </button>
+                            </footer>
+                          </section>
+                        </div>,
+                        document.body,
+                      );
+                    })()}
+                </>
               )}
 
               {productViewMode === "all" && (
@@ -5316,6 +6941,13 @@ if (!variantsError) {
                           <span className="ncsPosQuickItemBadge">QUICK</span>
                         )}
                       </h3>
+
+                      {!item.isQuickItem && item.brand && (
+                        <span className="ncsPosCartBrandName">
+                          {item.brand}
+                        </span>
+                      )}
+
                       <p>
                         {[item.size, item.color]
                           .filter(Boolean)
@@ -5792,7 +7424,9 @@ if (!variantsError) {
         />
       )}
 
-      {showQuickItem && (
+      {showQuickItem &&
+        typeof document !== "undefined" &&
+        createPortal(
         <div
           className="ncsPosModalOverlay"
           role="presentation"
@@ -6036,8 +7670,9 @@ if (!variantsError) {
               </footer>
             </form>
           </section>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
 
       {showHeldBills && (
         <div className="ncsPosModalOverlay">
@@ -6270,6 +7905,12 @@ if (!variantsError) {
               <button
                 type="button"
                 className="ncsPosSuccessWhatsApp"
+                disabled={!hasValidWhatsAppCustomerPhone(completedSale)}
+                title={
+                  hasValidWhatsAppCustomerPhone(completedSale)
+                    ? "Send invoice on WhatsApp"
+                    : "Add customer mobile number before completing the bill to enable WhatsApp"
+                }
                 onClick={() =>
                   shareCustomerInvoicePdf(completedSale)
                 }
@@ -6291,6 +7932,12 @@ if (!variantsError) {
               <button
                 type="button"
                 className="ncsPosSuccessTextWhatsApp"
+                disabled={!hasValidWhatsAppCustomerPhone(completedSale)}
+                title={
+                  hasValidWhatsAppCustomerPhone(completedSale)
+                    ? "Send bill message on WhatsApp"
+                    : "Add customer mobile number before completing the bill to enable WhatsApp"
+                }
                 onClick={() =>
                   shareCompletedSaleOnWhatsApp(completedSale)
                 }
@@ -6345,7 +7992,7 @@ if (!variantsError) {
           width: 100%;
           max-width: 100%;
           min-height: 100vh;
-          padding: 22px;
+          padding: 18px 20px 20px;
           overflow-x: hidden;
           background:
             radial-gradient(
@@ -7055,6 +8702,700 @@ if (!variantsError) {
           font-size: 12px;
           font-weight: 900;
           cursor: pointer;
+        }
+
+        .ncsPosAiCompactToggle {
+          width: 100%;
+          min-height: 62px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 9px 11px;
+          border: 0;
+          background: transparent;
+          color: inherit;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .ncsPosAiPanel.collapsed {
+          padding: 4px 7px;
+          border-radius: 16px;
+          box-shadow: 0 7px 18px rgba(3, 21, 63, 0.07);
+        }
+
+        .ncsPosAiPanel.collapsed::before {
+          opacity: .52;
+        }
+
+        .ncsPosAiPanel.collapsed .ncsPosAiHeading small {
+          margin-top: 2px;
+          font-size: 9px;
+        }
+
+        .ncsPosAiCompactRight {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          flex: 0 0 auto;
+          padding: 7px 10px;
+          border: 1px solid rgba(10, 46, 115, 0.10);
+          border-radius: 999px;
+          background: rgba(255,255,255,.78);
+          color: #0a2e73;
+          box-shadow: 0 4px 12px rgba(3,21,63,.05);
+        }
+
+        .ncsPosAiCompactRight b {
+          font-size: 9px;
+          font-weight: 950;
+          letter-spacing: .3px;
+        }
+
+        .ncsPosAiCompactRight em {
+          color: #b8890b;
+          font-size: 12px;
+          font-style: normal;
+          font-weight: 950;
+        }
+
+        .ncsPosAiLiveDot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #16a36a;
+          box-shadow: 0 0 0 4px rgba(22,163,106,.12);
+        }
+
+        .ncsPosAiExpandableBody {
+          padding: 0 8px 8px;
+          animation: ncsAiExpandIn .2s ease both;
+        }
+
+        @keyframes ncsAiExpandIn {
+          from {
+            opacity: 0;
+            transform: translateY(-5px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .ncsPosAiPanel {
+          position: relative;
+          margin-top: 12px;
+          padding: 16px;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.42);
+          border-radius: 20px;
+          background:
+            radial-gradient(circle at 92% 0%, rgba(212, 175, 55, 0.18), transparent 32%),
+            linear-gradient(135deg, #ffffff 0%, #fbfcff 60%, #f8f4ec 100%);
+          box-shadow: 0 16px 38px rgba(3, 21, 63, 0.10);
+        }
+
+        .ncsPosAiPanel::before {
+          content: "";
+          position: absolute;
+          inset: 0 auto 0 0;
+          width: 4px;
+          background: linear-gradient(180deg, ${GOLD}, ${ROYAL_BLUE});
+        }
+
+        .ncsPosAiTopRow {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          margin-bottom: 8px;
+        }
+
+        .ncsPosAiHeading {
+          display: flex;
+          align-items: center;
+          gap: 11px;
+          min-width: 0;
+        }
+
+        .ncsPosAiBadge {
+          width: 39px;
+          height: 39px;
+          flex: 0 0 auto;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(212, 175, 55, 0.66);
+          border-radius: 12px;
+          background: linear-gradient(145deg, ${DEEP_BLUE}, ${ROYAL_BLUE});
+          color: ${GOLD};
+          box-shadow: 0 8px 18px rgba(3, 21, 63, 0.18);
+          font-size: 19px;
+          font-weight: 950;
+        }
+
+        .ncsPosAiHeading strong {
+          display: block;
+          color: ${DEEP_BLUE};
+          font-size: 14px;
+          font-weight: 950;
+          letter-spacing: 0.01em;
+        }
+
+        .ncsPosAiHeading small {
+          display: block;
+          margin-top: 2px;
+          color: #70798a;
+          font-size: 10px;
+          font-weight: 650;
+        }
+
+        .ncsPosAiLivePill {
+          flex: 0 0 auto;
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          padding: 7px 10px;
+          border: 1px solid rgba(10, 46, 115, 0.10);
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.86);
+          color: ${ROYAL_BLUE};
+          font-size: 9px;
+          font-weight: 950;
+          letter-spacing: 0.08em;
+        }
+
+        .ncsPosAiLivePill span {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #20a464;
+          box-shadow: 0 0 0 4px rgba(32, 164, 100, 0.12);
+        }
+
+        .ncsPosAiCommandRow {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 9px;
+          align-items: center;
+        }
+
+        .ncsPosAiInputShell {
+          position: relative;
+          min-width: 0;
+          height: 50px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 0 8px 0 13px;
+          border: 1px solid rgba(10, 46, 115, 0.15);
+          border-radius: 14px;
+          background: #ffffff;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+        }
+
+        .ncsPosAiInputShell:focus-within {
+          border-color: rgba(212, 175, 55, 0.88);
+          box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.12);
+        }
+
+        .ncsPosAiSpark {
+          color: ${GOLD};
+          font-size: 16px;
+          font-weight: 950;
+        }
+
+        .ncsPosAiCommandRow input {
+          min-width: 0;
+          width: 100%;
+          height: 46px;
+          border: 0;
+          outline: 0;
+          background: transparent;
+          color: ${CHARCOAL};
+          font-family: inherit;
+          font-size: 13px;
+          font-weight: 720;
+        }
+
+        .ncsPosAiCommandRow input::placeholder {
+          color: #9299a7;
+          font-weight: 580;
+        }
+
+        .ncsPosAiClearButton {
+          width: 31px;
+          height: 31px;
+          flex: 0 0 auto;
+          border: 0;
+          border-radius: 50%;
+          background: #f0f3f8;
+          color: #6e7581;
+          font-size: 18px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .ncsPosAiAddButton {
+          min-width: 132px;
+          height: 50px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          border: 1px solid rgba(212, 175, 55, 0.72);
+          border-radius: 14px;
+          background: linear-gradient(135deg, ${DEEP_BLUE}, ${ROYAL_BLUE});
+          color: #ffffff;
+          box-shadow: 0 10px 22px rgba(3, 21, 63, 0.18);
+          font-family: inherit;
+          font-size: 11px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: transform 160ms ease, box-shadow 160ms ease;
+        }
+
+        .ncsPosAiAddButton span {
+          color: ${GOLD};
+          font-size: 15px;
+        }
+
+        .ncsPosAiAddButton:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 13px 28px rgba(3, 21, 63, 0.22);
+        }
+
+        .ncsPosAiHintRow {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-top: 9px;
+        }
+
+        .ncsPosAiHintRow > span {
+          padding: 4px 7px;
+          border-radius: 999px;
+          background: rgba(10, 46, 115, 0.055);
+          color: ${ROYAL_BLUE};
+          font-size: 8px;
+          font-weight: 850;
+        }
+
+        .ncsPosAiHintRow small {
+          margin-left: auto;
+          color: #8a909b;
+          font-size: 8px;
+          font-weight: 620;
+        }
+
+        .ncsPosAiResults {
+          margin-top: 13px;
+          padding-top: 12px;
+          border-top: 1px solid rgba(10, 46, 115, 0.09);
+        }
+
+        .ncsPosAiResultsHeader {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 9px;
+        }
+
+        .ncsPosAiResultsHeader strong {
+          display: block;
+          color: ${DEEP_BLUE};
+          font-size: 11px;
+          font-weight: 950;
+        }
+
+        .ncsPosAiResultsHeader small {
+          display: block;
+          margin-top: 2px;
+          color: #7b8391;
+          font-size: 8px;
+          font-weight: 620;
+        }
+
+        .ncsPosAiResultsHeader > span {
+          flex: 0 0 auto;
+          padding: 5px 8px;
+          border-radius: 999px;
+          background: ${IVORY};
+          color: #80651a;
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        .ncsPosAiResultGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+        }
+
+        .ncsPosAiResultCard {
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 10px;
+          border: 1px solid rgba(10, 46, 115, 0.10);
+          border-radius: 14px;
+          background: #ffffff;
+          color: ${CHARCOAL};
+          text-align: left;
+          box-shadow: 0 7px 18px rgba(3, 21, 63, 0.06);
+          cursor: pointer;
+          transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+        }
+
+        .ncsPosAiResultCard:hover {
+          transform: translateY(-1px);
+          border-color: rgba(212, 175, 55, 0.70);
+          box-shadow: 0 10px 24px rgba(3, 21, 63, 0.10);
+        }
+
+        .ncsPosAiResultMain {
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          gap: 9px;
+        }
+
+        .ncsPosAiResultIcon {
+          width: 34px;
+          height: 34px;
+          flex: 0 0 auto;
+          display: grid;
+          place-items: center;
+          border-radius: 10px;
+          background: linear-gradient(145deg, ${DEEP_BLUE}, ${ROYAL_BLUE});
+          color: ${GOLD};
+          font-size: 9px;
+          font-weight: 950;
+        }
+
+        .ncsPosAiResultMain > div {
+          min-width: 0;
+        }
+
+        .ncsPosAiResultMain strong,
+        .ncsPosAiResultMain span,
+        .ncsPosAiResultMain small {
+          display: block;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .ncsPosAiResultMain strong {
+          max-width: 210px;
+          color: ${DEEP_BLUE};
+          font-size: 10px;
+          font-weight: 950;
+        }
+
+        .ncsPosAiResultMain span {
+          margin-top: 1px;
+          color: ${ROYAL_BLUE};
+          font-size: 8px;
+          font-weight: 850;
+        }
+
+        .ncsPosAiResultMain small {
+          margin-top: 2px;
+          color: #7b8390;
+          font-size: 8px;
+          font-weight: 650;
+        }
+
+        .ncsPosAiResultMeta {
+          flex: 0 0 auto;
+          text-align: right;
+        }
+
+        .ncsPosAiResultMeta b,
+        .ncsPosAiResultMeta small,
+        .ncsPosAiResultMeta em {
+          display: block;
+        }
+
+        .ncsPosAiResultMeta b {
+          color: ${DEEP_BLUE};
+          font-size: 10px;
+          font-weight: 950;
+        }
+
+        .ncsPosAiResultMeta small {
+          margin-top: 2px;
+          color: #27835b;
+          font-size: 8px;
+          font-weight: 850;
+        }
+
+        .ncsPosAiResultMeta em {
+          margin-top: 4px;
+          color: #9a7720;
+          font-size: 8px;
+          font-style: normal;
+          font-weight: 900;
+        }
+
+        /*
+         * NCS INDEPENDENT BILLING LAYER
+         *
+         * Empty bill:
+         *   Current Bill stays in its normal embedded POS position.
+         *
+         * Active bill:
+         *   ONLY Current Bill detaches from document flow and becomes a
+         *   fixed independent work surface over the right side.
+         *   The POS/dashboard/catalogue underneath keeps its own normal
+         *   document scroll. Scrolling over the bill scrolls the bill only.
+         *   Completing/clearing the sale removes ncsPosBillingFocus and
+         *   returns the bill to the original embedded position automatically.
+         */
+        .ncsPosBillingFocus .ncsPosBillPanel {
+          position: fixed !important;
+          z-index: 8000;
+          top: 8px !important;
+          right: 8px;
+          bottom: 8px;
+          left: auto;
+          width: min(
+            970px,
+            calc(100vw - 665px)
+          );
+          min-width: 700px;
+          max-width: calc(100vw - 130px);
+          min-height: 0 !important;
+          max-height: none !important;
+          height: auto;
+          display: flex;
+          flex-direction: column;
+          overflow-x: hidden;
+          overflow-y: auto !important;
+          overscroll-behavior: contain;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(10, 46, 115, .35) transparent;
+          border: 1px solid rgba(212, 175, 55, .72);
+          border-radius: 20px;
+          background: #ffffff;
+          box-shadow:
+            -28px 34px 90px rgba(3, 21, 63, .28),
+            0 18px 48px rgba(10, 46, 115, .20),
+            0 0 0 1px rgba(255,255,255,.72) inset;
+          transform-origin: top right;
+          animation: ncsBillLayerOpen .34s cubic-bezier(.2,.82,.22,1);
+          isolation: isolate;
+        }
+
+        @keyframes ncsBillLayerOpen {
+          from {
+            opacity: .82;
+            transform:
+              perspective(1400px)
+              translate3d(22px, 32px, -50px)
+              rotateY(-1.4deg)
+              scale(.972);
+          }
+          to {
+            opacity: 1;
+            transform:
+              perspective(1400px)
+              translate3d(0, 0, 0)
+              rotateY(0)
+              scale(1);
+          }
+        }
+
+        .ncsPosBillingFocus .ncsPosBillPanel::before {
+          content: "";
+          position: sticky;
+          top: 0;
+          z-index: 0;
+          display: block;
+          height: 0;
+          pointer-events: none;
+        }
+
+        .ncsPosBillingFocus .ncsPosBillHeader {
+          position: sticky;
+          top: 0;
+          z-index: 40;
+          flex: 0 0 auto;
+          border-bottom: 1px solid rgba(212, 175, 55, .24);
+          box-shadow: 0 12px 30px rgba(3, 21, 63, .14);
+        }
+
+        /*
+         * In active billing mode the whole bill surface owns its scrolling.
+         * Avoid nested cart scrolling, so wheel/touch behavior is natural.
+         */
+        .ncsPosBillingFocus .ncsPosCartItems {
+          min-height: 220px;
+          max-height: none !important;
+          overflow: visible !important;
+          flex: 0 0 auto;
+          padding-top: 10px;
+        }
+
+        .ncsPosBillingFocus .ncsPosCartTableHeader {
+          position: relative;
+          top: auto;
+          z-index: 2;
+          flex: 0 0 auto;
+          margin: 0;
+          box-shadow: none;
+        }
+
+        .ncsPosBillingFocus .ncsPosBillPanel > * {
+          position: relative;
+        }
+
+        /*
+         * A subtle depth edge makes the active bill read as a separate
+         * physical work surface without blocking the catalogue underneath.
+         */
+        .ncsPosBillingFocus .ncsPosBillPanel::after {
+          content: "";
+          position: fixed;
+          z-index: -1;
+          top: 18px;
+          right: 18px;
+          bottom: 18px;
+          width: min(
+            940px,
+            calc(100vw - 690px)
+          );
+          min-width: 670px;
+          border-radius: 28px;
+          background: rgba(3, 21, 63, .08);
+          filter: blur(18px);
+          pointer-events: none;
+        }
+
+        @media (max-width: 1380px) {
+          .ncsPosBillingFocus .ncsPosBillPanel {
+            width: min(820px, calc(100vw - 525px));
+            min-width: 620px;
+          }
+
+          .ncsPosBillingFocus .ncsPosBillPanel::after {
+            width: min(790px, calc(100vw - 550px));
+            min-width: 590px;
+          }
+        }
+
+        @media (max-width: 1100px) {
+          .ncsPosBillingFocus .ncsPosBillPanel {
+            top: 8px !important;
+            right: 8px;
+            bottom: 12px;
+            width: calc(100vw - 210px);
+            min-width: 0;
+            max-width: none;
+          }
+
+          .ncsPosBillingFocus .ncsPosBillPanel::after {
+            display: none;
+          }
+        }
+
+        @media (max-width: 760px) {
+          .ncsPosBillingFocus .ncsPosBillPanel {
+            inset: 8px 8px 8px 8px;
+            width: auto;
+            border-radius: 18px;
+          }
+
+          .ncsPosBillingFocus .ncsPosCartTableHeader {
+            position: relative;
+            top: auto;
+          }
+        }
+
+        /* Dense brand window for brands with many styles */
+        .ncsPosBrandModalDense {
+          width: min(1240px, 96vw);
+          max-height: 92vh;
+        }
+
+        .ncsPosBrandModalDense .ncsPosBrandModalBody {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 8px;
+          padding: 10px;
+        }
+
+        .ncsPosBrandModalDense .ncsPosGroupedCardMain {
+          grid-template-columns: 76px minmax(0, 1fr) 34px;
+          gap: 9px;
+          min-height: 112px;
+          padding: 9px;
+        }
+
+        .ncsPosBrandModalDense .ncsPosGroupedImage {
+          height: 86px;
+        }
+
+        .ncsPosBrandModalDense .ncsPosGroupedInfo h3 {
+          font-size: 13px;
+          line-height: 1.14;
+        }
+
+        .ncsPosBrandModalDense .ncsPosGroupedInfo p,
+        .ncsPosBrandModalDense .ncsPosGroupedInfo small {
+          font-size: 8px;
+        }
+
+        .ncsPosBrandModalDense .ncsPosGroupedCard.open {
+          grid-column: 1 / -1;
+          height: auto;
+          min-height: max-content;
+          overflow: visible;
+          align-self: start;
+        }
+
+        @media (max-width: 1180px) {
+          .ncsPosBrandModalDense .ncsPosBrandModalBody {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 900px) {
+          .ncsPosBrandModalDense .ncsPosBrandModalBody {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 760px) {
+          .ncsPosAiTopRow {
+            align-items: flex-start;
+          }
+
+          .ncsPosAiLivePill {
+            display: none;
+          }
+
+          .ncsPosAiCommandRow {
+            grid-template-columns: 1fr;
+          }
+
+          .ncsPosAiAddButton {
+            width: 100%;
+          }
+
+          .ncsPosAiHintRow small {
+            width: 100%;
+            margin-left: 0;
+          }
+
+          .ncsPosAiResultGrid {
+            grid-template-columns: 1fr;
+          }
         }
 
         .ncsPosCategoryRow {
@@ -8520,7 +10861,7 @@ if (!variantsError) {
 
         .ncsPosModalOverlay {
           position: fixed;
-          z-index: 600;
+          z-index: 20000;
           inset: 0;
           display: flex;
           align-items: center;
@@ -9235,6 +11576,14 @@ if (!variantsError) {
           cursor: pointer;
         }
 
+        .ncsPosSuccessActions button:disabled {
+          cursor: not-allowed;
+          opacity: .46;
+          filter: grayscale(.25);
+          box-shadow: none !important;
+          transform: none !important;
+        }
+
         .ncsPosSuccessWhatsApp {
           grid-column: 1 / -1;
           display: inline-flex;
@@ -9728,6 +12077,21 @@ if (!variantsError) {
           box-shadow: 0 16px 32px rgba(212, 175, 55, 0.36);
         }
 
+        .ncsPosCartBrandName {
+          display: block;
+          max-width: 100%;
+          margin-top: 2px;
+          overflow: hidden;
+          color: #b8890b;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: .55px;
+          line-height: 1.15;
+          text-overflow: ellipsis;
+          text-transform: uppercase;
+          white-space: nowrap;
+        }
+
         .ncsPosQuickItemBadge {
           display: inline-flex;
           align-items: center;
@@ -9743,9 +12107,24 @@ if (!variantsError) {
           vertical-align: middle;
         }
 
+        .ncsPosModalOverlay:has(.ncsPosQuickItemModal) {
+          background:
+            radial-gradient(
+              circle at 50% 18%,
+              rgba(212, 175, 55, .16),
+              transparent 30%
+            ),
+            rgba(3, 21, 63, .76);
+          backdrop-filter: blur(11px) saturate(1.08);
+        }
+
         .ncsPosQuickItemModal {
-          width: min(720px, calc(100vw - 28px));
-          max-height: calc(100vh - 30px);
+          isolation: isolate;
+        }
+
+        .ncsPosQuickItemModal {
+          width: min(650px, calc(100vw - 28px));
+          max-height: min(760px, calc(100vh - 24px));
           overflow-y: auto;
           border: 1px solid rgba(212, 175, 55, 0.48);
           border-radius: 24px;
@@ -9760,7 +12139,7 @@ if (!variantsError) {
           justify-content: space-between;
           gap: 18px;
           overflow: hidden;
-          padding: 24px;
+          padding: 18px 20px;
           border-bottom: 1px solid rgba(212, 175, 55, 0.3);
           background:
             radial-gradient(
@@ -9795,7 +12174,7 @@ if (!variantsError) {
           position: relative;
           z-index: 1;
           margin: 5px 0 0;
-          font-size: 27px;
+          font-size: 23px;
         }
 
         .ncsPosQuickItemModal > header p {
@@ -10450,6 +12829,237 @@ if (!variantsError) {
           font-size: 25px;
         }
 
+        .ncsPosBrandCompactGrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+          gap: 8px;
+        }
+
+        .ncsPosBrandCompactCard {
+          min-height: 70px;
+          display: grid;
+          grid-template-columns: 34px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 9px;
+          padding: 9px 10px;
+          border: 1px solid rgba(10, 46, 115, 0.12);
+          border-radius: 14px;
+          background: linear-gradient(145deg, #ffffff, #f8f4ec);
+          color: #03153f;
+          text-align: left;
+          cursor: pointer;
+          box-shadow: 0 6px 16px rgba(3, 21, 63, 0.05);
+          transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+        }
+
+        .ncsPosBrandCompactCard:hover {
+          transform: translateY(-1px);
+          border-color: rgba(212, 175, 55, 0.72);
+          box-shadow: 0 9px 20px rgba(3, 21, 63, 0.1);
+        }
+
+        .ncsPosBrandCompactMark {
+          width: 34px;
+          height: 34px;
+          display: grid;
+          place-items: center;
+          border-radius: 10px;
+          background: linear-gradient(135deg, #03153f, #0a2e73);
+          color: #d4af37;
+          font-size: 10px;
+          font-weight: 1000;
+          letter-spacing: .4px;
+        }
+
+        .ncsPosBrandCompactCard > div {
+          min-width: 0;
+        }
+
+        .ncsPosBrandCompactCard strong,
+        .ncsPosBrandCompactCard small {
+          display: block;
+        }
+
+        .ncsPosBrandCompactCard strong {
+          overflow: hidden;
+          color: #0a2e73;
+          font-size: 12px;
+          font-weight: 950;
+          line-height: 1.15;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .ncsPosBrandCompactCard small {
+          margin-top: 4px;
+          overflow: hidden;
+          color: #717988;
+          font-size: 8.5px;
+          font-weight: 750;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .ncsPosBrandCompactCard b {
+          color: #d4af37;
+          font-size: 18px;
+        }
+
+        body:has(.ncsPosBrandModalBackdrop),
+        body:has(.ncsPosModalOverlay) {
+          overflow: hidden;
+        }
+
+        .ncsPosBrandModalBackdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 18000;
+          display: grid;
+          place-items: center;
+          padding: 22px;
+          background: rgba(2, 12, 35, 0.58);
+          backdrop-filter: blur(8px);
+        }
+
+        .ncsPosBrandModal {
+          width: min(980px, 94vw);
+          max-height: min(760px, 88vh);
+          display: grid;
+          grid-template-rows: auto minmax(0, 1fr) auto;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.58);
+          border-radius: 24px;
+          background: #f8f4ec;
+          box-shadow: 0 28px 90px rgba(0, 0, 0, 0.34);
+        }
+
+        .ncsPosBrandModalHeader {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          padding: 14px 16px;
+          border-bottom: 1px solid rgba(212, 175, 55, 0.28);
+          background: linear-gradient(135deg, #03153f, #0a2e73);
+          color: #fff;
+        }
+
+        .ncsPosBrandModalTitle {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          min-width: 0;
+        }
+
+        .ncsPosBrandModalTitle .ncsPosBrandCompactMark {
+          width: 42px;
+          height: 42px;
+          flex: 0 0 auto;
+          border: 1px solid rgba(212, 175, 55, .55);
+          background: rgba(255,255,255,.08);
+          font-size: 12px;
+        }
+
+        .ncsPosBrandModalTitle small {
+          display: block;
+          color: #f0d56d;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 1px;
+        }
+
+        .ncsPosBrandModalTitle h3 {
+          margin: 2px 0 0;
+          font-size: 20px;
+          line-height: 1.1;
+        }
+
+        .ncsPosBrandModalTitle p {
+          margin: 3px 0 0;
+          color: rgba(255,255,255,.68);
+          font-size: 9px;
+          font-weight: 750;
+        }
+
+        .ncsPosBrandModalClose {
+          width: 40px;
+          height: 40px;
+          flex: 0 0 auto;
+          border: 1px solid rgba(255,255,255,.18);
+          border-radius: 12px;
+          background: rgba(255,255,255,.08);
+          color: #fff;
+          font-size: 24px;
+          line-height: 1;
+          cursor: pointer;
+        }
+
+        .ncsPosBrandModalBody {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+          align-content: start;
+          align-items: start;
+          grid-auto-rows: max-content;
+          gap: 10px;
+          overflow-y: auto;
+          padding: 12px;
+          scrollbar-width: thin;
+        }
+
+        .ncsPosBrandModalBody .ncsPosGroupedCard.open {
+          grid-column: 1 / -1;
+          align-self: start;
+          height: auto;
+          min-height: max-content;
+          overflow: visible;
+          position: relative;
+          z-index: 3;
+        }
+
+        .ncsPosBrandModalBody .ncsPosGroupedCard.open .ncsPosVariantPanel {
+          display: block;
+          height: auto;
+          min-height: 92px;
+          overflow: visible;
+        }
+
+        .ncsPosBrandModalBody .ncsPosGroupedCard.open .ncsPosVariantList {
+          display: grid !important;
+          min-height: 54px;
+          height: auto !important;
+          overflow: visible !important;
+          opacity: 1 !important;
+          visibility: visible !important;
+        }
+
+        .ncsPosBrandModalFooter {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 10px 14px;
+          border-top: 1px solid rgba(10, 46, 115, 0.1);
+          background: #fff;
+        }
+
+        .ncsPosBrandModalFooter span {
+          color: #6b7280;
+          font-size: 9px;
+          font-weight: 700;
+        }
+
+        .ncsPosBrandModalFooter button {
+          min-height: 36px;
+          padding: 0 14px;
+          border: 0;
+          border-radius: 10px;
+          background: linear-gradient(135deg, #0a2e73, #164ca8);
+          color: #fff;
+          font-size: 10px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
         .ncsPosBrandAccordion {
           overflow: hidden;
           border: 1px solid rgba(10, 46, 115, 0.12);
@@ -10472,6 +13082,40 @@ if (!variantsError) {
 
         .ncsPosBrandAccordionHeader small {
           color: rgba(255,255,255,.7);
+        }
+
+        @media (max-width: 760px) {
+          .ncsPosBrandModalDense .ncsPosBrandModalBody {
+            grid-template-columns: 1fr;
+          }
+
+          .ncsPosBrandCompactGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .ncsPosBrandModalBackdrop {
+            align-items: end;
+            padding: 0;
+          }
+
+          .ncsPosBrandModal {
+            width: 100%;
+            max-height: 90vh;
+            border-radius: 22px 22px 0 0;
+          }
+
+          .ncsPosBrandModalBody {
+            grid-template-columns: 1fr;
+            padding: 10px;
+          }
+
+          .ncsPosBrandModalFooter span {
+            display: none;
+          }
+
+          .ncsPosBrandModalFooter button {
+            width: 100%;
+          }
         }
 
         .ncsPosGroupedProductGrid {
@@ -11177,3 +13821,6 @@ if (!variantsError) {
     </main>
   );
 }
+
+
+
