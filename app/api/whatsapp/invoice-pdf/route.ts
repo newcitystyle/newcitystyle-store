@@ -318,6 +318,9 @@ async function createInvoicePdf(body: InvoiceRequest) {
     const pageWidth =
       thermalMm === 58 ? 158.74 : 215.43; // safe 56 mm / 76 mm PDF width
     const margin = thermalMm === 58 ? 9 : 10;
+    // 58mm only: shift printable receipt content safely ~2mm to the left.
+    // 80mm stays exactly at its existing alignment.
+    const thermalShiftX = thermalMm === 58 ? -5.67 : 0;
     const contentWidth = pageWidth - margin * 2;
     const thermalInk = rgb(0.08, 0.08, 0.08);
 
@@ -362,8 +365,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
       const safe = text(value, "");
       page.drawText(safe, {
         x: Math.max(
-          margin,
-          pageWidth / 2 -
+          margin + thermalShiftX,
+          pageWidth / 2 + thermalShiftX -
             font.widthOfTextAtSize(safe, size) / 2,
         ),
         y,
@@ -407,8 +410,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
     y -= 11;
 
     page.drawLine({
-      start: { x: margin + 12, y },
-      end: { x: pageWidth - margin - 12, y },
+      start: { x: margin + thermalShiftX + 12, y },
+      end: { x: pageWidth - margin + thermalShiftX - 12, y },
       thickness: 0.8,
       color: thermalInk,
     });
@@ -452,8 +455,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
     }
 
     page.drawLine({
-      start: { x: margin, y },
-      end: { x: pageWidth - margin, y },
+      start: { x: margin + thermalShiftX, y },
+      end: { x: pageWidth - margin + thermalShiftX, y },
       thickness: 0.55,
       color: rgb(0.76, 0.78, 0.81),
       dashArray: [2, 2],
@@ -475,7 +478,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
 
     const drawMetaRow = (labelText: string, valueText: string) => {
       page.drawText(labelText, {
-        x: margin,
+        x: margin + thermalShiftX,
         y,
         size: metaSize,
         font: bold,
@@ -484,7 +487,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
 
       const value = text(valueText, "-");
       page.drawText(value, {
-        x: margin + (thermalMm === 58 ? 38 : 50),
+        x: margin + thermalShiftX + (thermalMm === 58 ? 38 : 50),
         y,
         size: metaBold,
         font: bold,
@@ -510,8 +513,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
 
     y -= 4;
     page.drawLine({
-      start: { x: margin, y },
-      end: { x: pageWidth - margin, y },
+      start: { x: margin + thermalShiftX, y },
+      end: { x: pageWidth - margin + thermalShiftX, y },
       thickness: 0.7,
       color: rgb(0.72, 0.74, 0.78),
     });
@@ -521,7 +524,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
     const smallFont = thermalMm === 58 ? 5.7 : 6.5;
 
     page.drawRectangle({
-      x: margin,
+      x: margin + thermalShiftX,
       y: y - 5,
       width: contentWidth,
       height: 15,
@@ -529,21 +532,21 @@ async function createInvoicePdf(body: InvoiceRequest) {
     });
 
     page.drawText("ITEM", {
-      x: margin + 4,
+      x: margin + thermalShiftX + 4,
       y,
       size: smallFont,
       font: bold,
       color: thermalInk,
     });
     page.drawText("QTY", {
-      x: pageWidth - margin - (thermalMm === 58 ? 52 : 72),
+      x: pageWidth - margin + thermalShiftX - (thermalMm === 58 ? 52 : 72),
       y,
       size: smallFont,
       font: bold,
       color: thermalInk,
     });
     page.drawText("AMOUNT", {
-      x: pageWidth - margin - (thermalMm === 58 ? 40 : 50),
+      x: pageWidth - margin + thermalShiftX - (thermalMm === 58 ? 40 : 50),
       y,
       size: smallFont,
       font: bold,
@@ -564,7 +567,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
       }`;
 
       page.drawText(itemName, {
-        x: margin,
+        x: margin + thermalShiftX,
         y,
         size: itemFont,
         font: bold,
@@ -575,7 +578,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
 
       const qtyText = qty.toFixed(qty % 1 === 0 ? 0 : 2);
       page.drawText(qtyText, {
-        x: pageWidth - margin - (thermalMm === 58 ? 52 : 72),
+        x: pageWidth - margin + thermalShiftX - (thermalMm === 58 ? 52 : 72),
         y,
         size: itemFont,
         font: bold,
@@ -586,7 +589,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
       page.drawText(totalText, {
         x:
           pageWidth -
-          margin -
+          margin +
+          thermalShiftX -
           bold.widthOfTextAtSize(totalText, itemFont),
         y,
         size: itemFont,
@@ -597,8 +601,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
       y -= itemRowHeight;
 
       page.drawLine({
-        start: { x: margin, y: y + 8 },
-        end: { x: pageWidth - margin, y: y + 8 },
+        start: { x: margin + thermalShiftX, y: y + 8 },
+        end: { x: pageWidth - margin + thermalShiftX, y: y + 8 },
         thickness: 0.35,
         color: rgb(0.86, 0.87, 0.89),
         dashArray: [1.5, 2],
@@ -621,7 +625,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
           : 7;
 
       page.drawText(labelText, {
-        x: margin,
+        x: margin + thermalShiftX,
         y,
         size,
         font: bold,
@@ -632,7 +636,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
       page.drawText(valueText, {
         x:
           pageWidth -
-          margin -
+          margin +
+          thermalShiftX -
           bold.widthOfTextAtSize(
             valueText,
             size,
@@ -658,7 +663,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
     }
 
     page.drawRectangle({
-      x: margin,
+      x: margin + thermalShiftX,
       y: y - 5,
       width: contentWidth,
       height: thermalMm === 58 ? 24 : 28,
@@ -666,7 +671,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
     });
 
     page.drawText("TOTAL", {
-      x: margin + 7,
+      x: margin + thermalShiftX + 7,
       y: y + (thermalMm === 58 ? 3 : 5),
       size: thermalMm === 58 ? 7.7 : 8.8,
       font: bold,
@@ -677,7 +682,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
     page.drawText(totalReceiptText, {
       x:
         pageWidth -
-        margin -
+        margin +
+        thermalShiftX -
         7 -
         bold.widthOfTextAtSize(
           totalReceiptText,
@@ -692,7 +698,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
     y -= thermalMm === 58 ? 32 : 36;
 
     page.drawText(`Paid: ${money(paidAmount)}`, {
-      x: margin,
+      x: margin + thermalShiftX,
       y,
       size: smallFont,
       font: bold,
@@ -702,7 +708,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
 
     if (dueAmount > 0) {
       page.drawText(`Due: ${money(dueAmount)}`, {
-        x: margin,
+        x: margin + thermalShiftX,
         y,
         size: smallFont,
         font: bold,
@@ -714,8 +720,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
     if (showUpiQr || showBank) {
       y -= 4;
       page.drawLine({
-        start: { x: margin, y },
-        end: { x: pageWidth - margin, y },
+        start: { x: margin + thermalShiftX, y },
+        end: { x: pageWidth - margin + thermalShiftX, y },
         thickness: 0.6,
         color: rgb(0.80, 0.81, 0.84),
       });
@@ -724,7 +730,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
       if (upiQrImage) {
         const qrSize = thermalMm === 58 ? 62 : 76;
         page.drawImage(upiQrImage, {
-          x: pageWidth / 2 - qrSize / 2,
+          x: pageWidth / 2 + thermalShiftX - qrSize / 2,
           y: y - qrSize,
           width: qrSize,
           height: qrSize,
@@ -768,8 +774,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
     if (showTerms && termsText) {
       y -= 4;
       page.drawLine({
-        start: { x: margin, y },
-        end: { x: pageWidth - margin, y },
+        start: { x: margin + thermalShiftX, y },
+        end: { x: pageWidth - margin + thermalShiftX, y },
         thickness: 0.5,
         color: rgb(0.84, 0.85, 0.87),
         dashArray: [2, 2],
