@@ -46,26 +46,43 @@ export default function FeaturedProducts() {
         )
         .eq("sell_online", true)
         .eq("is_active", true)
+        .gt("online_stock_limit", 0)
+        .gt("stock", 0)
+        .gt("price", 0)
         .limit(12);
 
       if (error) {
         console.error("Featured products error:", error);
         setProducts([]);
       } else {
-        setProducts((data as Product[]) || []);
+        const safeProducts = ((data as Product[]) || []).filter((item) => {
+          const totalStock = Number(item.stock || 0);
+          const onlineLimit = Number(item.online_stock_limit || 0);
+          const price = Number(item.price || 0);
+
+          return (
+            item.sell_online === true &&
+            item.is_active === true &&
+            totalStock > 0 &&
+            onlineLimit > 0 &&
+            price > 0
+          );
+        });
+
+        setProducts(safeProducts);
       }
 
       setLoading(false);
     }
 
-    loadProducts();
+    void loadProducts();
   }, []);
 
   if (!mounted || loading) {
     return (
       <section style={styles.featuredSection}>
         <div style={styles.headingArea}>
-          <span style={styles.eyebrow}>NEW CITY STYLE</span>
+          <div style={styles.eyebrow}>NEW CITY STYLE</div>
           <h2 style={styles.heading}>Featured Products</h2>
           <p style={styles.headingText}>
             Premium fashion selected for every member of the family.
@@ -80,7 +97,7 @@ export default function FeaturedProducts() {
   return (
     <section style={styles.featuredSection}>
       <div style={styles.headingArea}>
-        <span style={styles.eyebrow}>NEW CITY STYLE</span>
+        <div style={styles.eyebrow}>NEW CITY STYLE</div>
         <h2 style={styles.heading}>Featured Products</h2>
         <p style={styles.headingText}>
           Premium fashion selected for every member of the family.
@@ -95,16 +112,26 @@ export default function FeaturedProducts() {
             const imageSource = item.image_url || item.image || "";
             const productName = item.name || "Premium Product";
 
-            const totalStock = Number(item.stock || 0);
-            const onlineLimit = Number(item.online_stock_limit || 0);
+            const totalStock = Math.max(0, Number(item.stock || 0));
+            const onlineLimit = Math.max(
+              0,
+              Number(item.online_stock_limit || 0)
+            );
 
-            const onlineQuantity =
-              onlineLimit > 0
-                ? Math.min(onlineLimit, totalStock)
-                : totalStock;
+            // IMPORTANT:
+            // online_stock_limit = 0 means this product is NOT available online.
+            const onlineQuantity = Math.min(onlineLimit, totalStock);
 
             const isAvailableOnline =
-              onlineQuantity > 0 && totalStock > 0;
+              item.sell_online === true &&
+              item.is_active === true &&
+              Number(item.price || 0) > 0 &&
+              onlineLimit > 0 &&
+              onlineQuantity > 0;
+
+            if (!isAvailableOnline) {
+              return null;
+            }
 
             return (
               <article
@@ -137,12 +164,10 @@ export default function FeaturedProducts() {
                   <div
                     style={{
                       ...styles.stock,
-                      color: isAvailableOnline ? "#067647" : "#b42318",
+                      color: "#067647",
                     }}
                   >
-                    {isAvailableOnline
-                      ? `${onlineQuantity} available online`
-                      : "Out of stock"}
+                    {onlineQuantity} available online
                   </div>
 
                   <button

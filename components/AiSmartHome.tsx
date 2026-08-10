@@ -75,11 +75,18 @@ function imageOf(product: Product) {
 function onlineStock(product: Product) {
   const stock = Math.max(0, num(product.stock));
   const limit = Math.max(0, num(product.online_stock_limit));
-  return limit > 0 ? Math.min(stock, limit) : stock;
+
+  // Online stock is intentionally separate from physical shop stock.
+  // If no online quantity is assigned, the product must stay hidden online.
+  if (limit <= 0 || stock <= 0) return 0;
+
+  return Math.min(stock, limit);
 }
 
 function discountOf(product: Product) {
   const price = num(product.price);
+  if (price <= 0) return 0;
+
   const mrp = Math.max(price, num(product.mrp));
   if (num(product.discount_percent) > 0) {
     return Math.round(num(product.discount_percent));
@@ -123,7 +130,13 @@ export default function AiSmartHome() {
 
       if (error) throw error;
 
-      const rows = (data || []) as Product[];
+      const rows = ((data || []) as Product[]).filter(
+        (item) =>
+          item.sell_online === true &&
+          item.is_active === true &&
+          num(item.price) > 0 &&
+          onlineStock(item) > 0,
+      );
       setProducts(rows);
 
       let storedQuery = "";
@@ -152,7 +165,11 @@ export default function AiSmartHome() {
           const result = (await response.json()) as AiResponse;
 
           if (response.ok && result.success) {
-            setAiProducts(result.products || []);
+            setAiProducts(
+              (result.products || []).filter(
+                (item) => num(item.price) > 0 && num(item.onlineStock) > 0,
+              ),
+            );
             setAiAnswer(result.answer || "");
           }
         } catch {
