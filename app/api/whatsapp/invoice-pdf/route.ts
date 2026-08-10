@@ -312,17 +312,21 @@ async function createInvoicePdf(body: InvoiceRequest) {
       (studio as Record<string, unknown> | null)?.thermal_width ?? 80,
     );
     const thermalMm = rawThermalWidth === 58 ? 58 : 80;
+    // Keep the generated PDF slightly narrower than the physical roll.
+    // Epson TM-T82 has an 80 mm roll, but the printable area is smaller;
+    // this safety width prevents the right edge / AMOUNT column from clipping.
     const pageWidth =
-      thermalMm === 58 ? 164.41 : 226.77; // millimetres converted to PDF points
-    const margin = thermalMm === 58 ? 10 : 14;
+      thermalMm === 58 ? 158.74 : 215.43; // safe 56 mm / 76 mm PDF width
+    const margin = thermalMm === 58 ? 9 : 10;
     const contentWidth = pageWidth - margin * 2;
+    const thermalInk = rgb(0.08, 0.08, 0.08);
 
     const showPhone = studioBool(studio, "show_phone", true);
     const showAddress = studioBool(studio, "show_address", true);
     const showEmail = studioBool(studio, "show_email", true);
     const boldText = studioBool(studio, "bold_text", true);
 
-    const itemRowHeight = thermalMm === 58 ? 22 : 24;
+    const itemRowHeight = thermalMm === 58 ? 24 : 26;
     const identityHeight =
       74 +
       (showAddress ? 22 : 0) +
@@ -388,17 +392,17 @@ async function createInvoicePdf(body: InvoiceRequest) {
     // Compact premium brand lockup for thermal paper.
     centerText(
       "NEW CITY STYLE",
-      thermalMm === 58 ? 12.5 : 15,
+      thermalMm === 58 ? 13 : 15.5,
       bold,
-      BLUE,
+      thermalInk,
     );
-    y -= thermalMm === 58 ? 14 : 17;
+    y -= thermalMm === 58 ? 15 : 18;
 
     centerText(
       "STYLE FOR EVERY FAMILY",
-      thermalMm === 58 ? 5.4 : 6.2,
+      thermalMm === 58 ? 5.8 : 6.7,
       bold,
-      GOLD,
+      thermalInk,
     );
     y -= 11;
 
@@ -406,23 +410,23 @@ async function createInvoicePdf(body: InvoiceRequest) {
       start: { x: margin + 12, y },
       end: { x: pageWidth - margin - 12, y },
       thickness: 0.8,
-      color: GOLD,
+      color: thermalInk,
     });
     y -= 10;
 
     if (showAddress) {
       centerText(
         "Main Road, Opp. Govt. MPDO Office",
-        thermalMm === 58 ? 5.1 : 5.8,
-        regular,
-        GRAY,
+        thermalMm === 58 ? 5.5 : 6.4,
+        bold,
+        thermalInk,
       );
       y -= 9;
       centerText(
         "Sarubujjili, Srikakulam - 532458",
-        thermalMm === 58 ? 5.1 : 5.8,
-        regular,
-        GRAY,
+        thermalMm === 58 ? 5.5 : 6.4,
+        bold,
+        thermalInk,
       );
       y -= 9;
     }
@@ -430,9 +434,9 @@ async function createInvoicePdf(body: InvoiceRequest) {
     if (showPhone) {
       centerText(
         "Ph / WhatsApp: +91 90100 14001",
-        thermalMm === 58 ? 5.1 : 5.8,
-        regular,
-        GRAY,
+        thermalMm === 58 ? 5.5 : 6.4,
+        bold,
+        thermalInk,
       );
       y -= 9;
     }
@@ -440,9 +444,9 @@ async function createInvoicePdf(body: InvoiceRequest) {
     if (showEmail) {
       centerText(
         "www.newcitystyle.store",
-        thermalMm === 58 ? 4.9 : 5.5,
-        regular,
-        GRAY,
+        thermalMm === 58 ? 5.3 : 6.2,
+        bold,
+        thermalInk,
       );
       y -= 9;
     }
@@ -466,16 +470,16 @@ async function createInvoicePdf(body: InvoiceRequest) {
       y -= 13;
     }
 
-    const metaSize = thermalMm === 58 ? 5.8 : 6.5;
-    const metaBold = thermalMm === 58 ? 6.1 : 6.8;
+    const metaSize = thermalMm === 58 ? 6.2 : 7.2;
+    const metaBold = thermalMm === 58 ? 6.5 : 7.5;
 
     const drawMetaRow = (labelText: string, valueText: string) => {
       page.drawText(labelText, {
         x: margin,
         y,
         size: metaSize,
-        font: regular,
-        color: GRAY,
+        font: bold,
+        color: thermalInk,
       });
 
       const value = text(valueText, "-");
@@ -484,7 +488,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
         y,
         size: metaBold,
         font: bold,
-        color: CHARCOAL,
+        color: thermalInk,
         maxWidth:
           contentWidth - (thermalMm === 58 ? 38 : 50),
       });
@@ -513,8 +517,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
     });
     y -= 12;
 
-    const itemFont = thermalMm === 58 ? 6.1 : 7;
-    const smallFont = thermalMm === 58 ? 5.2 : 5.8;
+    const itemFont = thermalMm === 58 ? 6.6 : 7.6;
+    const smallFont = thermalMm === 58 ? 5.7 : 6.5;
 
     page.drawRectangle({
       x: margin,
@@ -529,23 +533,23 @@ async function createInvoicePdf(body: InvoiceRequest) {
       y,
       size: smallFont,
       font: bold,
-      color: BLUE,
+      color: thermalInk,
     });
     page.drawText("QTY", {
-      x: pageWidth - margin - (thermalMm === 58 ? 48 : 64),
+      x: pageWidth - margin - (thermalMm === 58 ? 52 : 72),
       y,
       size: smallFont,
       font: bold,
-      color: BLUE,
+      color: thermalInk,
     });
     page.drawText("AMOUNT", {
-      x: pageWidth - margin - (thermalMm === 58 ? 30 : 38),
+      x: pageWidth - margin - (thermalMm === 58 ? 40 : 50),
       y,
       size: smallFont,
       font: bold,
-      color: BLUE,
+      color: thermalInk,
     });
-    y -= 13;
+    y -= 14;
 
     for (const item of items) {
       const qty = Math.max(1, amount(item.quantity, 1));
@@ -563,19 +567,19 @@ async function createInvoicePdf(body: InvoiceRequest) {
         x: margin,
         y,
         size: itemFont,
-        font: boldText ? bold : regular,
-        color: CHARCOAL,
+        font: bold,
+        color: thermalInk,
         maxWidth:
-          contentWidth - (thermalMm === 58 ? 66 : 88),
+          contentWidth - (thermalMm === 58 ? 72 : 96),
       });
 
       const qtyText = qty.toFixed(qty % 1 === 0 ? 0 : 2);
       page.drawText(qtyText, {
-        x: pageWidth - margin - (thermalMm === 58 ? 48 : 64),
+        x: pageWidth - margin - (thermalMm === 58 ? 52 : 72),
         y,
         size: itemFont,
-        font: regular,
-        color: CHARCOAL,
+        font: bold,
+        color: thermalInk,
       });
 
       const totalText = money(total);
@@ -587,7 +591,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
         y,
         size: itemFont,
         font: bold,
-        color: CHARCOAL,
+        color: thermalInk,
       });
 
       y -= itemRowHeight;
@@ -620,8 +624,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
         x: margin,
         y,
         size,
-        font: emphasize ? bold : regular,
-        color: emphasize ? BLUE : CHARCOAL,
+        font: bold,
+        color: thermalInk,
       });
 
       const valueText = money(value);
@@ -629,14 +633,14 @@ async function createInvoicePdf(body: InvoiceRequest) {
         x:
           pageWidth -
           margin -
-          (emphasize ? bold : regular).widthOfTextAtSize(
+          bold.widthOfTextAtSize(
             valueText,
             size,
           ),
         y,
         size,
-        font: emphasize ? bold : regular,
-        color: emphasize ? BLUE : CHARCOAL,
+        font: bold,
+        color: thermalInk,
       });
 
       y -= emphasize ? 18 : 13;
@@ -691,8 +695,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
       x: margin,
       y,
       size: smallFont,
-      font: regular,
-      color: GRAY,
+      font: bold,
+      color: thermalInk,
     });
     y -= 11;
 
@@ -728,16 +732,16 @@ async function createInvoicePdf(body: InvoiceRequest) {
         y -= qrSize + 9;
         centerText(
           "SCAN & PAY",
-          thermalMm === 58 ? 6 : 7,
+          thermalMm === 58 ? 6.4 : 7.4,
           bold,
-          BLUE,
+          thermalInk,
         );
         y -= 10;
         centerText(
           upiId,
           thermalMm === 58 ? 5 : 5.6,
-          regular,
-          GRAY,
+          bold,
+          thermalInk,
         );
         y -= 11;
       }
@@ -753,8 +757,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
           centerText(
             line,
             thermalMm === 58 ? 5 : 5.6,
-            regular,
-            GRAY,
+            bold,
+            thermalInk,
           );
           y -= 10;
         }
@@ -773,9 +777,9 @@ async function createInvoicePdf(body: InvoiceRequest) {
       y -= 12;
       centerText(
         termsText,
-        thermalMm === 58 ? 4.8 : 5.5,
-        regular,
-        GRAY,
+        thermalMm === 58 ? 5.2 : 6.0,
+        bold,
+        thermalInk,
       );
       y -= 18;
     }
@@ -784,7 +788,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
       dueAmount > 0 ? "PAYMENT PARTIAL" : "PAYMENT RECEIVED",
       thermalMm === 58 ? 5.2 : 5.8,
       bold,
-      dueAmount > 0 ? rgb(0.72, 0.12, 0.12) : BLUE,
+      thermalInk,
     );
     y -= 11;
 
@@ -792,15 +796,15 @@ async function createInvoicePdf(body: InvoiceRequest) {
       footerMessage,
       thermalMm === 58 ? 5.7 : 6.4,
       bold,
-      BLUE,
+      thermalInk,
     );
     y -= 11;
 
     centerText(
       "Powered by NCS Billing",
-      thermalMm === 58 ? 4.4 : 4.9,
-      regular,
-      GOLD,
+      thermalMm === 58 ? 4.8 : 5.4,
+      bold,
+      thermalInk,
     );
 
     const thermalPdfBytes = await pdf.save();
