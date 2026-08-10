@@ -84,6 +84,16 @@ type ReturnSelection = {
 
 type SaleDetails = Sale & { items: SaleItem[] };
 
+type ExchangeSettlementSummary = {
+  id: string;
+  difference_amount?: number | string | null;
+  settlement_direction?: string | null;
+  settlement_method?: string | null;
+  settlement_status?: string | null;
+  created_at?: string | null;
+};
+
+
 const BLUE = "#0A2E73";
 const DEEP = "#03153F";
 const GOLD = "#D4AF37";
@@ -135,6 +145,9 @@ const today = (v?: string | null) => {
 
 export default function SalesHistoryPage() {
   const [sales, setSales] = useState<Sale[]>([]);
+  const [exchangeSettlements, setExchangeSettlements] = useState<
+    ExchangeSettlementSummary[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
   const [search, setSearch] = useState("");
@@ -285,18 +298,43 @@ export default function SalesHistoryPage() {
     setLoading(true);
     setErrorText("");
 
-    const { data, error } = await supabase
-      .from("pos_sales")
-      .select("*")
-      .eq("is_deleted", false)
-      .order("created_at", { ascending: false });
+    const [salesResult, exchangeResult] = await Promise.all([
+      supabase
+        .from("pos_sales")
+        .select("*")
+        .eq("is_deleted", false)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("pos_exchange_settlements")
+        .select(
+          "id,difference_amount,settlement_direction,settlement_method,settlement_status,created_at"
+        )
+        .order("created_at", { ascending: false }),
+    ]);
 
-    if (error) {
-      console.error(error);
-      setErrorText(error.message || "Unable to load sales.");
+    if (salesResult.error) {
+      console.error(salesResult.error);
+      setErrorText(
+        salesResult.error.message || "Unable to load sales."
+      );
       setSales([]);
     } else {
-      setSales((data || []) as unknown as Sale[]);
+      setSales(
+        (salesResult.data || []) as unknown as Sale[]
+      );
+    }
+
+    if (exchangeResult.error) {
+      console.info(
+        "Unable to load exchange settlements:",
+        exchangeResult.error
+      );
+      setExchangeSettlements([]);
+    } else {
+      setExchangeSettlements(
+        (exchangeResult.data || []) as unknown as
+          ExchangeSettlementSummary[]
+      );
     }
 
     setLoading(false);
@@ -359,19 +397,116 @@ export default function SalesHistoryPage() {
   }, [sales, search, payment, status, period]);
 
   const stats = useMemo(() => {
-    return filtered.reduce(
+    const base = filtered.reduce(
       (a, sale) => {
         if (norm(sale.sale_status) !== "cancelled") {
           a.value += num(sale.total_amount);
           a.paid += num(sale.paid_amount);
           a.due += num(sale.due_amount);
         }
-        if (today(sale.created_at)) a.today += 1;
+
+        if (today(sale.created_at)) {
+          a.today += 1;
+        }
+
         return a;
       },
-      { bills: filtered.length, value: 0, paid: 0, due: 0, today: 0 }
+      {
+        bills: filtered.length,
+        value: 0,
+        paid: 0,
+        due: 0,
+        today: 0,
+      }
     );
-  }, [filtered]);
+
+    const now = new Date();
+
+    const exchangeRowsForPeriod =
+      exchangeSettlements.filter((row) => {
+        if (
+          norm(row.settlement_status) === "cancelled"
+        ) {
+          return false;
+        }
+
+        const created = row.created_at
+          ? new Date(row.created_at)
+          : null;
+
+        if (
+          !created ||
+          Number.isNaN(created.getTime())
+        ) {
+          return false;
+        }
+
+        if (period === "today") {
+          return today(row.created_at);
+        }
+
+        if (period === "7") {
+          const from = new Date(now);
+          from.setDate(from.getDate() - 7);
+          return created >= from;
+        }
+
+        if (period === "30") {
+          const from = new Date(now);
+          from.setDate(from.getDate() - 30);
+          return created >= from;
+        }
+
+        return true;
+      });
+
+    const exchangeNet = exchangeRowsForPeriod.reduce(
+      (sum, row) => {
+        const difference = Math.max(
+          0,
+          num(row.difference_amount)
+        );
+
+        if (
+          norm(row.settlement_direction) === "collect"
+        ) {
+          return sum + difference;
+        }
+
+        if (
+          norm(row.settlement_direction) === "refund"
+        ) {
+          return sum - difference;
+        }
+
+        return sum;
+      },
+      0
+    );
+
+    const todayExchangeCount =
+      exchangeSettlements.filter(
+        (row) =>
+          norm(row.settlement_status) !==
+            "cancelled" &&
+          today(row.created_at)
+      ).length;
+
+    base.value += exchangeNet;
+    base.paid += exchangeNet;
+    base.today += todayExchangeCount;
+
+    return {
+      ...base,
+      bills:
+        base.bills +
+        exchangeRowsForPeriod.length,
+    };
+  }, [
+    exchangeSettlements,
+    filtered,
+    period,
+  ]);
 
   async function showDetails(sale: Sale) {
     setDetailsLoading(true);
@@ -615,6 +750,174 @@ export default function SalesHistoryPage() {
     );
   }
 
+  function updateExchangeDiscount(
+    key: string,
+    rawDiscountPercent: number
+  ) {
+    const safeDiscount = Math.min(
+      100,
+      Math.max(0, num(rawDiscountPercent))
+    );
+
+    setExchangeItems((current) =>
+      current.map((item) => {
+        if (item.key !== key) return item;
+
+        const baseMrp =
+          item.mrp > 0
+            ? item.mrp
+            : item.price > 0
+              ? item.price
+              : item.exchangePrice;
+
+        const finalPrice =
+          baseMrp > 0
+            ? baseMrp - (baseMrp * safeDiscount) / 100
+            : item.exchangePrice;
+
+        return {
+          ...item,
+          exchangePrice: Math.max(
+            0,
+            Number(finalPrice.toFixed(2))
+          ),
+        };
+      })
+    );
+  }
+
+  async function sendExchangeWhatsAppConfirmation(
+    sale: SaleDetails,
+    result: {
+      return_number?: string;
+      returned_value?: number;
+      exchange_value?: number;
+      difference_amount?: number;
+      settlement_direction?: string;
+      settlement_method?: string;
+    }
+  ) {
+    const digits = (sale.customer_phone || "").replace(
+      /\D/g,
+      ""
+    );
+    const recipientPhone =
+      digits.length === 10 ? `91${digits}` : digits;
+
+    if (
+      recipientPhone.length < 10 ||
+      recipientPhone.length > 15
+    ) {
+      return {
+        sent: false,
+        reason: "no_valid_mobile",
+      };
+    }
+
+    const direction =
+      norm(result.settlement_direction);
+    const difference = Math.max(
+      0,
+      num(result.difference_amount)
+    );
+
+    try {
+      const response = await fetch(
+        "/api/whatsapp/invoice",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: recipientPhone,
+            sendWhatsApp: true,
+            customerName:
+              sale.customer_name ||
+              "Walk-in Customer",
+            customerPhone:
+              sale.customer_phone || "",
+            billNumber:
+              result.return_number ||
+              `EXCHANGE-${sale.invoice_number || sale.id}`,
+            billDate: new Date().toISOString(),
+            paymentMethod:
+              direction === "even"
+                ? "NO EXTRA PAYMENT"
+                : label(
+                    result.settlement_method ||
+                      exchangeSettlementMethod
+                  ),
+            subtotal: num(
+              result.exchange_value ||
+                exchangeTotal
+            ),
+            discountAmount: 0,
+            taxAmount: 0,
+            roundOff: 0,
+            billAmount: num(
+              result.exchange_value ||
+                exchangeTotal
+            ),
+            paidAmount:
+              direction === "collect"
+                ? difference
+                : 0,
+            dueAmount: 0,
+            whatsappLanguage: "telugu",
+            items: exchangeItems.map(
+              (item) => ({
+                name: item.name,
+                quantity: item.quantity,
+                mrp: item.mrp,
+                price: item.exchangePrice,
+                total:
+                  item.exchangePrice *
+                  item.quantity,
+                size: item.size || "",
+                color: item.color || "",
+                barcode: item.barcode || "",
+              })
+            ),
+          }),
+        }
+      );
+
+      const payload = (await response.json()) as {
+        success?: boolean;
+        whatsappPdfSent?: boolean;
+        whatsappTextSent?: boolean;
+        error?: string;
+      };
+
+      return {
+        sent:
+          response.ok &&
+          payload.success === true &&
+          (payload.whatsappPdfSent === true ||
+            payload.whatsappTextSent === true),
+        reason:
+          payload.error ||
+          (response.ok
+            ? ""
+            : "whatsapp_send_failed"),
+      };
+    } catch (error) {
+      console.info(
+        "Exchange completed, but WhatsApp confirmation failed:",
+        error
+      );
+
+      return {
+        sent: false,
+        reason:
+          error instanceof Error
+            ? error.message
+            : "whatsapp_send_failed",
+      };
+    }
+  }
+
   async function submitReturn() {
     if (!selected) return;
 
@@ -691,6 +994,25 @@ export default function SalesHistoryPage() {
         );
       }
 
+      let whatsappStatus = "";
+
+      if (returnType === "exchange") {
+        const whatsappResult =
+          await sendExchangeWhatsAppConfirmation(
+            selected,
+            result
+          );
+
+        whatsappStatus = whatsappResult.sent
+          ? " WhatsApp sent ✓"
+          : (selected.customer_phone || "").replace(
+                /\D/g,
+                ""
+              ).length >= 10
+            ? " Exchange saved; WhatsApp not sent."
+            : " Exchange saved; no valid mobile for WhatsApp.";
+      }
+
       setNotice(
         returnType === "exchange"
           ? `${result.return_number || "Exchange"} completed. Returned ${money(
@@ -703,7 +1025,7 @@ export default function SalesHistoryPage() {
                 : result.settlement_direction === "refund"
                   ? "refund"
                   : "difference"
-            } ${money(result.difference_amount || 0)}.`
+            } ${money(result.difference_amount || 0)}.${whatsappStatus}`
           : `${result.return_number || "Return"} completed for ${money(
               result.total_return_amount || selectedReturnTotal
             )}.`
@@ -732,8 +1054,12 @@ export default function SalesHistoryPage() {
                   availableReturnQuantity(item)
               );
             })
-              ? "returned"
-              : "partially_returned",
+              ? returnType === "exchange"
+                ? "exchanged"
+                : "returned"
+              : returnType === "exchange"
+                ? "partially_exchanged"
+                : "partially_returned",
           items:
             (refreshedItems || []) as unknown as SaleItem[],
         });
@@ -1981,11 +2307,47 @@ export default function SalesHistoryPage() {
                           />
                         </label>
 
+                        <label className="exchangeMrpField">
+                          <span>MRP</span>
+                          <strong>{money(item.mrp || item.price)}</strong>
+                        </label>
+
                         <label>
-                          <span>Exchange Price</span>
+                          <span>Discount %</span>
                           <input
                             type="number"
                             min="0"
+                            max="100"
+                            step="0.01"
+                            value={(() => {
+                              const baseMrp =
+                                item.mrp > 0
+                                  ? item.mrp
+                                  : item.price;
+                              if (baseMrp <= 0) return 0;
+                              return Number(
+                                (
+                                  ((baseMrp - item.exchangePrice) /
+                                    baseMrp) *
+                                  100
+                                ).toFixed(2)
+                              );
+                            })()}
+                            onChange={(event) =>
+                              updateExchangeDiscount(
+                                item.key,
+                                num(event.target.value)
+                              )
+                            }
+                          />
+                        </label>
+
+                        <label>
+                          <span>Final Price</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max={item.mrp > 0 ? item.mrp : undefined}
                             step="0.01"
                             value={item.exchangePrice}
                             onChange={(event) =>
@@ -1998,9 +2360,14 @@ export default function SalesHistoryPage() {
                           />
                         </label>
 
-                        <strong className="exchangeLineTotal">
-                          {money(item.exchangePrice * item.quantity)}
-                        </strong>
+                        <div className="exchangeLineValue">
+                          <span>Line Total</span>
+                          <strong>
+                            {money(
+                              item.exchangePrice * item.quantity
+                            )}
+                          </strong>
+                        </div>
 
                         <button
                           type="button"
@@ -2026,12 +2393,17 @@ export default function SalesHistoryPage() {
                   <div className={`exchangeDifference ${exchangeDirection}`}>
                     <span>
                       {exchangeDirection === "collect"
-                        ? "Collect From Customer"
+                        ? "Extra Collection • Today"
                         : exchangeDirection === "refund"
                           ? "Refund Customer"
                           : "Equal Exchange"}
                     </span>
                     <strong>{money(Math.abs(exchangeDifference))}</strong>
+                    {exchangeDirection === "collect" && (
+                      <small>
+                        Only this extra amount is new money collected today.
+                      </small>
+                    )}
                   </div>
                 </div>
 
@@ -2128,7 +2500,11 @@ export default function SalesHistoryPage() {
                 <strong>{label(returnType)}</strong>
               </div>
               <div className="returnTotal">
-                <span>Return Value</span>
+                <span>
+                  {returnType === "exchange"
+                    ? "Old Item Credit"
+                    : "Return Value"}
+                </span>
                 <strong>{money(selectedReturnTotal)}</strong>
               </div>
             </div>
@@ -2210,7 +2586,7 @@ export default function SalesHistoryPage() {
         .paymentEditModal>footer{display:flex;justify-content:flex-end;gap:10px;padding:0 20px 20px}.paymentEditModal>footer button{min-height:44px;border:0;border-radius:11px;padding:0 16px;font:inherit;font-size:10px;font-weight:900;cursor:pointer}.paymentEditModal>footer button:disabled{opacity:.45;cursor:not-allowed}.paymentCancel{background:#e9edf4;color:#394150}.paymentSave{background:linear-gradient(135deg,${GOLD},#efcf68);color:${DEEP};box-shadow:0 10px 24px rgba(212,175,55,.24)}
         
         .returnOverlay{position:fixed;inset:0;z-index:10050;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,21,63,.78);backdrop-filter:blur(11px)}
-        .returnModal{width:min(940px,100%);max-height:94vh;overflow:auto;border:1px solid rgba(212,175,55,.32);border-radius:26px;background:#fff;box-shadow:0 35px 100px rgba(0,0,0,.38);animation:returnModalEnter .26s ease-out}
+        .returnModal{width:min(1180px,96vw);max-height:96vh;overflow:auto;border:1px solid rgba(212,175,55,.32);border-radius:26px;background:#fff;box-shadow:0 35px 100px rgba(0,0,0,.38);animation:returnModalEnter .26s ease-out}
         .returnHeader{display:flex;justify-content:space-between;gap:18px;padding:24px 26px;background:radial-gradient(circle at 86% 0%,rgba(212,175,55,.22),transparent 32%),linear-gradient(135deg,${DEEP},${BLUE});color:#fff}
         .returnHeader span{color:${GOLD};font-size:10px;font-weight:950;letter-spacing:1.5px}.returnHeader h2{margin:6px 0 4px;font-size:30px}.returnHeader p{margin:0;color:rgba(255,255,255,.68);font-size:11px}.returnHeader button{width:42px;height:42px;border:1px solid rgba(255,255,255,.22);border-radius:12px;background:rgba(255,255,255,.08);color:#fff;font-size:24px;cursor:pointer}
         .returnTypeGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:18px 20px 4px}.returnTypeCard{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:15px;border:1px solid #e5e9f0;border-radius:16px;background:#fff;color:#5f6878;text-align:left;cursor:pointer;transition:.22s ease}.returnTypeCard:hover{transform:translateY(-3px);border-color:${GOLD};box-shadow:0 14px 30px rgba(10,46,115,.09)}.returnTypeCard.active{border-color:${BLUE};background:linear-gradient(145deg,#f9fbff,#eef3fb);box-shadow:0 12px 30px rgba(10,46,115,.12)}.returnTypeCard>span{width:38px;height:38px;display:flex;align-items:center;justify-content:center;margin-bottom:4px;border-radius:12px;background:#eef2f8;color:${BLUE};font-size:20px;font-weight:950}.returnTypeCard.active>span{background:${GOLD};color:${DEEP};animation:returnGlow 1.8s ease-in-out infinite}.returnTypeCard strong{color:${DEEP};font-size:13px}.returnTypeCard small{font-size:9px}
@@ -2218,6 +2594,7 @@ export default function SalesHistoryPage() {
         .returnItem{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;align-items:center;margin-bottom:9px;padding:14px;border:1px solid #e8ebf1;border-radius:16px;background:#fff;transition:.2s ease}.returnItem.selected{border-color:rgba(10,46,115,.35);background:linear-gradient(135deg,#fff,#f6f9ff);box-shadow:0 10px 26px rgba(10,46,115,.08)}.returnItemBadge{display:inline-flex;padding:5px 8px;border-radius:20px;background:#edf7f1;color:#167842;font-size:8px;font-weight:900}.returnItemInfo h4{margin:6px 0 2px;color:${DEEP};font-size:13px}.returnItemInfo p{margin:0;color:#89909c;font-size:9px}.returnItemInfo>strong{display:block;margin-top:5px;color:${BLUE};font-size:13px}.returnActualPaidLabel{display:block;margin-top:2px;color:#8a91a0;font-size:7px;font-weight:750;text-transform:uppercase}
         .returnQtyControl{display:flex;align-items:center;gap:9px}.returnQtyControl button{width:34px;height:34px;border:0;border-radius:10px;background:#eef2f8;color:${BLUE};font-size:20px;font-weight:900;cursor:pointer;transition:.18s ease}.returnQtyControl button:hover:not(:disabled){transform:scale(1.08);background:${BLUE};color:#fff}.returnQtyControl button:disabled{opacity:.35;cursor:not-allowed}.returnQtyControl span{min-width:26px;text-align:center;color:${DEEP};font-weight:950}
         .restockToggle{display:flex;align-items:center;gap:7px;color:#5f6878;font-size:9px;font-weight:850}.restockToggle input{display:none}.restockToggle>span{position:relative;width:36px;height:20px;border-radius:30px;background:#d9dee8;transition:.2s ease}.restockToggle>span:after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.2);transition:.2s ease}.restockToggle input:checked+span{background:#1f9d55}.restockToggle input:checked+span:after{transform:translateX(16px)}
+        .exchangeMrpField{min-width:110px}.exchangeMrpField>strong{min-height:42px;display:flex;align-items:center;padding:0 12px;border:1px solid rgba(10,46,115,.12);border-radius:10px;background:#f8fafc;color:${BLUE};font-size:13px;font-weight:900}.exchangeLineValue{min-width:120px;display:flex;flex-direction:column;gap:5px}.exchangeLineValue>span{color:#6b7280;font-size:8px;font-weight:850;text-transform:uppercase}.exchangeLineValue>strong{color:${BLUE};font-size:14px;font-weight:950}.exchangeDifference small{display:block;margin-top:3px;font-size:8px;font-weight:750;opacity:.8}
         .exchangeDesk{margin:0 20px 18px;padding:16px;border:1px solid rgba(212,175,55,.26);border-radius:18px;background:linear-gradient(180deg,#fbfcff,#f5f8fd)}
         .exchangeSearchBox{display:flex;align-items:center;gap:9px;padding:0 11px;border:1px solid #dfe4ed;border-radius:12px;background:#fff}.exchangeSearchBox>span{color:${BLUE};font-size:21px}.exchangeSearchBox input{width:100%;height:44px;border:0;outline:0;font:inherit;font-size:11px}.exchangeSearchBox button{width:34px;height:34px;border:1px solid rgba(212,175,55,.5);border-radius:9px;background:${GOLD};color:${DEEP};font-weight:950;cursor:pointer}
         .exchangeProductGrid{max-height:235px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px;overflow:auto}.exchangeProductCard{display:flex;flex-direction:column;align-items:flex-start;min-width:0;padding:12px;border:1px solid #e3e8f0;border-radius:13px;background:#fff;text-align:left;cursor:pointer;transition:.18s ease}.exchangeProductCard:hover{transform:translateY(-2px);border-color:${GOLD};box-shadow:0 10px 22px rgba(3,21,63,.09)}.exchangeProductCard>span{padding:4px 7px;border-radius:20px;background:#eaf7ef;color:#167842;font-size:7px;font-weight:900}.exchangeProductCard strong{max-width:100%;margin-top:7px;overflow:hidden;color:${DEEP};font-size:11px;text-overflow:ellipsis;white-space:nowrap}.exchangeProductCard small{max-width:100%;margin-top:3px;overflow:hidden;color:#858d9b;font-size:8px;text-overflow:ellipsis;white-space:nowrap}.exchangeProductCard b{margin-top:7px;color:${BLUE};font-size:12px}.exchangeProductCard em{margin-top:5px;color:${GOLD};font-size:8px;font-style:normal;font-weight:900}

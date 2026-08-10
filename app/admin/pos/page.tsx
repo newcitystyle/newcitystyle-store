@@ -212,6 +212,14 @@ type PosOverview = {
   creditCustomers: number;
 };
 
+type PosExchangeSettlementOverview = {
+  difference_amount?: number | string | null;
+  settlement_direction?: string | null;
+  settlement_method?: string | null;
+  settlement_status?: string | null;
+  created_at?: string | null;
+};
+
 type CompletedSale = {
   saleId: string;
   invoiceNumber: string;
@@ -231,6 +239,57 @@ type CompletedSale = {
   rewardPointsEarned: number;
   rewardClosingBalance: number;
   completedAt: string;
+};
+
+
+type PosInvoiceStudioSettings = {
+  active_tab: "thermal" | "a4" | "whatsapp";
+  theme: "signature" | "minimal" | "counter";
+  thermal_width: 58 | 80;
+  copies: number;
+  bold_text: boolean;
+  auto_cut: boolean;
+  cash_drawer: boolean;
+  show_logo: boolean;
+  show_address: boolean;
+  show_phone: boolean;
+  show_email: boolean;
+  show_gstin: boolean;
+  show_bank: boolean;
+  show_upi_qr: boolean;
+  show_signature: boolean;
+  show_terms: boolean;
+  footer_message: string;
+  terms_text: string;
+  bank_name: string;
+  account_number: string;
+  ifsc_code: string;
+  upi_id: string;
+};
+
+const POS_INVOICE_STUDIO_FALLBACK: PosInvoiceStudioSettings = {
+  active_tab: "thermal",
+  theme: "signature",
+  thermal_width: 80,
+  copies: 1,
+  bold_text: true,
+  auto_cut: false,
+  cash_drawer: false,
+  show_logo: true,
+  show_address: true,
+  show_phone: true,
+  show_email: true,
+  show_gstin: false,
+  show_bank: false,
+  show_upi_qr: false,
+  show_signature: false,
+  show_terms: true,
+  footer_message: "Thank you for shopping with NEW CITY STYLE.",
+  terms_text: "Exchange subject to store policy. Please retain your bill.",
+  bank_name: "",
+  account_number: "",
+  ifsc_code: "",
+  upi_id: "",
 };
 
 
@@ -1280,6 +1339,14 @@ const [posAiLastAction, setPosAiLastAction] = useState<{
   const [isCompletingSale, setIsCompletingSale] = useState(false);
   const [completedSale, setCompletedSale] =
     useState<CompletedSale | null>(null);
+
+  const [invoiceStudioSettings, setInvoiceStudioSettings] =
+    useState<PosInvoiceStudioSettings>(
+      POS_INVOICE_STUDIO_FALLBACK
+    );
+  const [invoiceStudioLoaded, setInvoiceStudioLoaded] =
+    useState(false);
+
   const [isOnline, setIsOnline] = useState(true);
   const [pendingOfflineBills, setPendingOfflineBills] = useState(0);
   const [syncingOfflineBills, setSyncingOfflineBills] = useState(false);
@@ -1287,6 +1354,61 @@ const [posAiLastAction, setPosAiLastAction] = useState<{
   const [showQuickItem, setShowQuickItem] = useState(false);
   const [quickItemForm, setQuickItemForm] =
     useState<QuickItemForm>(EMPTY_QUICK_ITEM_FORM);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadInvoiceStudioSettings() {
+      try {
+        const { data, error } = await supabase
+          .from("ncs_invoice_settings")
+          .select("*")
+          .eq("id", "default")
+          .maybeSingle();
+
+        if (!mounted) return;
+
+        if (error) {
+          console.info(
+            "Invoice Studio settings unavailable; using POS defaults:",
+            error
+          );
+          setInvoiceStudioLoaded(true);
+          return;
+        }
+
+        if (data) {
+          setInvoiceStudioSettings({
+            ...POS_INVOICE_STUDIO_FALLBACK,
+            ...(data as Partial<PosInvoiceStudioSettings>),
+            thermal_width:
+              Number(data.thermal_width) === 58 ? 58 : 80,
+            copies: Math.min(
+              3,
+              Math.max(1, Number(data.copies || 1))
+            ),
+          });
+        }
+
+        setInvoiceStudioLoaded(true);
+      } catch (error) {
+        console.info(
+          "Unable to load Invoice Studio settings:",
+          error
+        );
+
+        if (mounted) {
+          setInvoiceStudioLoaded(true);
+        }
+      }
+    }
+
+    void loadInvoiceStudioSettings();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!expandedBrand) return;
@@ -1504,7 +1626,11 @@ const [posAiLastAction, setPosAiLastAction] = useState<{
       const cloudCreditPhones = new Set<string>();
 
       if (isBrowserOnline()) {
-        const [salesResponse, creditResponse] = await Promise.all([
+        const [
+          salesResponse,
+          creditResponse,
+          exchangeResponse,
+        ] = await Promise.all([
           supabase
             .from("pos_sales")
             .select(
@@ -1518,6 +1644,14 @@ const [posAiLastAction, setPosAiLastAction] = useState<{
             .from("customer_credit_accounts")
             .select("current_balance,is_active,customer_phone")
             .eq("is_active", true),
+
+          supabase
+            .from("pos_exchange_settlements")
+            .select(
+              "difference_amount,settlement_direction,settlement_method,settlement_status,created_at",
+            )
+            .gte("created_at", startOfDay.toISOString())
+            .lt("created_at", endOfDay.toISOString()),
         ]);
 
         if (!salesResponse.error) {
@@ -1580,6 +1714,85 @@ const [posAiLastAction, setPosAiLastAction] = useState<{
               todayDigital += paid;
             }
           });
+
+          if (!exchangeResponse.error) {
+            const exchangeRows =
+              (exchangeResponse.data || []) as
+                PosExchangeSettlementOverview[];
+
+            exchangeRows.forEach((row) => {
+              const status = normalizeText(
+                row.settlement_status || "completed",
+              );
+
+              if (
+                ["cancelled", "void", "deleted"].includes(
+                  status,
+                )
+              ) {
+                return;
+              }
+
+              const difference = Math.max(
+                0,
+                toNumber(row.difference_amount),
+              );
+
+              const direction = normalizeText(
+                row.settlement_direction,
+              );
+
+              const method = normalizeText(
+                row.settlement_method,
+              );
+
+              if (direction === "collect") {
+                todaySales += difference;
+                todayBills += 1;
+
+                if (method === "cash") {
+                  todayCash += difference;
+                } else if (
+                  method === "upi" ||
+                  method === "card" ||
+                  method === "bank" ||
+                  method === "bank_transfer"
+                ) {
+                  todayDigital += difference;
+                }
+              } else if (direction === "refund") {
+                todaySales = Math.max(
+                  0,
+                  todaySales - difference,
+                );
+                todayBills += 1;
+
+                if (method === "cash") {
+                  todayCash = Math.max(
+                    0,
+                    todayCash - difference,
+                  );
+                } else if (
+                  method === "upi" ||
+                  method === "card" ||
+                  method === "bank" ||
+                  method === "bank_transfer"
+                ) {
+                  todayDigital = Math.max(
+                    0,
+                    todayDigital - difference,
+                  );
+                }
+              } else if (direction === "even") {
+                todayBills += 1;
+              }
+            });
+          } else {
+            console.info(
+              "Exchange overview unavailable:",
+              exchangeResponse.error.message,
+            );
+          }
 
           baseOverview = {
             ...baseOverview,
@@ -4695,12 +4908,155 @@ if (!variantsError) {
     return pdf;
   }
 
-  function downloadCustomerInvoicePdf(sale: CompletedSale) {
-    const pdf = generateCustomerInvoicePdf(sale);
-    const fileName = `${safePdfFileName(sale.invoiceNumber)}.pdf`;
+  async function buildCanonicalInvoicePayload(
+    sale: CompletedSale,
+    sendWhatsApp: boolean,
+  ) {
+    const digits = sale.customerPhone.replace(/\D/g, "");
+    const recipientPhone =
+      digits.length === 10 ? `91${digits}` : digits;
 
-    pdf.save(fileName);
-    showNotice(`${fileName} downloaded successfully.`, "success");
+    let freshInvoiceStudioSettings =
+      invoiceStudioSettings;
+
+    try {
+      const { data, error } = await supabase
+        .from("ncs_invoice_settings")
+        .select("*")
+        .eq("id", "default")
+        .maybeSingle();
+
+      if (!error && data) {
+        freshInvoiceStudioSettings = {
+          ...POS_INVOICE_STUDIO_FALLBACK,
+          ...invoiceStudioSettings,
+          ...(data as Partial<PosInvoiceStudioSettings>),
+          thermal_width:
+            Number(data.thermal_width) === 58 ? 58 : 80,
+          copies: Math.min(
+            3,
+            Math.max(1, Number(data.copies || 1)),
+          ),
+        };
+
+        setInvoiceStudioSettings(
+          freshInvoiceStudioSettings,
+        );
+      }
+    } catch (error) {
+      console.info(
+        "Using already loaded Invoice Studio settings:",
+        error,
+      );
+    }
+
+    return {
+      to: recipientPhone,
+      sendWhatsApp,
+      customerName:
+        sale.customerName.trim() || "Customer",
+      customerPhone: sale.customerPhone,
+      billNumber: sale.invoiceNumber,
+      billDate: sale.completedAt,
+      paymentMethod:
+        sale.paymentMethod.toUpperCase(),
+      subtotal: sale.subtotal,
+      discountAmount:
+        sale.billDiscount + sale.rewardDiscount,
+      taxAmount: sale.taxAmount,
+      roundOff: sale.roundOff,
+      billAmount: sale.totalAmount,
+      paidAmount: sale.paidAmount,
+      dueAmount: sale.dueAmount,
+      whatsappLanguage: "telugu",
+      items: sale.items.map((item) => ({
+        name: item.name,
+        quantity: item.quantity,
+        mrp: item.mrp,
+        price: item.price,
+        total: item.price * item.quantity,
+        size: item.size || "",
+        color: item.color || "",
+      })),
+      invoiceStudio: freshInvoiceStudioSettings,
+    };
+  }
+
+  async function downloadCustomerInvoicePdf(
+    sale: CompletedSale,
+  ) {
+    try {
+      showNotice(
+        "Preparing Invoice Studio PDF...",
+        "info",
+      );
+
+      const response = await fetch(
+        "/api/whatsapp/invoice-pdf",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(
+            await buildCanonicalInvoicePayload(
+              sale,
+              false,
+            ),
+          ),
+        },
+      );
+
+      if (!response.ok) {
+        let message =
+          "Unable to generate the Invoice Studio PDF.";
+
+        try {
+          const result = (await response.json()) as {
+            error?: string;
+          };
+          if (result.error) {
+            message = result.error;
+          }
+        } catch {
+          // Keep the safe fallback message.
+        }
+
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const fileName =
+        `${safePdfFileName(sale.invoiceNumber)}.pdf`;
+
+      link.href = objectUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.setTimeout(() => {
+        URL.revokeObjectURL(objectUrl);
+      }, 1500);
+
+      showNotice(
+        `${fileName} downloaded successfully.`,
+        "success",
+      );
+    } catch (error) {
+      console.info(
+        "Unable to download canonical invoice PDF:",
+        error,
+      );
+      showNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to download invoice PDF.",
+        "error",
+      );
+    }
   }
 
   function hasValidWhatsAppCustomerPhone(sale: CompletedSale) {
@@ -4810,38 +5166,19 @@ if (!variantsError) {
       );
     }
 
-    const formData = new FormData();
-
-    formData.append("to", recipientPhone);
-    formData.append(
-      "customerName",
-      sale.customerName.trim() || "Customer",
-    );
-    formData.append("billNumber", sale.invoiceNumber);
-    formData.append(
-      "billAmount",
-      String(sale.totalAmount),
-    );
-    formData.append(
-      "paidAmount",
-      String(sale.paidAmount),
-    );
-    formData.append(
-      "dueAmount",
-      String(sale.dueAmount),
-    );
-    formData.append(
-      "paymentMethod",
-      sale.paymentMethod.toUpperCase(),
-    );
-
-    formData.append("whatsappLanguage", "telugu");
-
     const response = await fetch(
       "/api/whatsapp/invoice-pdf",
       {
         method: "POST",
-        body: formData,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(
+          await buildCanonicalInvoicePayload(
+            sale,
+            true,
+          ),
+        ),
       },
     );
 
@@ -4944,6 +5281,30 @@ if (!variantsError) {
       .join("");
   }
 
+  function getInvoiceThemeColors() {
+    if (invoiceStudioSettings.theme === "minimal") {
+      return {
+        primary: "#202733",
+        accent: "#6B7280",
+        soft: "#F5F7FA",
+      };
+    }
+
+    if (invoiceStudioSettings.theme === "counter") {
+      return {
+        primary: "#0A2E73",
+        accent: "#D4AF37",
+        soft: "#FFF9E8",
+      };
+    }
+
+    return {
+      primary: "#0A2E73",
+      accent: "#D4AF37",
+      soft: "#F8F4EC",
+    };
+  }
+
   function printCustomerInvoiceA4(sale: CompletedSale) {
     const rows = buildCustomerInvoiceRows(sale);
     const popup = window.open("", "_blank", "width=1000,height=900");
@@ -4955,6 +5316,53 @@ if (!variantsError) {
       );
       return;
     }
+
+    const colors = getInvoiceThemeColors();
+    const footerMessage =
+      invoiceStudioSettings.footer_message.trim() ||
+      "Thank you for shopping with NEW CITY STYLE.";
+
+    const contactLines = [
+      invoiceStudioSettings.show_address
+        ? "Main Road, Sarubujjili • Srikakulam, Andhra Pradesh - 532458"
+        : "",
+      invoiceStudioSettings.show_phone
+        ? "Mobile: 9010014001"
+        : "",
+      invoiceStudioSettings.show_email
+        ? "Email: badri.nsv@gmail.com"
+        : "",
+    ].filter(Boolean);
+
+    const bankBlock =
+      invoiceStudioSettings.show_bank
+        ? `
+          <section class="payPanel">
+            <strong>Bank Details</strong>
+            <span>${invoiceStudioSettings.bank_name || "Bank name not configured"}</span>
+            ${
+              invoiceStudioSettings.account_number
+                ? `<span>A/C: ${invoiceStudioSettings.account_number}</span>`
+                : ""
+            }
+            ${
+              invoiceStudioSettings.ifsc_code
+                ? `<span>IFSC: ${invoiceStudioSettings.ifsc_code}</span>`
+                : ""
+            }
+          </section>
+        `
+        : "";
+
+    const upiBlock =
+      invoiceStudioSettings.show_upi_qr
+        ? `
+          <section class="payPanel">
+            <strong>UPI Payment</strong>
+            <span>${invoiceStudioSettings.upi_id || "UPI ID not configured"}</span>
+          </section>
+        `
+        : "";
 
     popup.document.write(`
       <!doctype html>
@@ -4981,42 +5389,63 @@ if (!variantsError) {
             grid-template-columns: 1fr auto;
             gap: 24px;
             padding: 22px 24px;
-            border-radius: 16px;
-            background: linear-gradient(135deg, #03153F, #0A2E73);
-            color: #fff;
+            border: 1px solid ${colors.accent};
+            border-radius: ${
+              invoiceStudioSettings.theme === "minimal"
+                ? "8px"
+                : "16px"
+            };
+            background: ${
+              invoiceStudioSettings.theme === "minimal"
+                ? "#fff"
+                : `linear-gradient(135deg, #03153F, ${colors.primary})`
+            };
+            color: ${
+              invoiceStudioSettings.theme === "minimal"
+                ? colors.primary
+                : "#fff"
+            };
           }
           .storeName {
             margin: 0;
-            color: #fff;
+            color: inherit;
             font-size: 34px;
             font-weight: 900;
             letter-spacing: 1.2px;
           }
           .tagline {
             margin: 4px 0 12px;
-            color: #D4AF37;
+            color: ${colors.accent};
             font-size: 15px;
             font-weight: 800;
           }
           .storeDetails {
             margin: 0;
-            color: rgba(255,255,255,.88);
+            color: ${
+              invoiceStudioSettings.theme === "minimal"
+                ? "#5f6670"
+                : "rgba(255,255,255,.88)"
+            };
             font-size: 12px;
             line-height: 1.65;
           }
           .invoiceBadge {
             min-width: 220px;
             padding: 16px;
-            border: 1px solid rgba(212,175,55,.75);
+            border: 1px solid ${colors.accent};
             border-radius: 12px;
-            background: rgba(255,255,255,.08);
+            background: ${
+              invoiceStudioSettings.theme === "minimal"
+                ? colors.soft
+                : "rgba(255,255,255,.08)"
+            };
           }
           .invoiceBadge span,
           .invoiceBadge strong {
             display: block;
           }
           .invoiceBadge span {
-            color: #D4AF37;
+            color: ${colors.accent};
             font-size: 10px;
             font-weight: 800;
             text-transform: uppercase;
@@ -5052,7 +5481,7 @@ if (!variantsError) {
           .infoBox strong {
             display: block;
             margin-top: 5px;
-            color: #0A2E73;
+            color: ${colors.primary};
             font-size: 13px;
           }
           .infoBox p {
@@ -5073,7 +5502,7 @@ if (!variantsError) {
             font-size: 11px;
           }
           th {
-            background: #0A2E73;
+            background: ${colors.primary};
             color: #fff;
             font-size: 10px;
             text-transform: uppercase;
@@ -5103,7 +5532,7 @@ if (!variantsError) {
             margin-top: 6px;
             padding: 12px;
             border-radius: 9px;
-            background: #0A2E73;
+            background: ${colors.primary};
             color: #fff;
             font-size: 17px;
             font-weight: 900;
@@ -5112,6 +5541,40 @@ if (!variantsError) {
             color: #B42318;
             font-weight: 900;
           }
+          .paymentGrid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 16px;
+          }
+          .payPanel {
+            padding: 12px;
+            border: 1px solid #dfe4eb;
+            border-radius: 10px;
+            background: ${colors.soft};
+            font-size: 10px;
+          }
+          .payPanel strong,
+          .payPanel span {
+            display: block;
+          }
+          .payPanel strong {
+            color: ${colors.primary};
+            margin-bottom: 5px;
+          }
+          .payPanel span {
+            color: #59616d;
+            margin-top: 3px;
+          }
+          .terms {
+            margin-top: 16px;
+            padding: 11px 13px;
+            border-radius: 10px;
+            background: #f7f8fa;
+            color: #667085;
+            font-size: 10px;
+            line-height: 1.5;
+          }
           .footer {
             margin-top: auto;
             padding-top: 22px;
@@ -5119,8 +5582,8 @@ if (!variantsError) {
           }
           .footerMessage {
             padding: 14px;
-            border-top: 2px solid #D4AF37;
-            color: #0A2E73;
+            border-top: 2px solid ${colors.accent};
+            color: ${colors.primary};
             font-size: 13px;
             font-weight: 800;
           }
@@ -5131,7 +5594,10 @@ if (!variantsError) {
             font-size: 10px;
           }
           @media print {
-            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+            body {
+              print-color-adjust: exact;
+              -webkit-print-color-adjust: exact;
+            }
           }
         </style>
       </head>
@@ -5139,14 +5605,18 @@ if (!variantsError) {
         <div class="invoice">
           <header class="brandHeader">
             <div>
+              ${
+                invoiceStudioSettings.show_logo
+                  ? `<div style="display:inline-grid;place-items:center;width:50px;height:50px;margin-bottom:8px;border:1px solid ${colors.accent};border-radius:14px;font-weight:900;color:${colors.accent};">NCS</div>`
+                  : ""
+              }
               <h1 class="storeName">NEW CITY STYLE</h1>
               <p class="tagline">Style for Every Family</p>
-              <p class="storeDetails">
-                Main Road, Sarubujjili<br/>
-                Srikakulam, Andhra Pradesh - 532458<br/>
-                Mobile: 9010014001<br/>
-                Email: badri.nsv@gmail.com
-              </p>
+              ${
+                contactLines.length > 0
+                  ? `<p class="storeDetails">${contactLines.join("<br/>")}</p>`
+                  : ""
+              }
             </div>
 
             <div class="invoiceBadge">
@@ -5197,11 +5667,21 @@ if (!variantsError) {
             <div class="totalLine"><span>Reward Balance</span><strong>${sale.rewardClosingBalance}</strong></div>
           </section>
 
+          ${
+            bankBlock || upiBlock
+              ? `<div class="paymentGrid">${upiBlock}${bankBlock}</div>`
+              : ""
+          }
+
+          ${
+            invoiceStudioSettings.show_terms &&
+            invoiceStudioSettings.terms_text.trim()
+              ? `<section class="terms">${invoiceStudioSettings.terms_text}</section>`
+              : ""
+          }
+
           <footer class="footer">
-            <div class="footerMessage">
-              Thank you for shopping with NEW CITY STYLE.
-              We look forward to serving your family again.
-            </div>
+            <div class="footerMessage">${footerMessage}</div>
             <small>NEW CITY STYLE — Style for Every Family</small>
           </footer>
         </div>
@@ -5220,24 +5700,82 @@ if (!variantsError) {
 
   function printCustomerInvoiceT82(sale: CompletedSale) {
     const rows = buildCustomerInvoiceRows(sale, true);
+    const thermalWidth =
+      invoiceStudioSettings.thermal_width === 58 ? 58 : 80;
 
-    // Epson T82 uses roll paper. Giving Chrome an exact short page height
-    // prevents it from feeding a long blank section after the receipt.
+    const contentWidth =
+      thermalWidth === 58 ? 48 : 66;
+
+    const marginLeft =
+      thermalWidth === 58 ? 4 : 4;
+
+    const marginRight =
+      thermalWidth === 58 ? 4 : 5;
+
     const itemCount = Math.max(1, sale.items.length);
     const receiptHeightMm = Math.min(
-      260,
-      Math.max(165, 150 + itemCount * 12),
+      280,
+      Math.max(160, 145 + itemCount * 12),
     );
 
-    const popup = window.open("", "_blank", "width=430,height=900");
+    const popup = window.open(
+      "",
+      "_blank",
+      thermalWidth === 58
+        ? "width=360,height=900"
+        : "width=430,height=900"
+    );
 
     if (!popup) {
       showNotice(
-        "Please allow popups to print the Epson T82 receipt.",
+        `Please allow popups to print the ${thermalWidth}mm receipt.`,
         "error"
       );
       return;
     }
+
+    const colors = getInvoiceThemeColors();
+    const footerMessage =
+      invoiceStudioSettings.footer_message.trim() ||
+      "Thank you for shopping with NEW CITY STYLE.";
+
+    const addressLines = [
+      invoiceStudioSettings.show_address
+        ? "Main Road, Sarubujjili"
+        : "",
+      invoiceStudioSettings.show_address
+        ? "Srikakulam, Andhra Pradesh - 532458"
+        : "",
+      invoiceStudioSettings.show_phone
+        ? "Mob: 9010014001"
+        : "",
+      invoiceStudioSettings.show_email
+        ? "badri.nsv@gmail.com"
+        : "",
+    ].filter(Boolean);
+
+    const paymentBlocks = [
+      invoiceStudioSettings.show_upi_qr
+        ? invoiceStudioSettings.upi_id
+          ? `UPI: ${invoiceStudioSettings.upi_id}`
+          : "UPI ID: configure in Invoice Studio"
+        : "",
+      invoiceStudioSettings.show_bank
+        ? [
+            invoiceStudioSettings.bank_name,
+            invoiceStudioSettings.account_number
+              ? `A/C ${invoiceStudioSettings.account_number}`
+              : "",
+            invoiceStudioSettings.ifsc_code
+              ? `IFSC ${invoiceStudioSettings.ifsc_code}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" • ")
+        : "",
+    ].filter(Boolean);
+
+    const pageMargin = `2mm ${marginRight}mm 2mm ${marginLeft}mm`;
 
     popup.document.write(`
       <!doctype html>
@@ -5247,55 +5785,76 @@ if (!variantsError) {
         <title>${sale.invoiceNumber}</title>
         <style>
           @page {
-            size: 80mm ${receiptHeightMm}mm;
-            margin: 2mm 5mm 2mm 4mm;
+            size: ${thermalWidth}mm ${receiptHeightMm}mm;
+            margin: ${pageMargin};
           }
           * { box-sizing: border-box; }
           html, body {
-            width: 66mm;
-            max-width: 66mm;
+            width: ${contentWidth}mm;
+            max-width: ${contentWidth}mm;
             margin: 0;
             padding: 0;
             overflow: hidden;
             background: #fff;
             color: #000;
             font-family: Arial, Helvetica, sans-serif;
-            font-weight: 800;
+            font-weight: ${invoiceStudioSettings.bold_text ? "800" : "600"};
           }
           .receipt {
-            width: 66mm;
-            max-width: 66mm;
+            width: ${contentWidth}mm;
+            max-width: ${contentWidth}mm;
             height: auto;
             min-height: 0;
             padding: 1mm 0 0;
             overflow: hidden;
           }
           .center { text-align: center; }
+          .logo {
+            width: 13mm;
+            height: 13mm;
+            display: grid;
+            place-items: center;
+            margin: 0 auto 2mm;
+            border: 1px solid ${colors.accent};
+            border-radius: 3mm;
+            color: ${colors.primary};
+            font-size: 10px;
+            font-weight: 1000;
+          }
           .storeName {
             margin: 0;
-            font-size: 22px;
+            font-size: ${thermalWidth === 58 ? "17px" : "22px"};
             font-weight: 1000;
-            letter-spacing: .8px;
+            letter-spacing: .6px;
             line-height: 1.05;
           }
           .tagline {
             margin: 2px 0 4px;
-            font-size: 12px;
+            font-size: ${thermalWidth === 58 ? "9px" : "12px"};
             font-weight: 900;
+            color: ${
+              invoiceStudioSettings.theme === "minimal"
+                ? "#000"
+                : colors.primary
+            };
           }
           .address {
             margin: 0;
-            font-size: 9.5px;
-            font-weight: 800;
+            font-size: ${thermalWidth === 58 ? "8px" : "9.5px"};
+            font-weight: 700;
             line-height: 1.35;
           }
           .divider {
             margin: 4px 0;
-            border-top: 1px dashed #000;
+            border-top: ${
+              invoiceStudioSettings.theme === "counter"
+                ? `2px solid ${colors.primary}`
+                : "1px dashed #000"
+            };
           }
           .meta {
             width: 100%;
-            font-size: 9.5px;
+            font-size: ${thermalWidth === 58 ? "8.5px" : "9.5px"};
             font-weight: 800;
             line-height: 1.4;
           }
@@ -5308,18 +5867,16 @@ if (!variantsError) {
             align-items: start;
             gap: 5px;
           }
-
           .metaRow span,
           .receiptItemLine span,
           .totalRow span {
             min-width: 0;
             overflow-wrap: anywhere;
           }
-
           .metaRow strong,
           .receiptItemLine strong,
           .totalRow strong {
-            max-width: 36mm;
+            max-width: ${thermalWidth === 58 ? "27mm" : "36mm"};
             text-align: right;
             overflow-wrap: anywhere;
             word-break: break-word;
@@ -5333,7 +5890,7 @@ if (!variantsError) {
           .receiptItemName span {
             display: block;
             max-width: 100%;
-            font-size: 12px;
+            font-size: ${thermalWidth === 58 ? "10px" : "12px"};
             font-weight: 1000;
             overflow-wrap: anywhere;
           }
@@ -5341,19 +5898,19 @@ if (!variantsError) {
             display: block;
             max-width: 100%;
             margin-top: 2px;
-            font-size: 9px;
+            font-size: ${thermalWidth === 58 ? "7.5px" : "9px"};
             font-weight: 800;
             overflow-wrap: anywhere;
           }
           .receiptItemLine {
             margin-top: 3px;
-            font-size: 10px;
+            font-size: ${thermalWidth === 58 ? "8.5px" : "10px"};
             font-weight: 900;
           }
           .totals {
             width: 100%;
             margin-top: 4px;
-            font-size: 9.8px;
+            font-size: ${thermalWidth === 58 ? "8.5px" : "9.8px"};
             font-weight: 900;
             line-height: 1.45;
             break-inside: avoid;
@@ -5363,24 +5920,30 @@ if (!variantsError) {
             padding: 5px 0;
             border-top: 2px solid #000;
             border-bottom: 2px solid #000;
-            font-size: 14px;
+            font-size: ${thermalWidth === 58 ? "12px" : "14px"};
             font-weight: 1000;
           }
           .due {
             font-weight: 1000;
           }
+          .paymentInfo,
+          .terms,
           .thanks {
             margin-top: 6px;
-            font-size: 10px;
-            font-weight: 1000;
-            line-height: 1.35;
+            font-size: ${thermalWidth === 58 ? "8px" : "9px"};
+            font-weight: 800;
+            line-height: 1.4;
             text-align: center;
             break-inside: avoid;
             page-break-inside: avoid;
           }
+          .terms {
+            padding: 4px 0;
+            border-top: 1px dashed #000;
+          }
           .footer {
             margin-top: 4px;
-            font-size: 8.5px;
+            font-size: ${thermalWidth === 58 ? "7px" : "8.5px"};
             font-weight: 900;
             line-height: 1.3;
             text-align: center;
@@ -5390,21 +5953,18 @@ if (!variantsError) {
 
           @media print {
             html, body, .receipt {
-              width: 66mm !important;
-              max-width: 66mm !important;
+              width: ${contentWidth}mm !important;
+              max-width: ${contentWidth}mm !important;
               min-height: 0 !important;
             }
-
             html, body {
               height: auto !important;
               overflow: hidden !important;
             }
-
             .receipt {
               break-after: avoid-page !important;
               page-break-after: avoid !important;
             }
-
             body {
               print-color-adjust: exact;
               -webkit-print-color-adjust: exact;
@@ -5415,14 +5975,18 @@ if (!variantsError) {
       <body>
         <div class="receipt">
           <div class="center">
+            ${
+              invoiceStudioSettings.show_logo
+                ? `<div class="logo">NCS</div>`
+                : ""
+            }
             <h1 class="storeName">NEW CITY STYLE</h1>
             <p class="tagline">Style for Every Family</p>
-            <p class="address">
-              Main Road, Sarubujjili<br/>
-              Srikakulam, Andhra Pradesh - 532458<br/>
-              Mob: 9010014001<br/>
-              badri.nsv@gmail.com
-            </p>
+            ${
+              addressLines.length > 0
+                ? `<p class="address">${addressLines.join("<br/>")}</p>`
+                : ""
+            }
           </div>
 
           <div class="divider"></div>
@@ -5445,7 +6009,7 @@ if (!variantsError) {
 
           <div class="totals">
             <div class="totalRow"><span>Subtotal</span><strong>${formatCurrency(sale.subtotal)}</strong></div>
-            <div class="totalRow"><span>Tax</span><strong>${formatCurrency(sale.taxAmount)}</strong></div>
+            <div class="totalRow"><span>GST Included</span><strong>${formatCurrency(sale.taxAmount)}</strong></div>
             <div class="totalRow"><span>Discount</span><strong>-${formatCurrency(sale.billDiscount)}</strong></div>
             <div class="totalRow"><span>Reward Used</span><strong>${sale.rewardPointsUsed}</strong></div>
             <div class="totalRow"><span>Reward Disc.</span><strong>-${formatCurrency(sale.rewardDiscount)}</strong></div>
@@ -5457,15 +6021,32 @@ if (!variantsError) {
             <div class="totalRow"><span>Reward Balance</span><strong>${sale.rewardClosingBalance}</strong></div>
           </div>
 
+          ${
+            paymentBlocks.length > 0
+              ? `<div class="paymentInfo">${paymentBlocks.join("<br/>")}</div>`
+              : ""
+          }
+
+          ${
+            invoiceStudioSettings.show_terms &&
+            invoiceStudioSettings.terms_text.trim()
+              ? `<div class="terms">${invoiceStudioSettings.terms_text}</div>`
+              : ""
+          }
+
           <div class="divider"></div>
 
           <div class="thanks">
-            Thank you for shopping with us!<br/>
-            Please visit NEW CITY STYLE again.
+            ${footerMessage}
           </div>
 
           <div class="footer">
             NEW CITY STYLE — Style for Every Family
+            ${
+              invoiceStudioSettings.copies > 1
+                ? `<br/>Studio copies setting: ${invoiceStudioSettings.copies}`
+                : ""
+            }
           </div>
         </div>
 
@@ -5479,6 +6060,14 @@ if (!variantsError) {
     `);
 
     popup.document.close();
+  }
+
+  function openInvoiceStudioFromPos() {
+    window.open(
+      "/admin/invoice-studio",
+      "_blank",
+      "noopener,noreferrer"
+    );
   }
 
   function startNewBill() {
@@ -8324,7 +8913,7 @@ if (!variantsError) {
                   printCustomerInvoiceT82(completedSale)
                 }
               >
-                EPSON T82 RECEIPT
+                THERMAL • {invoiceStudioSettings.thermal_width}MM
               </button>
 
               <button
@@ -8334,7 +8923,15 @@ if (!variantsError) {
                   printCustomerInvoiceA4(completedSale)
                 }
               >
-                A4 PRINTER INVOICE
+                A4 • {invoiceStudioSettings.theme.toUpperCase()}
+              </button>
+
+              <button
+                type="button"
+                className="ncsPosSuccessStudio"
+                onClick={openInvoiceStudioFromPos}
+              >
+                INVOICE STUDIO
               </button>
 
               <button
@@ -8347,6 +8944,10 @@ if (!variantsError) {
             </div>
 
             <small className="ncsPosSuccessHint">
+              {invoiceStudioLoaded
+                ? `Invoice Studio synced • ${invoiceStudioSettings.thermal_width}mm • ${invoiceStudioSettings.theme}`
+                : "Loading Invoice Studio settings..."}
+              <br />
               Mobileలో “Share PDF Invoice” నొక్కితే PDFను WhatsAppకు
               directగా share చేయవచ్చు. Desktopలో PDF download అయ్యి,
               WhatsApp chat open అవుతుంది; downloaded PDFను attach చేయండి.
@@ -11812,7 +12413,12 @@ if (!variantsError) {
 
         .ncsPosSuccessModal {
           width: min(470px, 100%);
+          max-height: calc(100vh - 24px);
           padding: 27px;
+          padding-bottom: 92px;
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          scrollbar-width: thin;
           border: 1px solid rgba(212, 175, 55, 0.45);
           border-radius: 24px;
           background:
@@ -11825,6 +12431,16 @@ if (!variantsError) {
           text-align: center;
           box-shadow: 0 30px 90px rgba(0, 0, 0, 0.32);
           animation: ncsPosSuccessEnter 0.25s ease-out;
+          position: relative;
+        }
+
+        .ncsPosSuccessModal::-webkit-scrollbar {
+          width: 6px;
+        }
+
+        .ncsPosSuccessModal::-webkit-scrollbar-thumb {
+          border-radius: 999px;
+          background: rgba(10, 46, 115, 0.20);
         }
 
         .ncsPosSuccessIcon {
@@ -11978,6 +12594,33 @@ if (!variantsError) {
           color: #ffffff;
         }
 
+        .ncsPosSuccessStudio {
+          min-height: 44px;
+          border: 1px solid rgba(212, 175, 55, 0.64);
+          border-radius: 13px;
+          background:
+            linear-gradient(
+              135deg,
+              rgba(3, 21, 63, 0.98),
+              rgba(10, 46, 115, 0.96)
+            );
+          color: #f4d85b;
+          font-weight: 900;
+          letter-spacing: 0.04em;
+          cursor: pointer;
+          box-shadow:
+            0 10px 24px rgba(3, 21, 63, 0.16),
+            inset 0 1px 0 rgba(255, 255, 255, 0.10);
+        }
+
+        .ncsPosSuccessStudio:hover {
+          transform: translateY(-1px);
+          box-shadow:
+            0 14px 30px rgba(3, 21, 63, 0.22),
+            0 0 0 2px rgba(212, 175, 55, 0.08);
+        }
+
+
         .ncsPosSuccessPdf {
           background: ${GOLD};
           color: ${DEEP_BLUE};
@@ -11996,9 +12639,38 @@ if (!variantsError) {
 
         .ncsPosSuccessNewBill {
           grid-column: 1 / -1;
-          border: 1px solid rgba(10, 46, 115, 0.15) !important;
-          background: #eef2f8;
-          color: ${ROYAL_BLUE};
+          min-height: 52px !important;
+          border: 1px solid rgba(212, 175, 55, 0.72) !important;
+          background:
+            linear-gradient(
+              135deg,
+              ${DEEP_BLUE},
+              ${ROYAL_BLUE}
+            );
+          color: #ffffff;
+          font-size: 12px !important;
+          letter-spacing: 0.04em;
+          box-shadow:
+            0 14px 30px rgba(3, 21, 63, 0.18),
+            inset 0 1px 0 rgba(255, 255, 255, 0.10);
+          position: sticky;
+          bottom: -74px;
+          z-index: 5;
+        }
+
+        .ncsPosSuccessNewBill::before {
+          content: "＋";
+          margin-right: 7px;
+          color: ${GOLD};
+          font-size: 16px;
+          font-weight: 950;
+        }
+
+        .ncsPosSuccessNewBill:hover {
+          transform: translateY(-1px);
+          box-shadow:
+            0 18px 34px rgba(3, 21, 63, 0.24),
+            0 0 0 2px rgba(212, 175, 55, 0.08);
         }
 
         .ncsPosSuccessHint {
@@ -12007,6 +12679,60 @@ if (!variantsError) {
           color: #9298a4;
           font-size: 8px;
           line-height: 1.55;
+        }
+
+        @media (max-height: 820px) {
+          .ncsPosSuccessOverlay {
+            align-items: flex-start;
+            padding: 8px 14px;
+          }
+
+          .ncsPosSuccessModal {
+            max-height: calc(100vh - 16px);
+            padding: 18px 20px 82px;
+            border-radius: 20px;
+          }
+
+          .ncsPosSuccessIcon {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 8px;
+            font-size: 24px;
+          }
+
+          .ncsPosSuccessModal h2 {
+            font-size: 21px;
+          }
+
+          .ncsPosSuccessAmount {
+            margin: 12px 0 10px;
+            padding: 13px;
+          }
+
+          .ncsPosSuccessAmount strong {
+            font-size: 25px;
+          }
+
+          .ncsPosSuccessSummary {
+            gap: 6px;
+            margin-bottom: 10px;
+          }
+
+          .ncsPosSuccessSummary p {
+            padding: 8px 9px;
+          }
+
+          .ncsPosSuccessActions {
+            gap: 7px;
+          }
+
+          .ncsPosSuccessActions button {
+            min-height: 42px;
+          }
+
+          .ncsPosSuccessHint {
+            margin-top: 8px;
+          }
         }
 
         @keyframes ncsPosSuccessEnter {

@@ -50,6 +50,7 @@ const menuItems = [
   { label: "Collections", href: "/admin/collections", icon: "✨" },
   { label: "Orders", href: "/admin/orders", icon: "📦" },
   { label: "Billing / POS", href: "/admin/pos", icon: "🧾" },
+  { label: "Invoice Studio", href: "/admin/invoice-studio", icon: "🖨️" },
   { label: "Daily Expenses", href: "/admin/expenses", icon: "💸" },
   {
     label: "Cash & Bank Book",

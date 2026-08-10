@@ -118,6 +118,18 @@ type CashBankTransaction = {
   is_deleted?: boolean | null;
 };
 
+type ExchangeSettlement = {
+  id: string;
+  sale_id?: string | null;
+  returned_value?: number | string | null;
+  exchange_value?: number | string | null;
+  difference_amount?: number | string | null;
+  settlement_direction?: "collect" | "refund" | "even" | string | null;
+  settlement_method?: string | null;
+  settlement_status?: string | null;
+  created_at?: string | null;
+};
+
 type DashboardStats = {
   totalProducts: number;
   totalOrders: number;
@@ -290,6 +302,8 @@ export default function AdminDashboardPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [cashTransactions, setCashTransactions] =
     useState<CashBankTransaction[]>([]);
+  const [exchangeSettlements, setExchangeSettlements] =
+    useState<ExchangeSettlement[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -332,6 +346,7 @@ export default function AdminDashboardPage() {
           suppliersResult,
           purchasesResult,
           cashTransactionsResult,
+          exchangeSettlementsResult,
         ] = await Promise.all([
           supabase
             .from("products")
@@ -407,6 +422,14 @@ export default function AdminDashboardPage() {
             .eq("is_deleted", false)
             .order("transaction_date", { ascending: false })
             .limit(5000),
+
+          supabase
+            .from("pos_exchange_settlements")
+            .select(
+              "id,sale_id,returned_value,exchange_value,difference_amount,settlement_direction,settlement_method,settlement_status,created_at",
+            )
+            .order("created_at", { ascending: false })
+            .limit(5000),
         ]);
 
         if (productsResult.error) throw productsResult.error;
@@ -420,6 +443,12 @@ export default function AdminDashboardPage() {
           console.info(
             "Cash book manual entries are unavailable:",
             cashTransactionsResult.error.message,
+          );
+        }
+        if (exchangeSettlementsResult.error) {
+          console.info(
+            "Exchange settlements are unavailable:",
+            exchangeSettlementsResult.error.message,
           );
         }
 
@@ -442,6 +471,12 @@ export default function AdminDashboardPage() {
             ? []
             : ((cashTransactionsResult.data ||
                 []) as CashBankTransaction[]),
+        );
+        setExchangeSettlements(
+          exchangeSettlementsResult.error
+            ? []
+            : ((exchangeSettlementsResult.data ||
+                []) as ExchangeSettlement[]),
         );
 
         if (visitsResult.error) {
@@ -502,6 +537,58 @@ export default function AdminDashboardPage() {
       return !Number.isNaN(date.getTime()) && date >= monthStart;
     });
 
+    const activeExchangeSettlements = exchangeSettlements.filter(
+      (row) =>
+        (row.settlement_status || "completed")
+          .trim()
+          .toLowerCase() !== "cancelled",
+    );
+
+    const todayExchangeRows = activeExchangeSettlements.filter((row) => {
+      if (!row.created_at) return false;
+      const date = new Date(row.created_at);
+      return !Number.isNaN(date.getTime()) && date >= todayStart;
+    });
+
+    const monthExchangeRows = activeExchangeSettlements.filter((row) => {
+      if (!row.created_at) return false;
+      const date = new Date(row.created_at);
+      return !Number.isNaN(date.getTime()) && date >= monthStart;
+    });
+
+    const exchangeNet = (rows: ExchangeSettlement[]) =>
+      rows.reduce((sum, row) => {
+        const amount = Math.max(0, toNumber(row.difference_amount));
+        const direction = (row.settlement_direction || "")
+          .trim()
+          .toLowerCase();
+
+        if (direction === "collect") return sum + amount;
+        if (direction === "refund") return sum - amount;
+        return sum;
+      }, 0);
+
+    const exchangeMoneyByMethod = (
+      rows: ExchangeSettlement[],
+      methods: string[],
+    ) =>
+      rows.reduce((sum, row) => {
+        const method = (row.settlement_method || "")
+          .trim()
+          .toLowerCase();
+
+        if (!methods.includes(method)) return sum;
+
+        const amount = Math.max(0, toNumber(row.difference_amount));
+        const direction = (row.settlement_direction || "")
+          .trim()
+          .toLowerCase();
+
+        if (direction === "collect") return sum + amount;
+        if (direction === "refund") return sum - amount;
+        return sum;
+      }, 0);
+
     const todayExpenseRows = expenses.filter((expense) => {
       return expense.expense_date === dateKey(todayStart);
     });
@@ -537,20 +624,33 @@ export default function AdminDashboardPage() {
       0,
     );
 
-    const cashSales = monthSalesRows
+    const baseCashSales = monthSalesRows
       .filter(
         (sale) =>
           (sale.payment_method || "").toLowerCase() === "cash",
       )
       .reduce((sum, sale) => sum + salePaidAmount(sale), 0);
 
-    const digitalSales = monthSalesRows
+    const baseDigitalSales = monthSalesRows
       .filter((sale) =>
         ["upi", "card", "bank", "bank_transfer"].includes(
           (sale.payment_method || "").toLowerCase(),
         ),
       )
       .reduce((sum, sale) => sum + salePaidAmount(sale), 0);
+
+    const cashExchangeMovement = exchangeMoneyByMethod(
+      monthExchangeRows,
+      ["cash"],
+    );
+
+    const digitalExchangeMovement = exchangeMoneyByMethod(
+      monthExchangeRows,
+      ["upi", "card", "bank", "bank_transfer"],
+    );
+
+    const cashSales = baseCashSales + cashExchangeMovement;
+    const digitalSales = baseDigitalSales + digitalExchangeMovement;
 
     const cashExpenses = monthExpenseRows
       .filter(
@@ -579,6 +679,7 @@ export default function AdminDashboardPage() {
         const date = new Date(
           `${transaction.transaction_date}T00:00:00`,
         );
+
         return (
           !Number.isNaN(date.getTime()) &&
           date >= monthStart &&
@@ -598,6 +699,7 @@ export default function AdminDashboardPage() {
         const date = new Date(
           `${transaction.transaction_date}T00:00:00`,
         );
+
         return (
           !Number.isNaN(date.getTime()) &&
           date >= monthStart &&
@@ -614,10 +716,15 @@ export default function AdminDashboardPage() {
         0,
       );
 
-    const monthSales = monthSalesRows.reduce(
+    const normalMonthSales = monthSalesRows.reduce(
       (sum, sale) => sum + toNumber(sale.total_amount),
       0,
     );
+
+    const monthExchangeNet = exchangeNet(monthExchangeRows);
+    const todayExchangeNet = exchangeNet(todayExchangeRows);
+
+    const monthSales = normalMonthSales + monthExchangeNet;
 
     const monthExpenses = monthExpenseRows.reduce(
       (sum, expense) => sum + toNumber(expense.amount),
@@ -631,13 +738,20 @@ export default function AdminDashboardPage() {
     );
 
     return {
-      todaySales: todaySalesRows.reduce(
-        (sum, sale) => sum + toNumber(sale.total_amount),
-        0,
-      ),
-      todayBills: todaySalesRows.length,
+      todaySales:
+        todaySalesRows.reduce(
+          (sum, sale) => sum + toNumber(sale.total_amount),
+          0,
+        ) + todayExchangeNet,
+      todayBills:
+        todaySalesRows.length + todayExchangeRows.length,
+      todayExchangeCount: todayExchangeRows.length,
+      todayExchangeNet,
       monthSales,
-      monthBills: monthSalesRows.length,
+      monthBills:
+        monthSalesRows.length + monthExchangeRows.length,
+      monthExchangeCount: monthExchangeRows.length,
+      monthExchangeNet,
       todayExpenses: todayExpenseRows.reduce(
         (sum, expense) => sum + toNumber(expense.amount),
         0,
@@ -656,6 +770,7 @@ export default function AdminDashboardPage() {
   }, [
     cashTransactions,
     creditAccounts,
+    exchangeSettlements,
     expenses,
     monthStart,
     purchases,
@@ -754,22 +869,56 @@ export default function AdminDashboardPage() {
   const salesTrend = useMemo<SalesPoint[]>(() => {
     const points: SalesPoint[] = [];
 
+    const activeExchangeSettlements = exchangeSettlements.filter(
+      (row) =>
+        (row.settlement_status || "completed")
+          .trim()
+          .toLowerCase() !== "cancelled",
+    );
+
     for (let index = salesRange - 1; index >= 0; index -= 1) {
       const day = new Date(todayStart);
       day.setDate(day.getDate() - index);
       const key = dateKey(day);
 
-      const amount = successfulPosSales
+      const normalAmount = successfulPosSales
         .filter((sale) => {
           if (!sale.created_at) return false;
           const date = new Date(sale.created_at);
-          return !Number.isNaN(date.getTime()) &&
-            dateKey(date) === key;
+          return (
+            !Number.isNaN(date.getTime()) &&
+            dateKey(date) === key
+          );
         })
         .reduce(
           (sum, sale) => sum + toNumber(sale.total_amount),
           0,
         );
+
+      const exchangeAmount = activeExchangeSettlements
+        .filter((row) => {
+          if (!row.created_at) return false;
+          const date = new Date(row.created_at);
+          return (
+            !Number.isNaN(date.getTime()) &&
+            dateKey(date) === key
+          );
+        })
+        .reduce((sum, row) => {
+          const amount = Math.max(
+            0,
+            toNumber(row.difference_amount),
+          );
+          const direction = (
+            row.settlement_direction || ""
+          )
+            .trim()
+            .toLowerCase();
+
+          if (direction === "collect") return sum + amount;
+          if (direction === "refund") return sum - amount;
+          return sum;
+        }, 0);
 
       points.push({
         key,
@@ -777,12 +926,17 @@ export default function AdminDashboardPage() {
           day: "2-digit",
           month: "short",
         }),
-        amount,
+        amount: normalAmount + exchangeAmount,
       });
     }
 
     return points;
-  }, [salesRange, successfulPosSales, todayStart]);
+  }, [
+    exchangeSettlements,
+    salesRange,
+    successfulPosSales,
+    todayStart,
+  ]);
 
   const trendMax = Math.max(
     1,
@@ -1018,16 +1172,24 @@ export default function AdminDashboardPage() {
           icon="₹"
           label="Today Sales"
           value={formatCurrency(business.todaySales)}
-          note={`${business.todayBills} POS bill${
+          note={`${business.todayBills} transaction${
             business.todayBills === 1 ? "" : "s"
-          } today`}
+          } today${
+            business.todayExchangeCount > 0
+              ? ` • ${business.todayExchangeCount} exchange`
+              : ""
+          }`}
           tone="blue"
         />
         <BusinessKpi
           icon="↗"
           label="This Month Sales"
           value={formatCurrency(business.monthSales)}
-          note={`${business.monthBills} completed POS bills`}
+          note={`${business.monthBills} transactions${
+            business.monthExchangeCount > 0
+              ? ` • ${business.monthExchangeCount} exchange`
+              : ""
+          }`}
           tone="gold"
         />
         <BusinessKpi

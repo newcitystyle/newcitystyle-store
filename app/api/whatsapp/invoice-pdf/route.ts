@@ -31,6 +31,7 @@ type InvoiceRequest = {
   dueAmount?: number | string;
   whatsappLanguage?: "en" | "te" | "english" | "telugu" | string;
   items?: InvoiceItem[];
+  invoiceStudio?: Record<string, unknown> | null;
 };
 
 type MetaErrorResponse = {
@@ -159,6 +160,54 @@ function resolveInvoiceTemplate(languageValue: unknown) {
   };
 }
 
+function studioText(
+  studio: Record<string, unknown> | null | undefined,
+  key: string,
+): string {
+  return String(studio?.[key] ?? "").trim();
+}
+
+function studioBool(
+  studio: Record<string, unknown> | null | undefined,
+  key: string,
+  fallback = false,
+): boolean {
+  const value = studio?.[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+async function loadUpiQrPng(
+  upiId: string,
+  payeeName: string,
+): Promise<Uint8Array | null> {
+  const cleanUpi = upiId.trim();
+  if (!cleanUpi) return null;
+
+  try {
+    const params = new URLSearchParams({
+      pa: cleanUpi,
+      pn: payeeName || "NEW CITY STYLE",
+      cu: "INR",
+    });
+    const upiUrl = `upi://pay?${params.toString()}`;
+    const qrUrl =
+      `https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=12&data=${encodeURIComponent(
+        upiUrl,
+      )}`;
+
+    const response = await fetch(qrUrl, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) return null;
+
+    return new Uint8Array(await response.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+
 function buildMetaError(metaData: MetaErrorResponse) {
   const metaError = metaData?.error;
 
@@ -213,7 +262,31 @@ async function createInvoicePdf(body: InvoiceRequest) {
           },
         ];
 
+  const studio = body.invoiceStudio || null;
+  const upiId = studioText(studio, "upi_id");
+  const showUpiQr =
+    Boolean(upiId) &&
+    studioBool(studio, "show_upi_qr", true);
+  const showBank = studioBool(studio, "show_bank", false);
+  const showTerms = studioBool(studio, "show_terms", true);
+  const bankName = studioText(studio, "bank_name");
+  const accountNumber = studioText(studio, "account_number");
+  const ifscCode = studioText(studio, "ifsc_code");
+  const footerMessage =
+    studioText(studio, "footer_message") ||
+    "Thank you for shopping with NEW CITY STYLE.";
+  const termsText =
+    studioText(studio, "terms_text") ||
+    "Please retain this invoice for return or exchange reference.";
+
   const pdf = await PDFDocument.create();
+  const upiQrBytes =
+    showUpiQr && upiId
+      ? await loadUpiQrPng(upiId, "NEW CITY STYLE")
+      : null;
+  const upiQrImage = upiQrBytes
+    ? await pdf.embedPng(upiQrBytes)
+    : null;
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(
     StandardFonts.HelveticaBold,
@@ -632,7 +705,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
   });
 
   page.drawText(
-    "Thank you for shopping with NEW CITY STYLE.",
+    footerMessage,
     {
       x: margin,
       y: Math.max(78, y - 172),
@@ -642,8 +715,9 @@ async function createInvoicePdf(body: InvoiceRequest) {
     },
   );
 
-  page.drawText(
-    "Please retain this invoice for return or exchange reference.",
+  if (showTerms && termsText) {
+    page.drawText(
+      termsText,
     {
       x: margin,
       y: Math.max(64, y - 189),
@@ -651,7 +725,115 @@ async function createInvoicePdf(body: InvoiceRequest) {
       font: regular,
       color: GRAY,
     },
-  );
+    );
+  }
+
+  if (upiQrImage) {
+    const qrSize = 82;
+    const qrX = margin;
+    const qrY = Math.max(82, y - 142);
+
+    page.drawRectangle({
+      x: qrX - 7,
+      y: qrY - 7,
+      width: qrSize + 14,
+      height: qrSize + 36,
+      color: IVORY,
+      borderColor: GOLD,
+      borderWidth: 1,
+    });
+
+    page.drawImage(upiQrImage, {
+      x: qrX,
+      y: qrY + 14,
+      width: qrSize,
+      height: qrSize,
+    });
+
+    page.drawText("SCAN & PAY", {
+      x: qrX,
+      y: qrY + 2,
+      size: 8,
+      font: bold,
+      color: BLUE,
+    });
+
+    page.drawText(upiId, {
+      x: qrX,
+      y: qrY - 10,
+      size: 7.5,
+      font: regular,
+      color: CHARCOAL,
+      maxWidth: 160,
+    });
+  } else if (showUpiQr && upiId) {
+    page.drawRectangle({
+      x: margin - 7,
+      y: Math.max(82, y - 142) - 7,
+      width: 188,
+      height: 48,
+      color: IVORY,
+      borderColor: GOLD,
+      borderWidth: 1,
+    });
+
+    page.drawText("SCAN & PAY", {
+      x: margin,
+      y: Math.max(82, y - 142) + 23,
+      size: 8,
+      font: bold,
+      color: BLUE,
+    });
+
+    page.drawText(`UPI: ${upiId}`, {
+      x: margin,
+      y: Math.max(82, y - 142) + 8,
+      size: 7.5,
+      font: regular,
+      color: CHARCOAL,
+      maxWidth: 170,
+    });
+
+    page.drawText("QR image could not be loaded.", {
+      x: margin,
+      y: Math.max(82, y - 142) - 5,
+      size: 6.5,
+      font: regular,
+      color: GRAY,
+    });
+  }
+
+  if (showBank) {
+    const bankLines = [
+      bankName ? `Bank: ${bankName}` : "",
+      accountNumber ? `A/C: ${accountNumber}` : "",
+      ifscCode ? `IFSC: ${ifscCode}` : "",
+    ].filter(Boolean);
+
+    if (bankLines.length > 0) {
+      let bankY = Math.max(62, y - 152);
+      page.drawText("BANK DETAILS", {
+        x: margin + 190,
+        y: bankY,
+        size: 8,
+        font: bold,
+        color: BLUE,
+      });
+      bankY -= 14;
+
+      for (const line of bankLines) {
+        page.drawText(line, {
+          x: margin + 190,
+          y: bankY,
+          size: 7.5,
+          font: regular,
+          color: CHARCOAL,
+          maxWidth: 180,
+        });
+        bankY -= 12;
+      }
+    }
+  }
 
   drawFooter();
 
@@ -924,7 +1106,35 @@ export async function POST(request: NextRequest) {
               formData.get("language") ||
               "telugu",
           ),
-          items: [],
+          items: (() => {
+            try {
+              const raw = String(
+                formData.get("itemsJson") || "[]",
+              );
+              const parsed = JSON.parse(raw);
+              return Array.isArray(parsed)
+                ? (parsed as InvoiceItem[])
+                : [];
+            } catch {
+              return [];
+            }
+          })(),
+          invoiceStudio: (() => {
+            try {
+              const raw = String(
+                formData.get("invoiceStudioJson") || "",
+              );
+              if (!raw) return null;
+              const parsed = JSON.parse(raw);
+              return parsed &&
+                typeof parsed === "object" &&
+                !Array.isArray(parsed)
+                ? (parsed as Record<string, unknown>)
+                : null;
+            } catch {
+              return null;
+            }
+          })(),
         };
       } else {
         body = (await request.json()) as InvoiceRequest;
@@ -951,6 +1161,20 @@ export async function POST(request: NextRequest) {
           "Content-Type": "application/pdf",
           "Content-Disposition": `inline; filename="${invoice.fileName}"`,
           "Cache-Control": "no-store, max-age=0",
+          "X-NCS-Invoice-Engine": "canonical-v3",
+          "X-NCS-UPI-Enabled":
+            studioBool(
+              body.invoiceStudio || null,
+              "show_upi_qr",
+              false,
+            )
+              ? "1"
+              : "0",
+          "X-NCS-UPI-ID":
+            studioText(
+              body.invoiceStudio || null,
+              "upi_id",
+            ) || "missing",
         },
       });
     }
@@ -1084,6 +1308,8 @@ export async function POST(request: NextRequest) {
         templateName,
         templateLanguage,
         selectedLanguage,
+        invoiceItemCount:
+          Array.isArray(body.items) ? body.items.length : 0,
       },
       {
         status: 200,
