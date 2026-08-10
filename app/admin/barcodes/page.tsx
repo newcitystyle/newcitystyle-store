@@ -167,6 +167,7 @@ export default function BarcodesPage() {
   const [notice, setNotice] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [supplierFilter, setSupplierFilter] = useState("");
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
 
@@ -555,10 +556,32 @@ export default function BarcodesPage() {
     );
   }, [productItems]);
 
+  const supplierOptions = useMemo(() => {
+    const unique = new Map<string, string>();
+
+    purchaseItems.forEach((item) => {
+      const displayName = item.supplierName.trim();
+      const key = normalize(displayName);
+
+      if (!key || key === "unknown supplier") return;
+      if (!unique.has(key)) unique.set(key, displayName);
+    });
+
+    return Array.from(unique.entries())
+      .sort((a, b) => a[1].localeCompare(b[1], "en-IN"))
+      .map(([key, name]) => ({ key, name }));
+  }, [purchaseItems]);
+
   const filteredItems = useMemo(() => {
     const query = normalize(searchQuery);
+    const selectedSupplier = normalize(supplierFilter);
 
     return currentItems.filter((item) => {
+      const matchesSupplier =
+        viewMode !== "purchases" ||
+        !selectedSupplier ||
+        normalize(item.supplierName) === selectedSupplier;
+
       const matchesSearch =
         !query ||
         [
@@ -584,9 +607,15 @@ export default function BarcodesPage() {
         (stockFilter === "low-stock" && item.stock > 0 && item.stock <= 5) ||
         (stockFilter === "out-of-stock" && item.stock <= 0);
 
-      return matchesSearch && matchesStock;
+      return matchesSupplier && matchesSearch && matchesStock;
     });
-  }, [currentItems, searchQuery, stockFilter]);
+  }, [
+    currentItems,
+    searchQuery,
+    supplierFilter,
+    stockFilter,
+    viewMode,
+  ]);
 
   const allVisibleSelected =
     filteredItems.length > 0 &&
@@ -639,6 +668,7 @@ export default function BarcodesPage() {
     setViewMode(next);
     setSelectedKeys([]);
     setSearchQuery("");
+    setSupplierFilter("");
   }
 
   function toggleItem(key: string) {
@@ -1210,7 +1240,28 @@ export default function BarcodesPage() {
           </button>
         </div>
 
-        <div className="toolbar">
+        <div className={`toolbar ${viewMode === "purchases" ? "withSupplier" : ""}`}>
+          {viewMode === "purchases" && (
+            <div className="supplierFilterBox">
+              <span>Supplier</span>
+              <select
+                value={supplierFilter}
+                onChange={(event) => {
+                  setSupplierFilter(event.target.value);
+                  setSelectedKeys([]);
+                }}
+                aria-label="Filter barcodes by supplier"
+              >
+                <option value="">All Suppliers ({supplierOptions.length})</option>
+                {supplierOptions.map((supplier) => (
+                  <option key={supplier.key} value={supplier.name}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="searchBox">
             <span>⌕</span>
             <input
@@ -1218,7 +1269,7 @@ export default function BarcodesPage() {
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder={
                 viewMode === "purchases"
-                  ? "Search supplier, purchase no, invoice, product or barcode..."
+                  ? "Search purchase no, invoice, product, barcode or supplier phone..."
                   : "Search product, barcode, SKU, size..."
               }
             />
@@ -1236,6 +1287,29 @@ export default function BarcodesPage() {
             <option value="out-of-stock">Out of Stock</option>
           </select>
         </div>
+
+        {viewMode === "purchases" && supplierFilter && (
+          <div className="supplierActiveBar">
+            <div>
+              <span>SUPPLIER FILTER</span>
+              <strong>{supplierFilter}</strong>
+              <small>
+                {filteredItems.length} purchase item batch
+                {filteredItems.length === 1 ? "" : "es"} shown
+              </small>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSupplierFilter("");
+                setSelectedKeys([]);
+              }}
+            >
+              Show All Suppliers
+            </button>
+          </div>
+        )}
 
         <div className="printBar">
           <label>
@@ -1743,6 +1817,78 @@ export default function BarcodesPage() {
           padding: 14px 15px;
           border-top: 1px solid #edf0f4;
           border-bottom: 1px solid #edf0f4;
+        }
+
+        .toolbar.withSupplier {
+          grid-template-columns: minmax(210px, 0.72fr) minmax(0, 1.5fr) 190px;
+        }
+
+        .supplierFilterBox {
+          display: grid;
+          gap: 4px;
+        }
+
+        .supplierFilterBox > span {
+          color: ${ROYAL_BLUE};
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: .7px;
+          text-transform: uppercase;
+        }
+
+        .supplierFilterBox select {
+          border-color: rgba(10, 46, 115, 0.22);
+          background: #fffdf5;
+          color: ${DEEP_BLUE};
+          font-weight: 900;
+        }
+
+        .supplierActiveBar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          padding: 10px 15px;
+          border-bottom: 1px solid rgba(212, 175, 55, 0.28);
+          background: linear-gradient(90deg, #fffdf5, #f8fbff);
+        }
+
+        .supplierActiveBar > div {
+          display: flex;
+          align-items: baseline;
+          gap: 9px;
+          min-width: 0;
+        }
+
+        .supplierActiveBar span {
+          color: ${GOLD};
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: .8px;
+        }
+
+        .supplierActiveBar strong {
+          color: ${ROYAL_BLUE};
+          font-size: 11px;
+          font-weight: 950;
+        }
+
+        .supplierActiveBar small {
+          color: #667085;
+          font-size: 9px;
+          font-weight: 750;
+        }
+
+        .supplierActiveBar button {
+          min-height: 34px;
+          padding: 0 11px;
+          border: 1px solid #dfe4eb;
+          border-radius: 9px;
+          background: white;
+          color: ${ROYAL_BLUE};
+          font-size: 8px;
+          font-weight: 900;
+          cursor: pointer;
         }
 
         .searchBox {
@@ -2284,8 +2430,18 @@ export default function BarcodesPage() {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
-          .toolbar {
+          .toolbar,
+          .toolbar.withSupplier {
             grid-template-columns: 1fr;
+          }
+
+          .supplierActiveBar {
+            align-items: flex-start;
+          }
+
+          .supplierActiveBar > div {
+            display: grid;
+            gap: 3px;
           }
 
           .printBar {

@@ -32,6 +32,7 @@ type InvoiceRequest = {
   whatsappLanguage?: "en" | "te" | "english" | "telugu" | string;
   items?: InvoiceItem[];
   invoiceStudio?: Record<string, unknown> | null;
+  duplicateCopy?: boolean;
 };
 
 type MetaErrorResponse = {
@@ -237,6 +238,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
     new Date().toLocaleString("en-IN"),
   );
   const paymentMethod = text(body.paymentMethod, "Cash");
+  const duplicateCopy = body.duplicateCopy === true;
 
   const billAmount = amount(body.billAmount);
   const paidAmount = amount(body.paidAmount);
@@ -263,6 +265,17 @@ async function createInvoicePdf(body: InvoiceRequest) {
         ];
 
   const studio = body.invoiceStudio || null;
+  const studioMode = (
+    studioText(studio, "active_tab") || "a4"
+  ).toLowerCase();
+  const studioTheme = (
+    studioText(studio, "theme") || "signature"
+  ).toLowerCase();
+  const isMinimalTheme = studioTheme === "minimal";
+  const isCounterTheme = studioTheme === "counter";
+  const isSignatureTheme =
+    !isMinimalTheme && !isCounterTheme;
+
   const upiId = studioText(studio, "upi_id");
   const showUpiQr =
     Boolean(upiId) &&
@@ -292,255 +305,870 @@ async function createInvoicePdf(body: InvoiceRequest) {
     StandardFonts.HelveticaBold,
   );
 
+  // True thermal mode: use real 58/80mm paper width and dynamic receipt height.
+  // This prevents browser printing from creating a long A4/1-metre-looking receipt.
+  if (studioMode === "thermal") {
+    const rawThermalWidth = Number(
+      (studio as Record<string, unknown> | null)?.thermal_width ?? 80,
+    );
+    const thermalMm = rawThermalWidth === 58 ? 58 : 80;
+    const pageWidth =
+      thermalMm === 58 ? 164.41 : 226.77; // millimetres converted to PDF points
+    const margin = thermalMm === 58 ? 10 : 14;
+    const contentWidth = pageWidth - margin * 2;
+
+    const showPhone = studioBool(studio, "show_phone", true);
+    const showAddress = studioBool(studio, "show_address", true);
+    const showEmail = studioBool(studio, "show_email", true);
+    const boldText = studioBool(studio, "bold_text", true);
+
+    const itemRowHeight = thermalMm === 58 ? 22 : 24;
+    const identityHeight =
+      74 +
+      (showAddress ? 22 : 0) +
+      (showPhone ? 12 : 0) +
+      (showEmail ? 12 : 0);
+    const metaHeight = 78;
+    const totalsHeight = 104;
+    const payHeight = showUpiQr || showBank ? 100 : 0;
+    const termsHeight = showTerms && termsText ? 34 : 0;
+    const footerBlockHeight = 46;
+
+    const pageHeight = Math.max(
+      thermalMm === 58 ? 340 : 390,
+      identityHeight +
+        metaHeight +
+        items.length * itemRowHeight +
+        totalsHeight +
+        payHeight +
+        termsHeight +
+        footerBlockHeight +
+        38,
+    );
+
+    const page = pdf.addPage([pageWidth, pageHeight]);
+    let y = pageHeight - 18;
+
+    const centerText = (
+      value: string,
+      size: number,
+      font = regular,
+      color = CHARCOAL,
+    ) => {
+      const safe = text(value, "");
+      page.drawText(safe, {
+        x: Math.max(
+          margin,
+          pageWidth / 2 -
+            font.widthOfTextAtSize(safe, size) / 2,
+        ),
+        y,
+        size,
+        font,
+        color,
+        maxWidth: contentWidth,
+      });
+    };
+
+    // Premium compact top line.
+    page.drawRectangle({
+      x: 0,
+      y: pageHeight - 5,
+      width: pageWidth,
+      height: 5,
+      color: isCounterTheme
+        ? GOLD
+        : isMinimalTheme
+          ? rgb(0.82, 0.84, 0.88)
+          : BLUE,
+    });
+
+    y -= 13;
+
+    // Compact premium brand lockup for thermal paper.
+    centerText(
+      "NEW CITY STYLE",
+      thermalMm === 58 ? 12.5 : 15,
+      bold,
+      BLUE,
+    );
+    y -= thermalMm === 58 ? 14 : 17;
+
+    centerText(
+      "STYLE FOR EVERY FAMILY",
+      thermalMm === 58 ? 5.4 : 6.2,
+      bold,
+      GOLD,
+    );
+    y -= 11;
+
+    page.drawLine({
+      start: { x: margin + 12, y },
+      end: { x: pageWidth - margin - 12, y },
+      thickness: 0.8,
+      color: GOLD,
+    });
+    y -= 10;
+
+    if (showAddress) {
+      centerText(
+        "Main Road, Opp. Govt. MPDO Office",
+        thermalMm === 58 ? 5.1 : 5.8,
+        regular,
+        GRAY,
+      );
+      y -= 9;
+      centerText(
+        "Sarubujjili, Srikakulam - 532458",
+        thermalMm === 58 ? 5.1 : 5.8,
+        regular,
+        GRAY,
+      );
+      y -= 9;
+    }
+
+    if (showPhone) {
+      centerText(
+        "Ph / WhatsApp: +91 90100 14001",
+        thermalMm === 58 ? 5.1 : 5.8,
+        regular,
+        GRAY,
+      );
+      y -= 9;
+    }
+
+    if (showEmail) {
+      centerText(
+        "www.newcitystyle.store",
+        thermalMm === 58 ? 4.9 : 5.5,
+        regular,
+        GRAY,
+      );
+      y -= 9;
+    }
+
+    page.drawLine({
+      start: { x: margin, y },
+      end: { x: pageWidth - margin, y },
+      thickness: 0.55,
+      color: rgb(0.76, 0.78, 0.81),
+      dashArray: [2, 2],
+    });
+    y -= 12;
+
+    if (duplicateCopy) {
+      centerText(
+        "DUPLICATE COPY",
+        thermalMm === 58 ? 7 : 8,
+        bold,
+        BLUE,
+      );
+      y -= 13;
+    }
+
+    const metaSize = thermalMm === 58 ? 5.8 : 6.5;
+    const metaBold = thermalMm === 58 ? 6.1 : 6.8;
+
+    const drawMetaRow = (labelText: string, valueText: string) => {
+      page.drawText(labelText, {
+        x: margin,
+        y,
+        size: metaSize,
+        font: regular,
+        color: GRAY,
+      });
+
+      const value = text(valueText, "-");
+      page.drawText(value, {
+        x: margin + (thermalMm === 58 ? 38 : 50),
+        y,
+        size: metaBold,
+        font: bold,
+        color: CHARCOAL,
+        maxWidth:
+          contentWidth - (thermalMm === 58 ? 38 : 50),
+      });
+      y -= 12;
+    };
+
+    drawMetaRow("Invoice", billNumber);
+    drawMetaRow("Customer", customerName);
+    if (customerPhone && customerPhone !== "-") {
+      drawMetaRow("Mobile", customerPhone);
+    }
+    drawMetaRow("Payment", paymentMethod);
+    drawMetaRow(
+      "Date",
+      new Date(billDate).toString() === "Invalid Date"
+        ? billDate
+        : new Date(billDate).toLocaleString("en-IN"),
+    );
+
+    y -= 4;
+    page.drawLine({
+      start: { x: margin, y },
+      end: { x: pageWidth - margin, y },
+      thickness: 0.7,
+      color: rgb(0.72, 0.74, 0.78),
+    });
+    y -= 12;
+
+    const itemFont = thermalMm === 58 ? 6.1 : 7;
+    const smallFont = thermalMm === 58 ? 5.2 : 5.8;
+
+    page.drawRectangle({
+      x: margin,
+      y: y - 5,
+      width: contentWidth,
+      height: 15,
+      color: rgb(0.965, 0.97, 0.985),
+    });
+
+    page.drawText("ITEM", {
+      x: margin + 4,
+      y,
+      size: smallFont,
+      font: bold,
+      color: BLUE,
+    });
+    page.drawText("QTY", {
+      x: pageWidth - margin - (thermalMm === 58 ? 48 : 64),
+      y,
+      size: smallFont,
+      font: bold,
+      color: BLUE,
+    });
+    page.drawText("AMOUNT", {
+      x: pageWidth - margin - (thermalMm === 58 ? 30 : 38),
+      y,
+      size: smallFont,
+      font: bold,
+      color: BLUE,
+    });
+    y -= 13;
+
+    for (const item of items) {
+      const qty = Math.max(1, amount(item.quantity, 1));
+      const price = amount(item.price);
+      const total = amount(item.total, qty * price);
+      const variant = [item.size, item.color]
+        .map((v) => text(v, ""))
+        .filter(Boolean)
+        .join(" / ");
+      const itemName = `${text(item.name, "Product")}${
+        variant ? ` (${variant})` : ""
+      }`;
+
+      page.drawText(itemName, {
+        x: margin,
+        y,
+        size: itemFont,
+        font: boldText ? bold : regular,
+        color: CHARCOAL,
+        maxWidth:
+          contentWidth - (thermalMm === 58 ? 66 : 88),
+      });
+
+      const qtyText = qty.toFixed(qty % 1 === 0 ? 0 : 2);
+      page.drawText(qtyText, {
+        x: pageWidth - margin - (thermalMm === 58 ? 48 : 64),
+        y,
+        size: itemFont,
+        font: regular,
+        color: CHARCOAL,
+      });
+
+      const totalText = money(total);
+      page.drawText(totalText, {
+        x:
+          pageWidth -
+          margin -
+          bold.widthOfTextAtSize(totalText, itemFont),
+        y,
+        size: itemFont,
+        font: bold,
+        color: CHARCOAL,
+      });
+
+      y -= itemRowHeight;
+
+      page.drawLine({
+        start: { x: margin, y: y + 8 },
+        end: { x: pageWidth - margin, y: y + 8 },
+        thickness: 0.35,
+        color: rgb(0.86, 0.87, 0.89),
+        dashArray: [1.5, 2],
+      });
+    }
+
+    y -= 2;
+
+    const drawMoneyRow = (
+      labelText: string,
+      value: number,
+      emphasize = false,
+    ) => {
+      const size = emphasize
+        ? thermalMm === 58
+          ? 8
+          : 9
+        : thermalMm === 58
+          ? 6.2
+          : 7;
+
+      page.drawText(labelText, {
+        x: margin,
+        y,
+        size,
+        font: emphasize ? bold : regular,
+        color: emphasize ? BLUE : CHARCOAL,
+      });
+
+      const valueText = money(value);
+      page.drawText(valueText, {
+        x:
+          pageWidth -
+          margin -
+          (emphasize ? bold : regular).widthOfTextAtSize(
+            valueText,
+            size,
+          ),
+        y,
+        size,
+        font: emphasize ? bold : regular,
+        color: emphasize ? BLUE : CHARCOAL,
+      });
+
+      y -= emphasize ? 18 : 13;
+    };
+
+    drawMoneyRow("Subtotal", subtotal);
+    if (discountAmount > 0) {
+      drawMoneyRow("Discount", -discountAmount);
+    }
+    if (taxAmount > 0) {
+      drawMoneyRow("GST Included", taxAmount);
+    }
+    if (roundOff !== 0) {
+      drawMoneyRow("Round Off", roundOff);
+    }
+
+    page.drawRectangle({
+      x: margin,
+      y: y - 5,
+      width: contentWidth,
+      height: thermalMm === 58 ? 24 : 28,
+      color: BLUE,
+    });
+
+    page.drawText("TOTAL", {
+      x: margin + 7,
+      y: y + (thermalMm === 58 ? 3 : 5),
+      size: thermalMm === 58 ? 7.7 : 8.8,
+      font: bold,
+      color: GOLD,
+    });
+
+    const totalReceiptText = money(billAmount);
+    page.drawText(totalReceiptText, {
+      x:
+        pageWidth -
+        margin -
+        7 -
+        bold.widthOfTextAtSize(
+          totalReceiptText,
+          thermalMm === 58 ? 7.7 : 8.8,
+        ),
+      y: y + (thermalMm === 58 ? 3 : 5),
+      size: thermalMm === 58 ? 7.7 : 8.8,
+      font: bold,
+      color: rgb(1, 1, 1),
+    });
+
+    y -= thermalMm === 58 ? 32 : 36;
+
+    page.drawText(`Paid: ${money(paidAmount)}`, {
+      x: margin,
+      y,
+      size: smallFont,
+      font: regular,
+      color: GRAY,
+    });
+    y -= 11;
+
+    if (dueAmount > 0) {
+      page.drawText(`Due: ${money(dueAmount)}`, {
+        x: margin,
+        y,
+        size: smallFont,
+        font: bold,
+        color: rgb(0.72, 0.12, 0.12),
+      });
+      y -= 12;
+    }
+
+    if (showUpiQr || showBank) {
+      y -= 4;
+      page.drawLine({
+        start: { x: margin, y },
+        end: { x: pageWidth - margin, y },
+        thickness: 0.6,
+        color: rgb(0.80, 0.81, 0.84),
+      });
+      y -= 13;
+
+      if (upiQrImage) {
+        const qrSize = thermalMm === 58 ? 62 : 76;
+        page.drawImage(upiQrImage, {
+          x: pageWidth / 2 - qrSize / 2,
+          y: y - qrSize,
+          width: qrSize,
+          height: qrSize,
+        });
+        y -= qrSize + 9;
+        centerText(
+          "SCAN & PAY",
+          thermalMm === 58 ? 6 : 7,
+          bold,
+          BLUE,
+        );
+        y -= 10;
+        centerText(
+          upiId,
+          thermalMm === 58 ? 5 : 5.6,
+          regular,
+          GRAY,
+        );
+        y -= 11;
+      }
+
+      if (showBank) {
+        const bankLines = [
+          bankName,
+          accountNumber ? `A/C ${accountNumber}` : "",
+          ifscCode ? `IFSC ${ifscCode}` : "",
+        ].filter(Boolean);
+
+        for (const line of bankLines) {
+          centerText(
+            line,
+            thermalMm === 58 ? 5 : 5.6,
+            regular,
+            GRAY,
+          );
+          y -= 10;
+        }
+      }
+    }
+
+    if (showTerms && termsText) {
+      y -= 4;
+      page.drawLine({
+        start: { x: margin, y },
+        end: { x: pageWidth - margin, y },
+        thickness: 0.5,
+        color: rgb(0.84, 0.85, 0.87),
+        dashArray: [2, 2],
+      });
+      y -= 12;
+      centerText(
+        termsText,
+        thermalMm === 58 ? 4.8 : 5.5,
+        regular,
+        GRAY,
+      );
+      y -= 18;
+    }
+
+    centerText(
+      dueAmount > 0 ? "PAYMENT PARTIAL" : "PAYMENT RECEIVED",
+      thermalMm === 58 ? 5.2 : 5.8,
+      bold,
+      dueAmount > 0 ? rgb(0.72, 0.12, 0.12) : BLUE,
+    );
+    y -= 11;
+
+    centerText(
+      footerMessage,
+      thermalMm === 58 ? 5.7 : 6.4,
+      bold,
+      BLUE,
+    );
+    y -= 11;
+
+    centerText(
+      "Powered by NCS Billing",
+      thermalMm === 58 ? 4.4 : 4.9,
+      regular,
+      GOLD,
+    );
+
+    const thermalPdfBytes = await pdf.save();
+    const thermalFileName = `${safeFileName(billNumber)}.pdf`;
+
+    return {
+      pdfBytes: new Uint8Array(thermalPdfBytes),
+      fileName: thermalFileName,
+      customerName,
+      customerPhone,
+      billNumber,
+      billAmount,
+      paidAmount,
+      dueAmount,
+      paymentMethod,
+    };
+  }
+
   const pageWidth = 595.28;
   const pageHeight = 841.89;
   const margin = 38;
-  const footerHeight = 54;
-  const headerHeight = 142;
-  const tableTop = pageHeight - 256;
-  const rowHeight = 28;
+  const footerHeight = 42;
+  const headerHeight = 150;
+  const tableTop = pageHeight - 292;
+  const rowHeight = isCounterTheme ? 24 : 28;
+
+  const themeTopColor = isMinimalTheme
+    ? rgb(0.85, 0.86, 0.90)
+    : isCounterTheme
+      ? GOLD
+      : BLUE;
+  const themeTopHeight = isSignatureTheme
+    ? 8
+    : isCounterTheme
+      ? 5
+      : 3;
+
+  const tableFill = rgb(1, 1, 1);
+  const tableText = GRAY;
+  const softRowFill = rgb(1, 1, 1);
+  const summaryFill = rgb(1, 1, 1);
 
   let page = pdf.addPage([pageWidth, pageHeight]);
   let y = tableTop;
 
   const drawHeader = () => {
+    // Premium editorial masthead: restrained, international and print-friendly.
     page.drawRectangle({
       x: 0,
-      y: pageHeight - headerHeight,
+      y: pageHeight - themeTopHeight,
       width: pageWidth,
-      height: headerHeight,
+      height: themeTopHeight,
+      color: themeTopColor,
+    });
+
+    // Left identity block.
+    const markSize = 48;
+    const markX = margin;
+    const markY = pageHeight - 78;
+
+    page.drawRectangle({
+      x: markX,
+      y: markY,
+      width: markSize,
+      height: markSize,
       color: BLUE,
     });
 
     page.drawRectangle({
-      x: 0,
-      y: pageHeight - headerHeight - 4,
-      width: pageWidth,
-      height: 4,
-      color: GOLD,
-    });
-
-    page.drawCircle({
-      x: margin + 28,
-      y: pageHeight - 47,
-      size: 27,
-      color: GOLD,
+      x: markX + 4,
+      y: markY + 4,
+      width: markSize - 8,
+      height: markSize - 8,
+      borderColor: GOLD,
+      borderWidth: 1,
     });
 
     page.drawText("NCS", {
-      x: margin + 10,
-      y: pageHeight - 54,
-      size: 18,
+      x: markX + 8,
+      y: markY + 17,
+      size: 15,
+      font: bold,
+      color: GOLD,
+    });
+
+    const brandX = markX + markSize + 16;
+
+    page.drawText("NEW CITY STYLE", {
+      x: brandX,
+      y: pageHeight - 46,
+      size: 22,
       font: bold,
       color: BLUE,
     });
 
-    page.drawText("NEW CITY STYLE", {
-      x: margin + 70,
-      y: pageHeight - 42,
-      size: 22,
+    page.drawText("STYLE FOR EVERY FAMILY", {
+      x: brandX,
+      y: pageHeight - 61,
+      size: 7,
       font: bold,
-      color: rgb(1, 1, 1),
-    });
-
-    page.drawText("Style for Every Family", {
-      x: margin + 70,
-      y: pageHeight - 62,
-      size: 10,
-      font: regular,
       color: GOLD,
     });
 
-    page.drawText("Main Road, Opp. Govt. MPDO Office", {
-      x: margin + 70,
-      y: pageHeight - 82,
-      size: 8.5,
-      font: regular,
-      color: rgb(1, 1, 1),
-    });
-
     page.drawText(
-      "Sarubujjili, Andhra Pradesh - 532458",
+      "Main Road, Opp. Govt. MPDO Office • Sarubujjili • Srikakulam",
       {
-        x: margin + 70,
-        y: pageHeight - 96,
-        size: 8.5,
+        x: brandX,
+        y: pageHeight - 77,
+        size: 7,
         font: regular,
-        color: rgb(1, 1, 1),
+        color: GRAY,
       },
     );
 
     page.drawText(
-      "Phone / WhatsApp: +91 90100 14001",
+      "Andhra Pradesh 532458 • +91 90100 14001 • newcitystyle.store",
       {
-        x: margin + 70,
-        y: pageHeight - 110,
-        size: 8.5,
+        x: brandX,
+        y: pageHeight - 89,
+        size: 7,
+        font: regular,
+        color: GRAY,
+      },
+    );
+
+    // Right invoice identity.
+    const rightX = pageWidth - margin - 150;
+
+    page.drawText(
+      studioMode === "whatsapp"
+        ? "WHATSAPP INVOICE"
+        : duplicateCopy
+          ? "DUPLICATE INVOICE"
+          : "RETAIL INVOICE",
+      {
+        x: rightX,
+        y: pageHeight - 44,
+        size: 12,
+        font: bold,
+        color: BLUE,
+      },
+    );
+
+    page.drawText(
+      isCounterTheme
+        ? "Counter Compact"
+        : isMinimalTheme
+          ? "Clean Minimal"
+          : "NCS Signature",
+      {
+        x: rightX,
+        y: pageHeight - 59,
+        size: 7,
         font: bold,
         color: GOLD,
       },
     );
 
-    page.drawText("www.newcitystyle.store", {
-      x: margin + 70,
-      y: pageHeight - 124,
-      size: 8.5,
-      font: regular,
-      color: rgb(1, 1, 1),
+    if (duplicateCopy) {
+      page.drawRectangle({
+        x: rightX,
+        y: pageHeight - 86,
+        width: 106,
+        height: 18,
+        color: rgb(1, 0.97, 0.84),
+        borderColor: GOLD,
+        borderWidth: 0.8,
+      });
+
+      page.drawText("DUPLICATE COPY", {
+        x: rightX + 11,
+        y: pageHeight - 81,
+        size: 8,
+        font: bold,
+        color: BLUE,
+      });
+    }
+
+    // Editorial divider.
+    page.drawLine({
+      start: { x: margin, y: pageHeight - 112 },
+      end: { x: pageWidth - margin, y: pageHeight - 112 },
+      thickness: 1,
+      color: rgb(0.86, 0.88, 0.92),
     });
 
-    page.drawText("TAX INVOICE", {
-      x: pageWidth - margin - 112,
-      y: pageHeight - 42,
-      size: 16,
-      font: bold,
+    page.drawLine({
+      start: { x: margin, y: pageHeight - 115 },
+      end: { x: margin + 122, y: pageHeight - 115 },
+      thickness: 2,
       color: GOLD,
-    });
-
-    page.drawText("Premium Retail Invoice", {
-      x: pageWidth - margin - 112,
-      y: pageHeight - 62,
-      size: 8.5,
-      font: regular,
-      color: rgb(1, 1, 1),
     });
   };
 
   const drawFooter = () => {
-    page.drawRectangle({
-      x: 0,
-      y: 0,
-      width: pageWidth,
-      height: footerHeight,
-      color: BLUE,
+    page.drawLine({
+      start: { x: margin, y: 42 },
+      end: { x: pageWidth - margin, y: 42 },
+      thickness: 0.7,
+      color: rgb(0.87, 0.89, 0.92),
+      dashArray: [2, 2],
     });
 
-    page.drawText(
-      "Thank you for shopping with NEW CITY STYLE.",
-      {
-        x: margin,
-        y: 37,
-        size: 8.5,
-        font: bold,
-        color: GOLD,
-      },
-    );
+    const footerLabel =
+      footerMessage ||
+      "Thank you for shopping with NEW CITY STYLE.";
 
-    page.drawText(
-      "Main Road, Opp. Govt. MPDO Office, Sarubujjili, Andhra Pradesh - 532458",
-      {
-        x: margin,
-        y: 24,
-        size: 7.5,
-        font: regular,
-        color: rgb(1, 1, 1),
-      },
-    );
+    page.drawText(footerLabel, {
+      x:
+        pageWidth / 2 -
+        bold.widthOfTextAtSize(footerLabel, 8) / 2,
+      y: 25,
+      size: 8,
+      font: bold,
+      color: BLUE,
+      maxWidth: pageWidth - margin * 2,
+    });
 
-    page.drawText(
-      "Phone / WhatsApp: +91 90100 14001  |  www.newcitystyle.store",
-      {
-        x: margin,
-        y: 11,
-        size: 7.5,
-        font: regular,
-        color: rgb(1, 1, 1),
-      },
-    );
+    page.drawText("Powered by NCS Billing", {
+      x:
+        pageWidth / 2 -
+        regular.widthOfTextAtSize(
+          "Powered by NCS Billing",
+          6.5,
+        ) /
+          2,
+      y: 13,
+      size: 6.5,
+      font: regular,
+      color: GOLD,
+    });
   };
 
   const drawInvoiceInfo = () => {
-    const top = pageHeight - headerHeight - 30;
+    const topY = pageHeight - headerHeight - 16;
+    const gap = 12;
+    const totalWidth = pageWidth - margin * 2;
+    const leftWidth = totalWidth * 0.56;
+    const rightWidth = totalWidth - leftWidth - gap;
+    const cardHeight = 70;
 
-    page.drawText("BILL TO", {
+    // Customer card.
+    page.drawRectangle({
       x: margin,
-      y: top,
-      size: 10,
+      y: topY - cardHeight,
+      width: leftWidth,
+      height: cardHeight,
+      color: rgb(0.975, 0.98, 0.99),
+      borderColor: rgb(0.90, 0.91, 0.94),
+      borderWidth: 0.7,
+    });
+
+    page.drawText("BILLED TO", {
+      x: margin + 12,
+      y: topY - 17,
+      size: 6.5,
       font: bold,
       color: GOLD,
     });
 
     page.drawText(customerName, {
-      x: margin,
-      y: top - 20,
-      size: 12,
+      x: margin + 12,
+      y: topY - 34,
+      size: 10,
       font: bold,
-      color: CHARCOAL,
+      color: BLUE,
+      maxWidth: leftWidth - 24,
     });
 
-    page.drawText(customerPhone, {
-      x: margin,
-      y: top - 38,
-      size: 9,
-      font: regular,
-      color: GRAY,
-    });
-
-    const infoX = pageWidth - margin - 215;
-    const labels = ["Invoice No.", "Date", "Payment"];
-    const values = [billNumber, billDate, paymentMethod];
-
-    labels.forEach((label, index) => {
-      const rowY = top - index * 19;
-
-      page.drawText(label, {
-        x: infoX,
-        y: rowY,
-        size: 9,
-        font: bold,
+    if (customerPhone && customerPhone !== "-") {
+      page.drawText(customerPhone, {
+        x: margin + 12,
+        y: topY - 50,
+        size: 7.5,
+        font: regular,
         color: GRAY,
       });
+    }
 
-      page.drawText(values[index], {
-        x: infoX + 82,
+    // Bill meta card.
+    const metaX = margin + leftWidth + gap;
+
+    page.drawRectangle({
+      x: metaX,
+      y: topY - cardHeight,
+      width: rightWidth,
+      height: cardHeight,
+      color: BLUE,
+    });
+
+    const formattedDate =
+      new Date(billDate).toString() === "Invalid Date"
+        ? billDate
+        : new Date(billDate).toLocaleString("en-IN");
+
+    const metaRows = [
+      ["INVOICE", billNumber],
+      ["DATE", formattedDate],
+      ["PAYMENT", paymentMethod],
+    ];
+
+    let rowY = topY - 17;
+
+    metaRows.forEach(([labelText, valueText]) => {
+      page.drawText(labelText, {
+        x: metaX + 12,
         y: rowY,
-        size: index === 0 ? 8.5 : 8,
-        font: index === 0 ? bold : regular,
-        color: CHARCOAL,
-        maxWidth: 132,
+        size: 5.8,
+        font: bold,
+        color: GOLD,
       });
+
+      page.drawText(valueText, {
+        x: metaX + 62,
+        y: rowY,
+        size: 6.7,
+        font: bold,
+        color: rgb(1, 1, 1),
+        maxWidth: rightWidth - 74,
+      });
+
+      rowY -= 17;
     });
   };
 
   const columns = [
-    { label: "#", x: margin, width: 24 },
-    { label: "ITEM", x: margin + 25, width: 220 },
-    { label: "QTY", x: margin + 248, width: 42 },
-    { label: "MRP", x: margin + 292, width: 62 },
-    { label: "PRICE", x: margin + 356, width: 70 },
-    { label: "TOTAL", x: margin + 428, width: 90 },
+    { label: "ITEM", x: margin, width: 330 },
+    { label: "QTY", x: margin + 336, width: 54 },
+    { label: "AMOUNT", x: margin + 396, width: 123 },
   ];
 
   const drawTableHeader = () => {
     page.drawRectangle({
       x: margin,
-      y: y - 20,
+      y: y - 14,
       width: pageWidth - margin * 2,
-      height: 28,
-      color: BLUE,
+      height: 22,
+      color: rgb(0.965, 0.97, 0.985),
+    });
+
+    page.drawLine({
+      start: { x: margin, y: y + 8 },
+      end: { x: pageWidth - margin, y: y + 8 },
+      thickness: 0.8,
+      color: GOLD,
     });
 
     columns.forEach((column, index) => {
       const labelWidth = bold.widthOfTextAtSize(
         column.label,
-        8,
+        6.4,
       );
 
       const x =
-        index <= 1
-          ? column.x + 6
-          : column.x + column.width - labelWidth - 6;
+        index === 0
+          ? column.x + 7
+          : column.x + column.width - labelWidth - 7;
 
       page.drawText(column.label, {
         x,
-        y: y - 11,
-        size: 8,
+        y: y - 5,
+        size: 6.4,
         font: bold,
-        color: GOLD,
+        color: BLUE,
       });
     });
 
-    y -= 28;
+    y -= 24;
   };
 
   const newPage = () => {
@@ -556,14 +1184,13 @@ async function createInvoicePdf(body: InvoiceRequest) {
   drawTableHeader();
 
   for (let index = 0; index < items.length; index += 1) {
-    if (y - rowHeight < 210) {
+    if (y - rowHeight < 220) {
       newPage();
     }
 
     const item = items[index];
     const qty = Math.max(1, amount(item.quantity, 1));
     const price = amount(item.price);
-    const mrp = amount(item.mrp, price);
     const total = amount(item.total, qty * price);
 
     const variant = [item.size, item.color]
@@ -575,69 +1202,48 @@ async function createInvoicePdf(body: InvoiceRequest) {
       variant ? ` (${variant})` : ""
     }`;
 
-    if (index % 2 === 0) {
-      page.drawRectangle({
-        x: margin,
-        y: y - rowHeight + 6,
-        width: pageWidth - margin * 2,
-        height: rowHeight,
-        color: IVORY,
-      });
-    }
+    page.drawText(itemName, {
+      x: columns[0].x,
+      y: y - 8,
+      size: 8,
+      font: regular,
+      color: CHARCOAL,
+      maxWidth: columns[0].width - 8,
+    });
 
-    page.drawText(String(index + 1), {
-      x: columns[0].x + 6,
-      y: y - 11,
+    const qtyText = qty.toFixed(
+      qty % 1 === 0 ? 0 : 2,
+    );
+    const amountText = money(total);
+
+    page.drawText(qtyText, {
+      x:
+        columns[1].x +
+        columns[1].width -
+        regular.widthOfTextAtSize(qtyText, 8),
+      y: y - 8,
       size: 8,
       font: regular,
       color: CHARCOAL,
     });
 
-    page.drawText(itemName, {
-      x: columns[1].x + 6,
-      y: y - 11,
+    page.drawText(amountText, {
+      x:
+        columns[2].x +
+        columns[2].width -
+        bold.widthOfTextAtSize(amountText, 8),
+      y: y - 8,
       size: 8,
       font: bold,
       color: CHARCOAL,
-      maxWidth: columns[1].width - 12,
-    });
-
-    const values = [
-      qty.toFixed(qty % 1 === 0 ? 0 : 2),
-      money(mrp),
-      money(price),
-      money(total),
-    ];
-
-    [2, 3, 4, 5].forEach((columnIndex, valueIndex) => {
-      const font = columnIndex === 5 ? bold : regular;
-      const size = columnIndex === 2 ? 8 : 7.4;
-      const value = values[valueIndex];
-
-      page.drawText(value, {
-        x:
-          columns[columnIndex].x +
-          columns[columnIndex].width -
-          font.widthOfTextAtSize(value, size) -
-          6,
-        y: y - 11,
-        size,
-        font,
-        color: CHARCOAL,
-      });
     });
 
     page.drawLine({
-      start: {
-        x: margin,
-        y: y - rowHeight + 6,
-      },
-      end: {
-        x: pageWidth - margin,
-        y: y - rowHeight + 6,
-      },
-      thickness: 0.4,
-      color: rgb(0.86, 0.86, 0.86),
+      start: { x: margin, y: y - rowHeight + 6 },
+      end: { x: pageWidth - margin, y: y - rowHeight + 6 },
+      thickness: 0.35,
+      color: rgb(0.89, 0.90, 0.92),
+      dashArray: [2, 2],
     });
 
     y -= rowHeight;
@@ -649,188 +1255,184 @@ async function createInvoicePdf(body: InvoiceRequest) {
 
   y -= 18;
 
-  const summaryX = pageWidth - margin - 220;
-  const summaryWidth = 220;
-
-  page.drawRectangle({
-    x: summaryX,
-    y: y - 145,
-    width: summaryWidth,
-    height: 155,
-    color: IVORY,
-    borderColor: GOLD,
-    borderWidth: 1,
-  });
+  const summaryX = pageWidth - margin - 225;
+  const summaryWidth = 225;
 
   const summaryRows: Array<
     [string, string, boolean]
   > = [
     ["Subtotal", money(subtotal), false],
     ["Discount", money(discountAmount), false],
-    ["Tax", money(taxAmount), false],
-    ["Round Off", money(roundOff), false],
-    ["Bill Total", money(billAmount), true],
-    ["Paid", money(paidAmount), false],
-    ["Due", money(dueAmount), true],
   ];
 
-  let summaryY = y - 16;
+  let summaryY = y;
 
-  summaryRows.forEach(([label, value, strong]) => {
-    const font = strong ? bold : regular;
-    const size = strong ? 9.5 : 8.5;
-    const color = strong ? BLUE : CHARCOAL;
-
+  summaryRows.forEach(([label, value]) => {
     page.drawText(label, {
-      x: summaryX + 14,
+      x: summaryX,
       y: summaryY,
-      size,
-      font,
-      color,
+      size: 8,
+      font: regular,
+      color: CHARCOAL,
     });
 
     page.drawText(value, {
       x:
         summaryX +
         summaryWidth -
-        14 -
-        font.widthOfTextAtSize(value, size),
+        regular.widthOfTextAtSize(value, 8),
       y: summaryY,
-      size,
-      font,
-      color,
+      size: 8,
+      font: regular,
+      color: CHARCOAL,
     });
 
-    summaryY -= 19;
+    summaryY -= 17;
+  });
+
+  page.drawRectangle({
+    x: summaryX,
+    y: summaryY - 8,
+    width: summaryWidth,
+    height: 32,
+    color: BLUE,
+  });
+
+  page.drawRectangle({
+    x: summaryX,
+    y: summaryY + 21,
+    width: summaryWidth,
+    height: 3,
+    color: GOLD,
+  });
+
+  page.drawText("TOTAL PAID", {
+    x: summaryX + 12,
+    y: summaryY + 4,
+    size: 8.5,
+    font: bold,
+    color: GOLD,
+  });
+
+  const grandText = money(billAmount);
+  page.drawText(grandText, {
+    x:
+      summaryX +
+      summaryWidth -
+      12 -
+      bold.widthOfTextAtSize(grandText, 9),
+    y: summaryY + 4,
+    size: 9,
+    font: bold,
+    color: rgb(1, 1, 1),
   });
 
   page.drawText(
-    footerMessage,
+    "GST, where applicable, is included in the selling price.",
     {
-      x: margin,
-      y: Math.max(78, y - 172),
-      size: 9.5,
-      font: bold,
-      color: BLUE,
-    },
-  );
-
-  if (showTerms && termsText) {
-    page.drawText(
-      termsText,
-    {
-      x: margin,
-      y: Math.max(64, y - 189),
-      size: 8,
-      font: regular,
-      color: GRAY,
-    },
-    );
-  }
-
-  if (upiQrImage) {
-    const qrSize = 82;
-    const qrX = margin;
-    const qrY = Math.max(82, y - 142);
-
-    page.drawRectangle({
-      x: qrX - 7,
-      y: qrY - 7,
-      width: qrSize + 14,
-      height: qrSize + 36,
-      color: IVORY,
-      borderColor: GOLD,
-      borderWidth: 1,
-    });
-
-    page.drawImage(upiQrImage, {
-      x: qrX,
-      y: qrY + 14,
-      width: qrSize,
-      height: qrSize,
-    });
-
-    page.drawText("SCAN & PAY", {
-      x: qrX,
-      y: qrY + 2,
-      size: 8,
-      font: bold,
-      color: BLUE,
-    });
-
-    page.drawText(upiId, {
-      x: qrX,
-      y: qrY - 10,
-      size: 7.5,
-      font: regular,
-      color: CHARCOAL,
-      maxWidth: 160,
-    });
-  } else if (showUpiQr && upiId) {
-    page.drawRectangle({
-      x: margin - 7,
-      y: Math.max(82, y - 142) - 7,
-      width: 188,
-      height: 48,
-      color: IVORY,
-      borderColor: GOLD,
-      borderWidth: 1,
-    });
-
-    page.drawText("SCAN & PAY", {
-      x: margin,
-      y: Math.max(82, y - 142) + 23,
-      size: 8,
-      font: bold,
-      color: BLUE,
-    });
-
-    page.drawText(`UPI: ${upiId}`, {
-      x: margin,
-      y: Math.max(82, y - 142) + 8,
-      size: 7.5,
-      font: regular,
-      color: CHARCOAL,
-      maxWidth: 170,
-    });
-
-    page.drawText("QR image could not be loaded.", {
-      x: margin,
-      y: Math.max(82, y - 142) - 5,
+      x: summaryX,
+      y: summaryY - 18,
       size: 6.5,
       font: regular,
       color: GRAY,
+      maxWidth: summaryWidth,
+    },
+  );
+
+  const footerTextY = Math.max(115, summaryY - 70);
+
+  if (showTerms && termsText) {
+    page.drawRectangle({
+      x: margin,
+      y: footerTextY - 6,
+      width: pageWidth - margin * 2,
+      height: 24,
+      color: rgb(0.97, 0.975, 0.985),
+    });
+
+    page.drawText(termsText, {
+      x: margin + 10,
+      y: footerTextY + 2,
+      size: 6.5,
+      font: regular,
+      color: GRAY,
+      maxWidth: pageWidth - margin * 2 - 20,
     });
   }
 
-  if (showBank) {
-    const bankLines = [
-      bankName ? `Bank: ${bankName}` : "",
-      accountNumber ? `A/C: ${accountNumber}` : "",
-      ifscCode ? `IFSC: ${ifscCode}` : "",
-    ].filter(Boolean);
+  if (showUpiQr || showBank) {
+    const payY = Math.max(
+      150,
+      footerTextY + (showTerms ? 38 : 8),
+    );
 
-    if (bankLines.length > 0) {
-      let bankY = Math.max(62, y - 152);
-      page.drawText("BANK DETAILS", {
-        x: margin + 190,
-        y: bankY,
+    page.drawRectangle({
+      x: margin,
+      y: payY,
+      width: 250,
+      height: 88,
+      color: rgb(1, 0.995, 0.96),
+      borderColor: GOLD,
+      borderWidth: 0.8,
+    });
+
+    let textX = margin + 92;
+
+    if (upiQrImage) {
+      page.drawImage(upiQrImage, {
+        x: margin + 10,
+        y: payY + 10,
+        width: 68,
+        height: 68,
+      });
+    } else if (showUpiQr && upiId) {
+      page.drawText("UPI", {
+        x: margin + 28,
+        y: payY + 42,
+        size: 12,
+        font: bold,
+        color: BLUE,
+      });
+    }
+
+    if (showUpiQr && upiId) {
+      page.drawText("Scan & Pay", {
+        x: textX,
+        y: payY + 56,
         size: 8,
         font: bold,
         color: BLUE,
       });
-      bankY -= 14;
 
-      for (const line of bankLines) {
+      page.drawText(upiId, {
+        x: textX,
+        y: payY + 42,
+        size: 7,
+        font: regular,
+        color: GRAY,
+        maxWidth: 145,
+      });
+    }
+
+    if (showBank) {
+      const bankLines = [
+        bankName ? bankName : "",
+        accountNumber ? `A/C ${accountNumber}` : "",
+        ifscCode ? `IFSC ${ifscCode}` : "",
+      ].filter(Boolean);
+
+      let bankY = payY + (showUpiQr ? 28 : 58);
+
+      for (const line of bankLines.slice(0, 3)) {
         page.drawText(line, {
-          x: margin + 190,
+          x: textX,
           y: bankY,
-          size: 7.5,
+          size: 6.5,
           font: regular,
-          color: CHARCOAL,
-          maxWidth: 180,
+          color: GRAY,
+          maxWidth: 145,
         });
-        bankY -= 12;
+        bankY -= 11;
       }
     }
   }
@@ -1119,6 +1721,10 @@ export async function POST(request: NextRequest) {
               return [];
             }
           })(),
+          duplicateCopy:
+            String(formData.get("duplicateCopy") || "")
+              .trim()
+              .toLowerCase() === "true",
           invoiceStudio: (() => {
             try {
               const raw = String(
@@ -1175,6 +1781,18 @@ export async function POST(request: NextRequest) {
               body.invoiceStudio || null,
               "upi_id",
             ) || "missing",
+          "X-NCS-Invoice-Theme":
+            studioText(
+              body.invoiceStudio || null,
+              "theme",
+            ) || "signature",
+          "X-NCS-Invoice-Mode":
+            studioText(
+              body.invoiceStudio || null,
+              "active_tab",
+            ) || "a4",
+          "X-NCS-Duplicate-Copy":
+            body.duplicateCopy === true ? "1" : "0",
         },
       });
     }

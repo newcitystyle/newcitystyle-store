@@ -5305,761 +5305,128 @@ if (!variantsError) {
     };
   }
 
-  function printCustomerInvoiceA4(sale: CompletedSale) {
-    const rows = buildCustomerInvoiceRows(sale);
-    const popup = window.open("", "_blank", "width=1000,height=900");
-
-    if (!popup) {
+  async function printCanonicalInvoice(
+    sale: CompletedSale,
+    mode: "a4" | "thermal",
+  ) {
+    try {
       showNotice(
-        "Please allow popups to print the A4 invoice.",
-        "error"
+        mode === "thermal"
+          ? `Preparing ${invoiceStudioSettings.thermal_width}mm thermal receipt...`
+          : "Preparing A4 premium invoice...",
+        "info",
       );
-      return;
-    }
 
-    const colors = getInvoiceThemeColors();
-    const footerMessage =
-      invoiceStudioSettings.footer_message.trim() ||
-      "Thank you for shopping with NEW CITY STYLE.";
+      const payload = await buildCanonicalInvoicePayload(
+        sale,
+        false,
+      );
 
-    const contactLines = [
-      invoiceStudioSettings.show_address
-        ? "Main Road, Sarubujjili • Srikakulam, Andhra Pradesh - 532458"
-        : "",
-      invoiceStudioSettings.show_phone
-        ? "Mobile: 9010014001"
-        : "",
-      invoiceStudioSettings.show_email
-        ? "Email: badri.nsv@gmail.com"
-        : "",
-    ].filter(Boolean);
+      const response = await fetch(
+        "/api/whatsapp/invoice-pdf",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...payload,
+            invoiceStudio: {
+              ...(payload.invoiceStudio || {}),
+              active_tab: mode,
+              thermal_width:
+                invoiceStudioSettings.thermal_width === 58
+                  ? 58
+                  : 80,
+              bold_text: true,
+              show_upi_qr:
+                Boolean(
+                  invoiceStudioSettings.show_upi_qr &&
+                    invoiceStudioSettings.upi_id.trim(),
+                ),
+            },
+          }),
+        },
+      );
 
-    const bankBlock =
-      invoiceStudioSettings.show_bank
-        ? `
-          <section class="payPanel">
-            <strong>Bank Details</strong>
-            <span>${invoiceStudioSettings.bank_name || "Bank name not configured"}</span>
-            ${
-              invoiceStudioSettings.account_number
-                ? `<span>A/C: ${invoiceStudioSettings.account_number}</span>`
-                : ""
-            }
-            ${
-              invoiceStudioSettings.ifsc_code
-                ? `<span>IFSC: ${invoiceStudioSettings.ifsc_code}</span>`
-                : ""
-            }
-          </section>
-        `
-        : "";
+      if (!response.ok) {
+        let message =
+          mode === "thermal"
+            ? "Unable to generate thermal receipt."
+            : "Unable to generate A4 invoice.";
 
-    const upiBlock =
-      invoiceStudioSettings.show_upi_qr
-        ? `
-          <section class="payPanel">
-            <strong>UPI Payment</strong>
-            <span>${invoiceStudioSettings.upi_id || "UPI ID not configured"}</span>
-          </section>
-        `
-        : "";
-
-    popup.document.write(`
-      <!doctype html>
-      <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>${sale.invoiceNumber}</title>
-        <style>
-          @page { size: A4; margin: 12mm; }
-          * { box-sizing: border-box; }
-          body {
-            margin: 0;
-            color: #202020;
-            font-family: Arial, sans-serif;
-            background: #fff;
-          }
-          .invoice {
-            min-height: 270mm;
-            display: flex;
-            flex-direction: column;
-          }
-          .brandHeader {
-            display: grid;
-            grid-template-columns: 1fr auto;
-            gap: 24px;
-            padding: 22px 24px;
-            border: 1px solid ${colors.accent};
-            border-radius: ${
-              invoiceStudioSettings.theme === "minimal"
-                ? "8px"
-                : "16px"
-            };
-            background: ${
-              invoiceStudioSettings.theme === "minimal"
-                ? "#fff"
-                : `linear-gradient(135deg, #03153F, ${colors.primary})`
-            };
-            color: ${
-              invoiceStudioSettings.theme === "minimal"
-                ? colors.primary
-                : "#fff"
-            };
-          }
-          .storeName {
-            margin: 0;
-            color: inherit;
-            font-size: 34px;
-            font-weight: 900;
-            letter-spacing: 1.2px;
-          }
-          .tagline {
-            margin: 4px 0 12px;
-            color: ${colors.accent};
-            font-size: 15px;
-            font-weight: 800;
-          }
-          .storeDetails {
-            margin: 0;
-            color: ${
-              invoiceStudioSettings.theme === "minimal"
-                ? "#5f6670"
-                : "rgba(255,255,255,.88)"
-            };
-            font-size: 12px;
-            line-height: 1.65;
-          }
-          .invoiceBadge {
-            min-width: 220px;
-            padding: 16px;
-            border: 1px solid ${colors.accent};
-            border-radius: 12px;
-            background: ${
-              invoiceStudioSettings.theme === "minimal"
-                ? colors.soft
-                : "rgba(255,255,255,.08)"
-            };
-          }
-          .invoiceBadge span,
-          .invoiceBadge strong {
-            display: block;
-          }
-          .invoiceBadge span {
-            color: ${colors.accent};
-            font-size: 10px;
-            font-weight: 800;
-            text-transform: uppercase;
-          }
-          .invoiceBadge strong {
-            margin-top: 5px;
-            font-size: 16px;
-          }
-          .invoiceBadge p {
-            margin: 8px 0 0;
-            font-size: 11px;
-            line-height: 1.5;
-          }
-          .infoGrid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-top: 16px;
-          }
-          .infoBox {
-            padding: 14px;
-            border: 1px solid #dfe4eb;
-            border-radius: 11px;
-            background: #fafbfc;
-          }
-          .infoBox span {
-            display: block;
-            color: #7b8491;
-            font-size: 9px;
-            font-weight: 800;
-            text-transform: uppercase;
-          }
-          .infoBox strong {
-            display: block;
-            margin-top: 5px;
-            color: ${colors.primary};
-            font-size: 13px;
-          }
-          .infoBox p {
-            margin: 5px 0 0;
-            font-size: 11px;
-            line-height: 1.5;
-          }
-          table {
-            width: 100%;
-            margin-top: 16px;
-            border-collapse: collapse;
-          }
-          th, td {
-            padding: 10px 9px;
-            border: 1px solid #dfe4eb;
-            text-align: left;
-            vertical-align: top;
-            font-size: 11px;
-          }
-          th {
-            background: ${colors.primary};
-            color: #fff;
-            font-size: 10px;
-            text-transform: uppercase;
-          }
-          td small {
-            display: block;
-            margin-top: 3px;
-            color: #7b8491;
-          }
-          .totalsWrap {
-            width: 360px;
-            margin: 18px 0 0 auto;
-            padding: 14px;
-            border: 1px solid #dfe4eb;
-            border-radius: 12px;
-            background: #fafbfc;
-          }
-          .totalLine {
-            display: flex;
-            justify-content: space-between;
-            gap: 16px;
-            padding: 7px 0;
-            border-bottom: 1px solid #e9edf2;
-            font-size: 11px;
-          }
-          .grandTotal {
-            margin-top: 6px;
-            padding: 12px;
-            border-radius: 9px;
-            background: ${colors.primary};
-            color: #fff;
-            font-size: 17px;
-            font-weight: 900;
-          }
-          .dueLine {
-            color: #B42318;
-            font-weight: 900;
-          }
-          .paymentGrid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 10px;
-            margin-top: 16px;
-          }
-          .payPanel {
-            padding: 12px;
-            border: 1px solid #dfe4eb;
-            border-radius: 10px;
-            background: ${colors.soft};
-            font-size: 10px;
-          }
-          .payPanel strong,
-          .payPanel span {
-            display: block;
-          }
-          .payPanel strong {
-            color: ${colors.primary};
-            margin-bottom: 5px;
-          }
-          .payPanel span {
-            color: #59616d;
-            margin-top: 3px;
-          }
-          .terms {
-            margin-top: 16px;
-            padding: 11px 13px;
-            border-radius: 10px;
-            background: #f7f8fa;
-            color: #667085;
-            font-size: 10px;
-            line-height: 1.5;
-          }
-          .footer {
-            margin-top: auto;
-            padding-top: 22px;
-            text-align: center;
-          }
-          .footerMessage {
-            padding: 14px;
-            border-top: 2px solid ${colors.accent};
-            color: ${colors.primary};
-            font-size: 13px;
-            font-weight: 800;
-          }
-          .footer small {
-            display: block;
-            margin-top: 6px;
-            color: #6f7782;
-            font-size: 10px;
-          }
-          @media print {
-            body {
-              print-color-adjust: exact;
-              -webkit-print-color-adjust: exact;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="invoice">
-          <header class="brandHeader">
-            <div>
-              ${
-                invoiceStudioSettings.show_logo
-                  ? `<div style="display:inline-grid;place-items:center;width:50px;height:50px;margin-bottom:8px;border:1px solid ${colors.accent};border-radius:14px;font-weight:900;color:${colors.accent};">NCS</div>`
-                  : ""
-              }
-              <h1 class="storeName">NEW CITY STYLE</h1>
-              <p class="tagline">Style for Every Family</p>
-              ${
-                contactLines.length > 0
-                  ? `<p class="storeDetails">${contactLines.join("<br/>")}</p>`
-                  : ""
-              }
-            </div>
-
-            <div class="invoiceBadge">
-              <span>Tax Invoice / Customer Bill</span>
-              <strong>${sale.invoiceNumber}</strong>
-              <p>${new Date(sale.completedAt).toLocaleString("en-IN")}</p>
-            </div>
-          </header>
-
-          <section class="infoGrid">
-            <div class="infoBox">
-              <span>Customer</span>
-              <strong>${sale.customerName || "Walk-in Customer"}</strong>
-              <p>${sale.customerPhone || "Mobile not provided"}</p>
-            </div>
-
-            <div class="infoBox">
-              <span>Payment</span>
-              <strong>${sale.paymentMethod.toUpperCase()}</strong>
-              <p>${sale.dueAmount > 0 ? "Credit / Due Bill" : "Paid Bill"}</p>
-            </div>
-          </section>
-
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Product / Variant</th>
-                <th>Qty</th>
-                <th>Rate</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-
-          <section class="totalsWrap">
-            <div class="totalLine"><span>Subtotal</span><strong>${formatCurrency(sale.subtotal)}</strong></div>
-            <div class="totalLine"><span>GST Included</span><strong>${formatCurrency(sale.taxAmount)}</strong></div>
-            <div class="totalLine"><span>Discount</span><strong>-${formatCurrency(sale.billDiscount)}</strong></div>
-            <div class="totalLine"><span>Reward Points Used</span><strong>${sale.rewardPointsUsed}</strong></div>
-            <div class="totalLine"><span>Reward Discount</span><strong>-${formatCurrency(sale.rewardDiscount)}</strong></div>
-            <div class="totalLine"><span>Round Off</span><strong>-${formatCurrency(sale.roundOff)}</strong></div>
-            <div class="totalLine grandTotal"><span>Total</span><strong>${formatCurrency(sale.totalAmount)}</strong></div>
-            <div class="totalLine"><span>Paid</span><strong>${formatCurrency(sale.paidAmount)}</strong></div>
-            <div class="totalLine dueLine"><span>Due</span><strong>${formatCurrency(sale.dueAmount)}</strong></div>
-            <div class="totalLine"><span>Points Earned</span><strong>${sale.rewardPointsEarned}</strong></div>
-            <div class="totalLine"><span>Reward Balance</span><strong>${sale.rewardClosingBalance}</strong></div>
-          </section>
-
-          ${
-            bankBlock || upiBlock
-              ? `<div class="paymentGrid">${upiBlock}${bankBlock}</div>`
-              : ""
-          }
-
-          ${
-            invoiceStudioSettings.show_terms &&
-            invoiceStudioSettings.terms_text.trim()
-              ? `<section class="terms">${invoiceStudioSettings.terms_text}</section>`
-              : ""
-          }
-
-          <footer class="footer">
-            <div class="footerMessage">${footerMessage}</div>
-            <small>NEW CITY STYLE — Style for Every Family</small>
-          </footer>
-        </div>
-
-        <script>
-          window.onload = function () {
-            window.print();
+        try {
+          const result = (await response.json()) as {
+            error?: string;
           };
-        </script>
-      </body>
-      </html>
-    `);
+          if (result.error) message = result.error;
+        } catch {
+          // Keep fallback.
+        }
 
-    popup.document.close();
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const frame = document.createElement("iframe");
+
+      frame.style.position = "fixed";
+      frame.style.right = "0";
+      frame.style.bottom = "0";
+      frame.style.width = "1px";
+      frame.style.height = "1px";
+      frame.style.border = "0";
+      frame.style.opacity = "0";
+      frame.src = objectUrl;
+
+      frame.onload = () => {
+        window.setTimeout(() => {
+          try {
+            frame.contentWindow?.focus();
+            frame.contentWindow?.print();
+          } finally {
+            window.setTimeout(() => {
+              frame.remove();
+              URL.revokeObjectURL(objectUrl);
+            }, 4000);
+          }
+        }, 700);
+      };
+
+      document.body.appendChild(frame);
+
+      showNotice(
+        mode === "thermal"
+          ? `${invoiceStudioSettings.thermal_width}mm receipt ready.`
+          : "A4 premium invoice ready.",
+        "success",
+      );
+    } catch (error) {
+      console.info(
+        "Unable to print canonical invoice:",
+        error,
+      );
+
+      showNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to print invoice.",
+        "error",
+      );
+    }
   }
 
-  function printCustomerInvoiceT82(sale: CompletedSale) {
-    const rows = buildCustomerInvoiceRows(sale, true);
-    const thermalWidth =
-      invoiceStudioSettings.thermal_width === 58 ? 58 : 80;
+  function printCustomerInvoiceA4(
+    sale: CompletedSale,
+  ) {
+    void printCanonicalInvoice(sale, "a4");
+  }
 
-    const contentWidth =
-      thermalWidth === 58 ? 48 : 66;
-
-    const marginLeft =
-      thermalWidth === 58 ? 4 : 4;
-
-    const marginRight =
-      thermalWidth === 58 ? 4 : 5;
-
-    const itemCount = Math.max(1, sale.items.length);
-    const receiptHeightMm = Math.min(
-      280,
-      Math.max(160, 145 + itemCount * 12),
-    );
-
-    const popup = window.open(
-      "",
-      "_blank",
-      thermalWidth === 58
-        ? "width=360,height=900"
-        : "width=430,height=900"
-    );
-
-    if (!popup) {
-      showNotice(
-        `Please allow popups to print the ${thermalWidth}mm receipt.`,
-        "error"
-      );
-      return;
-    }
-
-    const colors = getInvoiceThemeColors();
-    const footerMessage =
-      invoiceStudioSettings.footer_message.trim() ||
-      "Thank you for shopping with NEW CITY STYLE.";
-
-    const addressLines = [
-      invoiceStudioSettings.show_address
-        ? "Main Road, Sarubujjili"
-        : "",
-      invoiceStudioSettings.show_address
-        ? "Srikakulam, Andhra Pradesh - 532458"
-        : "",
-      invoiceStudioSettings.show_phone
-        ? "Mob: 9010014001"
-        : "",
-      invoiceStudioSettings.show_email
-        ? "badri.nsv@gmail.com"
-        : "",
-    ].filter(Boolean);
-
-    const paymentBlocks = [
-      invoiceStudioSettings.show_upi_qr
-        ? invoiceStudioSettings.upi_id
-          ? `UPI: ${invoiceStudioSettings.upi_id}`
-          : "UPI ID: configure in Invoice Studio"
-        : "",
-      invoiceStudioSettings.show_bank
-        ? [
-            invoiceStudioSettings.bank_name,
-            invoiceStudioSettings.account_number
-              ? `A/C ${invoiceStudioSettings.account_number}`
-              : "",
-            invoiceStudioSettings.ifsc_code
-              ? `IFSC ${invoiceStudioSettings.ifsc_code}`
-              : "",
-          ]
-            .filter(Boolean)
-            .join(" • ")
-        : "",
-    ].filter(Boolean);
-
-    const pageMargin = `2mm ${marginRight}mm 2mm ${marginLeft}mm`;
-
-    popup.document.write(`
-      <!doctype html>
-      <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>${sale.invoiceNumber}</title>
-        <style>
-          @page {
-            size: ${thermalWidth}mm ${receiptHeightMm}mm;
-            margin: ${pageMargin};
-          }
-          * { box-sizing: border-box; }
-          html, body {
-            width: ${contentWidth}mm;
-            max-width: ${contentWidth}mm;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background: #fff;
-            color: #000;
-            font-family: Arial, Helvetica, sans-serif;
-            font-weight: ${invoiceStudioSettings.bold_text ? "800" : "600"};
-          }
-          .receipt {
-            width: ${contentWidth}mm;
-            max-width: ${contentWidth}mm;
-            height: auto;
-            min-height: 0;
-            padding: 1mm 0 0;
-            overflow: hidden;
-          }
-          .center { text-align: center; }
-          .logo {
-            width: 13mm;
-            height: 13mm;
-            display: grid;
-            place-items: center;
-            margin: 0 auto 2mm;
-            border: 1px solid ${colors.accent};
-            border-radius: 3mm;
-            color: ${colors.primary};
-            font-size: 10px;
-            font-weight: 1000;
-          }
-          .storeName {
-            margin: 0;
-            font-size: ${thermalWidth === 58 ? "17px" : "22px"};
-            font-weight: 1000;
-            letter-spacing: .6px;
-            line-height: 1.05;
-          }
-          .tagline {
-            margin: 2px 0 4px;
-            font-size: ${thermalWidth === 58 ? "9px" : "12px"};
-            font-weight: 900;
-            color: ${
-              invoiceStudioSettings.theme === "minimal"
-                ? "#000"
-                : colors.primary
-            };
-          }
-          .address {
-            margin: 0;
-            font-size: ${thermalWidth === 58 ? "8px" : "9.5px"};
-            font-weight: 700;
-            line-height: 1.35;
-          }
-          .divider {
-            margin: 4px 0;
-            border-top: ${
-              invoiceStudioSettings.theme === "counter"
-                ? `2px solid ${colors.primary}`
-                : "1px dashed #000"
-            };
-          }
-          .meta {
-            width: 100%;
-            font-size: ${thermalWidth === 58 ? "8.5px" : "9.5px"};
-            font-weight: 800;
-            line-height: 1.4;
-          }
-          .metaRow,
-          .receiptItemLine,
-          .totalRow {
-            width: 100%;
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            align-items: start;
-            gap: 5px;
-          }
-          .metaRow span,
-          .receiptItemLine span,
-          .totalRow span {
-            min-width: 0;
-            overflow-wrap: anywhere;
-          }
-          .metaRow strong,
-          .receiptItemLine strong,
-          .totalRow strong {
-            max-width: ${thermalWidth === 58 ? "27mm" : "36mm"};
-            text-align: right;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-          }
-          .receiptItem {
-            padding: 3px 0;
-            border-bottom: 1px dotted #000;
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-          .receiptItemName span {
-            display: block;
-            max-width: 100%;
-            font-size: ${thermalWidth === 58 ? "10px" : "12px"};
-            font-weight: 1000;
-            overflow-wrap: anywhere;
-          }
-          .receiptItemName small {
-            display: block;
-            max-width: 100%;
-            margin-top: 2px;
-            font-size: ${thermalWidth === 58 ? "7.5px" : "9px"};
-            font-weight: 800;
-            overflow-wrap: anywhere;
-          }
-          .receiptItemLine {
-            margin-top: 3px;
-            font-size: ${thermalWidth === 58 ? "8.5px" : "10px"};
-            font-weight: 900;
-          }
-          .totals {
-            width: 100%;
-            margin-top: 4px;
-            font-size: ${thermalWidth === 58 ? "8.5px" : "9.8px"};
-            font-weight: 900;
-            line-height: 1.45;
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-          .grand {
-            padding: 5px 0;
-            border-top: 2px solid #000;
-            border-bottom: 2px solid #000;
-            font-size: ${thermalWidth === 58 ? "12px" : "14px"};
-            font-weight: 1000;
-          }
-          .due {
-            font-weight: 1000;
-          }
-          .paymentInfo,
-          .terms,
-          .thanks {
-            margin-top: 6px;
-            font-size: ${thermalWidth === 58 ? "8px" : "9px"};
-            font-weight: 800;
-            line-height: 1.4;
-            text-align: center;
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-          .terms {
-            padding: 4px 0;
-            border-top: 1px dashed #000;
-          }
-          .footer {
-            margin-top: 4px;
-            font-size: ${thermalWidth === 58 ? "7px" : "8.5px"};
-            font-weight: 900;
-            line-height: 1.3;
-            text-align: center;
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-
-          @media print {
-            html, body, .receipt {
-              width: ${contentWidth}mm !important;
-              max-width: ${contentWidth}mm !important;
-              min-height: 0 !important;
-            }
-            html, body {
-              height: auto !important;
-              overflow: hidden !important;
-            }
-            .receipt {
-              break-after: avoid-page !important;
-              page-break-after: avoid !important;
-            }
-            body {
-              print-color-adjust: exact;
-              -webkit-print-color-adjust: exact;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="receipt">
-          <div class="center">
-            ${
-              invoiceStudioSettings.show_logo
-                ? `<div class="logo">NCS</div>`
-                : ""
-            }
-            <h1 class="storeName">NEW CITY STYLE</h1>
-            <p class="tagline">Style for Every Family</p>
-            ${
-              addressLines.length > 0
-                ? `<p class="address">${addressLines.join("<br/>")}</p>`
-                : ""
-            }
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="meta">
-            <div class="metaRow"><span>Invoice</span><strong>${sale.invoiceNumber}</strong></div>
-            <div class="metaRow"><span>Date</span><strong>${new Date(sale.completedAt).toLocaleString("en-IN")}</strong></div>
-            <div class="metaRow"><span>Customer</span><strong>${sale.customerName || "Walk-in"}</strong></div>
-            ${
-              sale.customerPhone
-                ? `<div class="metaRow"><span>Mobile</span><strong>${sale.customerPhone}</strong></div>`
-                : ""
-            }
-            <div class="metaRow"><span>Payment</span><strong>${sale.paymentMethod.toUpperCase()}</strong></div>
-          </div>
-
-          <div class="divider"></div>
-
-          ${rows}
-
-          <div class="totals">
-            <div class="totalRow"><span>Subtotal</span><strong>${formatCurrency(sale.subtotal)}</strong></div>
-            <div class="totalRow"><span>GST Included</span><strong>${formatCurrency(sale.taxAmount)}</strong></div>
-            <div class="totalRow"><span>Discount</span><strong>-${formatCurrency(sale.billDiscount)}</strong></div>
-            <div class="totalRow"><span>Reward Used</span><strong>${sale.rewardPointsUsed}</strong></div>
-            <div class="totalRow"><span>Reward Disc.</span><strong>-${formatCurrency(sale.rewardDiscount)}</strong></div>
-            <div class="totalRow"><span>Round Off</span><strong>-${formatCurrency(sale.roundOff)}</strong></div>
-            <div class="totalRow grand"><span>TOTAL</span><strong>${formatCurrency(sale.totalAmount)}</strong></div>
-            <div class="totalRow"><span>Paid</span><strong>${formatCurrency(sale.paidAmount)}</strong></div>
-            <div class="totalRow due"><span>Due</span><strong>${formatCurrency(sale.dueAmount)}</strong></div>
-            <div class="totalRow"><span>Points Earned</span><strong>${sale.rewardPointsEarned}</strong></div>
-            <div class="totalRow"><span>Reward Balance</span><strong>${sale.rewardClosingBalance}</strong></div>
-          </div>
-
-          ${
-            paymentBlocks.length > 0
-              ? `<div class="paymentInfo">${paymentBlocks.join("<br/>")}</div>`
-              : ""
-          }
-
-          ${
-            invoiceStudioSettings.show_terms &&
-            invoiceStudioSettings.terms_text.trim()
-              ? `<div class="terms">${invoiceStudioSettings.terms_text}</div>`
-              : ""
-          }
-
-          <div class="divider"></div>
-
-          <div class="thanks">
-            ${footerMessage}
-          </div>
-
-          <div class="footer">
-            NEW CITY STYLE — Style for Every Family
-            ${
-              invoiceStudioSettings.copies > 1
-                ? `<br/>Studio copies setting: ${invoiceStudioSettings.copies}`
-                : ""
-            }
-          </div>
-        </div>
-
-        <script>
-          window.onload = function () {
-            window.print();
-          };
-        </script>
-      </body>
-      </html>
-    `);
-
-    popup.document.close();
+  function printCustomerInvoiceT82(
+    sale: CompletedSale,
+  ) {
+    void printCanonicalInvoice(sale, "thermal");
   }
 
   function openInvoiceStudioFromPos() {

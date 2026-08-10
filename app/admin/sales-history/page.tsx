@@ -167,6 +167,11 @@ export default function SalesHistoryPage() {
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [whatsAppSendingSaleId, setWhatsAppSendingSaleId] =
     useState<string | null>(null);
+  const [duplicateAction, setDuplicateAction] =
+    useState<"download" | "print" | "whatsapp" | null>(null);
+
+  const SALES_PER_PAGE = 10;
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnType, setReturnType] = useState<ReturnType>("refund");
@@ -395,6 +400,26 @@ export default function SalesHistoryPage() {
       return true;
     });
   }, [sales, search, payment, status, period]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filtered.length / SALES_PER_PAGE)
+  );
+
+  const pagedSales = useMemo(() => {
+    const start = (currentPage - 1) * SALES_PER_PAGE;
+    return filtered.slice(start, start + SALES_PER_PAGE);
+  }, [filtered, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, payment, status, period]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const stats = useMemo(() => {
     const base = filtered.reduce(
@@ -1377,6 +1402,266 @@ export default function SalesHistoryPage() {
     }
   }
 
+  async function buildDuplicateInvoicePayload(
+    sale: SaleDetails,
+    sendWhatsApp: boolean,
+  ) {
+    const digits = (sale.customer_phone || "").replace(/\D/g, "");
+    const recipientPhone =
+      digits.length === 10 ? `91${digits}` : digits;
+
+    let invoiceStudio: Record<string, unknown> | null = null;
+
+    try {
+      const { data } = await supabase
+        .from("ncs_invoice_settings")
+        .select("*")
+        .eq("id", "default")
+        .maybeSingle();
+
+      if (data) {
+        invoiceStudio = data as Record<string, unknown>;
+      }
+    } catch (error) {
+      console.info(
+        "Duplicate invoice will use route defaults:",
+        error,
+      );
+    }
+
+    return {
+      to: recipientPhone,
+      sendWhatsApp,
+      duplicateCopy: true,
+      customerName:
+        sale.customer_name || "Walk-in Customer",
+      customerPhone: sale.customer_phone || "",
+      billNumber:
+        sale.invoice_number || `POS-${sale.id}`,
+      billDate: sale.created_at,
+      paymentMethod: label(sale.payment_method),
+      subtotal: num(sale.subtotal),
+      discountAmount: num(sale.bill_discount),
+      taxAmount: num(sale.tax_amount),
+      roundOff: num(sale.round_off),
+      billAmount: num(sale.total_amount),
+      paidAmount: num(sale.paid_amount),
+      dueAmount: num(sale.due_amount),
+      whatsappLanguage: "telugu",
+      items: sale.items.map((item) => ({
+        name: item.product_name || "Product",
+        quantity: num(item.quantity),
+        mrp: num(item.unit_price),
+        price: num(item.unit_price),
+        total:
+          num(item.line_total) ||
+          num(item.unit_price) * num(item.quantity),
+        size: item.size || "",
+        color: item.color || "",
+        barcode: item.barcode || "",
+      })),
+      invoiceStudio,
+    };
+  }
+
+  async function fetchDuplicateInvoicePdf(
+    sale: SaleDetails,
+  ) {
+    const response = await fetch(
+      "/api/whatsapp/invoice-pdf",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(
+          await buildDuplicateInvoicePayload(
+            sale,
+            false,
+          ),
+        ),
+      },
+    );
+
+    if (!response.ok) {
+      let message =
+        "Unable to generate duplicate invoice PDF.";
+
+      try {
+        const result = (await response.json()) as {
+          error?: string;
+        };
+        if (result.error) message = result.error;
+      } catch {
+        // Use fallback message.
+      }
+
+      throw new Error(message);
+    }
+
+    return await response.blob();
+  }
+
+  async function downloadDuplicateInvoice(
+    sale: SaleDetails,
+  ) {
+    if (duplicateAction) return;
+    setDuplicateAction("download");
+    setNotice("");
+
+    try {
+      const blob = await fetchDuplicateInvoicePdf(sale);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const billNo =
+        sale.invoice_number || `POS-${sale.id}`;
+
+      link.href = url;
+      link.download = `${billNo}-DUPLICATE.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.setTimeout(
+        () => URL.revokeObjectURL(url),
+        2000,
+      );
+
+      setNotice("Duplicate PDF downloaded.");
+      window.setTimeout(() => setNotice(""), 3000);
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to download duplicate PDF.",
+      );
+      window.setTimeout(() => setNotice(""), 5000);
+    } finally {
+      setDuplicateAction(null);
+    }
+  }
+
+  async function printDuplicateInvoice(
+    sale: SaleDetails,
+  ) {
+    if (duplicateAction) return;
+    setDuplicateAction("print");
+    setNotice("");
+
+    try {
+      const blob = await fetchDuplicateInvoicePdf(sale);
+      const url = URL.createObjectURL(blob);
+      const frame = document.createElement("iframe");
+
+      frame.style.position = "fixed";
+      frame.style.right = "0";
+      frame.style.bottom = "0";
+      frame.style.width = "1px";
+      frame.style.height = "1px";
+      frame.style.border = "0";
+      frame.style.opacity = "0";
+      frame.src = url;
+
+      frame.onload = () => {
+        window.setTimeout(() => {
+          try {
+            frame.contentWindow?.focus();
+            frame.contentWindow?.print();
+          } finally {
+            window.setTimeout(() => {
+              frame.remove();
+              URL.revokeObjectURL(url);
+            }, 3000);
+          }
+        }, 500);
+      };
+
+      document.body.appendChild(frame);
+      setNotice("Duplicate copy ready for print.");
+      window.setTimeout(() => setNotice(""), 3000);
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to print duplicate invoice.",
+      );
+      window.setTimeout(() => setNotice(""), 5000);
+    } finally {
+      setDuplicateAction(null);
+    }
+  }
+
+  async function sendDuplicateInvoiceWhatsApp(
+    sale: SaleDetails,
+  ) {
+    if (duplicateAction) return;
+
+    const digits = (sale.customer_phone || "").replace(/\D/g, "");
+    const recipientPhone =
+      digits.length === 10 ? `91${digits}` : digits;
+
+    if (
+      recipientPhone.length < 10 ||
+      recipientPhone.length > 15
+    ) {
+      setNotice(
+        "A valid customer mobile number is required for duplicate WhatsApp PDF.",
+      );
+      window.setTimeout(() => setNotice(""), 4000);
+      return;
+    }
+
+    setDuplicateAction("whatsapp");
+    setNotice("");
+
+    try {
+      const response = await fetch(
+        "/api/whatsapp/invoice-pdf",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(
+            await buildDuplicateInvoicePayload(
+              sale,
+              true,
+            ),
+          ),
+        },
+      );
+
+      const result = (await response.json()) as {
+        success?: boolean;
+        whatsappPdfSent?: boolean;
+        error?: string;
+      };
+
+      if (
+        !response.ok ||
+        result.success !== true ||
+        result.whatsappPdfSent !== true
+      ) {
+        throw new Error(
+          result.error ||
+            "Duplicate WhatsApp PDF could not be sent.",
+        );
+      }
+
+      setNotice("Duplicate PDF sent on WhatsApp ✓");
+      window.setTimeout(() => setNotice(""), 4000);
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to send duplicate WhatsApp PDF.",
+      );
+      window.setTimeout(() => setNotice(""), 5000);
+    } finally {
+      setDuplicateAction(null);
+    }
+  }
+
   async function sendSaleWhatsAppPdf(sale: SaleDetails) {
     if (whatsAppSendingSaleId !== null) return;
 
@@ -1640,8 +1925,9 @@ export default function SalesHistoryPage() {
           <p>Complete a POS sale or change the filters.</p>
         </section>
       ) : (
-        <section className="saleList">
-          {filtered.map((sale) => {
+        <>
+          <section className="saleList">
+          {pagedSales.map((sale) => {
             const due = num(sale.due_amount);
             const cancelled = norm(sale.sale_status) === "cancelled";
 
@@ -1681,6 +1967,90 @@ export default function SalesHistoryPage() {
             );
           })}
         </section>
+
+        {filtered.length > SALES_PER_PAGE && (
+          <section className="salesPagination">
+            <div className="pageSummary">
+              Showing{" "}
+              {(currentPage - 1) * SALES_PER_PAGE + 1}–
+              {Math.min(
+                currentPage * SALES_PER_PAGE,
+                filtered.length
+              )}{" "}
+              of {filtered.length} bills
+            </div>
+
+            <div className="pageButtons">
+              <button
+                type="button"
+                disabled={currentPage === 1}
+                onClick={() =>
+                  setCurrentPage((page) =>
+                    Math.max(1, page - 1)
+                  )
+                }
+              >
+                Previous
+              </button>
+
+              {Array.from(
+                { length: totalPages },
+                (_, index) => index + 1
+              )
+                .filter(
+                  (page) =>
+                    page === 1 ||
+                    page === totalPages ||
+                    Math.abs(page - currentPage) <= 1
+                )
+                .map((page, index, visiblePages) => {
+                  const previousPage =
+                    visiblePages[index - 1];
+
+                  return (
+                    <span
+                      key={page}
+                      className="pageNumberWrap"
+                    >
+                      {previousPage &&
+                        page - previousPage > 1 && (
+                          <span className="pageEllipsis">
+                            …
+                          </span>
+                        )}
+
+                      <button
+                        type="button"
+                        className={
+                          currentPage === page
+                            ? "active"
+                            : ""
+                        }
+                        onClick={() =>
+                          setCurrentPage(page)
+                        }
+                      >
+                        {page}
+                      </button>
+                    </span>
+                  );
+                })}
+
+              <button
+                type="button"
+                disabled={currentPage === totalPages}
+                onClick={() =>
+                  setCurrentPage((page) =>
+                    Math.min(totalPages, page + 1)
+                  )
+                }
+              >
+                Next
+              </button>
+            </div>
+          </section>
+        )}
+        </>
       )}
 
       {selected && (
@@ -1791,6 +2161,50 @@ export default function SalesHistoryPage() {
                     ? "WhatsApp PDF + Due"
                     : "WhatsApp PDF"}
               </button>
+
+              <div className="duplicateActions">
+                <span>DUPLICATE BILL</span>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    void downloadDuplicateInvoice(selected)
+                  }
+                  disabled={duplicateAction !== null}
+                >
+                  {duplicateAction === "download"
+                    ? "Preparing..."
+                    : "Download PDF"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    void printDuplicateInvoice(selected)
+                  }
+                  disabled={duplicateAction !== null}
+                >
+                  {duplicateAction === "print"
+                    ? "Preparing..."
+                    : "Print Duplicate"}
+                </button>
+
+                <button
+                  type="button"
+                  className="duplicateWhatsApp"
+                  onClick={() =>
+                    void sendDuplicateInvoiceWhatsApp(selected)
+                  }
+                  disabled={
+                    duplicateAction !== null ||
+                    norm(selected.sale_status) === "cancelled"
+                  }
+                >
+                  {duplicateAction === "whatsapp"
+                    ? "Sending..."
+                    : "WhatsApp Duplicate"}
+                </button>
+              </div>
 
               <button
                 className="deleteAction"
@@ -2606,6 +3020,20 @@ export default function SalesHistoryPage() {
         @keyframes returnModalEnter{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}@keyframes returnPulse{0%,100%{transform:translateX(0)}50%{transform:translateX(-3px)}}@keyframes returnGlow{0%,100%{box-shadow:0 0 0 0 rgba(212,175,55,.25)}50%{box-shadow:0 0 0 8px rgba(212,175,55,0)}}@keyframes salesStatRise{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}@keyframes salesStatShine{0%,62%{left:-42%;opacity:0}68%{opacity:.7}100%{left:126%;opacity:0}}
 @media(max-width:1100px){.stats{grid-template-columns:repeat(3,1fr)}.filters{grid-template-columns:1fr 1fr}.searchBox{grid-column:1/-1}}
         @media(max-width:700px){.salesPage{padding:12px}.hero{align-items:flex-start}.hero h1{font-size:29px}.stats{grid-template-columns:1fr 1fr}.filters{grid-template-columns:1fr}.searchBox{grid-column:auto}.saleTop{display:block}.badges{margin-top:12px}.amounts{grid-template-columns:1fr 1fr}.customerGrid{grid-template-columns:1fr}.items article{grid-template-columns:1fr auto}.items b{grid-column:2}.returnOverlay{padding:8px}.returnModal{max-height:97vh;border-radius:20px}.returnTypeGrid{grid-template-columns:1fr}.returnItem{grid-template-columns:1fr}.returnQtyControl{justify-content:flex-start}.returnFormGrid{grid-template-columns:1fr}.returnFormGrid .fullWidth{grid-column:auto}.returnSummary{grid-template-columns:1fr}.exchangeProductGrid{grid-template-columns:1fr}.exchangeSelectedList article{grid-template-columns:1fr 1fr}.exchangeSelectedInfo{grid-column:1/-1}.exchangeLineTotal{align-self:center}.exchangeSettlement{grid-template-columns:1fr}.returnFooter{display:grid;grid-template-columns:1fr}.returnFooter button{width:100%}.paymentCompare{grid-template-columns:1fr}.paymentEditModal>footer{display:grid;grid-template-columns:1fr}.paymentEditModal>footer button{width:100%}}
+        .salesPagination{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:18px 0 8px;padding:14px 16px;border:1px solid rgba(10,46,115,.10);border-radius:16px;background:rgba(255,255,255,.94);box-shadow:0 10px 26px rgba(3,21,63,.06)}
+        .pageSummary{color:#6b7280;font-size:11px;font-weight:800}
+        .pageButtons{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+        .pageButtons button{min-width:36px;height:36px;padding:0 12px;border:1px solid rgba(10,46,115,.14);border-radius:10px;background:#fff;color:#0A2E73;font-size:11px;font-weight:900;cursor:pointer}
+        .pageButtons button:hover:not(:disabled){border-color:rgba(212,175,55,.65);box-shadow:0 6px 14px rgba(10,46,115,.08)}
+        .pageButtons button.active{background:linear-gradient(135deg,#03153F,#0A2E73);color:#fff;border-color:#D4AF37}
+        .pageButtons button:disabled{opacity:.42;cursor:not-allowed}
+        .pageNumberWrap{display:flex;align-items:center;gap:7px}
+        .pageEllipsis{color:#9ca3af;font-weight:900;padding:0 2px}
+        .duplicateActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border:1px solid rgba(212,175,55,.5);border-radius:14px;background:linear-gradient(135deg,#fffdf5,#f7f9fd)}
+        .duplicateActions>span{font-size:9px;font-weight:950;letter-spacing:.11em;color:#8a6b00;margin-right:2px}
+        .duplicateActions button{border:1px solid rgba(10,46,115,.16);border-radius:10px;padding:10px 12px;background:#fff;color:${BLUE};font-size:11px;font-weight:900;cursor:pointer}
+        .duplicateActions button:disabled{opacity:.55;cursor:not-allowed}
+        .duplicateActions .duplicateWhatsApp{background:#159447;color:#fff;border-color:#159447}
       `}</style>
     </main>
   );
