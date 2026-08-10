@@ -8,10 +8,91 @@ const ADMIN_EMAIL = "badri.nsv@gmail.com";
 const OFFLINE_PIN_HASH_KEY = "ncs_offline_pos_pin_hash_v1";
 const OFFLINE_PIN_SALT_KEY = "ncs_offline_pos_pin_salt_v1";
 const OFFLINE_POS_SESSION_KEY = "ncs_offline_pos_session_v1";
+const OFFLINE_POS_TRUST_KEY = "ncs_offline_pos_trusted_access_v1";
+const OFFLINE_TRUST_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 const CANONICAL_PRODUCTION_HOST = "www.newcitystyle.store";
 
 function isBrowserOnline() {
   return typeof navigator === "undefined" ? true : navigator.onLine;
+}
+
+function withTimeout<T>(
+  promise: PromiseLike<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+
+    Promise.resolve(promise).then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+function rememberTrustedOfflineAccess() {
+  if (typeof window === "undefined") return;
+
+  const payload = {
+    unlockedAt: new Date().toISOString(),
+    expiresAt: Date.now() + OFFLINE_TRUST_DURATION_MS,
+    access: "pos-only",
+  };
+
+  try {
+    window.sessionStorage.setItem(
+      OFFLINE_POS_SESSION_KEY,
+      JSON.stringify(payload),
+    );
+    window.localStorage.setItem(
+      OFFLINE_POS_TRUST_KEY,
+      JSON.stringify(payload),
+    );
+  } catch (error) {
+    console.info("Unable to remember trusted Offline POS access:", error);
+  }
+}
+
+function restoreTrustedOfflineAccess() {
+  if (typeof window === "undefined") return false;
+
+  try {
+    const saved = window.localStorage.getItem(OFFLINE_POS_TRUST_KEY);
+
+    if (!saved) return false;
+
+    const parsed = JSON.parse(saved) as {
+      expiresAt?: number;
+      access?: string;
+    };
+
+    if (
+      parsed.access !== "pos-only" ||
+      !parsed.expiresAt ||
+      parsed.expiresAt <= Date.now()
+    ) {
+      window.localStorage.removeItem(OFFLINE_POS_TRUST_KEY);
+      return false;
+    }
+
+    window.sessionStorage.setItem(
+      OFFLINE_POS_SESSION_KEY,
+      saved,
+    );
+
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function bytesToHex(bytes: Uint8Array) {
@@ -73,8 +154,11 @@ async function cacheOfflineShellNow() {
   }
 
   try {
-    const registration =
-      await navigator.serviceWorker.ready;
+    const registration = await withTimeout(
+      navigator.serviceWorker.ready,
+      2500,
+      "Service worker was not ready in time.",
+    );
 
     const worker =
       registration.active ||
@@ -131,29 +215,34 @@ export default function AdminLoginPage() {
   }, []);
 
   async function checkExistingSession() {
+    if (!isBrowserOnline()) {
+      setIsOnline(false);
+      setOfflinePinConfigured(hasOfflinePinConfigured());
+
+      if (restoreTrustedOfflineAccess()) {
+        window.location.replace("/admin/pos");
+        return;
+      }
+
+      setCheckingSession(false);
+      return;
+    }
+
     try {
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await withTimeout(
+        supabase.auth.getSession(),
+        5000,
+        "Session check timed out.",
+      );
 
       const sessionEmail =
         session?.user?.email?.trim().toLowerCase() || "";
 
       if (session?.user && sessionEmail === ADMIN_EMAIL) {
-        if (isBrowserOnline()) {
-          const pinReady =
-            await ensureOfflinePinConfigured();
-
-          if (!pinReady) {
-            setErrorMessage(
-              "Create the Offline POS PIN once to finish trusted-computer setup.",
-            );
-            return;
-          }
-
-          await cacheOfflineShellNow();
-        }
-
+        rememberTrustedOfflineAccess();
+        void cacheOfflineShellNow();
         router.replace("/admin/dashboard");
         return;
       }
@@ -162,9 +251,7 @@ export default function AdminLoginPage() {
         await supabase.auth.signOut({ scope: "local" });
       }
     } catch (error) {
-      if (isBrowserOnline()) {
-        console.error("Admin session check error:", error);
-      }
+      console.info("Admin session check did not complete:", error);
     } finally {
       setCheckingSession(false);
     }
@@ -234,11 +321,33 @@ export default function AdminLoginPage() {
 
     setOfflinePinConfigured(true);
 
+    try {
+      if ("storage" in navigator && "persist" in navigator.storage) {
+        await navigator.storage.persist();
+      }
+    } catch (error) {
+      console.info("Persistent browser storage request was skipped:", error);
+    }
+
     alert(
-      "Offline POS PIN saved permanently on this trusted computer.",
+      "Offline POS PIN saved on this trusted computer. It will not be requested during every online login.",
     );
 
     return true;
+  }
+
+  async function handleConfigureOfflinePin() {
+    setErrorMessage("");
+
+    if (!isBrowserOnline()) {
+      setErrorMessage(
+        "Connect to the internet once to set or change the Offline POS PIN.",
+      );
+      return;
+    }
+
+    await ensureOfflinePinConfigured();
+    setOfflinePinConfigured(hasOfflinePinConfigured());
   }
 
   async function handleOfflineUnlock() {
@@ -272,14 +381,7 @@ export default function AdminLoginPage() {
         throw new Error("Offline POS PIN is incorrect.");
       }
 
-      window.sessionStorage.setItem(
-        OFFLINE_POS_SESSION_KEY,
-        JSON.stringify({
-          unlockedAt: new Date().toISOString(),
-          access: "pos-only",
-        }),
-      );
-
+      rememberTrustedOfflineAccess();
       window.location.replace("/admin/pos");
     } catch (error) {
       setErrorMessage(
@@ -301,6 +403,7 @@ export default function AdminLoginPage() {
 
     window.localStorage.removeItem(OFFLINE_PIN_HASH_KEY);
     window.localStorage.removeItem(OFFLINE_PIN_SALT_KEY);
+    window.localStorage.removeItem(OFFLINE_POS_TRUST_KEY);
     window.sessionStorage.removeItem(OFFLINE_POS_SESSION_KEY);
     setOfflinePinConfigured(false);
     setOfflinePin("");
@@ -348,11 +451,14 @@ export default function AdminLoginPage() {
     setSubmitting(true);
 
     try {
-      const { data, error } =
-        await supabase.auth.signInWithPassword({
+      const { data, error } = await withTimeout(
+        supabase.auth.signInWithPassword({
           email: cleanEmail,
           password,
-        });
+        }),
+        12000,
+        "Login request timed out. Please check the connection and try again.",
+      );
 
       if (error) {
         throw error;
@@ -369,21 +475,9 @@ export default function AdminLoginPage() {
         );
       }
 
-      const pinReady =
-        await ensureOfflinePinConfigured();
+      rememberTrustedOfflineAccess();
+      void cacheOfflineShellNow();
 
-      if (!pinReady) {
-        setErrorMessage(
-          "Offline POS PIN setup was not completed. Create it once so billing can open without internet.",
-        );
-        return;
-      }
-
-      await cacheOfflineShellNow();
-
-      window.sessionStorage.removeItem(
-        OFFLINE_POS_SESSION_KEY,
-      );
       window.location.replace("/admin/dashboard");
     } catch (error) {
       console.error("Admin password login error:", error);
@@ -405,13 +499,14 @@ export default function AdminLoginPage() {
         );
       } else if (
         message.toLowerCase().includes("failed to fetch") ||
-        message.toLowerCase().includes("network")
+        message.toLowerCase().includes("network") ||
+        message.toLowerCase().includes("timed out")
       ) {
         setIsOnline(false);
         setErrorMessage(
           offlinePinConfigured
             ? "Internet is unavailable. Unlock Offline POS with your PIN below."
-            : "Internet is unavailable. Connect once and login to create an Offline POS PIN.",
+            : "Internet is unavailable. Connect once to authenticate this trusted computer, then Offline POS will be available.",
         );
       } else {
         setErrorMessage(message);
@@ -665,15 +760,28 @@ export default function AdminLoginPage() {
             <div>
               <strong>
                 {offlinePinConfigured
-                  ? "Unlock Billing / POS"
-                  : "Offline PIN Not Configured"}
+                  ? "Offline Billing Ready"
+                  : "Trusted Offline Billing"}
               </strong>
               <p>
                 {offlinePinConfigured
-                  ? "Use this only when internet is unavailable. Access is limited to Billing / POS."
-                  : "Login online once on this computer to create your Offline POS PIN."}
+                  ? "Your PIN is saved on this computer. Normal online login will not ask you to set it again."
+                  : "After a successful online login, this trusted computer can reopen POS offline for up to 30 days. You can also set a PIN as a backup."}
               </p>
             </div>
+
+            {isOnline && (
+              <button
+                type="button"
+                className="configurePinButton"
+                onClick={() => void handleConfigureOfflinePin()}
+                disabled={submitting || offlineUnlocking}
+              >
+                {offlinePinConfigured
+                  ? "Change / Reset Offline PIN"
+                  : "Set Offline PIN (Optional Backup)"}
+              </button>
+            )}
 
             {offlinePinConfigured && (
               <>
@@ -724,7 +832,7 @@ export default function AdminLoginPage() {
                   onClick={forgetOfflinePin}
                   disabled={offlineUnlocking}
                 >
-                  Remove Offline PIN
+                  Remove Saved Offline PIN
                 </button>
               </>
             )}
@@ -1093,6 +1201,7 @@ export default function AdminLoginPage() {
         }
 
         .offlineUnlockButton,
+        .configurePinButton,
         .forgetPinButton {
           width: 100%;
           min-height: 44px;
@@ -1105,6 +1214,13 @@ export default function AdminLoginPage() {
           border: 0;
           background: linear-gradient(135deg, #d4af37, #f1d26a);
           color: #0a2e73;
+        }
+
+        .configurePinButton {
+          border: 1px solid #d4af37;
+          background: #ffffff;
+          color: #0a2e73;
+          font-size: 10px;
         }
 
         .forgetPinButton {
