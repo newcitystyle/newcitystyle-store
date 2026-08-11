@@ -1,10 +1,87 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 const currentYear = 2026;
 
+type FooterBranding = {
+  facebookUrl: string;
+  instagramUrl: string;
+  youtubeUrl: string;
+  twitterUrl: string;
+  whatsappNumber: string;
+  showFacebookIcon: boolean;
+  showInstagramIcon: boolean;
+  showYoutubeIcon: boolean;
+  showTwitterIcon: boolean;
+  showWhatsappButton: boolean;
+};
+
+const DEFAULT_FOOTER_BRANDING: FooterBranding = {
+  facebookUrl: "",
+  instagramUrl: "",
+  youtubeUrl: "",
+  twitterUrl: "",
+  whatsappNumber: "919010014001",
+  showFacebookIcon: true,
+  showInstagramIcon: true,
+  showYoutubeIcon: true,
+  showTwitterIcon: true,
+  showWhatsappButton: true,
+};
+
+function normalizeWhatsappNumber(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return digits.length === 10 ? `91${digits}` : digits;
+}
+
 export default function Footer() {
+  const [branding, setBranding] = useState<FooterBranding>(
+    DEFAULT_FOOTER_BRANDING
+  );
+
+  useEffect(() => {
+    loadFooterBranding();
+  }, []);
+
+  async function loadFooterBranding() {
+    try {
+      const { data, error } = await supabase
+        .from("branding_settings")
+        .select(
+          "facebook_url, instagram_url, youtube_url, twitter_url, whatsapp_number, show_facebook_icon, show_instagram_icon, show_youtube_icon, show_twitter_icon, show_whatsapp_button"
+        )
+        .order("id", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) return;
+
+      setBranding({
+        facebookUrl: String(data.facebook_url || "").trim(),
+        instagramUrl: String(data.instagram_url || "").trim(),
+        youtubeUrl: String(data.youtube_url || "").trim(),
+        twitterUrl: String(data.twitter_url || "").trim(),
+        whatsappNumber:
+          normalizeWhatsappNumber(String(data.whatsapp_number || "")) ||
+          DEFAULT_FOOTER_BRANDING.whatsappNumber,
+        showFacebookIcon: data.show_facebook_icon ?? true,
+        showInstagramIcon: data.show_instagram_icon ?? true,
+        showYoutubeIcon: data.show_youtube_icon ?? true,
+        showTwitterIcon: data.show_twitter_icon ?? true,
+        showWhatsappButton: data.show_whatsapp_button ?? true,
+      });
+    } catch (error) {
+      console.error("Footer branding load error:", error);
+    }
+  }
+
+  const safeWhatsappNumber =
+    branding.whatsappNumber || DEFAULT_FOOTER_BRANDING.whatsappNumber;
+
   return (
     <footer className="footer">
       <div className="topGlow" />
@@ -143,21 +220,60 @@ export default function Footer() {
             </form>
 
             <div className="socialLinks">
-              <a href="#" aria-label="Facebook">
-                f
-              </a>
+              {branding.showFacebookIcon && branding.facebookUrl && (
+                <a
+                  href={branding.facebookUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Facebook"
+                >
+                  f
+                </a>
+              )}
 
-              <a href="#" aria-label="Instagram">
-                ◎
-              </a>
+              {branding.showInstagramIcon && branding.instagramUrl && (
+                <a
+                  href={branding.instagramUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Instagram"
+                >
+                  ◎
+                </a>
+              )}
 
-              <a href="https://wa.me/919010014001" aria-label="WhatsApp">
-                ☏
-              </a>
+              {branding.showWhatsappButton && safeWhatsappNumber && (
+                <a
+                  href={`https://wa.me/${safeWhatsappNumber}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="WhatsApp"
+                >
+                  ☏
+                </a>
+              )}
 
-              <a href="#" aria-label="YouTube">
-                ▶
-              </a>
+              {branding.showYoutubeIcon && branding.youtubeUrl && (
+                <a
+                  href={branding.youtubeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="YouTube"
+                >
+                  ▶
+                </a>
+              )}
+
+              {branding.showTwitterIcon && branding.twitterUrl && (
+                <a
+                  href={branding.twitterUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="X / Twitter"
+                >
+                  𝕏
+                </a>
+              )}
             </div>
           </div>
         </section>
