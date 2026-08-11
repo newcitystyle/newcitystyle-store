@@ -207,11 +207,20 @@ function SearchPageContent() {
         .select("*")
         .eq("sell_online", true)
         .eq("is_active", true)
+        .gt("stock", 0)
+        .gt("online_stock_limit", 0)
         .order("id", { ascending: false });
 
       if (error) throw error;
 
       const allProducts = ((data as Product[]) || []).filter((product) => {
+        const isOnline =
+          product.sell_online === true &&
+          product.is_active === true &&
+          Number(product.stock ?? 0) > 0 &&
+          Number(product.online_stock_limit ?? 0) > 0;
+
+        if (!isOnline) return false;
         if (!query) return true;
 
         const normalizedQuery = query.toLowerCase();
