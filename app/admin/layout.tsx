@@ -105,6 +105,7 @@ const menuItems = [
   },
   { label: "Returns", href: "/admin/returns", icon: "↩️" },
   { label: "Customers", href: "/admin/customers", icon: "👥" },
+  { label: "Customer Retention", href: "/admin/customer-retention", icon: "💎" },
   {
     label: "Customer Requests",
     href: "/admin/customer-requests",
