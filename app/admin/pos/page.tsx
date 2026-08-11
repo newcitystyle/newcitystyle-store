@@ -303,6 +303,27 @@ const HELD_BILLS_STORAGE_KEY = "ncs_pos_held_bills_v1";
 const POS_RECENT_PRODUCTS_KEY = "ncs_pos_recent_products_v1";
 const POS_POPULAR_PRODUCTS_KEY = "ncs_pos_popular_products_v1";
 const POS_OVERVIEW_CACHE_KEY = "ncs_pos_overview_cache_v1";
+const OWNER_MIN_PROFIT_MARGIN_PERCENT = 15;
+const OWNER_PROFIT_ALERT_TABLE = "owner_profit_alerts";
+
+type OwnerProfitAlertLevel = "LOW_PROFIT" | "LOSS_SALE" | "BILL_PROFIT_SUMMARY";
+
+type OwnerProfitAlertDraft = {
+  fingerprint: string;
+  level: OwnerProfitAlertLevel;
+  productId: number;
+  variantId: number | null;
+  productName: string;
+  sku: string;
+  size: string;
+  color: string;
+  quantity: number;
+  purchasePrice: number;
+  actualSellingPrice: number;
+  profitPerUnit: number;
+  marginPercent: number;
+};
+
 
 function toNumber(
   value: number | string | null | undefined,
@@ -1281,6 +1302,8 @@ const [posAiLastAction, setPosAiLastAction] = useState<{
   productKey: string;
   previousQuantity: number;
 } | null>(null);
+const ownerProfitAlertFingerprintsRef = useRef<Set<string>>(new Set());
+const ownerProfitAlertTimerRef = useRef<number | null>(null);
 
   const [productViewMode, setProductViewMode] =
     useState<ProductViewMode>("brands");
@@ -2800,6 +2823,156 @@ if (!variantsError) {
     0,
     grandTotal - safeRoundOffAmount
   );
+
+
+  const ownerProfitAlerts = useMemo<OwnerProfitAlertDraft[]>(() => {
+    if (cartItems.length === 0 || subtotal <= 0) {
+      return [];
+    }
+
+    // finalPayable already includes item-level negotiated prices,
+    // bill discount, reward discount and round-off. Distribute that
+    // final realised value proportionally across registered items.
+    const realisedRevenueFactor = Math.max(
+      0,
+      Math.min(1, finalPayable / subtotal),
+    );
+
+    return cartItems
+      .filter(
+        (item) =>
+          !item.isQuickItem &&
+          item.purchasePriceKnown === true &&
+          toNumber(item.purchasePrice) > 0 &&
+          item.quantity > 0,
+      )
+      .map((item) => {
+        const purchasePrice = Math.max(0, toNumber(item.purchasePrice));
+        const actualSellingPrice = Math.max(
+          0,
+          item.price * realisedRevenueFactor,
+        );
+        const profitPerUnit = actualSellingPrice - purchasePrice;
+        const marginPercent =
+          actualSellingPrice > 0
+            ? (profitPerUnit / actualSellingPrice) * 100
+            : -100;
+
+        const level: OwnerProfitAlertLevel =
+          profitPerUnit < 0 ? "LOSS_SALE" : "LOW_PROFIT";
+
+        return {
+          fingerprint: [
+            item.key,
+            level,
+            item.quantity,
+            actualSellingPrice.toFixed(2),
+            purchasePrice.toFixed(2),
+            safeBillDiscountPercent.toFixed(2),
+            safeRewardPointsToUse,
+            safeRoundOffAmount.toFixed(2),
+          ].join("|"),
+          level,
+          productId: item.productId,
+          variantId: item.variantId,
+          productName: item.name,
+          sku: item.sku,
+          size: item.size,
+          color: item.color,
+          quantity: item.quantity,
+          purchasePrice,
+          actualSellingPrice,
+          profitPerUnit,
+          marginPercent,
+        };
+      })
+      .filter(
+        (alert) =>
+          alert.level === "LOSS_SALE" ||
+          alert.marginPercent < OWNER_MIN_PROFIT_MARGIN_PERCENT,
+      );
+  }, [
+    cartItems,
+    finalPayable,
+    safeBillDiscountPercent,
+    safeRewardPointsToUse,
+    safeRoundOffAmount,
+    subtotal,
+  ]);
+
+  useEffect(() => {
+    if (ownerProfitAlertTimerRef.current !== null) {
+      window.clearTimeout(ownerProfitAlertTimerRef.current);
+      ownerProfitAlertTimerRef.current = null;
+    }
+
+    if (ownerProfitAlerts.length === 0 || !isBrowserOnline()) {
+      return;
+    }
+
+    ownerProfitAlertTimerRef.current = window.setTimeout(() => {
+      void (async () => {
+        const newAlerts = ownerProfitAlerts.filter(
+          (alert) =>
+            !ownerProfitAlertFingerprintsRef.current.has(alert.fingerprint),
+        );
+
+        if (newAlerts.length === 0) {
+          return;
+        }
+
+        const rows = newAlerts.map((alert) => ({
+          alert_type: alert.level,
+          source: "WEB_POS_PRE_BILL",
+          product_id: alert.productId,
+          variant_id: alert.variantId,
+          product_name: alert.productName,
+          sku: alert.sku || null,
+          size: alert.size || null,
+          color: alert.color || null,
+          quantity: alert.quantity,
+          purchase_price: Number(alert.purchasePrice.toFixed(2)),
+          actual_selling_price: Number(alert.actualSellingPrice.toFixed(2)),
+          profit_per_unit: Number(alert.profitPerUnit.toFixed(2)),
+          margin_percent: Number(alert.marginPercent.toFixed(2)),
+          target_margin_percent: OWNER_MIN_PROFIT_MARGIN_PERCENT,
+          bill_discount_percent: Number(safeBillDiscountPercent.toFixed(2)),
+          final_bill_amount: Number(finalPayable.toFixed(2)),
+          status: "NEW",
+          created_at: new Date().toISOString(),
+        }));
+
+        const { error } = await supabase
+          .from(OWNER_PROFIT_ALERT_TABLE)
+          .insert(rows);
+
+        if (error) {
+          // Keep POS billing uninterrupted. The table is installed separately
+          // and the alert will be retried on the next relevant price change.
+          console.info(
+            "Owner Profit Alert sync is not ready:",
+            error.message,
+          );
+          return;
+        }
+
+        newAlerts.forEach((alert) => {
+          ownerProfitAlertFingerprintsRef.current.add(alert.fingerprint);
+        });
+      })();
+    }, 650);
+
+    return () => {
+      if (ownerProfitAlertTimerRef.current !== null) {
+        window.clearTimeout(ownerProfitAlertTimerRef.current);
+        ownerProfitAlertTimerRef.current = null;
+      }
+    };
+  }, [
+    finalPayable,
+    ownerProfitAlerts,
+    safeBillDiscountPercent,
+  ]);
 
   const safeCreditPaidNow =
     paymentMethod === "credit"
@@ -5444,6 +5617,125 @@ if (!variantsError) {
     }, 100);
   }
 
+  async function saveCompletedBillProfitSummary(
+    sale: CompletedSale,
+  ) {
+    if (!isBrowserOnline()) {
+      return;
+    }
+
+    const saleSubtotal = Math.max(0, sale.subtotal);
+
+    if (saleSubtotal <= 0) {
+      return;
+    }
+
+    const realisedRevenueFactor = Math.max(
+      0,
+      Math.min(1, sale.totalAmount / saleSubtotal),
+    );
+
+    const registeredItems = sale.items.filter(
+      (item) =>
+        !item.isQuickItem &&
+        item.purchasePriceKnown === true &&
+        toNumber(item.purchasePrice) > 0 &&
+        item.quantity > 0,
+    );
+
+    if (registeredItems.length === 0) {
+      return;
+    }
+
+    const summary = registeredItems.reduce(
+      (current, item) => {
+        const quantity = Math.max(0, item.quantity);
+        const purchasePrice = Math.max(
+          0,
+          toNumber(item.purchasePrice),
+        );
+        const actualSellingPrice = Math.max(
+          0,
+          item.price * realisedRevenueFactor,
+        );
+
+        current.registeredUnits += quantity;
+        current.registeredRevenue +=
+          actualSellingPrice * quantity;
+        current.purchaseCost +=
+          purchasePrice * quantity;
+
+        return current;
+      },
+      {
+        registeredUnits: 0,
+        registeredRevenue: 0,
+        purchaseCost: 0,
+      },
+    );
+
+    const actualProfit =
+      summary.registeredRevenue - summary.purchaseCost;
+
+    const marginPercent =
+      summary.registeredRevenue > 0
+        ? (actualProfit / summary.registeredRevenue) * 100
+        : 0;
+
+    const { error } = await supabase
+      .from(OWNER_PROFIT_ALERT_TABLE)
+      .insert({
+        alert_type: "BILL_PROFIT_SUMMARY",
+        source: "WEB_POS_COMPLETED_BILL",
+        sale_id: sale.saleId || null,
+        invoice_number: sale.invoiceNumber,
+        product_id: null,
+        variant_id: null,
+        product_name: "Completed Bill Profit",
+        sku: null,
+        size: null,
+        color: null,
+        quantity: summary.registeredUnits,
+        purchase_price: Number(summary.purchaseCost.toFixed(2)),
+        actual_selling_price: Number(
+          summary.registeredRevenue.toFixed(2),
+        ),
+        profit_per_unit: Number(actualProfit.toFixed(2)),
+        margin_percent: Number(marginPercent.toFixed(2)),
+        target_margin_percent:
+          OWNER_MIN_PROFIT_MARGIN_PERCENT,
+        bill_discount_percent:
+          saleSubtotal > 0
+            ? Number(
+                (
+                  ((saleSubtotal - sale.totalAmount) /
+                    saleSubtotal) *
+                  100
+                ).toFixed(2),
+              )
+            : 0,
+        final_bill_amount: Number(
+          sale.totalAmount.toFixed(2),
+        ),
+        registered_revenue: Number(
+          summary.registeredRevenue.toFixed(2),
+        ),
+        registered_purchase_cost: Number(
+          summary.purchaseCost.toFixed(2),
+        ),
+        bill_profit: Number(actualProfit.toFixed(2)),
+        status: "NEW",
+        created_at: new Date().toISOString(),
+      });
+
+    if (error) {
+      console.info(
+        "Completed Bill Profit alert could not be saved:",
+        error.message,
+      );
+    }
+  }
+
   async function handleCompleteSale() {
     if (saleSubmissionLockRef.current || isCompletingSale) {
       return;
@@ -5999,6 +6291,10 @@ if (!variantsError) {
 
       setCompletedSale(saleSnapshot);
 
+      // Owner-only post-bill profit summary.
+      // MRP is never used and Quick Items are excluded.
+      await saveCompletedBillProfitSummary(saleSnapshot);
+
       let whatsappSyncWarning = "";
 
       if (saleSnapshot.customerPhone.trim()) {
@@ -6393,7 +6689,7 @@ if (!variantsError) {
               <small>
                 {posAiExpanded
                   ? "Add, edit, discount, stock, customer and payment commands."
-                  : "Tap to open smart billing commands"}
+                  : "Tap the corner assistant to open smart billing commands"}
               </small>
             </div>
           </div>
@@ -9137,6 +9433,66 @@ if (!variantsError) {
           box-shadow: 0 16px 38px rgba(3, 21, 63, 0.10);
         }
 
+        /* NCS AI now floats in the corner so it does not consume POS page space. */
+        .ncsPosAiPanel {
+          position: fixed;
+          right: 22px;
+          bottom: 22px;
+          z-index: 2500;
+          width: min(480px, calc(100vw - 32px));
+          max-height: min(72vh, 680px);
+          margin: 0;
+          overflow: auto;
+          box-shadow:
+            0 22px 60px rgba(3, 21, 63, 0.22),
+            0 4px 16px rgba(3, 21, 63, 0.10);
+        }
+
+        .ncsPosAiPanel.collapsed {
+          width: auto;
+          max-width: 210px;
+          max-height: none;
+          padding: 0;
+          overflow: hidden;
+          border-radius: 999px;
+          background:
+            radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.24), transparent 34%),
+            linear-gradient(135deg, #ffffff, #f8f4ec);
+          box-shadow:
+            0 14px 34px rgba(3, 21, 63, 0.20),
+            0 0 0 1px rgba(212, 175, 55, 0.14);
+          animation: ncsAiFloatPulse 3.2s ease-in-out infinite;
+        }
+
+        .ncsPosAiPanel.collapsed .ncsPosAiCompactToggle {
+          min-height: 58px;
+          padding: 8px 10px;
+        }
+
+        .ncsPosAiPanel.collapsed .ncsPosAiHeading > div:last-child {
+          display: none;
+        }
+
+        .ncsPosAiPanel.collapsed .ncsPosAiBadge {
+          width: 42px;
+          height: 42px;
+          flex-basis: 42px;
+          border-radius: 50%;
+        }
+
+        .ncsPosAiPanel.expanded {
+          border-radius: 20px;
+        }
+
+        @keyframes ncsAiFloatPulse {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-4px);
+          }
+        }
+
         .ncsPosAiPanel::before {
           content: "";
           position: absolute;
@@ -9646,6 +10002,18 @@ if (!variantsError) {
         }
 
         @media (max-width: 760px) {
+          .ncsPosAiPanel {
+            right: 12px;
+            bottom: 82px;
+            width: calc(100vw - 24px);
+            max-height: 66vh;
+          }
+
+          .ncsPosAiPanel.collapsed {
+            width: auto;
+            max-width: 178px;
+          }
+
           .ncsPosBillingFocus .ncsPosBillPanel {
             inset: 8px 8px 8px 8px;
             width: auto;
