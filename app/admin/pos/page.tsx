@@ -325,6 +325,22 @@ type OwnerProfitAlertDraft = {
 };
 
 
+type OwnerBusinessSettings = {
+  minimum_profit_margin_percent: number;
+  low_profit_alert_enabled: boolean;
+  loss_sale_alert_enabled: boolean;
+  bill_profit_summary_enabled: boolean;
+};
+
+const DEFAULT_OWNER_BUSINESS_SETTINGS: OwnerBusinessSettings = {
+  minimum_profit_margin_percent: OWNER_MIN_PROFIT_MARGIN_PERCENT,
+  low_profit_alert_enabled: true,
+  loss_sale_alert_enabled: true,
+  bill_profit_summary_enabled: true,
+};
+
+
+
 function toNumber(
   value: number | string | null | undefined,
   fallback = 0
@@ -1304,6 +1320,8 @@ const [posAiLastAction, setPosAiLastAction] = useState<{
 } | null>(null);
 const ownerProfitAlertFingerprintsRef = useRef<Set<string>>(new Set());
 const ownerProfitAlertTimerRef = useRef<number | null>(null);
+const [ownerBusinessSettings, setOwnerBusinessSettings] =
+  useState<OwnerBusinessSettings>(DEFAULT_OWNER_BUSINESS_SETTINGS);
 
   const [productViewMode, setProductViewMode] =
     useState<ProductViewMode>("brands");
@@ -2825,6 +2843,50 @@ if (!variantsError) {
   );
 
 
+  useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      const { data, error } = await supabase
+        .from("owner_business_settings")
+        .select(
+          "minimum_profit_margin_percent,low_profit_alert_enabled,loss_sale_alert_enabled,bill_profit_summary_enabled",
+        )
+        .eq("id", 1)
+        .maybeSingle();
+
+      if (!active || error || !data) {
+        if (error) {
+          console.info("Owner Guard settings fallback:", error.message);
+        }
+        return;
+      }
+
+      setOwnerBusinessSettings({
+        minimum_profit_margin_percent: Math.max(
+          0,
+          Math.min(
+            100,
+            toNumber(
+              data.minimum_profit_margin_percent,
+              OWNER_MIN_PROFIT_MARGIN_PERCENT,
+            ),
+          ),
+        ),
+        low_profit_alert_enabled:
+          data.low_profit_alert_enabled !== false,
+        loss_sale_alert_enabled:
+          data.loss_sale_alert_enabled !== false,
+        bill_profit_summary_enabled:
+          data.bill_profit_summary_enabled !== false,
+      });
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const ownerProfitAlerts = useMemo<OwnerProfitAlertDraft[]>(() => {
     if (cartItems.length === 0 || subtotal <= 0) {
       return [];
@@ -2886,11 +2948,17 @@ if (!variantsError) {
           marginPercent,
         };
       })
-      .filter(
-        (alert) =>
-          alert.level === "LOSS_SALE" ||
-          alert.marginPercent < OWNER_MIN_PROFIT_MARGIN_PERCENT,
-      );
+      .filter((alert) => {
+        if (alert.level === "LOSS_SALE") {
+          return ownerBusinessSettings.loss_sale_alert_enabled;
+        }
+
+        return (
+          ownerBusinessSettings.low_profit_alert_enabled &&
+          alert.marginPercent <
+            ownerBusinessSettings.minimum_profit_margin_percent
+        );
+      });
   }, [
     cartItems,
     finalPayable,
@@ -2898,6 +2966,9 @@ if (!variantsError) {
     safeRewardPointsToUse,
     safeRoundOffAmount,
     subtotal,
+    ownerBusinessSettings.low_profit_alert_enabled,
+    ownerBusinessSettings.loss_sale_alert_enabled,
+    ownerBusinessSettings.minimum_profit_margin_percent,
   ]);
 
   useEffect(() => {
@@ -2935,7 +3006,7 @@ if (!variantsError) {
           actual_selling_price: Number(alert.actualSellingPrice.toFixed(2)),
           profit_per_unit: Number(alert.profitPerUnit.toFixed(2)),
           margin_percent: Number(alert.marginPercent.toFixed(2)),
-          target_margin_percent: OWNER_MIN_PROFIT_MARGIN_PERCENT,
+          target_margin_percent: ownerBusinessSettings.minimum_profit_margin_percent,
           bill_discount_percent: Number(safeBillDiscountPercent.toFixed(2)),
           final_bill_amount: Number(finalPayable.toFixed(2)),
           status: "NEW",
@@ -5620,7 +5691,10 @@ if (!variantsError) {
   async function saveCompletedBillProfitSummary(
     sale: CompletedSale,
   ) {
-    if (!isBrowserOnline()) {
+    if (
+      !ownerBusinessSettings.bill_profit_summary_enabled ||
+      !isBrowserOnline()
+    ) {
       return;
     }
 
@@ -5703,7 +5777,7 @@ if (!variantsError) {
         profit_per_unit: Number(actualProfit.toFixed(2)),
         margin_percent: Number(marginPercent.toFixed(2)),
         target_margin_percent:
-          OWNER_MIN_PROFIT_MARGIN_PERCENT,
+          ownerBusinessSettings.minimum_profit_margin_percent,
         bill_discount_percent:
           saleSubtotal > 0
             ? Number(
