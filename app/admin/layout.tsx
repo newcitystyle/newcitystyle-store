@@ -44,6 +44,8 @@ type AdminLayoutProps = {
 
 const menuItems = [
   { label: "Dashboard", href: "/admin/dashboard", icon: "🏠" },
+  { label: "Owner Control Center", href: "/admin/owner-control", icon: "🎯" },
+  { label: "Business Action Center", href: "/admin/business-action-center", icon: "🚦" },
   { label: "Products", href: "/admin/products", icon: "🛍️" },
   { label: "Add Product", href: "/admin/add-product", icon: "➕" },
   { label: "Categories", href: "/admin/categories", icon: "🏷️" },
@@ -92,6 +94,11 @@ const menuItems = [
     label: "Stock Intelligence",
     href: "/admin/stock-intelligence",
     icon: "🧠",
+  },
+  {
+    label: "Profit Intelligence",
+    href: "/admin/profit-intelligence",
+    icon: "💹",
   },
   {
     label: "Low Stock Report",

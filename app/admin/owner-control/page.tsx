@@ -8,7 +8,7 @@ const DEEP = "#03153F";
 const GOLD = "#D4AF37";
 const IVORY = "#F8F4EC";
 
-type TabKey = "closing" | "guard" | "profit" | "cash" | "customers";
+type TabKey = "closing" | "guard" | "profit" | "trends" | "cash" | "customers";
 
 type PosSale = {
   id: string;
@@ -195,6 +195,7 @@ export default function OwnerControlCenterPage() {
   const [customerSearch, setCustomerSearch] = useState("");
   const [selectedCustomerKey, setSelectedCustomerKey] = useState<string | null>(null);
   const [profitPage, setProfitPage] = useState(1);
+  const [profitTrendRange, setProfitTrendRange] = useState<7 | 30>(7);
   const PROFIT_PAGE_SIZE = 15;
 
   const loadCore = useCallback(async () => {
@@ -505,6 +506,115 @@ export default function OwnerControlCenterPage() {
     customerRows[0] ||
     null;
 
+  const profitTrendRows = useMemo(() => {
+    const rows: {
+      key: string;
+      label: string;
+      revenue: number;
+      profit: number;
+      margin: number;
+      bills: number;
+    }[] = [];
+
+    for (let index = profitTrendRange - 1; index >= 0; index -= 1) {
+      const date = new Date();
+      date.setHours(0, 0, 0, 0);
+      date.setDate(date.getDate() - index);
+
+      const key = [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0"),
+      ].join("-");
+
+      const dayRows = allProfitHistory.filter((row) => {
+        if (!row.created_at) return false;
+        const created = new Date(row.created_at);
+        if (Number.isNaN(created.getTime())) return false;
+
+        const createdKey = [
+          created.getFullYear(),
+          String(created.getMonth() + 1).padStart(2, "0"),
+          String(created.getDate()).padStart(2, "0"),
+        ].join("-");
+
+        return createdKey === key;
+      });
+
+      const revenue = dayRows.reduce(
+        (sum, row) => sum + n(row.registered_revenue || row.actual_selling_price),
+        0,
+      );
+
+      const profit = dayRows.reduce(
+        (sum, row) => sum + n(row.bill_profit ?? row.profit_per_unit),
+        0,
+      );
+
+      rows.push({
+        key,
+        label: date.toLocaleDateString("en-IN", {
+          day: "2-digit",
+          month: "short",
+        }),
+        revenue,
+        profit,
+        margin: revenue > 0 ? (profit / revenue) * 100 : 0,
+        bills: dayRows.length,
+      });
+    }
+
+    return rows;
+  }, [allProfitHistory, profitTrendRange]);
+
+  const maxProfitTrendValue = Math.max(
+    1,
+    ...profitTrendRows.map((row) => Math.abs(row.profit)),
+  );
+
+  function buildOwnerClosingText() {
+    return [
+      "NEW CITY STYLE — OWNER CLOSING REPORT",
+      selectedDate,
+      "",
+      `Sales: ${money(daily.salesTotal)}`,
+      `Bills: ${daily.bills}`,
+      `Registered Revenue: ${money(daily.registeredRevenue)}`,
+      `Registered Purchase Cost: ${money(daily.registeredCost)}`,
+      `Actual Gross Profit: ${money(daily.grossProfit)}`,
+      `Profit Margin: ${daily.margin.toFixed(1)}%`,
+      `Expenses: ${money(daily.expenseTotal)}`,
+      `Operating Result: ${money(daily.operatingResult)}`,
+      `Customer Due Created: ${money(daily.duesCreated)}`,
+      `Cash In: ${money(daily.cashIn)}`,
+      `Cash Out: ${money(daily.cashOut)}`,
+      "",
+      "Profit rule: actual sold value minus registered purchase cost. MRP and Quick Items are excluded from profit.",
+    ].join("\n");
+  }
+
+  function printOwnerClosing() {
+    window.print();
+  }
+
+  async function copyOwnerClosing() {
+    try {
+      await navigator.clipboard.writeText(buildOwnerClosingText());
+      setMessage("Owner closing report copied.");
+    } catch {
+      setMessage("Unable to copy owner closing report.");
+    }
+  }
+
+  function shareOwnerClosingWhatsApp() {
+    const text = encodeURIComponent(buildOwnerClosingText());
+    window.open(
+      `https://wa.me/919010014001?text=${text}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }
+
   const totalProfitPages = Math.max(1, Math.ceil(allProfitHistory.length / PROFIT_PAGE_SIZE));
   const safeProfitPage = Math.min(profitPage, totalProfitPages);
   const pagedProfit = allProfitHistory.slice(
@@ -575,6 +685,7 @@ export default function OwnerControlCenterPage() {
     { key: "closing", label: "Daily Closing", icon: "📋" },
     { key: "guard", label: "Profit Guard", icon: "🛡️" },
     { key: "profit", label: "Bill Profit", icon: "💹" },
+    { key: "trends", label: "Profit Trends", icon: "📈" },
     { key: "cash", label: "Cash Closing", icon: "💵" },
     { key: "customers", label: "Customer 360", icon: "👤" },
   ];
@@ -681,6 +792,19 @@ export default function OwnerControlCenterPage() {
                 </span>
               </div>
             </Panel>
+          </section>
+
+          <section className="occReportTools noPrint">
+            <div>
+              <span>OWNER CLOSING REPORT</span>
+              <strong>Print, save as PDF or send the summary to your own WhatsApp.</strong>
+            </div>
+            <div>
+              <button type="button" onClick={printOwnerClosing}>Print / Save PDF</button>
+              <button type="button" onClick={() => void copyOwnerClosing()}>Copy Report</button>
+              <button type="button" className="wa" onClick={shareOwnerClosingWhatsApp}>WhatsApp Owner</button>
+              <a href="/admin/business-action-center">Open Action Center →</a>
+            </div>
           </section>
         </>
       )}
@@ -800,6 +924,56 @@ export default function OwnerControlCenterPage() {
               <strong>{safeProfitPage} / {totalProfitPages}</strong>
               <button type="button" disabled={safeProfitPage >= totalProfitPages} onClick={() => setProfitPage((p) => Math.min(totalProfitPages, p + 1))}>Next →</button>
             </div>
+          </div>
+        </section>
+      )}
+
+      {tab === "trends" && (
+        <section className="occTablePanel">
+          <div className="occSectionHeading occTrendHeading">
+            <div>
+              <span>ACTUAL PROFIT TREND</span>
+              <h2>Daily Registered-Stock Profit</h2>
+              <p>Actual sold value minus purchase cost. MRP and Quick Items are excluded.</p>
+            </div>
+
+            <select
+              value={profitTrendRange}
+              onChange={(event) =>
+                setProfitTrendRange(Number(event.target.value) as 7 | 30)
+              }
+            >
+              <option value={7}>Last 7 Days</option>
+              <option value={30}>Last 30 Days</option>
+            </select>
+          </div>
+
+          <div className="occProfitTrend">
+            {profitTrendRows.map((row) => {
+              const height =
+                row.profit === 0
+                  ? 3
+                  : Math.max(
+                      5,
+                      (Math.abs(row.profit) / maxProfitTrendValue) * 100,
+                    );
+
+              return (
+                <div className="occProfitTrendColumn" key={row.key}>
+                  <div className="occProfitTrendValue">
+                    {row.bills > 0 ? money(row.profit) : "—"}
+                  </div>
+                  <div className="occProfitTrendTrack">
+                    <div
+                      className={row.profit < 0 ? "negative" : "positive"}
+                      style={{ height: `${height}%` }}
+                    />
+                  </div>
+                  <strong>{row.label}</strong>
+                  <small>{row.bills} bill{row.bills === 1 ? "" : "s"} • {row.margin.toFixed(0)}%</small>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
@@ -952,6 +1126,8 @@ export default function OwnerControlCenterPage() {
         .occCashMetrics{grid-template-columns:repeat(6,minmax(0,1fr))}.occCashForm{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.occCashForm label{display:grid;gap:6px}.occCashForm label.wide{grid-column:1/-1}.occCashForm span{font-size:9px;font-weight:900;color:${BLUE}}.occCashForm input,.occCashForm textarea{width:100%;box-sizing:border-box;border:1px solid #d8dde7;border-radius:10px;padding:10px;font:inherit;font-size:10px;outline:none}.occCashForm input:focus,.occCashForm textarea:focus{border-color:${GOLD};box-shadow:0 0 0 3px rgba(212,175,55,.11)}
         .occCustomerSearch{width:100%;box-sizing:border-box;height:42px;margin:15px 0;border:1px solid #d8dde7;border-radius:11px;padding:0 12px;font:inherit;font-size:10px;outline:none}.occCustomerSearch:focus{border-color:${GOLD}}
         .occCustomerGrid{display:grid;grid-template-columns:minmax(260px,390px) 1fr;gap:12px}.occCustomerList{max-height:570px;overflow:auto;border:1px solid #edf0f4;border-radius:13px;padding:7px}.occCustomerList button{width:100%;display:grid;grid-template-columns:1fr auto;gap:3px 8px;text-align:left;padding:11px;border:0;border-bottom:1px solid #eef1f5;background:#fff;cursor:pointer}.occCustomerList button.active{background:#f1f5ff;border-radius:9px}.occCustomerList strong{grid-column:1;color:${BLUE};font-size:10px}.occCustomerList span{grid-column:1;color:#667085;font-size:8px}.occCustomerList b{grid-row:1/3;grid-column:2;align-self:center;color:#087a55;font-size:9px}.occCustomerDetail{min-height:360px;border:1px solid #edf0f4;border-radius:15px;padding:22px;background:linear-gradient(180deg,#fff,#fbfcff)}.occAvatar{width:58px;height:58px;display:grid;place-items:center;border-radius:18px;background:${BLUE};color:${GOLD};font-size:24px;font-weight:950}.occCustomerDetail h3{margin:11px 0 2px;color:${BLUE};font-size:20px}.occCustomerDetail p{margin:0;color:#667085;font-size:9px}.occMiniGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:18px}.occMini{min-height:85px;padding:12px;border:1px solid #e7eaf0;border-radius:12px;background:#fff}.occMini span{display:block;color:#98a2b3;font-size:8px;font-weight:850}.occMini strong{display:block;margin-top:8px;color:${BLUE};font-size:13px}.occMini.red strong{color:#b42318}
+        .occReportTools{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:12px;padding:14px;border:1px solid rgba(212,175,55,.45);border-radius:14px;background:#fff9e8}.occReportTools>div:first-child span{display:block;color:#9b7410;font-size:8px;font-weight:950;letter-spacing:.7px}.occReportTools>div:first-child strong{display:block;margin-top:4px;color:${BLUE};font-size:10px}.occReportTools>div:last-child{display:flex;flex-wrap:wrap;gap:7px}.occReportTools button,.occReportTools a{min-height:34px;display:inline-flex;align-items:center;padding:0 10px;border:1px solid #d9dee8;border-radius:8px;background:#fff;color:${BLUE};font:inherit;font-size:8px;font-weight:900;text-decoration:none;cursor:pointer}.occReportTools button.wa{background:#0a7a50;color:#fff;border-color:#61cfa4}.occTrendHeading{display:flex;justify-content:space-between;gap:12px;align-items:center}.occTrendHeading select{height:34px;border:1px solid #d8dde7;border-radius:9px;padding:0 9px;background:#fff;color:${BLUE};font:inherit;font-size:8px;font-weight:900}.occProfitTrend{height:280px;display:flex;align-items:flex-end;gap:7px;overflow-x:auto;margin-top:17px;padding:5px}.occProfitTrendColumn{min-width:45px;flex:1;height:100%;display:grid;grid-template-rows:28px 1fr 18px 20px;text-align:center}.occProfitTrendValue{overflow:hidden;color:#667085;font-size:7px;font-weight:850;text-overflow:ellipsis;white-space:nowrap}.occProfitTrendTrack{display:flex;align-items:flex-end;justify-content:center;border-bottom:1px solid #dfe3ea;background:linear-gradient(180deg,rgba(10,46,115,.02),rgba(10,46,115,.05))}.occProfitTrendTrack div{width:55%;max-width:26px;border-radius:5px 5px 1px 1px}.occProfitTrendTrack .positive{background:linear-gradient(180deg,#18a86b,#0a7b51)}.occProfitTrendTrack .negative{background:linear-gradient(180deg,#ec6a5e,#b42318)}.occProfitTrendColumn>strong{align-self:end;color:${BLUE};font-size:7px}.occProfitTrendColumn>small{color:#98a2b3;font-size:6px;line-height:1.3}
+        @media print{.ncsSidebar,.ncsBusinessTicker,.ncsMobileMenuButton,.noPrint{display:none!important}.ncsAdminContent{margin-left:0!important}.occPage{padding:0;background:#fff}.occHero{background:#fff!important;color:${DEEP};box-shadow:none}.occHero p{color:#555}.occTabs{display:none}.occPanel,.occSettings,.occTablePanel,.occCustomerPanel{box-shadow:none}}
         @media(max-width:1200px){.occMetrics,.occCashMetrics{grid-template-columns:repeat(3,minmax(0,1fr))}.occSettingGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
         @media(max-width:760px){.occPage{padding:10px}.occHero{align-items:stretch;flex-direction:column}.occDateBox{min-width:0}.occMetrics,.occCashMetrics,.occGridTwo,.occSettingGrid,.occCustomerGrid,.occMiniGrid{grid-template-columns:1fr}.occCashForm{grid-template-columns:1fr}.occTabs{display:grid;grid-template-columns:1fr 1fr}.occTabs button{justify-content:center}.occHero h1{font-size:23px}}
       `}</style>

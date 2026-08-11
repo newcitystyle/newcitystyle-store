@@ -1937,6 +1937,12 @@ export default function AdminDashboardPage() {
             title="Cash & Bank"
             text="Review daily money movement"
           />
+          <QuickAction
+            href="/admin/business-action-center"
+            icon="🚦"
+            title="Action Center"
+            text="See the owner priority queue"
+          />
         </div>
       </section>
 
