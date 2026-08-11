@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   type CSSProperties,
   KeyboardEvent,
@@ -45,6 +45,10 @@ type Product = {
   subcategory?: string | null;
   brand?: string | null;
   price?: number | string | null;
+  stock?: number | string | null;
+  online_stock_limit?: number | string | null;
+  sell_online?: boolean | null;
+  is_active?: boolean | null;
   image?: string | null;
   image_url?: string | null;
   images?: string[] | string | null;
@@ -96,6 +100,7 @@ function formatCurrency(value: number | string | null | undefined) {
 
 export default function Navbar() {
   const router = useRouter();
+  const pathname = usePathname();
   const desktopSearchWrapperRef = useRef<HTMLDivElement | null>(null);
   const mobileSearchWrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -257,12 +262,24 @@ export default function Navbar() {
       const { data, error } = await supabase
         .from("products")
         .select("*")
+        .eq("sell_online", true)
+        .eq("is_active", true)
+        .gt("stock", 0)
+        .gt("online_stock_limit", 0)
         .order("created_at", { ascending: false })
         .limit(100);
 
       if (error) throw error;
 
-      setProducts((data as Product[]) || []);
+      const onlineProducts = ((data as Product[]) || []).filter(
+        (product) =>
+          product.sell_online === true &&
+          product.is_active === true &&
+          Number(product.stock ?? 0) > 0 &&
+          Number(product.online_stock_limit ?? 0) > 0
+      );
+
+      setProducts(onlineProducts);
     } catch (error) {
       console.error("Navbar product search error:", error);
     } finally {
@@ -405,6 +422,10 @@ export default function Navbar() {
     setSearch("");
     setActiveIndex(-1);
     setShowSuggestions(false);
+  }
+
+  if (pathname?.startsWith("/admin")) {
+    return null;
   }
 
   return (
