@@ -26,6 +26,20 @@ type VariantRow = {
   final_stock_status: string | null;
 };
 
+type VariantIdentityRow = {
+  id: number;
+  product_id: number;
+  variant_name?: string | null;
+  sku?: string | null;
+  purchase_price?: number | string | null;
+  selling_price?: number | string | null;
+};
+
+type ProductIdentityRow = {
+  id: number;
+  sku?: string | null;
+};
+
 type BrandRow = {
   brand: string | null;
   current_stock: number | null;
@@ -51,6 +65,7 @@ const ROYAL_BLUE = "#0A2E73";
 const DEEP_BLUE = "#03153F";
 const GOLD = "#D4AF37";
 const IVORY = "#F8F4EC";
+const PRODUCTS_PER_PAGE = 15;
 
 function n(value: unknown) {
   const parsed = Number(value);
@@ -79,16 +94,24 @@ function marginFrom(revenue: number, profit: number) {
   return revenue > 0 ? (profit / revenue) * 100 : 0;
 }
 
+function actualSoldPrice(row: VariantRow) {
+  const sold = n(row.sold_30d);
+  return sold > 0 ? n(row.revenue_30d) / sold : 0;
+}
+
+function actualCostTotal(row: VariantRow) {
+  return n(row.weighted_purchase_cost) * n(row.sold_30d);
+}
+
+function actualProfit(row: VariantRow) {
+  return n(row.revenue_30d) - actualCostTotal(row);
+}
+
 function variantMargin(row: VariantRow) {
   const revenue = n(row.revenue_30d);
-  const profit = n(row.gross_profit_30d);
-
-  if (revenue > 0) return marginFrom(revenue, profit);
-
-  const mrp = n(row.current_mrp);
-  const cost = n(row.weighted_purchase_cost);
-  return mrp > 0 && cost > 0 ? ((mrp - cost) / mrp) * 100 : 0;
+  return revenue > 0 ? (actualProfit(row) / revenue) * 100 : 0;
 }
+
 
 function groupVariants(
   rows: VariantRow[],
@@ -110,7 +133,7 @@ function groupVariants(
     };
 
     current.revenue += n(row.revenue_30d);
-    current.profit += n(row.gross_profit_30d);
+    current.profit += actualProfit(row);
     current.sold += n(row.sold_30d);
     current.stock += n(row.current_stock);
     current.blocked += n(row.money_blocked);
@@ -130,6 +153,8 @@ function groupVariants(
 export default function ProfitIntelligencePage() {
   const [variants, setVariants] = useState<VariantRow[]>([]);
   const [brands, setBrands] = useState<BrandRow[]>([]);
+  const [variantIdentities, setVariantIdentities] = useState<VariantIdentityRow[]>([]);
+  const [productIdentities, setProductIdentities] = useState<ProductIdentityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorText, setErrorText] = useState("");
@@ -138,6 +163,7 @@ export default function ProfitIntelligencePage() {
   const [profitFilter, setProfitFilter] = useState<
     "ALL" | "HIGH_MARGIN" | "LOW_MARGIN" | "LOSS" | "BLOCKED"
   >("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const loadData = useCallback(async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -146,25 +172,49 @@ export default function ProfitIntelligencePage() {
     setErrorText("");
 
     try {
-      const [variantResult, brandResult] = await Promise.all([
+      const [
+        variantResult,
+        brandResult,
+        variantIdentityResult,
+        productIdentityResult,
+      ] = await Promise.all([
         supabase
           .from("ncs_variant_intelligence_v2")
           .select("*")
-          .order("gross_profit_30d", { ascending: false })
+          .order("revenue_30d", { ascending: false })
           .limit(1000),
 
         supabase
           .from("ncs_brand_performance")
           .select("*")
-          .order("gross_profit_30d", { ascending: false })
+          .order("revenue_30d", { ascending: false })
           .limit(100),
+
+        supabase
+          .from("product_variants")
+          .select("id,product_id,variant_name,sku,purchase_price,selling_price")
+          .limit(5000),
+
+        supabase
+          .from("products")
+          .select("id,sku")
+          .limit(5000),
       ]);
 
       if (variantResult.error) throw variantResult.error;
-      if (brandResult.error) throw brandResult.error;
+      if (variantIdentityResult.error) throw variantIdentityResult.error;
+      if (productIdentityResult.error) throw productIdentityResult.error;
 
       setVariants((variantResult.data || []) as VariantRow[]);
-      setBrands((brandResult.data || []) as BrandRow[]);
+      setBrands(
+        brandResult.error ? [] : ((brandResult.data || []) as BrandRow[]),
+      );
+      setVariantIdentities(
+        (variantIdentityResult.data || []) as VariantIdentityRow[],
+      );
+      setProductIdentities(
+        (productIdentityResult.data || []) as ProductIdentityRow[],
+      );
     } catch (error) {
       console.error("Profit intelligence load error:", error);
       setErrorText(
@@ -182,8 +232,50 @@ export default function ProfitIntelligencePage() {
     void loadData();
   }, [loadData]);
 
+  const quickVariantIds = useMemo(() => {
+    return new Set(
+      variantIdentities
+        .filter((row) => {
+          const variantName = String(row.variant_name || "").trim().toLowerCase();
+          const sku = String(row.sku || "").trim().toUpperCase();
+          return variantName === "quick item" || sku.startsWith("QUICK-");
+        })
+        .map((row) => Number(row.id)),
+    );
+  }, [variantIdentities]);
+
+  const quickProductIds = useMemo(() => {
+    const ids = new Set<number>();
+
+    variantIdentities.forEach((row) => {
+      const variantName = String(row.variant_name || "").trim().toLowerCase();
+      const sku = String(row.sku || "").trim().toUpperCase();
+      if (variantName === "quick item" || sku.startsWith("QUICK-")) {
+        ids.add(Number(row.product_id));
+      }
+    });
+
+    productIdentities.forEach((row) => {
+      const sku = String(row.sku || "").trim().toUpperCase();
+      if (sku.startsWith("QUICK-")) ids.add(Number(row.id));
+    });
+
+    return ids;
+  }, [productIdentities, variantIdentities]);
+
+  const profitVariants = useMemo(
+    () =>
+      variants.filter(
+        (row) =>
+          !quickVariantIds.has(Number(row.variant_id)) &&
+          !quickProductIds.has(Number(row.product_id)) &&
+          n(row.weighted_purchase_cost) > 0,
+      ),
+    [quickProductIds, quickVariantIds, variants],
+  );
+
   const totals = useMemo(() => {
-    return variants.reduce(
+    return profitVariants.reduce(
       (summary, row) => {
         summary.revenue += n(row.revenue_30d);
         summary.profit += n(row.gross_profit_30d);
@@ -203,60 +295,44 @@ export default function ProfitIntelligencePage() {
         investment: 0,
       },
     );
-  }, [variants]);
+  }, [profitVariants]);
 
   const overallMargin = marginFrom(totals.revenue, totals.profit);
 
   const categoryRows = useMemo(
     () =>
       groupVariants(
-        variants,
+        profitVariants,
         (row) => row.category || "Unassigned Category",
       ),
-    [variants],
+    [profitVariants],
   );
 
-  const brandRows = useMemo<GroupRow[]>(() => {
-    if (brands.length > 0) {
-      return brands
-        .map((row) => ({
-          name: row.brand?.trim() || "Unassigned Brand",
-          revenue: n(row.revenue_30d),
-          profit: n(row.gross_profit_30d),
-          sold: n(row.sold_30d),
-          stock: n(row.current_stock),
-          blocked: n(row.money_blocked),
-          investment: 0,
-          margin: marginFrom(
-            n(row.revenue_30d),
-            n(row.gross_profit_30d),
-          ),
-        }))
-        .sort((a, b) => b.profit - a.profit);
-    }
-
-    return groupVariants(
-      variants,
-      (row) => row.brand || "Unassigned Brand",
-    );
-  }, [brands, variants]);
+  const brandRows = useMemo<GroupRow[]>(
+    () =>
+      groupVariants(
+        profitVariants,
+        (row) => row.brand || "Unassigned Brand",
+      ),
+    [profitVariants],
+  );
 
   const categories = useMemo(
     () =>
       Array.from(
         new Set(
-          variants
+          profitVariants
             .map((row) => row.category?.trim())
             .filter((value): value is string => Boolean(value)),
         ),
       ).sort(),
-    [variants],
+    [profitVariants],
   );
 
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    return [...variants]
+    return [...profitVariants]
       .filter((row) => {
         if (
           categoryFilter !== "ALL" &&
@@ -282,7 +358,7 @@ export default function ProfitIntelligencePage() {
         }
 
         const margin = variantMargin(row);
-        const profit = n(row.gross_profit_30d);
+        const profit = actualProfit(row);
         const blocked = n(row.money_blocked);
 
         if (profitFilter === "HIGH_MARGIN") return margin >= 40;
@@ -293,25 +369,58 @@ export default function ProfitIntelligencePage() {
 
         return true;
       })
-      .sort((a, b) => n(b.gross_profit_30d) - n(a.gross_profit_30d))
-      .slice(0, 250);
-  }, [categoryFilter, profitFilter, search, variants]);
+      .sort((a, b) => actualProfit(b) - actualProfit(a));
+  }, [categoryFilter, profitFilter, search, profitVariants]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE),
+  );
+
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const paginatedProducts = useMemo(() => {
+    const start = (safeCurrentPage - 1) * PRODUCTS_PER_PAGE;
+    return filteredProducts.slice(start, start + PRODUCTS_PER_PAGE);
+  }, [filteredProducts, safeCurrentPage]);
+
+  const visiblePageNumbers = useMemo(() => {
+    const pages: number[] = [];
+    const start = Math.max(1, safeCurrentPage - 2);
+    const end = Math.min(totalPages, safeCurrentPage + 2);
+
+    for (let page = start; page <= end; page += 1) {
+      pages.push(page);
+    }
+
+    return pages;
+  }, [safeCurrentPage, totalPages]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, categoryFilter, profitFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const topProducts = useMemo(
     () =>
-      [...variants]
-        .filter((row) => n(row.gross_profit_30d) > 0)
+      [...profitVariants]
+        .filter((row) => actualProfit(row) > 0)
         .sort(
           (a, b) =>
-            n(b.gross_profit_30d) - n(a.gross_profit_30d),
+            actualProfit(b) - actualProfit(a),
         )
         .slice(0, 5),
-    [variants],
+    [profitVariants],
   );
 
   const lowMarginProducts = useMemo(
     () =>
-      [...variants]
+      [...profitVariants]
         .filter(
           (row) =>
             n(row.revenue_30d) > 0 &&
@@ -321,16 +430,16 @@ export default function ProfitIntelligencePage() {
           (a, b) => variantMargin(a) - variantMargin(b),
         )
         .slice(0, 8),
-    [variants],
+    [profitVariants],
   );
 
   const blockedProducts = useMemo(
     () =>
-      [...variants]
+      [...profitVariants]
         .filter((row) => n(row.money_blocked) > 0)
         .sort((a, b) => n(b.money_blocked) - n(a.money_blocked))
         .slice(0, 8),
-    [variants],
+    [profitVariants],
   );
 
   if (loading) {
@@ -396,8 +505,7 @@ export default function ProfitIntelligencePage() {
           <span>NEW CITY STYLE • OWNER PROFIT CONTROL</span>
           <h1>Product & Category Profit Intelligence</h1>
           <p>
-            See which products, categories and brands are actually creating
-            profit — not just sales — and where stock money is getting blocked.
+            Profit is calculated only from registered stock: actual sold value minus purchase cost. Quick Items are excluded completely.
           </p>
         </div>
 
@@ -411,18 +519,22 @@ export default function ProfitIntelligencePage() {
       </section>
 
       {errorText && <div className="piError">{errorText}</div>}
+      <div className="piRuleNote">
+        <strong>Profit Rule:</strong> Purchase Cost → Actual Sold Price → Profit.
+        MRP is not used. POS Quick Items are excluded from all profit totals.
+      </div>
 
       <section className="piMetricGrid">
         <ProfitMetric
           label="Revenue • 30 Days"
           value={money(totals.revenue)}
-          note="Variant intelligence revenue"
+          note="Registered-stock sales only • Quick Items excluded"
           tone="blue"
         />
         <ProfitMetric
           label="Gross Profit • 30 Days"
           value={money(totals.profit)}
-          note="Revenue minus known purchase cost"
+          note="Actual sold value minus purchase cost"
           tone="gold"
         />
         <ProfitMetric
@@ -473,7 +585,7 @@ export default function ProfitIntelligencePage() {
           title="Best Profit Products"
           tone="green"
           rows={topProducts}
-          value={(row) => money(n(row.gross_profit_30d))}
+          value={(row) => money(actualProfit(row))}
           note={(row) =>
             `${percent(variantMargin(row))} margin • ${num(
               n(row.sold_30d),
@@ -488,7 +600,7 @@ export default function ProfitIntelligencePage() {
           rows={lowMarginProducts}
           value={(row) => percent(variantMargin(row))}
           note={(row) =>
-            `${money(n(row.gross_profit_30d))} profit • ${money(
+            `${money(actualProfit(row))} profit • ${money(
               n(row.revenue_30d),
             )} revenue`
           }
@@ -512,7 +624,7 @@ export default function ProfitIntelligencePage() {
         <div className="piPanelHeader">
           <div>
             <span>PRODUCT PROFIT CONTROL</span>
-            <h2>Product & Variant Profit Table</h2>
+            <h2>Actual Purchase vs Sold Profit Table</h2>
           </div>
 
           <div className="piFilters">
@@ -564,7 +676,7 @@ export default function ProfitIntelligencePage() {
                 <th>Category / Brand</th>
                 <th>Size / Colour</th>
                 <th>Cost</th>
-                <th>MRP</th>
+                <th>Avg Sold Price</th>
                 <th>Sold 30d</th>
                 <th>Revenue 30d</th>
                 <th>Profit 30d</th>
@@ -582,9 +694,9 @@ export default function ProfitIntelligencePage() {
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((row) => {
+                paginatedProducts.map((row) => {
                   const margin = variantMargin(row);
-                  const profit = n(row.gross_profit_30d);
+                  const profit = actualProfit(row);
 
                   return (
                     <tr key={`${row.variant_id}-${row.product_id}`}>
@@ -602,7 +714,7 @@ export default function ProfitIntelligencePage() {
                         <small>{row.color || "—"}</small>
                       </td>
                       <td>{money(n(row.weighted_purchase_cost))}</td>
-                      <td>{money(n(row.current_mrp))}</td>
+                      <td>{money(actualSoldPrice(row))}</td>
                       <td>{num(n(row.sold_30d))}</td>
                       <td>{money(n(row.revenue_30d))}</td>
                       <td
@@ -637,6 +749,90 @@ export default function ProfitIntelligencePage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="piPaginationBar">
+          <div className="piPaginationInfo">
+            Showing{" "}
+            <strong>
+              {filteredProducts.length === 0
+                ? 0
+                : (safeCurrentPage - 1) * PRODUCTS_PER_PAGE + 1}
+              -
+              {Math.min(
+                safeCurrentPage * PRODUCTS_PER_PAGE,
+                filteredProducts.length,
+              )}
+            </strong>{" "}
+            of <strong>{filteredProducts.length}</strong> products
+          </div>
+
+          <div className="piPaginationControls">
+            <button
+              type="button"
+              onClick={() =>
+                setCurrentPage((page) => Math.max(1, page - 1))
+              }
+              disabled={safeCurrentPage <= 1}
+            >
+              ← Previous
+            </button>
+
+            {visiblePageNumbers[0] > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(1)}
+                >
+                  1
+                </button>
+                {visiblePageNumbers[0] > 2 && (
+                  <span className="piPageDots">…</span>
+                )}
+              </>
+            )}
+
+            {visiblePageNumbers.map((page) => (
+              <button
+                type="button"
+                key={page}
+                className={
+                  page === safeCurrentPage ? "active" : undefined
+                }
+                onClick={() => setCurrentPage(page)}
+              >
+                {page}
+              </button>
+            ))}
+
+            {visiblePageNumbers[visiblePageNumbers.length - 1] <
+              totalPages && (
+              <>
+                {visiblePageNumbers[visiblePageNumbers.length - 1] <
+                  totalPages - 1 && (
+                  <span className="piPageDots">…</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(totalPages)}
+                >
+                  {totalPages}
+                </button>
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={() =>
+                setCurrentPage((page) =>
+                  Math.min(totalPages, page + 1),
+                )
+              }
+              disabled={safeCurrentPage >= totalPages}
+            >
+              Next →
+            </button>
+          </div>
         </div>
       </section>
 
@@ -714,6 +910,21 @@ export default function ProfitIntelligencePage() {
         .piHero button:disabled {
           opacity: 0.6;
           cursor: not-allowed;
+        }
+
+        .piRuleNote {
+          margin-top: 15px;
+          padding: 13px 15px;
+          border: 1px solid rgba(212, 175, 55, 0.34);
+          border-radius: 12px;
+          background: rgba(212, 175, 55, 0.08);
+          color: #5f4a10;
+          font-size: 11px;
+          line-height: 1.55;
+        }
+
+        .piRuleNote strong {
+          color: #0A2E73;
         }
 
         .piError {
@@ -802,6 +1013,78 @@ export default function ProfitIntelligencePage() {
 
         .piFilters input {
           min-width: 240px;
+        }
+
+        .piPaginationBar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          padding: 15px 16px 17px;
+          border-top: 1px solid #edf0f5;
+          background: linear-gradient(180deg, #ffffff, #fbfcff);
+        }
+
+        .piPaginationInfo {
+          color: #667085;
+          font-size: 10px;
+          font-weight: 750;
+        }
+
+        .piPaginationInfo strong {
+          color: ${ROYAL_BLUE};
+          font-weight: 950;
+        }
+
+        .piPaginationControls {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        .piPaginationControls button {
+          min-width: 34px;
+          height: 34px;
+          padding: 0 10px;
+          border: 1px solid #d9dee8;
+          border-radius: 9px;
+          background: #ffffff;
+          color: ${ROYAL_BLUE};
+          font-size: 9px;
+          font-weight: 900;
+          cursor: pointer;
+          transition:
+            transform 0.16s ease,
+            border-color 0.16s ease,
+            background 0.16s ease,
+            box-shadow 0.16s ease;
+        }
+
+        .piPaginationControls button:hover:not(:disabled) {
+          transform: translateY(-1px);
+          border-color: rgba(212, 175, 55, 0.72);
+          box-shadow: 0 6px 16px rgba(10, 46, 115, 0.09);
+        }
+
+        .piPaginationControls button.active {
+          border-color: ${GOLD};
+          background: linear-gradient(135deg, ${ROYAL_BLUE}, #174da4);
+          color: #ffffff;
+          box-shadow: 0 7px 18px rgba(10, 46, 115, 0.18);
+        }
+
+        .piPaginationControls button:disabled {
+          opacity: 0.38;
+          cursor: not-allowed;
+        }
+
+        .piPageDots {
+          padding: 0 2px;
+          color: #98a2b3;
+          font-size: 12px;
+          font-weight: 900;
         }
 
         .piTableWrap {

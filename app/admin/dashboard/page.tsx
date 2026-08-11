@@ -153,6 +153,29 @@ type GoogleBusinessStatus = {
   totalReviews?: number | null;
 };
 
+
+type ProfitVariantSummaryRow = {
+  variant_id: number;
+  product_id: number;
+  current_stock: number | null;
+  weighted_purchase_cost: number | null;
+  sold_30d: number | null;
+  revenue_30d: number | null;
+  money_blocked: number | null;
+};
+
+type ProfitVariantIdentityRow = {
+  id: number;
+  product_id: number;
+  variant_name?: string | null;
+  sku?: string | null;
+};
+
+type ProfitProductIdentityRow = {
+  id: number;
+  sku?: string | null;
+};
+
 type VisitorStats = {
   todayVisitors: number;
   sevenDayVisitors: number;
@@ -336,6 +359,11 @@ export default function AdminDashboardPage() {
       totalReviews: null,
     });
 
+  const [profitVariantRows, setProfitVariantRows] = useState<ProfitVariantSummaryRow[]>([]);
+  const [profitVariantIdentityRows, setProfitVariantIdentityRows] = useState<ProfitVariantIdentityRow[]>([]);
+  const [profitProductIdentityRows, setProfitProductIdentityRows] = useState<ProfitProductIdentityRow[]>([]);
+  const [profitSummaryLoading, setProfitSummaryLoading] = useState(true);
+
 
   const loadGoogleBusinessStatus = useCallback(
     async (showRefresh = false) => {
@@ -384,6 +412,52 @@ export default function AdminDashboardPage() {
     },
     [],
   );
+
+  const loadProfitSummary = useCallback(async () => {
+    setProfitSummaryLoading(true);
+
+    try {
+      const [intelligenceResult, variantIdentityResult, productIdentityResult] =
+        await Promise.all([
+          supabase
+            .from("ncs_variant_intelligence_v2")
+            .select(
+              "variant_id,product_id,current_stock,weighted_purchase_cost,sold_30d,revenue_30d,money_blocked",
+            )
+            .limit(1000),
+          supabase
+            .from("product_variants")
+            .select("id,product_id,variant_name,sku")
+            .limit(5000),
+          supabase
+            .from("products")
+            .select("id,sku")
+            .limit(5000),
+        ]);
+
+      if (intelligenceResult.error) throw intelligenceResult.error;
+      if (variantIdentityResult.error) throw variantIdentityResult.error;
+      if (productIdentityResult.error) throw productIdentityResult.error;
+
+      setProfitVariantRows(
+        (intelligenceResult.data || []) as ProfitVariantSummaryRow[],
+      );
+      setProfitVariantIdentityRows(
+        (variantIdentityResult.data || []) as ProfitVariantIdentityRow[],
+      );
+      setProfitProductIdentityRows(
+        (productIdentityResult.data || []) as ProfitProductIdentityRow[],
+      );
+    } catch (error) {
+      console.info("Unable to load Profit Intelligence summary:", error);
+      setProfitVariantRows([]);
+      setProfitVariantIdentityRows([]);
+      setProfitProductIdentityRows([]);
+    } finally {
+      setProfitSummaryLoading(false);
+    }
+  }, []);
+
 
   const loadDashboard = useCallback(
     async (showRefresh = false) => {
@@ -584,7 +658,8 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     void loadDashboard();
     void loadGoogleBusinessStatus();
-  }, [loadDashboard, loadGoogleBusinessStatus]);
+    void loadProfitSummary();
+  }, [loadDashboard, loadGoogleBusinessStatus, loadProfitSummary]);
 
   const todayStart = startOfLocalDay();
   const monthStart = startOfMonth();
@@ -1078,6 +1153,76 @@ export default function AdminDashboardPage() {
       .slice(0, 5);
   }, [visits]);
 
+  const dashboardProfitSummary = useMemo(() => {
+    const quickVariantIds = new Set(
+      profitVariantIdentityRows
+        .filter((row) => {
+          const name = String(row.variant_name || "").trim().toLowerCase();
+          const sku = String(row.sku || "").trim().toUpperCase();
+          return name === "quick item" || sku.startsWith("QUICK-");
+        })
+        .map((row) => Number(row.id)),
+    );
+
+    const quickProductIds = new Set<number>();
+
+    profitVariantIdentityRows.forEach((row) => {
+      const name = String(row.variant_name || "").trim().toLowerCase();
+      const sku = String(row.sku || "").trim().toUpperCase();
+
+      if (name === "quick item" || sku.startsWith("QUICK-")) {
+        quickProductIds.add(Number(row.product_id));
+      }
+    });
+
+    profitProductIdentityRows.forEach((row) => {
+      const sku = String(row.sku || "").trim().toUpperCase();
+      if (sku.startsWith("QUICK-")) quickProductIds.add(Number(row.id));
+    });
+
+    return profitVariantRows
+      .filter(
+        (row) =>
+          !quickVariantIds.has(Number(row.variant_id)) &&
+          !quickProductIds.has(Number(row.product_id)) &&
+          toNumber(row.weighted_purchase_cost) > 0,
+      )
+      .reduce(
+        (summary, row) => {
+          const sold = Math.max(0, toNumber(row.sold_30d));
+          const revenue = Math.max(0, toNumber(row.revenue_30d));
+          const purchaseCost =
+            Math.max(0, toNumber(row.weighted_purchase_cost)) * sold;
+
+          summary.revenue += revenue;
+          summary.profit += revenue - purchaseCost;
+          summary.blocked += Math.max(0, toNumber(row.money_blocked));
+          summary.stockInvestment +=
+            Math.max(0, toNumber(row.current_stock)) *
+            Math.max(0, toNumber(row.weighted_purchase_cost));
+
+          return summary;
+        },
+        {
+          revenue: 0,
+          profit: 0,
+          blocked: 0,
+          stockInvestment: 0,
+        },
+      );
+  }, [
+    profitProductIdentityRows,
+    profitVariantIdentityRows,
+    profitVariantRows,
+  ]);
+
+  const profitRevenue30d = dashboardProfitSummary.revenue;
+  const grossProfit30d = dashboardProfitSummary.profit;
+  const profitMargin30d =
+    profitRevenue30d > 0 ? (grossProfit30d / profitRevenue30d) * 100 : 0;
+  const blockedMoney = dashboardProfitSummary.blocked;
+  const stockInvestment = dashboardProfitSummary.stockInvestment;
+
   async function handleLogout() {
     try {
       await supabase.auth.signOut({ scope: "local" });
@@ -1159,7 +1304,23 @@ export default function AdminDashboardPage() {
               transform: rotate(360deg);
             }
           }
-        `}</style>
+  
+        @media (max-width: 760px) {
+          .profitDashboardGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .profitHeader {
+            align-items: stretch !important;
+            flex-direction: column;
+          }
+
+          .profitOpenButton {
+            width: 100%;
+          }
+        }
+
+      `}</style>
       </main>
     );
   }
@@ -1218,6 +1379,7 @@ export default function AdminDashboardPage() {
             onClick={() => {
               void loadDashboard(true);
               void loadGoogleBusinessStatus(true);
+              void loadProfitSummary();
             }}
             disabled={refreshing}
           >
@@ -1334,6 +1496,64 @@ export default function AdminDashboardPage() {
           )}
           note="Sales − purchases − expenses"
         />
+      </section>
+
+      <section className="profitIntelligencePanel">
+        <div className="profitGlow" aria-hidden="true" />
+        <div className="sectionHeader profitHeader">
+          <div>
+            <span>PROFIT INTELLIGENCE</span>
+            <h2>Know What Is Actually Making Money</h2>
+            <p className="profitSubtitle">
+              Profit uses only registered stock: actual sold value minus purchase cost. MRP and Quick Items are excluded.
+            </p>
+          </div>
+
+          <Link
+            href="/admin/profit-intelligence"
+            className="profitOpenButton"
+          >
+            Open Profit Intelligence →
+          </Link>
+        </div>
+
+        {profitSummaryLoading ? (
+          <div className="profitLoading">
+            Reading live profit intelligence...
+          </div>
+        ) : (
+          <div className="profitDashboardGrid">
+            <div className="profitMetricCard">
+              <span>30 DAY REVENUE</span>
+              <strong>{formatCurrency(profitRevenue30d)}</strong>
+              <small>Actual registered-stock sales • Quick Items excluded</small>
+            </div>
+
+            <div className="profitMetricCard highlight">
+              <span>GROSS PROFIT</span>
+              <strong>{formatCurrency(grossProfit30d)}</strong>
+              <small>Actual sold value minus purchase cost</small>
+            </div>
+
+            <div className="profitMetricCard">
+              <span>GROSS MARGIN</span>
+              <strong>{profitMargin30d.toFixed(1)}%</strong>
+              <small>Profit efficiency across tracked sales</small>
+            </div>
+
+            <div className="profitMetricCard warning">
+              <span>MONEY BLOCKED</span>
+              <strong>{formatCurrency(blockedMoney)}</strong>
+              <small>Capital sitting in slow / dead stock</small>
+            </div>
+
+            <div className="profitMetricCard">
+              <span>STOCK INVESTMENT</span>
+              <strong>{formatCurrency(stockInvestment)}</strong>
+              <small>Total inventory investment currently tracked</small>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="googleBusinessPanel">
@@ -2300,6 +2520,158 @@ export default function AdminDashboardPage() {
           border-radius: 19px;
           background: #ffffff;
           box-shadow: 0 12px 30px rgba(10, 46, 115, 0.07);
+        }
+
+
+        .profitIntelligencePanel {
+          position: relative;
+          overflow: hidden;
+          margin-top: 18px;
+          border: 1px solid rgba(212, 175, 55, 0.48);
+          border-radius: 22px;
+          background:
+            radial-gradient(circle at 92% 0%, rgba(212, 175, 55, 0.22), transparent 28%),
+            linear-gradient(135deg, #03153f, #0a2e73 68%, #174da4);
+          box-shadow: 0 18px 42px rgba(3, 21, 63, 0.18);
+          color: #fff;
+        }
+
+        .profitGlow {
+          position: absolute;
+          width: 240px;
+          height: 240px;
+          right: -90px;
+          top: -130px;
+          border-radius: 50%;
+          background: rgba(244, 216, 91, 0.18);
+          filter: blur(3px);
+          pointer-events: none;
+          animation: profitPulse 4s ease-in-out infinite;
+        }
+
+        .profitHeader {
+          position: relative;
+          z-index: 1;
+          border-bottom-color: rgba(255, 255, 255, 0.12) !important;
+        }
+
+        .profitHeader span {
+          color: #f4d85b !important;
+        }
+
+        .profitHeader h2 {
+          color: #fff !important;
+        }
+
+        .profitSubtitle {
+          max-width: 760px;
+          margin: 6px 0 0;
+          color: rgba(255, 255, 255, 0.68);
+          font-size: 11px;
+          line-height: 1.55;
+        }
+
+        .profitOpenButton {
+          min-height: 40px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 15px;
+          border: 1px solid rgba(212, 175, 55, 0.72);
+          border-radius: 11px;
+          background: linear-gradient(
+            135deg,
+            rgba(212, 175, 55, 0.16),
+            rgba(255, 255, 255, 0.06)
+          );
+          color: #f7dc79 !important;
+          font-size: 10px;
+          font-weight: 950;
+          text-decoration: none !important;
+          transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .profitOpenButton:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+        }
+
+        .profitDashboardGrid {
+          position: relative;
+          z-index: 1;
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 10px;
+          padding: 16px;
+        }
+
+        .profitMetricCard {
+          min-height: 116px;
+          padding: 15px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 15px;
+          background: rgba(255, 255, 255, 0.07);
+          backdrop-filter: blur(8px);
+          transition: transform 0.18s ease, border-color 0.18s ease;
+        }
+
+        .profitMetricCard:hover {
+          transform: translateY(-3px);
+          border-color: rgba(244, 216, 91, 0.52);
+        }
+
+        .profitMetricCard.highlight {
+          border-color: rgba(212, 175, 55, 0.46);
+          background: linear-gradient(
+            145deg,
+            rgba(212, 175, 55, 0.17),
+            rgba(255, 255, 255, 0.07)
+          );
+        }
+
+        .profitMetricCard.warning {
+          border-color: rgba(255, 165, 112, 0.36);
+        }
+
+        .profitMetricCard span,
+        .profitMetricCard strong,
+        .profitMetricCard small {
+          display: block;
+        }
+
+        .profitMetricCard span {
+          color: #f1d26a;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 0.55px;
+        }
+
+        .profitMetricCard strong {
+          margin-top: 10px;
+          color: #fff;
+          font-size: 20px;
+          line-height: 1;
+        }
+
+        .profitMetricCard small {
+          margin-top: 9px;
+          color: rgba(255, 255, 255, 0.62);
+          font-size: 8px;
+          line-height: 1.45;
+        }
+
+        .profitLoading {
+          position: relative;
+          z-index: 1;
+          padding: 25px 18px;
+          color: rgba(255, 255, 255, 0.7);
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        @keyframes profitPulse {
+          0%, 100% { transform: scale(1); opacity: 0.65; }
+          50% { transform: scale(1.12); opacity: 1; }
         }
 
         .googleBusinessPanel {

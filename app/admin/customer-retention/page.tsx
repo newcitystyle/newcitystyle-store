@@ -137,15 +137,22 @@ function birthdayWithinDays(value: string | null, days = 30) {
   return difference >= 0 && difference <= days;
 }
 
-function whatsappHref(phone: string, name: string, message: string) {
-  const clean = normalisePhone(phone);
-  if (!clean) return "#";
+type ReminderKind = "due" | "inactive" | "birthday" | "thank_you";
 
-  const full = clean.startsWith("91") && clean.length > 10 ? clean : `91${clean}`;
-  return `https://wa.me/${full}?text=${encodeURIComponent(
-    `Hi ${name || "Customer"}, ${message}`,
-  )}`;
+type ReminderPayload = {
+  customerKey: string;
+  phone: string;
+  customerName: string;
+  kind: ReminderKind;
+  dueAmount?: number;
+  dueDate?: string | null;
+  inactiveDays?: number;
+};
+
+function reminderButtonKey(customerKey: string, kind: ReminderKind) {
+  return `${customerKey}:${kind}`;
 }
+
 
 export default function CustomerRetentionPage() {
   const [sales, setSales] = useState<PosSale[]>([]);
@@ -154,6 +161,12 @@ export default function CustomerRetentionPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [sendingReminderKey, setSendingReminderKey] = useState("");
+  const [sentReminderKeys, setSentReminderKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [reminderMessage, setReminderMessage] = useState("");
+
 
   const loadData = useCallback(async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -375,6 +388,64 @@ export default function CustomerRetentionPage() {
       ? Math.round((repeatCustomers.length / customers.length) * 100)
       : 0;
 
+  const sendWhatsAppReminder = useCallback(
+    async (payload: ReminderPayload) => {
+      const key = reminderButtonKey(payload.customerKey, payload.kind);
+
+      if (!payload.phone || sendingReminderKey) return;
+
+      setSendingReminderKey(key);
+      setReminderMessage("");
+
+      try {
+        const response = await fetch("/api/whatsapp/customer-reminder", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: payload.phone,
+            customerName: payload.customerName,
+            kind: payload.kind,
+            dueAmount: payload.dueAmount ?? 0,
+            dueDate: payload.dueDate ?? null,
+            inactiveDays: payload.inactiveDays ?? 0,
+          }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok || data?.success !== true) {
+          throw new Error(
+            typeof data?.error === "string"
+              ? data.error
+              : "WhatsApp reminder could not be sent.",
+          );
+        }
+
+        setSentReminderKeys((current) => {
+          const next = new Set(current);
+          next.add(key);
+          return next;
+        });
+
+        setReminderMessage(
+          `WhatsApp reminder sent to ${payload.customerName}.`,
+        );
+      } catch (error) {
+        console.error("WhatsApp reminder send error:", error);
+        setReminderMessage(
+          error instanceof Error
+            ? error.message
+            : "WhatsApp reminder could not be sent.",
+        );
+      } finally {
+        setSendingReminderKey("");
+      }
+    },
+    [sendingReminderKey],
+  );
+
   if (loading) {
     return (
       <main className="retentionLoading">
@@ -457,6 +528,9 @@ export default function CustomerRetentionPage() {
       </section>
 
       {errorMessage && <div className="errorBox">{errorMessage}</div>}
+      {reminderMessage && (
+        <div className="reminderNotice">{reminderMessage}</div>
+      )}
 
       <section className="metricGrid">
         <RetentionMetric
@@ -503,6 +577,9 @@ export default function CustomerRetentionPage() {
             customers={topCustomers}
             emptyText="No purchase history found yet."
             mode="spend"
+                      onSendReminder={sendWhatsAppReminder}
+            sendingReminderKey={sendingReminderKey}
+            sentReminderKeys={sentReminderKeys}
           />
         </RetentionPanel>
 
@@ -515,6 +592,9 @@ export default function CustomerRetentionPage() {
             customers={inactiveCustomers.slice(0, 12)}
             emptyText="No inactive customers right now."
             mode="inactive"
+                      onSendReminder={sendWhatsAppReminder}
+            sendingReminderKey={sendingReminderKey}
+            sentReminderKeys={sentReminderKeys}
           />
         </RetentionPanel>
       </section>
@@ -531,6 +611,9 @@ export default function CustomerRetentionPage() {
             customers={dueCustomers.slice(0, 12)}
             emptyText="All customer dues are clear."
             mode="due"
+                      onSendReminder={sendWhatsAppReminder}
+            sendingReminderKey={sendingReminderKey}
+            sentReminderKeys={sentReminderKeys}
           />
         </RetentionPanel>
 
@@ -543,6 +626,9 @@ export default function CustomerRetentionPage() {
             customers={birthdayCustomers.slice(0, 12)}
             emptyText="No birthday data found for the next 30 days."
             mode="birthday"
+                      onSendReminder={sendWhatsAppReminder}
+            sendingReminderKey={sendingReminderKey}
+            sentReminderKeys={sentReminderKeys}
           />
         </RetentionPanel>
       </section>
@@ -568,18 +654,10 @@ export default function CustomerRetentionPage() {
               const birthday = birthdayWithinDays(customer.birthday, 30);
 
               let reason = "Customer follow-up";
-              let message =
-                "we would love to welcome you back to NEW CITY STYLE. New arrivals are available.";
-
               if (hasDue) {
                 reason = `Due ${formatCurrency(customer.dueAmount)}`;
-                message = `this is a friendly reminder that your pending balance is ${formatCurrency(
-                  customer.dueAmount,
-                )}. Please contact NEW CITY STYLE when convenient.`;
               } else if (birthday) {
                 reason = "Upcoming birthday";
-                message =
-                  "wishing you a wonderful birthday season from NEW CITY STYLE. We would be happy to help you find something special.";
               } else if (inactive) {
                 reason = `${daysSince(customer.lastPurchaseAt)} days inactive`;
               }
@@ -591,13 +669,42 @@ export default function CustomerRetentionPage() {
                     <span>{displayPhone(customer.phone)}</span>
                   </div>
                   <b>{reason}</b>
-                  <a
-                    href={whatsappHref(customer.phone, customer.name, message)}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    WhatsApp
-                  </a>
+                  {(() => {
+                    const kind: ReminderKind = hasDue
+                      ? "due"
+                      : birthday
+                        ? "birthday"
+                        : inactive
+                          ? "inactive"
+                          : "thank_you";
+                    const buttonKey = reminderButtonKey(customer.key, kind);
+                    const isSending = sendingReminderKey === buttonKey;
+                    const isSent = sentReminderKeys.has(buttonKey);
+
+                    return (
+                      <button
+                        type="button"
+                        disabled={isSending || isSent}
+                        onClick={() =>
+                          void sendWhatsAppReminder({
+                            customerKey: customer.key,
+                            phone: customer.phone,
+                            customerName: customer.name,
+                            kind,
+                            dueAmount: customer.dueAmount,
+                            dueDate: customer.nextDueDate,
+                            inactiveDays: daysSince(customer.lastPurchaseAt),
+                          })
+                        }
+                      >
+                        {isSent
+                          ? "Sent ✓"
+                          : isSending
+                            ? "Sending..."
+                            : "Send Reminder"}
+                      </button>
+                    );
+                  })()}
                 </article>
               );
             })
@@ -679,6 +786,17 @@ export default function CustomerRetentionPage() {
         .retentionHero button:disabled {
           opacity: 0.65;
           cursor: not-allowed;
+        }
+
+        .reminderNotice {
+          margin-top: 16px;
+          padding: 13px 15px;
+          border: 1px solid rgba(22, 131, 74, 0.28);
+          border-radius: 12px;
+          background: rgba(22, 131, 74, 0.08);
+          color: #126b3e;
+          font-size: 12px;
+          font-weight: 850;
         }
 
         .errorBox {
@@ -808,7 +926,7 @@ export default function CustomerRetentionPage() {
           font-weight: 700;
         }
 
-        .customerRow a {
+        .customerRow button {
           min-width: 82px;
           min-height: 34px;
           display: inline-flex;
@@ -821,6 +939,12 @@ export default function CustomerRetentionPage() {
           font-size: 10px;
           font-weight: 950;
           text-decoration: none !important;
+          cursor: pointer;
+        }
+
+        .customerRow button:disabled {
+          cursor: not-allowed;
+          opacity: 0.7;
         }
 
         .emptyState {
@@ -873,7 +997,7 @@ export default function CustomerRetentionPage() {
           font-size: 10px;
         }
 
-        .followUpCard a {
+        .followUpCard button {
           min-height: 36px;
           display: inline-flex;
           align-items: center;
@@ -884,6 +1008,13 @@ export default function CustomerRetentionPage() {
           font-size: 10px;
           font-weight: 950;
           text-decoration: none !important;
+          border: 0;
+          cursor: pointer;
+        }
+
+        .followUpCard button:disabled {
+          cursor: not-allowed;
+          opacity: 0.72;
         }
 
         @media (max-width: 1280px) {
@@ -916,7 +1047,7 @@ export default function CustomerRetentionPage() {
             grid-template-columns: 1fr;
           }
 
-          .customerRow a {
+          .customerRow button {
             width: 100%;
           }
         }
@@ -1012,10 +1143,16 @@ function CustomerTable({
   customers,
   emptyText,
   mode,
+  onSendReminder,
+  sendingReminderKey,
+  sentReminderKeys,
 }: {
   customers: CustomerSummary[];
   emptyText: string;
   mode: "spend" | "inactive" | "due" | "birthday";
+  onSendReminder: (payload: ReminderPayload) => Promise<void>;
+  sendingReminderKey: string;
+  sentReminderKeys: Set<string>;
 }) {
   if (customers.length === 0) {
     return <div className="emptyState">{emptyText}</div>;
@@ -1048,17 +1185,6 @@ function CustomerTable({
             : "Date unavailable";
         }
 
-        const message =
-          mode === "due"
-            ? `this is a friendly reminder that your pending balance is ${formatCurrency(
-                customer.dueAmount,
-              )}. Please contact NEW CITY STYLE when convenient.`
-            : mode === "birthday"
-              ? "wishing you a wonderful birthday season from NEW CITY STYLE. We would be happy to help you find something special."
-              : mode === "inactive"
-                ? "we would love to welcome you back to NEW CITY STYLE. New arrivals are available."
-                : "thank you for being one of our valued NEW CITY STYLE customers.";
-
         return (
           <div className="customerRow" key={customer.key}>
             <div className="customerMain">
@@ -1074,19 +1200,49 @@ function CustomerTable({
               <small>{note}</small>
             </div>
 
-            {customer.phone ? (
-              <a
-                href={whatsappHref(
-                  customer.phone,
-                  customer.name,
-                  message,
-                )}
-                target="_blank"
-                rel="noreferrer"
-              >
-                WhatsApp
-              </a>
-            ) : (
+            {customer.phone ? (() => {
+              const kind: ReminderKind =
+                mode === "due"
+                  ? "due"
+                  : mode === "birthday"
+                    ? "birthday"
+                    : mode === "inactive"
+                      ? "inactive"
+                      : "thank_you";
+              const key = reminderButtonKey(customer.key, kind);
+              const isSending = sendingReminderKey === key;
+              const isSent = sentReminderKeys.has(key);
+
+              return (
+                <button
+                  type="button"
+                  disabled={isSending || isSent}
+                  onClick={() =>
+                    void onSendReminder({
+                      customerKey: customer.key,
+                      phone: customer.phone,
+                      customerName: customer.name,
+                      kind,
+                      dueAmount: customer.dueAmount,
+                      dueDate: customer.nextDueDate,
+                      inactiveDays: daysSince(customer.lastPurchaseAt),
+                    })
+                  }
+                >
+                  {isSent
+                    ? "Sent ✓"
+                    : isSending
+                      ? "Sending..."
+                      : mode === "due"
+                        ? "Send Reminder"
+                        : mode === "birthday"
+                          ? "Send Wish"
+                          : mode === "inactive"
+                            ? "Send Comeback"
+                            : "Send Thanks"}
+                </button>
+              );
+            })() : (
               <span />
             )}
           </div>
