@@ -176,6 +176,19 @@ type ProfitProductIdentityRow = {
   sku?: string | null;
 };
 
+type TodayOwnerProfitAlertRow = {
+  id: number;
+  alert_type: "LOW_PROFIT" | "LOSS_SALE" | "BILL_PROFIT_SUMMARY" | string;
+  invoice_number?: string | null;
+  registered_revenue?: number | string | null;
+  registered_purchase_cost?: number | string | null;
+  bill_profit?: number | string | null;
+  profit_per_unit?: number | string | null;
+  margin_percent?: number | string | null;
+  final_bill_amount?: number | string | null;
+  created_at?: string | null;
+};
+
 type VisitorStats = {
   todayVisitors: number;
   sevenDayVisitors: number;
@@ -363,6 +376,10 @@ export default function AdminDashboardPage() {
   const [profitVariantIdentityRows, setProfitVariantIdentityRows] = useState<ProfitVariantIdentityRow[]>([]);
   const [profitProductIdentityRows, setProfitProductIdentityRows] = useState<ProfitProductIdentityRow[]>([]);
   const [profitSummaryLoading, setProfitSummaryLoading] = useState(true);
+  const [todayOwnerProfitRows, setTodayOwnerProfitRows] =
+    useState<TodayOwnerProfitAlertRow[]>([]);
+  const [todayOwnerProfitLoading, setTodayOwnerProfitLoading] =
+    useState(true);
 
 
   const loadGoogleBusinessStatus = useCallback(
@@ -458,6 +475,37 @@ export default function AdminDashboardPage() {
     }
   }, []);
 
+
+  const loadTodayOwnerProfit = useCallback(async () => {
+    setTodayOwnerProfitLoading(true);
+
+    try {
+      const todayIso = startOfLocalDay().toISOString();
+
+      const { data, error } = await supabase
+        .from("owner_profit_alerts")
+        .select(
+          "id,alert_type,invoice_number,registered_revenue,registered_purchase_cost,bill_profit,profit_per_unit,margin_percent,final_bill_amount,created_at",
+        )
+        .gte("created_at", todayIso)
+        .order("created_at", { ascending: false })
+        .limit(1000);
+
+      if (error) throw error;
+
+      setTodayOwnerProfitRows(
+        (data || []) as TodayOwnerProfitAlertRow[],
+      );
+    } catch (error) {
+      console.info(
+        "Unable to load today's owner profit snapshot:",
+        error,
+      );
+      setTodayOwnerProfitRows([]);
+    } finally {
+      setTodayOwnerProfitLoading(false);
+    }
+  }, []);
 
   const loadDashboard = useCallback(
     async (showRefresh = false) => {
@@ -659,7 +707,13 @@ export default function AdminDashboardPage() {
     void loadDashboard();
     void loadGoogleBusinessStatus();
     void loadProfitSummary();
-  }, [loadDashboard, loadGoogleBusinessStatus, loadProfitSummary]);
+    void loadTodayOwnerProfit();
+  }, [
+    loadDashboard,
+    loadGoogleBusinessStatus,
+    loadProfitSummary,
+    loadTodayOwnerProfit,
+  ]);
 
   const todayStart = startOfLocalDay();
   const monthStart = startOfMonth();
@@ -1223,6 +1277,63 @@ export default function AdminDashboardPage() {
   const blockedMoney = dashboardProfitSummary.blocked;
   const stockInvestment = dashboardProfitSummary.stockInvestment;
 
+  const todayOwnerProfit = useMemo(() => {
+    const billRows = todayOwnerProfitRows.filter(
+      (row) => row.alert_type === "BILL_PROFIT_SUMMARY",
+    );
+
+    const registeredRevenue = billRows.reduce(
+      (sum, row) =>
+        sum + Math.max(0, toNumber(row.registered_revenue)),
+      0,
+    );
+
+    const purchaseCost = billRows.reduce(
+      (sum, row) =>
+        sum + Math.max(0, toNumber(row.registered_purchase_cost)),
+      0,
+    );
+
+    const actualProfit = billRows.reduce(
+      (sum, row) =>
+        sum +
+        toNumber(
+          row.bill_profit != null
+            ? row.bill_profit
+            : row.profit_per_unit,
+        ),
+      0,
+    );
+
+    const trackedBillValue = billRows.reduce(
+      (sum, row) =>
+        sum + Math.max(0, toNumber(row.final_bill_amount)),
+      0,
+    );
+
+    const lowProfitAlerts = todayOwnerProfitRows.filter(
+      (row) => row.alert_type === "LOW_PROFIT",
+    ).length;
+
+    const lossAlerts = todayOwnerProfitRows.filter(
+      (row) => row.alert_type === "LOSS_SALE",
+    ).length;
+
+    return {
+      trackedBills: billRows.length,
+      trackedBillValue,
+      registeredRevenue,
+      purchaseCost,
+      actualProfit,
+      margin:
+        registeredRevenue > 0
+          ? (actualProfit / registeredRevenue) * 100
+          : 0,
+      lowProfitAlerts,
+      lossAlerts,
+    };
+  }, [todayOwnerProfitRows]);
+
   async function handleLogout() {
     try {
       await supabase.auth.signOut({ scope: "local" });
@@ -1305,7 +1416,27 @@ export default function AdminDashboardPage() {
             }
           }
   
+        @media (max-width: 1200px) {
+          .todayProfitGrid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+
         @media (max-width: 760px) {
+          .todayProfitHeader {
+            align-items: stretch;
+            flex-direction: column;
+          }
+
+          .todayProfitOpenButton {
+            width: 100%;
+            box-sizing: border-box;
+          }
+
+          .todayProfitGrid {
+            grid-template-columns: 1fr 1fr;
+          }
+
           .profitDashboardGrid {
             grid-template-columns: 1fr;
           }
@@ -1380,6 +1511,7 @@ export default function AdminDashboardPage() {
               void loadDashboard(true);
               void loadGoogleBusinessStatus(true);
               void loadProfitSummary();
+              void loadTodayOwnerProfit();
             }}
             disabled={refreshing}
           >
@@ -1455,6 +1587,88 @@ export default function AdminDashboardPage() {
           } suppliers pending`}
           tone="red"
         />
+      </section>
+
+      <section className="todayOwnerProfitPanel">
+        <div className="todayProfitGlow" aria-hidden="true" />
+
+        <div className="todayProfitHeader">
+          <div>
+            <span>TODAY • OWNER PROFIT SNAPSHOT</span>
+            <h2>Today&apos;s Actual Profit</h2>
+            <p>
+              Private registered-stock profit from completed bills.
+              MRP is never used and Quick Items are excluded.
+            </p>
+          </div>
+
+          <Link
+            href="/admin/owner-control"
+            className="todayProfitOpenButton"
+          >
+            Open Owner Control Center →
+          </Link>
+        </div>
+
+        {todayOwnerProfitLoading ? (
+          <div className="todayProfitLoading">
+            Reading today&apos;s completed bill profit...
+          </div>
+        ) : (
+          <div className="todayProfitGrid">
+            <div className="todayProfitMetric heroMetric">
+              <span>ACTUAL PROFIT</span>
+              <strong
+                className={
+                  todayOwnerProfit.actualProfit < 0
+                    ? "negative"
+                    : "positive"
+                }
+              >
+                {formatCurrency(todayOwnerProfit.actualProfit)}
+              </strong>
+              <small>
+                Registered revenue − registered purchase cost
+              </small>
+            </div>
+
+            <div className="todayProfitMetric">
+              <span>PROFIT MARGIN</span>
+              <strong>{todayOwnerProfit.margin.toFixed(1)}%</strong>
+              <small>Today&apos;s tracked registered-stock margin</small>
+            </div>
+
+            <div className="todayProfitMetric">
+              <span>TRACKED BILLS</span>
+              <strong>{todayOwnerProfit.trackedBills}</strong>
+              <small>
+                {formatCurrency(todayOwnerProfit.trackedBillValue)} bill value
+              </small>
+            </div>
+
+            <div className="todayProfitMetric">
+              <span>REGISTERED REVENUE</span>
+              <strong>
+                {formatCurrency(todayOwnerProfit.registeredRevenue)}
+              </strong>
+              <small>
+                Purchase cost {formatCurrency(todayOwnerProfit.purchaseCost)}
+              </small>
+            </div>
+
+            <div className="todayProfitMetric warning">
+              <span>LOW PROFIT ALERTS</span>
+              <strong>{todayOwnerProfit.lowProfitAlerts}</strong>
+              <small>Pre-bill margin warnings today</small>
+            </div>
+
+            <div className="todayProfitMetric danger">
+              <span>LOSS ALERTS</span>
+              <strong>{todayOwnerProfit.lossAlerts}</strong>
+              <small>Below purchase-cost warnings today</small>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="secondaryKpis">
@@ -2522,6 +2736,178 @@ export default function AdminDashboardPage() {
           box-shadow: 0 12px 30px rgba(10, 46, 115, 0.07);
         }
 
+
+        .todayOwnerProfitPanel {
+          position: relative;
+          overflow: hidden;
+          margin-top: 14px;
+          padding: 18px;
+          border: 1px solid rgba(212, 175, 55, 0.52);
+          border-radius: 20px;
+          background:
+            radial-gradient(
+              circle at 90% -10%,
+              rgba(212, 175, 55, 0.22),
+              transparent 30%
+            ),
+            linear-gradient(135deg, #ffffff, #fbfcff);
+          box-shadow: 0 14px 34px rgba(3, 21, 63, 0.08);
+        }
+
+        .todayProfitGlow {
+          position: absolute;
+          width: 190px;
+          height: 190px;
+          right: -70px;
+          top: -110px;
+          border-radius: 50%;
+          background: rgba(212, 175, 55, 0.12);
+          pointer-events: none;
+          animation: profitPulse 4s ease-in-out infinite;
+        }
+
+        .todayProfitHeader {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          padding-bottom: 13px;
+          border-bottom: 1px solid rgba(10, 46, 115, 0.08);
+        }
+
+        .todayProfitHeader span {
+          color: ${GOLD};
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 0.85px;
+        }
+
+        .todayProfitHeader h2 {
+          margin: 3px 0 2px;
+          color: ${ROYAL_BLUE};
+          font-size: 18px;
+        }
+
+        .todayProfitHeader p {
+          max-width: 720px;
+          margin: 0;
+          color: #667085;
+          font-size: 9px;
+          line-height: 1.55;
+        }
+
+        .todayProfitOpenButton {
+          min-height: 38px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex: 0 0 auto;
+          padding: 0 13px;
+          border: 1px solid rgba(212, 175, 55, 0.72);
+          border-radius: 10px;
+          background: ${ROYAL_BLUE};
+          color: #fff;
+          text-decoration: none;
+          font-size: 9px;
+          font-weight: 900;
+          transition:
+            transform 0.2s ease,
+            box-shadow 0.2s ease;
+        }
+
+        .todayProfitOpenButton:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 18px rgba(10, 46, 115, 0.16);
+        }
+
+        .todayProfitLoading {
+          padding: 24px 2px 6px;
+          color: #667085;
+          font-size: 10px;
+          font-weight: 750;
+        }
+
+        .todayProfitGrid {
+          position: relative;
+          z-index: 1;
+          display: grid;
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+          gap: 9px;
+          margin-top: 13px;
+        }
+
+        .todayProfitMetric {
+          min-width: 0;
+          min-height: 104px;
+          padding: 13px;
+          border: 1px solid rgba(10, 46, 115, 0.09);
+          border-radius: 14px;
+          background: #fff;
+          box-shadow: 0 7px 18px rgba(3, 21, 63, 0.04);
+        }
+
+        .todayProfitMetric.heroMetric {
+          background: linear-gradient(135deg, #03153f, #0a2e73);
+          border-color: rgba(212, 175, 55, 0.48);
+        }
+
+        .todayProfitMetric span {
+          display: block;
+          color: #667085;
+          font-size: 7px;
+          font-weight: 950;
+          letter-spacing: 0.55px;
+        }
+
+        .todayProfitMetric strong {
+          display: block;
+          margin-top: 9px;
+          color: ${ROYAL_BLUE};
+          font-size: 18px;
+          line-height: 1.25;
+        }
+
+        .todayProfitMetric strong.positive {
+          color: #80f2bd;
+        }
+
+        .todayProfitMetric strong.negative {
+          color: #ffb4ad;
+        }
+
+        .todayProfitMetric small {
+          display: block;
+          margin-top: 7px;
+          color: #98a2b3;
+          font-size: 7px;
+          line-height: 1.45;
+        }
+
+        .todayProfitMetric.heroMetric span {
+          color: ${GOLD};
+        }
+
+        .todayProfitMetric.heroMetric small {
+          color: rgba(255, 255, 255, 0.66);
+        }
+
+        .todayProfitMetric.warning {
+          background: #fffaeb;
+        }
+
+        .todayProfitMetric.warning strong {
+          color: #b54708;
+        }
+
+        .todayProfitMetric.danger {
+          background: #fef3f2;
+        }
+
+        .todayProfitMetric.danger strong {
+          color: #b42318;
+        }
 
         .profitIntelligencePanel {
           position: relative;
