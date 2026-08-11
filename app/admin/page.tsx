@@ -85,6 +85,18 @@ type DashboardData = {
   coupons: Coupon[];
 };
 
+type GoogleBusinessStatus = {
+  connected: boolean;
+  googleApiReady: boolean;
+  loading: boolean;
+  refreshing: boolean;
+  status?: number | null;
+  error?: string | null;
+  accountCount?: number;
+  rating?: number | null;
+  totalReviews?: number | null;
+};
+
 const emptyDashboardData: DashboardData = {
   products: [],
   orders: [],
@@ -101,10 +113,71 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [googleBusiness, setGoogleBusiness] = useState<GoogleBusinessStatus>({
+    connected: false,
+    googleApiReady: false,
+    loading: true,
+    refreshing: false,
+    status: null,
+    error: null,
+    accountCount: 0,
+    rating: null,
+    totalReviews: null,
+  });
 
   useEffect(() => {
-    loadDashboard();
+    void loadDashboard();
+    void loadGoogleBusinessStatus();
   }, []);
+
+  async function loadGoogleBusinessStatus(showRefreshing = false) {
+    setGoogleBusiness((current) => ({
+      ...current,
+      loading: showRefreshing ? current.loading : true,
+      refreshing: showRefreshing,
+    }));
+
+    try {
+      const response = await fetch("/api/google-business/status", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const data = await response.json();
+
+      setGoogleBusiness((current) => ({
+        ...current,
+        connected: Boolean(data?.connected),
+        googleApiReady: Boolean(data?.googleApiReady),
+        loading: false,
+        refreshing: false,
+        status: Number.isFinite(Number(data?.status))
+          ? Number(data.status)
+          : response.status,
+        error:
+          typeof data?.error === "string" ? data.error : null,
+        accountCount:
+          typeof data?.accountCount === "number"
+            ? data.accountCount
+            : 0,
+        rating:
+          typeof data?.rating === "number" ? data.rating : null,
+        totalReviews:
+          typeof data?.totalReviews === "number"
+            ? data.totalReviews
+            : null,
+      }));
+    } catch (error) {
+      console.error("Unable to load Google Business status:", error);
+
+      setGoogleBusiness((current) => ({
+        ...current,
+        loading: false,
+        refreshing: false,
+        error: "Unable to check Google Business connection.",
+      }));
+    }
+  }
 
   async function loadDashboard(showRefreshing = false) {
     if (showRefreshing) {
@@ -605,7 +678,10 @@ export default function AdminPage() {
 
               <button
                 type="button"
-                onClick={() => loadDashboard(true)}
+                onClick={() => {
+                  void loadDashboard(true);
+                  void loadGoogleBusinessStatus(true);
+                }}
                 disabled={refreshing}
                 style={{
                   background: "#D4AF37",
@@ -682,6 +758,182 @@ export default function AdminPage() {
             value={activeCoupons}
             subtitle={`${dashboardData.coupons.length} total coupons`}
           />
+        </section>
+
+        <section
+          className="google-business-section"
+          style={{
+            marginBottom: "25px",
+          }}
+        >
+          <DashboardPanel
+            title="Google Business Profile"
+            subtitle="Official Google profile connection, API access and review readiness"
+            action={
+              googleBusiness.connected ? (
+                <button
+                  type="button"
+                  onClick={() => void loadGoogleBusinessStatus(true)}
+                  disabled={googleBusiness.refreshing}
+                  style={{
+                    border: "1px solid #D4AF37",
+                    background: "#FFFDF5",
+                    color: "#0A2E73",
+                    padding: "9px 12px",
+                    borderRadius: "8px",
+                    fontWeight: 800,
+                    cursor: googleBusiness.refreshing
+                      ? "not-allowed"
+                      : "pointer",
+                    opacity: googleBusiness.refreshing ? 0.65 : 1,
+                  }}
+                >
+                  {googleBusiness.refreshing
+                    ? "Refreshing..."
+                    : "Refresh Google"}
+                </button>
+              ) : (
+                <a
+                  href="/api/google-business/connect"
+                  style={{
+                    textDecoration: "none",
+                    background: "#0A2E73",
+                    color: "#FFFFFF",
+                    padding: "9px 12px",
+                    borderRadius: "8px",
+                    fontWeight: 800,
+                  }}
+                >
+                  Connect Google
+                </a>
+              )
+            }
+          >
+            {googleBusiness.loading ? (
+              <div
+                style={{
+                  padding: "26px 12px",
+                  textAlign: "center",
+                  color: "#777",
+                  fontWeight: 700,
+                }}
+              >
+                Checking Google Business connection...
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(190px, 1fr))",
+                  gap: "14px",
+                }}
+              >
+                <GoogleBusinessMetric
+                  label="Connection"
+                  value={googleBusiness.connected ? "Connected" : "Not Connected"}
+                  tone={googleBusiness.connected ? "success" : "danger"}
+                  icon={googleBusiness.connected ? "✅" : "🔌"}
+                />
+
+                <GoogleBusinessMetric
+                  label="API Access"
+                  value={
+                    googleBusiness.googleApiReady
+                      ? "Ready"
+                      : googleBusiness.connected &&
+                          (googleBusiness.status === 429 ||
+                            googleBusiness.status === 403)
+                        ? "Pending Approval"
+                        : googleBusiness.connected
+                          ? "Waiting"
+                          : "Not Connected"
+                  }
+                  tone={
+                    googleBusiness.googleApiReady
+                      ? "success"
+                      : googleBusiness.connected
+                        ? "warning"
+                        : "danger"
+                  }
+                  icon={googleBusiness.googleApiReady ? "🟢" : "🟡"}
+                />
+
+                <GoogleBusinessMetric
+                  label="Google Rating"
+                  value={
+                    googleBusiness.rating != null
+                      ? `${googleBusiness.rating.toFixed(1)} ★`
+                      : "Waiting for API"
+                  }
+                  tone={googleBusiness.rating != null ? "gold" : "neutral"}
+                  icon="⭐"
+                />
+
+                <GoogleBusinessMetric
+                  label="Google Reviews"
+                  value={
+                    googleBusiness.totalReviews != null
+                      ? googleBusiness.totalReviews
+                      : "Waiting for API"
+                  }
+                  tone={
+                    googleBusiness.totalReviews != null
+                      ? "gold"
+                      : "neutral"
+                  }
+                  icon="💬"
+                />
+
+                {googleBusiness.googleApiReady &&
+                  googleBusiness.accountCount !== undefined && (
+                    <GoogleBusinessMetric
+                      label="Google Accounts"
+                      value={googleBusiness.accountCount}
+                      tone="neutral"
+                      icon="🏪"
+                    />
+                  )}
+
+                {googleBusiness.error && (
+                  <div
+                    style={{
+                      gridColumn: "1 / -1",
+                      borderRadius: "12px",
+                      padding: "13px 14px",
+                      background:
+                        googleBusiness.connected &&
+                        (googleBusiness.status === 429 ||
+                          googleBusiness.status === 403)
+                          ? "#FFFBEB"
+                          : "#FFF7F7",
+                      border:
+                        googleBusiness.connected &&
+                        (googleBusiness.status === 429 ||
+                          googleBusiness.status === 403)
+                          ? "1px solid #FDE68A"
+                          : "1px solid #FCA5A5",
+                      color:
+                        googleBusiness.connected &&
+                        (googleBusiness.status === 429 ||
+                          googleBusiness.status === 403)
+                          ? "#92400E"
+                          : "#B91C1C",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {googleBusiness.connected &&
+                    (googleBusiness.status === 429 ||
+                      googleBusiness.status === 403)
+                      ? "Google connection is complete. Business Profile API access is waiting for Google approval. Live rating and reviews will appear here after access becomes available."
+                      : googleBusiness.error}
+                  </div>
+                )}
+              </div>
+            )}
+          </DashboardPanel>
         </section>
 
         <section
@@ -1447,6 +1699,89 @@ function MetricCard({
       >
         {subtitle}
       </p>
+    </div>
+  );
+}
+
+function GoogleBusinessMetric({
+  label,
+  value,
+  icon,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string | number;
+  icon: string;
+  tone?: "success" | "warning" | "danger" | "gold" | "neutral";
+}) {
+  const toneStyles: Record<
+    "success" | "warning" | "danger" | "gold" | "neutral",
+    { background: string; border: string; color: string }
+  > = {
+    success: {
+      background: "#F0FDF4",
+      border: "#BBF7D0",
+      color: "#166534",
+    },
+    warning: {
+      background: "#FFFBEB",
+      border: "#FDE68A",
+      color: "#92400E",
+    },
+    danger: {
+      background: "#FFF7F7",
+      border: "#FCA5A5",
+      color: "#B91C1C",
+    },
+    gold: {
+      background: "#FFFDF5",
+      border: "rgba(212,175,55,0.55)",
+      color: "#8A6A00",
+    },
+    neutral: {
+      background: "#F8FAFC",
+      border: "#E5E7EB",
+      color: "#0A2E73",
+    },
+  };
+
+  const selectedTone = toneStyles[tone];
+
+  return (
+    <div
+      style={{
+        borderRadius: "14px",
+        padding: "16px",
+        background: selectedTone.background,
+        border: `1px solid ${selectedTone.border}`,
+        minHeight: "112px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          color: "#666",
+          fontSize: "12px",
+          fontWeight: 800,
+          marginBottom: "12px",
+        }}
+      >
+        <span style={{ fontSize: "18px" }}>{icon}</span>
+        <span>{label}</span>
+      </div>
+
+      <strong
+        style={{
+          display: "block",
+          color: selectedTone.color,
+          fontSize: "20px",
+          lineHeight: 1.25,
+        }}
+      >
+        {value}
+      </strong>
     </div>
   );
 }
