@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function redirectAndClearState(request: NextRequest, path: string) {
   const response = NextResponse.redirect(new URL(path, request.url));
-
   response.cookies.delete("google_business_oauth_state");
-
   return response;
 }
 
@@ -34,11 +33,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (
-      !returnedState ||
-      !savedState ||
-      returnedState !== savedState
-    ) {
+    if (!returnedState || !savedState || returnedState !== savedState) {
       console.error("Google OAuth state verification failed.");
 
       return redirectAndClearState(
@@ -55,10 +50,12 @@ export async function GET(request: NextRequest) {
     }
 
     const clientId = process.env.GOOGLE_BUSINESS_CLIENT_ID;
-    const clientSecret =
-      process.env.GOOGLE_BUSINESS_CLIENT_SECRET;
-    const redirectUri =
-      process.env.GOOGLE_BUSINESS_REDIRECT_URI;
+    const clientSecret = process.env.GOOGLE_BUSINESS_CLIENT_SECRET;
+    const redirectUri = process.env.GOOGLE_BUSINESS_REDIRECT_URI;
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceRoleKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!clientId || !clientSecret || !redirectUri) {
       console.error(
@@ -71,13 +68,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (!supabaseUrl || !supabaseServiceRoleKey) {
+      console.error(
+        "Missing Supabase server environment variables."
+      );
+
+      return redirectAndClearState(
+        request,
+        "/admin?google_business=supabase_config_error"
+      );
+    }
+
     const tokenResponse = await fetch(
       "https://oauth2.googleapis.com/token",
       {
         method: "POST",
         headers: {
-          "Content-Type":
-            "application/x-www-form-urlencoded",
+          "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
           client_id: clientId,
@@ -93,10 +100,7 @@ export async function GET(request: NextRequest) {
     const tokenData = await tokenResponse.json();
 
     if (!tokenResponse.ok) {
-      console.error(
-        "Google token exchange failed:",
-        tokenData
-      );
+      console.error("Google token exchange failed:", tokenData);
 
       return redirectAndClearState(
         request,
@@ -104,7 +108,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const refreshToken = tokenData?.refresh_token;
+    const refreshToken =
+      typeof tokenData?.refresh_token === "string"
+        ? tokenData.refresh_token
+        : null;
+
+    const scope =
+      typeof tokenData?.scope === "string"
+        ? tokenData.scope
+        : null;
 
     if (!refreshToken) {
       console.warn(
@@ -117,12 +129,48 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // IMPORTANT:
-    // Never send the refresh token to the browser.
-    // Next step will securely store it server-side.
+    const supabaseAdmin = createClient(
+      supabaseUrl,
+      supabaseServiceRoleKey,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      }
+    );
+
+    const now = new Date().toISOString();
+
+    const { error: saveError } = await supabaseAdmin
+      .from("google_business_credentials")
+      .upsert(
+        {
+          id: "primary",
+          refresh_token: refreshToken,
+          scope,
+          updated_at: now,
+        },
+        {
+          onConflict: "id",
+        }
+      );
+
+    if (saveError) {
+      console.error(
+        "Failed to save Google Business refresh token:",
+        saveError
+      );
+
+      return redirectAndClearState(
+        request,
+        "/admin?google_business=save_error"
+      );
+    }
 
     console.log(
-      "Google Business Profile OAuth connected successfully."
+      "Google Business Profile OAuth connected and refresh token stored successfully."
     );
 
     return redirectAndClearState(
@@ -130,10 +178,7 @@ export async function GET(request: NextRequest) {
       "/admin?google_business=connected"
     );
   } catch (error) {
-    console.error(
-      "Google Business callback error:",
-      error
-    );
+    console.error("Google Business callback error:", error);
 
     return redirectAndClearState(
       request,
