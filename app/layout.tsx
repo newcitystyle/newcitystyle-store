@@ -3,6 +3,7 @@ import Script from "next/script";
 import "./globals.css";
 import VisitorTracker from "../components/VisitorTracker";
 import NcsAiAssistant from "../components/NcsAiAssistant";
+import Navbar from "../components/Navbar";
 type SeoSettings = {
   site_title: string;
   site_description: string;
@@ -587,6 +588,7 @@ export default async function RootLayout({
           </noscript>
         )}
 
+        <Navbar />
         {children}
         <NcsAiAssistant />
       </body>
