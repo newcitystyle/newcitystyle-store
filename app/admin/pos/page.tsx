@@ -65,6 +65,13 @@ type ProductVariantRow = {
   is_active?: boolean | null;
 };
 
+type PosPurchaseCostRow = {
+  product_id?: number | string | null;
+  variant_id?: number | string | null;
+  purchase_price?: number | string | null;
+  created_at?: string | null;
+};
+
 type PosProduct = {
   key: string;
   productId: number;
@@ -2174,6 +2181,63 @@ if (!variantsError) {
   );
 }
 
+      // Profit safety: use the latest real purchase history as the primary
+      // cost source. This also covers registered products that do not have
+      // a product_variants row, which previously appeared in Sales but were
+      // silently excluded from Bill Profit.
+      const latestPurchaseCostByProductId = new Map<number, number>();
+      const latestPurchaseCostByVariantId = new Map<number, number>();
+
+      const productIdsForCostLookup = safeProductRows
+        .map((product) => Number(product.id))
+        .filter((productId) => Number.isFinite(productId) && productId > 0);
+
+      if (productIdsForCostLookup.length > 0) {
+        const { data: purchaseCostData, error: purchaseCostError } =
+          await supabase
+            .from("purchase_items")
+            .select("product_id,variant_id,purchase_price,created_at")
+            .in("product_id", productIdsForCostLookup)
+            .order("created_at", { ascending: false });
+
+        if (!purchaseCostError) {
+          const purchaseCostRows =
+            (purchaseCostData || []) as unknown as PosPurchaseCostRow[];
+
+          purchaseCostRows.forEach((row) => {
+            const productId = Number(row.product_id);
+            const variantId = Number(row.variant_id);
+            const purchasePrice = Math.max(0, toNumber(row.purchase_price));
+
+            if (purchasePrice <= 0) {
+              return;
+            }
+
+            // Rows are newest-first, so the first valid cost wins.
+            if (
+              Number.isFinite(variantId) &&
+              variantId > 0 &&
+              !latestPurchaseCostByVariantId.has(variantId)
+            ) {
+              latestPurchaseCostByVariantId.set(variantId, purchasePrice);
+            }
+
+            if (
+              Number.isFinite(productId) &&
+              productId > 0 &&
+              !latestPurchaseCostByProductId.has(productId)
+            ) {
+              latestPurchaseCostByProductId.set(productId, purchasePrice);
+            }
+          });
+        } else {
+          console.info(
+            "Latest purchase cost lookup unavailable; using variant cost fallback:",
+            purchaseCostError.message
+          );
+        }
+      }
+
       const variantsByProductId = new Map<
         number,
         ProductVariantRow[]
@@ -2263,12 +2327,14 @@ if (!variantsError) {
                 "",
               size: variant.size?.trim() || "",
               color: variant.color?.trim() || "",
-              purchasePrice: Math.max(
-                0,
-                toNumber(variant.purchase_price)
-              ),
+              purchasePrice:
+                latestPurchaseCostByVariantId.get(Number(variant.id)) ||
+                latestPurchaseCostByProductId.get(productId) ||
+                Math.max(0, toNumber(variant.purchase_price)),
               purchasePriceKnown:
-                toNumber(variant.purchase_price) > 0,
+                (latestPurchaseCostByVariantId.get(Number(variant.id)) ||
+                  latestPurchaseCostByProductId.get(productId) ||
+                  Math.max(0, toNumber(variant.purchase_price))) > 0,
             });
           });
 
@@ -2294,8 +2360,10 @@ if (!variantsError) {
           barcode: product.barcode?.trim() || "",
           size: "",
           color: "",
-          purchasePrice: 0,
-          purchasePriceKnown: false,
+          purchasePrice:
+            latestPurchaseCostByProductId.get(productId) || 0,
+          purchasePriceKnown:
+            (latestPurchaseCostByProductId.get(productId) || 0) > 0,
         });
       });
 
@@ -6850,31 +6918,47 @@ if (!variantsError) {
       <section
         className={`ncsPosAiPanel ${posAiExpanded ? "expanded" : "collapsed"}`}
       >
-        <button
-          type="button"
-          className="ncsPosAiCompactToggle"
-          onClick={() => setPosAiExpanded((current) => !current)}
-          aria-expanded={posAiExpanded}
-        >
-          <div className="ncsPosAiHeading">
-            <div className="ncsPosAiBadge">✦</div>
+        {!posAiExpanded ? (
+          <button
+            type="button"
+            className="ncsPosAiMascotRunner"
+            onClick={() => setPosAiExpanded(true)}
+            aria-label="Open NCS AI Billing Assistant"
+          >
+            <span className="ncsPosAiMascotCharacter" aria-hidden="true">
+              <span className="ncsPosAiMascotPerson">🧑‍💼</span>
+              <span className="ncsPosAiMascotCart">🛒</span>
+            </span>
+            <span className="ncsPosAiMascotBubble">
+              <b>NCS AI</b>
+              <small>Tap me</small>
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="ncsPosAiCompactToggle"
+            onClick={() => setPosAiExpanded(false)}
+            aria-expanded={posAiExpanded}
+          >
+            <div className="ncsPosAiHeading">
+              <div className="ncsPosAiBadge">✦</div>
 
-            <div>
-              <strong>NCS AI Billing Assistant</strong>
-              <small>
-                {posAiExpanded
-                  ? "Add, edit, discount, stock, customer and payment commands."
-                  : "Tap the corner assistant to open smart billing commands"}
-              </small>
+              <div>
+                <strong>NCS AI Billing Assistant</strong>
+                <small>
+                  Add, edit, discount, stock, customer and payment commands.
+                </small>
+              </div>
             </div>
-          </div>
 
-          <div className="ncsPosAiCompactRight">
-            <span className="ncsPosAiLiveDot" />
-            <b>{posAiExpanded ? "Close" : "Open AI"}</b>
-            <em>{posAiExpanded ? "⌃" : "⌄"}</em>
-          </div>
-        </button>
+            <div className="ncsPosAiCompactRight">
+              <span className="ncsPosAiLiveDot" />
+              <b>Close</b>
+              <em>⌃</em>
+            </div>
+          </button>
+        )}
 
         {posAiExpanded && (
           <div className="ncsPosAiExpandableBody">
@@ -9624,47 +9708,127 @@ if (!variantsError) {
         }
 
         .ncsPosAiPanel.collapsed {
-          width: auto;
-          max-width: 210px;
+          left: 0;
+          right: auto;
+          bottom: 12px;
+          width: 210px;
+          max-width: none;
           max-height: none;
           padding: 0;
-          overflow: hidden;
-          border-radius: 999px;
-          background:
-            radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.24), transparent 34%),
-            linear-gradient(135deg, #ffffff, #f8f4ec);
-          box-shadow:
-            0 14px 34px rgba(3, 21, 63, 0.20),
-            0 0 0 1px rgba(212, 175, 55, 0.14);
-          animation: ncsAiFloatPulse 3.2s ease-in-out infinite;
+          overflow: visible;
+          border: 0;
+          border-radius: 0;
+          background: transparent;
+          box-shadow: none;
+          animation: ncsAiMascotWalkAcross 20s linear infinite;
+          will-change: transform;
         }
 
-        .ncsPosAiPanel.collapsed .ncsPosAiCompactToggle {
-          min-height: 58px;
-          padding: 8px 10px;
-        }
-
-        .ncsPosAiPanel.collapsed .ncsPosAiHeading > div:last-child {
+        .ncsPosAiPanel.collapsed::before {
           display: none;
         }
 
-        .ncsPosAiPanel.collapsed .ncsPosAiBadge {
-          width: 42px;
-          height: 42px;
-          flex-basis: 42px;
-          border-radius: 50%;
+        .ncsPosAiPanel.collapsed:hover,
+        .ncsPosAiPanel.collapsed:focus-within {
+          animation-play-state: paused;
+        }
+
+        .ncsPosAiMascotRunner {
+          width: 210px;
+          min-height: 68px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          padding: 5px 8px;
+          border: 0;
+          background: transparent;
+          cursor: pointer;
+          font-family: inherit;
+          filter: drop-shadow(0 8px 12px rgba(3, 21, 63, 0.18));
+        }
+
+        .ncsPosAiMascotCharacter {
+          display: flex;
+          align-items: flex-end;
+          gap: 0;
+          transform-origin: 50% 100%;
+          animation: ncsAiMascotStep .62s ease-in-out infinite alternate;
+        }
+
+        .ncsPosAiMascotPerson {
+          display: block;
+          font-size: 37px;
+          line-height: 1;
+          transform: translateX(5px);
+        }
+
+        .ncsPosAiMascotCart {
+          display: block;
+          font-size: 34px;
+          line-height: 1;
+          transform: translateY(3px);
+        }
+
+        .ncsPosAiMascotBubble {
+          min-width: 66px;
+          padding: 7px 10px;
+          border: 1px solid rgba(212, 175, 55, 0.72);
+          border-radius: 14px 14px 14px 4px;
+          background: linear-gradient(145deg, ${DEEP_BLUE}, ${ROYAL_BLUE});
+          color: #ffffff;
+          text-align: left;
+          box-shadow: 0 8px 20px rgba(3, 21, 63, 0.18);
+        }
+
+        .ncsPosAiMascotBubble b {
+          display: block;
+          color: ${GOLD};
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: .05em;
+        }
+
+        .ncsPosAiMascotBubble small {
+          display: block;
+          margin-top: 1px;
+          color: #ffffff;
+          font-size: 8px;
+          font-weight: 800;
         }
 
         .ncsPosAiPanel.expanded {
           border-radius: 20px;
         }
 
-        @keyframes ncsAiFloatPulse {
-          0%, 100% {
-            transform: translateY(0);
+        @keyframes ncsAiMascotWalkAcross {
+          0% {
+            transform: translateX(calc(100vw + 30px));
           }
-          50% {
-            transform: translateY(-4px);
+          100% {
+            transform: translateX(-235px);
+          }
+        }
+
+        @keyframes ncsAiMascotStep {
+          from {
+            transform: translateY(0) rotate(-1deg);
+          }
+          to {
+            transform: translateY(-4px) rotate(1deg);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .ncsPosAiPanel.collapsed {
+            right: 18px;
+            left: auto;
+            animation: none;
+            transform: none;
+          }
+
+          .ncsPosAiMascotCharacter {
+            animation: none;
           }
         }
 
