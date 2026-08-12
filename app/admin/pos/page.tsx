@@ -5810,6 +5810,90 @@ if (!variantsError) {
     }
   }
 
+  async function sendPreBillOwnerProfitPreview(
+    previewReference: string,
+  ) {
+    if (!isBrowserOnline() || cartItems.length === 0 || subtotal <= 0) {
+      return;
+    }
+
+    // Strict owner rule:
+    // Actual Profit = actual registered sold value - registered purchase cost.
+    // MRP is NEVER used. Quick Items are excluded completely.
+    const realisedRevenueFactor = Math.max(
+      0,
+      Math.min(1, finalPayable / subtotal),
+    );
+
+    const registeredItems = cartItems.filter(
+      (item) =>
+        !item.isQuickItem &&
+        item.purchasePriceKnown === true &&
+        toNumber(item.purchasePrice) > 0 &&
+        item.quantity > 0,
+    );
+
+    if (registeredItems.length === 0) {
+      return;
+    }
+
+    const summary = registeredItems.reduce(
+      (current, item) => {
+        const quantity = Math.max(0, item.quantity);
+        const purchasePrice = Math.max(
+          0,
+          toNumber(item.purchasePrice),
+        );
+        const actualSellingPrice = Math.max(
+          0,
+          item.price * realisedRevenueFactor,
+        );
+
+        current.registeredUnits += quantity;
+        current.registeredRevenue +=
+          actualSellingPrice * quantity;
+        current.purchaseCost +=
+          purchasePrice * quantity;
+
+        return current;
+      },
+      {
+        registeredUnits: 0,
+        registeredRevenue: 0,
+        purchaseCost: 0,
+      },
+    );
+
+    const actualProfit =
+      summary.registeredRevenue - summary.purchaseCost;
+
+    const marginPercent =
+      summary.registeredRevenue > 0
+        ? (actualProfit / summary.registeredRevenue) * 100
+        : 0;
+
+    const { error } = await supabase.rpc(
+      "ncs_create_pre_bill_profit_alert",
+      {
+        p_invoice_number: previewReference,
+        p_registered_revenue: Number(
+          summary.registeredRevenue.toFixed(2),
+        ),
+        p_registered_purchase_cost: Number(
+          summary.purchaseCost.toFixed(2),
+        ),
+        p_bill_profit: Number(actualProfit.toFixed(2)),
+        p_margin_percent: Number(marginPercent.toFixed(2)),
+        p_final_bill_amount: Number(finalPayable.toFixed(2)),
+        p_registered_item_count: summary.registeredUnits,
+      },
+    );
+
+    if (error) {
+      throw error;
+    }
+  }
+
   async function handleCompleteSale() {
     if (saleSubmissionLockRef.current || isCompletingSale) {
       return;
@@ -5894,6 +5978,23 @@ if (!variantsError) {
                 .toString(36)
                 .slice(2, 10)}`
           : createOfflineClientTransactionId();
+
+      // OWNER PRE-BILL PUSH:
+      // Send the owner a profit/loss preview BEFORE complete_pos_sale.
+      // This is informational only. It never asks for approval and never
+      // blocks billing if the push/RPC has a temporary problem.
+      if (isBrowserOnline()) {
+        try {
+          await sendPreBillOwnerProfitPreview(
+            `PRE-${clientTransactionId}`,
+          );
+        } catch (preBillAlertError) {
+          console.info(
+            "Pre-bill owner profit preview could not be sent. Billing will continue:",
+            preBillAlertError,
+          );
+        }
+      }
 
       if (!isBrowserOnline()) {
         const offlineInvoiceNumber =
