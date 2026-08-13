@@ -258,6 +258,14 @@ const commonSizes = [
 
 const ncsPhotoStudioPresets: PhotoStudioPreset[] = [
   {
+    id: "0",
+    shortLabel: "MAIN",
+    name: "NCS World-Class Catalog",
+    description: "Clean luxury ivory editorial studio designed specifically for the primary e-commerce product image.",
+    recommendedFor: "Main product image, website cards, search results, premium catalogue",
+    backgroundStyle: "soft warm ivory seamless studio, subtle depth, clean luxury catalog lighting, no frames, no shelves, no decorative distractions",
+  },
+  {
     id: "1",
     shortLabel: "1",
     name: "Royal Boutique Wall",
@@ -324,7 +332,6 @@ const ncsPhotoStudioPresets: PhotoStudioPreset[] = [
 ];
 
 let ncsBackgroundRemovalPipelinePromise: Promise<any> | null = null;
-let ncsBen2BackgroundRemovalPipelinePromise: Promise<any> | null = null;
 
 async function getNcsBackgroundRemovalPipeline() {
   if (ncsBackgroundRemovalPipelinePromise) {
@@ -349,7 +356,7 @@ async function getNcsBackgroundRemovalPipeline() {
         );
       } catch (error) {
         console.warn(
-          "NCS Photo Studio MODNet WebGPU startup failed; falling back to browser CPU/WASM.",
+          "NCS Photo Studio WebGPU startup failed; falling back to browser CPU/WASM.",
           error
         );
       }
@@ -368,245 +375,6 @@ async function getNcsBackgroundRemovalPipeline() {
   });
 
   return ncsBackgroundRemovalPipelinePromise;
-}
-
-async function getNcsBen2BackgroundRemovalPipeline() {
-  if (ncsBen2BackgroundRemovalPipelinePromise) {
-    return ncsBen2BackgroundRemovalPipelinePromise;
-  }
-
-  ncsBen2BackgroundRemovalPipelinePromise = (async () => {
-    const { pipeline } = await import("@huggingface/transformers");
-    const hasWebGpu =
-      typeof navigator !== "undefined" &&
-      "gpu" in (navigator as Navigator & { gpu?: unknown });
-
-    if (hasWebGpu) {
-      try {
-        return await pipeline(
-          "background-removal",
-          "onnx-community/BEN2-ONNX",
-          {
-            device: "webgpu",
-          }
-        );
-      } catch (error) {
-        console.warn(
-          "NCS Photo Studio BEN2 WebGPU startup failed; falling back to browser CPU/WASM.",
-          error
-        );
-      }
-    }
-
-    return pipeline(
-      "background-removal",
-      "onnx-community/BEN2-ONNX"
-    );
-  })().catch((error) => {
-    ncsBen2BackgroundRemovalPipelinePromise = null;
-    throw error;
-  });
-
-  return ncsBen2BackgroundRemovalPipelinePromise;
-}
-
-function getFirstBackgroundRemovalResult(output: any) {
-  if (Array.isArray(output)) {
-    return output[0] ?? null;
-  }
-
-  if (
-    output &&
-    typeof output === "object" &&
-    0 in (output as Record<number, unknown>)
-  ) {
-    return (output as Record<number, unknown>)[0] ?? null;
-  }
-
-  return output ?? null;
-}
-
-async function rawImageLikeToCanvas(rawImage: any) {
-  if (!rawImage) {
-    throw new Error("The local engine returned an empty mask.");
-  }
-
-  if (typeof rawImage.toCanvas === "function") {
-    const canvas = await Promise.resolve(rawImage.toCanvas());
-    if (canvas instanceof HTMLCanvasElement) {
-      return canvas;
-    }
-  }
-
-  const width = Number(rawImage.width || rawImage.size?.[0] || 0);
-  const height = Number(rawImage.height || rawImage.size?.[1] || 0);
-  const channels = Number(rawImage.channels || 0);
-  const data = rawImage.data as
-    | Uint8Array
-    | Uint8ClampedArray
-    | undefined;
-
-  if (!width || !height || !data?.length) {
-    throw new Error("The local engine returned an unsupported mask format.");
-  }
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    throw new Error("This browser could not prepare the local mask canvas.");
-  }
-
-  const imageData = ctx.createImageData(width, height);
-
-  for (let pixelIndex = 0; pixelIndex < width * height; pixelIndex += 1) {
-    const sourceIndex = pixelIndex * Math.max(channels, 1);
-    const targetIndex = pixelIndex * 4;
-
-    if (channels === 4) {
-      imageData.data[targetIndex] = data[sourceIndex] ?? 0;
-      imageData.data[targetIndex + 1] = data[sourceIndex + 1] ?? 0;
-      imageData.data[targetIndex + 2] = data[sourceIndex + 2] ?? 0;
-      imageData.data[targetIndex + 3] = data[sourceIndex + 3] ?? 255;
-    } else if (channels === 3) {
-      imageData.data[targetIndex] = data[sourceIndex] ?? 0;
-      imageData.data[targetIndex + 1] = data[sourceIndex + 1] ?? 0;
-      imageData.data[targetIndex + 2] = data[sourceIndex + 2] ?? 0;
-      imageData.data[targetIndex + 3] = 255;
-    } else {
-      const value = data[sourceIndex] ?? 0;
-      imageData.data[targetIndex] = value;
-      imageData.data[targetIndex + 1] = value;
-      imageData.data[targetIndex + 2] = value;
-      imageData.data[targetIndex + 3] = 255;
-    }
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-  return canvas;
-}
-
-function normalizeMaskCanvas(
-  sourceMaskCanvas: HTMLCanvasElement,
-  targetWidth: number,
-  targetHeight: number
-) {
-  const scaledCanvas = document.createElement("canvas");
-  scaledCanvas.width = targetWidth;
-  scaledCanvas.height = targetHeight;
-
-  const ctx = scaledCanvas.getContext("2d", {
-    willReadFrequently: true,
-  });
-
-  if (!ctx) {
-    throw new Error("This browser could not normalize the product mask.");
-  }
-
-  ctx.clearRect(0, 0, targetWidth, targetHeight);
-  ctx.drawImage(sourceMaskCanvas, 0, 0, targetWidth, targetHeight);
-
-  const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
-  const pixels = imageData.data;
-
-  let alphaHasVariation = false;
-  let firstAlpha = pixels[3] ?? 255;
-
-  for (let index = 3; index < pixels.length; index += 64) {
-    if (Math.abs((pixels[index] ?? 255) - firstAlpha) > 4) {
-      alphaHasVariation = true;
-      break;
-    }
-  }
-
-  for (let index = 0; index < pixels.length; index += 4) {
-    const red = pixels[index] ?? 0;
-    const green = pixels[index + 1] ?? 0;
-    const blue = pixels[index + 2] ?? 0;
-    const alpha = pixels[index + 3] ?? 255;
-
-    const luminance = Math.round(
-      red * 0.299 + green * 0.587 + blue * 0.114
-    );
-
-    const maskValue = alphaHasVariation ? alpha : luminance;
-
-    pixels[index] = 255;
-    pixels[index + 1] = 255;
-    pixels[index + 2] = 255;
-    pixels[index + 3] = maskValue;
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-  return scaledCanvas;
-}
-
-async function createCutoutCanvasFromLocalOutput(
-  sourceImage: HTMLImageElement,
-  output: any
-) {
-  const result = getFirstBackgroundRemovalResult(output);
-  const maskLike =
-    result &&
-    typeof result === "object" &&
-    "mask" in result &&
-    (result as { mask?: unknown }).mask
-      ? (result as { mask: unknown }).mask
-      : result;
-
-  const rawMaskCanvas = await rawImageLikeToCanvas(maskLike);
-
-  const sourceWidth = sourceImage.naturalWidth || sourceImage.width;
-  const sourceHeight = sourceImage.naturalHeight || sourceImage.height;
-
-  const maskCanvas = normalizeMaskCanvas(
-    rawMaskCanvas,
-    sourceWidth,
-    sourceHeight
-  );
-
-  const cutoutCanvas = document.createElement("canvas");
-  cutoutCanvas.width = sourceWidth;
-  cutoutCanvas.height = sourceHeight;
-
-  const cutoutCtx = cutoutCanvas.getContext("2d");
-  if (!cutoutCtx) {
-    throw new Error("This browser could not start the product photo canvas.");
-  }
-
-  cutoutCtx.drawImage(
-    sourceImage,
-    0,
-    0,
-    cutoutCanvas.width,
-    cutoutCanvas.height
-  );
-  cutoutCtx.globalCompositeOperation = "destination-in";
-  cutoutCtx.drawImage(
-    maskCanvas,
-    0,
-    0,
-    cutoutCanvas.width,
-    cutoutCanvas.height
-  );
-  cutoutCtx.globalCompositeOperation = "source-over";
-
-  const bounds = findAlphaBounds(cutoutCanvas);
-  const foregroundAreaRatio =
-    (bounds.width * bounds.height) /
-    Math.max(1, cutoutCanvas.width * cutoutCanvas.height);
-
-  if (
-    bounds.width < 24 ||
-    bounds.height < 24 ||
-    foregroundAreaRatio < 0.002
-  ) {
-    throw new Error("The local engine returned an unusable foreground mask.");
-  }
-
-  return cutoutCanvas;
 }
 
 function canvasToBlob(
@@ -686,7 +454,36 @@ function drawNcsPremiumBackground(
   ctx.save();
   ctx.clearRect(0, 0, width, height);
 
-  if (presetId === "1") {
+  if (presetId === "0") {
+    // Primary e-commerce image: quiet, premium and product-first.
+    // No frames, shelves or decorative elements that compete with the garment.
+    const base = ctx.createLinearGradient(0, 0, 0, height);
+    base.addColorStop(0, "#FEFDFB");
+    base.addColorStop(0.56, "#FAF7F1");
+    base.addColorStop(1, "#F2ECE2");
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, width, height);
+
+    const centerGlow = ctx.createRadialGradient(
+      width * 0.5,
+      height * 0.39,
+      width * 0.05,
+      width * 0.5,
+      height * 0.44,
+      width * 0.67
+    );
+    centerGlow.addColorStop(0, "rgba(255,255,255,0.94)");
+    centerGlow.addColorStop(0.58, "rgba(255,255,255,0.35)");
+    centerGlow.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = centerGlow;
+    ctx.fillRect(0, 0, width, height);
+
+    const floor = ctx.createLinearGradient(0, height * 0.75, 0, height);
+    floor.addColorStop(0, "rgba(231,222,208,0)");
+    floor.addColorStop(1, "rgba(222,210,193,0.28)");
+    ctx.fillStyle = floor;
+    ctx.fillRect(0, height * 0.72, width, height * 0.28);
+  } else if (presetId === "1") {
     const wall = ctx.createLinearGradient(0, 0, width, height);
     wall.addColorStop(0, "#071A43");
     wall.addColorStop(0.55, "#0A2E73");
@@ -868,6 +665,30 @@ function drawNcsPremiumBackground(
   ctx.restore();
 }
 
+function refineProductCutoutEdges(canvas: HTMLCanvasElement) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return;
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+
+  // Tighten weak semi-transparent mask pixels that commonly create white/grey halos.
+  // RGB product pixels are left untouched; only alpha is refined.
+  for (let index = 3; index < data.length; index += 4) {
+    const alpha = data[index];
+
+    if (alpha <= 22) {
+      data[index] = 0;
+    } else if (alpha < 92) {
+      data[index] = Math.round(((alpha - 22) / 70) * 72);
+    } else if (alpha < 176) {
+      data[index] = Math.min(255, Math.round(alpha * 1.08));
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+}
+
 function findAlphaBounds(canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) {
@@ -955,7 +776,7 @@ export default function AddProductPage() {
   const [selectedStudioSourceIndex, setSelectedStudioSourceIndex] =
     useState(0);
   const [selectedPhotoStudioPresetId, setSelectedPhotoStudioPresetId] =
-    useState("1");
+    useState("0");
   const [photoStudioEnhancedImage, setPhotoStudioEnhancedImage] =
     useState("");
   const [uploadingStudioSource, setUploadingStudioSource] =
@@ -1823,87 +1644,59 @@ export default function AddProductPage() {
     setPhotoStudioStatus({
       type: "idle",
       message:
-        "Trying NCS Local Engine 1 first. If needed, Local Engine 2 will run automatically before any Cloud AI fallback...",
+        "Trying the free local NCS photo engine first. If it is unavailable, Cloud AI will be tried automatically...",
     });
 
     try {
-      const sourceImage = await loadCanvasImage(
-        selectedPhotoStudioSourceImage
-      );
-
-      let cutoutCanvas: HTMLCanvasElement | null = null;
-      let localEngineUsed = "";
-      const localEngineErrors: string[] = [];
-
-      try {
-        setPhotoStudioStatus({
-          type: "idle",
-          message:
-            "Local Engine 1 (MODNet): removing the background on this device...",
-        });
-
-        const modnetSegmenter =
-          await getNcsBackgroundRemovalPipeline();
-        const modnetOutput = await modnetSegmenter(
-          selectedPhotoStudioSourceImage
-        );
-
-        cutoutCanvas = await createCutoutCanvasFromLocalOutput(
-          sourceImage,
-          modnetOutput
-        );
-        localEngineUsed = "MODNet";
-      } catch (modnetError) {
-        const message =
-          modnetError instanceof Error
-            ? modnetError.message
-            : "MODNet failed.";
-
-        localEngineErrors.push(`MODNet: ${message}`);
-        console.warn("NCS MODNet local engine failed:", modnetError);
-
-        setPhotoStudioStatus({
-          type: "idle",
-          message:
-            "Local Engine 1 could not isolate this product. Trying Local Engine 2 (BEN2) automatically. The first BEN2 download can take longer, then the browser will cache it...",
-        });
-
-        try {
-          const ben2Segmenter =
-            await getNcsBen2BackgroundRemovalPipeline();
-          const ben2Output = await ben2Segmenter([
-            selectedPhotoStudioSourceImage,
-          ]);
-
-          cutoutCanvas = await createCutoutCanvasFromLocalOutput(
-            sourceImage,
-            ben2Output
-          );
-          localEngineUsed = "BEN2";
-        } catch (ben2Error) {
-          const ben2Message =
-            ben2Error instanceof Error
-              ? ben2Error.message
-              : "BEN2 failed.";
-
-          localEngineErrors.push(`BEN2: ${ben2Message}`);
-          console.warn("NCS BEN2 local engine failed:", ben2Error);
-        }
-      }
-
-      if (!cutoutCanvas) {
-        throw new Error(
-          localEngineErrors.length
-            ? localEngineErrors.join(" | ")
-            : "Both local background-removal engines failed."
-        );
-      }
+      const segmenter = await getNcsBackgroundRemovalPipeline();
 
       setPhotoStudioStatus({
         type: "idle",
         message:
-          `${localEngineUsed} removed the background locally. Preparing the selected NCS premium studio background...`,
+          "Removing the background and preparing the premium NCS studio image locally...",
       });
+
+      const [sourceImage, output] = await Promise.all([
+        loadCanvasImage(selectedPhotoStudioSourceImage),
+        segmenter(selectedPhotoStudioSourceImage),
+      ]);
+
+      const mask = Array.isArray(output) ? output[0] : null;
+      if (!mask || typeof mask.toCanvas !== "function") {
+        throw new Error(
+          "The local background-removal model did not return a usable mask."
+        );
+      }
+
+      const maskCanvas = mask.toCanvas() as HTMLCanvasElement;
+      const cutoutCanvas = document.createElement("canvas");
+      cutoutCanvas.width = sourceImage.naturalWidth || sourceImage.width;
+      cutoutCanvas.height = sourceImage.naturalHeight || sourceImage.height;
+
+      const cutoutCtx = cutoutCanvas.getContext("2d");
+      if (!cutoutCtx) {
+        throw new Error("This browser could not start the product photo canvas.");
+      }
+
+      cutoutCtx.drawImage(
+        sourceImage,
+        0,
+        0,
+        cutoutCanvas.width,
+        cutoutCanvas.height
+      );
+      cutoutCtx.globalCompositeOperation = "destination-in";
+      cutoutCtx.drawImage(
+        maskCanvas,
+        0,
+        0,
+        cutoutCanvas.width,
+        cutoutCanvas.height
+      );
+      cutoutCtx.globalCompositeOperation = "source-over";
+
+      // Refine only transparency so the original garment colour/print remains untouched.
+      refineProductCutoutEdges(cutoutCanvas);
 
       const bounds = findAlphaBounds(cutoutCanvas);
       const outputCanvas = document.createElement("canvas");
@@ -1922,8 +1715,9 @@ export default function AddProductPage() {
         outputCanvas.height
       );
 
-      const maxProductWidth = 910;
-      const maxProductHeight = 1125;
+      const isMainCatalogPreset = selectedPhotoStudioPresetId === "0";
+      const maxProductWidth = isMainCatalogPreset ? 850 : 910;
+      const maxProductHeight = isMainCatalogPreset ? 1110 : 1125;
       const scale = Math.min(
         maxProductWidth / bounds.width,
         maxProductHeight / bounds.height
@@ -1931,19 +1725,26 @@ export default function AddProductPage() {
       const targetWidth = Math.max(1, Math.round(bounds.width * scale));
       const targetHeight = Math.max(1, Math.round(bounds.height * scale));
       const targetX = Math.round((outputCanvas.width - targetWidth) / 2);
+
+      const safeTop = isMainCatalogPreset ? 135 : 120;
+      const safeBottom = isMainCatalogPreset ? 175 : 135;
+      const availableHeight = outputCanvas.height - safeTop - safeBottom;
       const targetY = Math.round(
-        Math.max(120, outputCanvas.height * 0.49 - targetHeight * 0.48)
+        safeTop + Math.max(0, (availableHeight - targetHeight) * 0.44)
       );
 
+      // Premium contact shadow: deliberately subtle so it reads like studio photography, not a poster mockup.
       ctx.save();
-      ctx.fillStyle = "rgba(17,24,39,0.15)";
-      ctx.filter = "blur(18px)";
+      ctx.fillStyle = isMainCatalogPreset
+        ? "rgba(41,37,36,0.075)"
+        : "rgba(17,24,39,0.11)";
+      ctx.filter = isMainCatalogPreset ? "blur(24px)" : "blur(18px)";
       ctx.beginPath();
       ctx.ellipse(
         outputCanvas.width / 2,
-        Math.min(outputCanvas.height - 135, targetY + targetHeight + 28),
-        Math.max(135, targetWidth * 0.34),
-        Math.max(18, targetHeight * 0.025),
+        Math.min(outputCanvas.height - safeBottom + 8, targetY + targetHeight + 18),
+        Math.max(112, targetWidth * (isMainCatalogPreset ? 0.27 : 0.32)),
+        Math.max(12, targetHeight * (isMainCatalogPreset ? 0.014 : 0.022)),
         0,
         0,
         Math.PI * 2
@@ -1952,9 +1753,14 @@ export default function AddProductPage() {
       ctx.restore();
 
       ctx.save();
-      ctx.shadowColor = "rgba(15,23,42,0.24)";
-      ctx.shadowBlur = 34;
-      ctx.shadowOffsetY = 22;
+      // Keep garment pixels faithful. Shadow is minimal and only supplies natural separation from the studio.
+      ctx.shadowColor = isMainCatalogPreset
+        ? "rgba(41,37,36,0.10)"
+        : "rgba(15,23,42,0.18)";
+      ctx.shadowBlur = isMainCatalogPreset ? 16 : 26;
+      ctx.shadowOffsetY = isMainCatalogPreset ? 8 : 16;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
       ctx.drawImage(
         cutoutCanvas,
         bounds.x,
@@ -1980,18 +1786,15 @@ export default function AddProductPage() {
       setPhotoStudioStatus({
         type: "success",
         message:
-          `Premium photo generated locally with ${localEngineUsed} using preset ${selectedPhotoStudioPreset.shortLabel} – ${selectedPhotoStudioPreset.name}. No cloud image-generation quota was used. Review Original vs Enhanced before using it as the main image.`,
+          `Premium photo generated locally using ${selectedPhotoStudioPreset.shortLabel} – ${selectedPhotoStudioPreset.name}. ${selectedPhotoStudioPresetId === "0" ? "World-Class Catalog composition applied: clean ivory studio, refined edge, controlled scale and subtle contact shadow." : "This creative preset is best suited to gallery/lifestyle presentation."} Review Original vs Enhanced before using it.`,
       });
     } catch (localError) {
-      console.error(
-        "NCS dual local premium photo generation failed:",
-        localError
-      );
+      console.error("NCS local premium photo generation failed:", localError);
 
       const localErrorMessage =
         localError instanceof Error
           ? localError.message
-          : "Both local premium photo engines failed.";
+          : "Local premium photo engine failed.";
 
       try {
         await generatePremiumPhotoWithCloudFallback(localErrorMessage);
@@ -2001,8 +1804,8 @@ export default function AddProductPage() {
           type: "error",
           message:
             cloudError instanceof Error
-              ? `Both local engines failed, and Cloud AI was unavailable: ${cloudError.message} You can still use Copy Prompt + Import Enhanced Result as the final backup.`
-              : "Both local engines failed, and Cloud AI was unavailable. You can still use Copy Prompt + Import Enhanced Result as the final backup.",
+              ? `Automatic premium photo generation failed: ${cloudError.message} You can still use Copy Prompt + Import Enhanced Result as the final backup.`
+              : "Automatic premium photo generation failed. You can still use Copy Prompt + Import Enhanced Result as the final backup.",
         });
       }
     } finally {
@@ -3496,7 +3299,7 @@ export default function AddProductPage() {
                       ✨ Generate Premium Photo Directly
                     </strong>
                     <p style={photoStudioDirectTextStyle}>
-                      Runs the free background-removal model in your browser, keeps the original product pixels, auto-crops and centers the product, adds a premium NCS preset background and creates a 1200 × 1500 WEBP image.
+                      Runs locally in your browser, preserves the original garment pixels, refines the transparent edge, auto-crops and composes a 1200 × 1500 WEBP image. Use MAIN – NCS World-Class Catalog for the primary website image; the other presets are better suited to gallery/lifestyle presentation.
                     </p>
                     <small style={photoStudioDirectSmallStyle}>
                       First run may take longer while the browser loads the local AI model. If direct generation cannot run on a device, use the free AI prompt/import backup below.
