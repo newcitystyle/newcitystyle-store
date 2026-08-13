@@ -13,7 +13,7 @@ const GEMINI_IMAGE_MODEL =
 const HUGGINGFACE_IMAGE_MODEL =
   process.env.HUGGINGFACE_IMAGE_MODEL?.trim() ||
   process.env.HF_IMAGE_MODEL?.trim() ||
-  "Qwen/Qwen-Image-Edit";
+  "black-forest-labs/FLUX.1-Kontext-dev";
 
 const CLOUDFLARE_PRIMARY_MODEL =
   "@cf/runwayml/stable-diffusion-v1-5-img2img";
@@ -249,6 +249,8 @@ STRICT PRODUCT PRESERVATION RULES:
 9. Remove the photographed floor/background and replace it with the selected premium studio environment; avoid poster-like frames, graphic boxes and fake decorative overlays unless the selected preset explicitly requests them.
 10. Do not invent packaging, branding or accessories. Do not smooth away texture, embroidery or print detail.
 11. The garment itself must remain the same sellable item. Improve presentation, not product design.
+12. The final image MUST visibly differ from the source photograph in background, framing and professional presentation. Never return the original photo unchanged or merely re-encoded.
+13. Remove the original floor/room completely and replace it with the selected premium studio environment while preserving the garment faithfully.
 
 BACKGROUND PRESET:
 Preset Name: ${preset.name}
@@ -986,6 +988,7 @@ export async function POST(request: NextRequest) {
       imageUrl?: unknown;
       preset?: unknown;
       productContext?: unknown;
+      skipProviders?: unknown;
     };
 
     const imageUrl = cleanText(body.imageUrl, 2000);
@@ -993,11 +996,21 @@ export async function POST(request: NextRequest) {
     const productContext = cleanProductContext(body.productContext);
     const premiumPrompt = buildPremiumPrompt(productContext, preset);
 
+    const skipProviders = new Set(
+      Array.isArray(body.skipProviders)
+        ? body.skipProviders
+            .map((value) => cleanText(value, 40).toLowerCase())
+            .filter((value) =>
+              ["huggingface", "gemini", "cloudflare", "openai"].includes(
+                value
+              )
+            )
+        : []
+    );
+
     if (!imageUrl || !isSafeImageUrl(imageUrl)) {
       return NextResponse.json(
-        {
-          error: "A valid uploaded product image URL is required.",
-        },
+        { error: "A valid uploaded product image URL is required." },
         { status: 400 }
       );
     }
@@ -1005,134 +1018,142 @@ export async function POST(request: NextRequest) {
     const { imageBuffer, mimeType } = await downloadImage(imageUrl);
     const providerErrors: string[] = [];
 
-    try {
-      const huggingFaceResult = await generateWithHuggingFace(
-        imageBuffer,
-        mimeType,
-        premiumPrompt
-      );
-
-      return NextResponse.json({
-        enhancedImageUrl: huggingFaceResult.imageUrl,
-        provider: huggingFaceResult.provider,
-        model: huggingFaceResult.model,
-        usedFallback: false,
-        presetUsed: preset,
-        manualPrompt: premiumPrompt,
-        providerErrors,
-        contextUsed: hasUsefulContext(productContext),
-        message:
-          "Premium product image generated successfully with Hugging Face Qwen Image Edit as the primary quality engine.",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unknown Hugging Face image error.";
-
+    if (!skipProviders.has("huggingface")) {
+      try {
+        const result = await generateWithHuggingFace(
+          imageBuffer,
+          mimeType,
+          premiumPrompt
+        );
+        return NextResponse.json({
+          enhancedImageUrl: result.imageUrl,
+          provider: result.provider,
+          model: result.model,
+          usedFallback: false,
+          presetUsed: preset,
+          manualPrompt: premiumPrompt,
+          providerErrors,
+          contextUsed: hasUsefulContext(productContext),
+          message:
+            "Premium product image generated with Hugging Face FLUX Kontext and passed to NCS quality validation.",
+        });
+      } catch (error) {
+        providerErrors.push(
+          `Hugging Face ${HUGGINGFACE_IMAGE_MODEL}: ${cleanText(
+            error instanceof Error ? error.message : "Unknown Hugging Face image error.",
+            1200
+          )}`
+        );
+      }
+    } else {
       providerErrors.push(
-        `Hugging Face ${HUGGINGFACE_IMAGE_MODEL}: ${cleanText(
-          message,
-          1200
-        )}`
+        "Hugging Face was skipped because its previous output was unchanged."
       );
     }
 
-    try {
-      const geminiResult = await generateWithGemini(
-        imageBuffer,
-        mimeType,
-        premiumPrompt
-      );
-
-      return NextResponse.json({
-        enhancedImageUrl: geminiResult.imageUrl,
-        provider: geminiResult.provider,
-        model: geminiResult.model,
-        usedFallback: true,
-        presetUsed: preset,
-        manualPrompt: premiumPrompt,
-        providerErrors,
-        contextUsed: hasUsefulContext(productContext),
-        message:
-          "Hugging Face was unavailable, so the premium product image was generated with Gemini Image AI.",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unknown Gemini image error.";
-
+    if (!skipProviders.has("gemini")) {
+      try {
+        const result = await generateWithGemini(
+          imageBuffer,
+          mimeType,
+          premiumPrompt
+        );
+        return NextResponse.json({
+          enhancedImageUrl: result.imageUrl,
+          provider: result.provider,
+          model: result.model,
+          usedFallback: true,
+          presetUsed: preset,
+          manualPrompt: premiumPrompt,
+          providerErrors,
+          contextUsed: hasUsefulContext(productContext),
+          message:
+            "The premium product image was generated with Gemini Image AI and passed to NCS quality validation.",
+        });
+      } catch (error) {
+        providerErrors.push(
+          `Gemini ${GEMINI_IMAGE_MODEL}: ${cleanText(
+            error instanceof Error ? error.message : "Unknown Gemini image error.",
+            1200
+          )}`
+        );
+      }
+    } else {
       providerErrors.push(
-        `Gemini ${GEMINI_IMAGE_MODEL}: ${cleanText(message, 1200)}`
+        "Gemini was skipped because its previous output was unchanged."
       );
     }
 
-    try {
-      const cloudflareResult = await generateWithCloudflareRetry(
-        imageBuffer,
-        premiumPrompt
-      );
-
-      return NextResponse.json({
-        enhancedImageUrl: cloudflareResult.imageUrl,
-        provider: cloudflareResult.provider,
-        model: cloudflareResult.model,
-        usedFallback: true,
-        presetUsed: preset,
-        manualPrompt: premiumPrompt,
-        providerErrors,
-        contextUsed: hasUsefulContext(productContext),
-        message:
-          "Hugging Face and Gemini were unavailable, so the premium product image was generated with Cloudflare.",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unknown Cloudflare error.";
-
+    if (!skipProviders.has("cloudflare")) {
+      try {
+        const result = await generateWithCloudflareRetry(
+          imageBuffer,
+          premiumPrompt
+        );
+        return NextResponse.json({
+          enhancedImageUrl: result.imageUrl,
+          provider: result.provider,
+          model: result.model,
+          usedFallback: true,
+          presetUsed: preset,
+          manualPrompt: premiumPrompt,
+          providerErrors,
+          contextUsed: hasUsefulContext(productContext),
+          message:
+            "The premium product image was generated with Cloudflare and passed to NCS quality validation.",
+        });
+      } catch (error) {
+        providerErrors.push(
+          `Cloudflare ${CLOUDFLARE_PRIMARY_MODEL}: ${cleanText(
+            error instanceof Error ? error.message : "Unknown Cloudflare error.",
+            1200
+          )}`
+        );
+      }
+    } else {
       providerErrors.push(
-        `Cloudflare ${CLOUDFLARE_PRIMARY_MODEL}: ${cleanText(
-          message,
-          1200
-        )}`
+        "Cloudflare was skipped because its previous output was unchanged."
       );
     }
 
-    try {
-      const openAiResult = await generateWithOpenAI(
-        imageBuffer,
-        mimeType,
-        premiumPrompt
+    if (!skipProviders.has("openai")) {
+      try {
+        const result = await generateWithOpenAI(
+          imageBuffer,
+          mimeType,
+          premiumPrompt
+        );
+        return NextResponse.json({
+          enhancedImageUrl: result.imageUrl,
+          provider: result.provider,
+          model: result.model,
+          usedFallback: true,
+          presetUsed: preset,
+          revisedPrompt: result.revisedPrompt || "",
+          manualPrompt: premiumPrompt,
+          providerErrors,
+          contextUsed: hasUsefulContext(productContext),
+          message:
+            "The premium product image was generated with OpenAI and passed to NCS quality validation.",
+        });
+      } catch (error) {
+        providerErrors.push(
+          `OpenAI: ${cleanText(
+            error instanceof Error ? error.message : "Unknown OpenAI error.",
+            1200
+          )}`
+        );
+      }
+    } else {
+      providerErrors.push(
+        "OpenAI was skipped because its previous output was unchanged."
       );
-
-      return NextResponse.json({
-        enhancedImageUrl: openAiResult.imageUrl,
-        provider: openAiResult.provider,
-        model: openAiResult.model,
-        usedFallback: true,
-        presetUsed: preset,
-        revisedPrompt: openAiResult.revisedPrompt || "",
-        manualPrompt: premiumPrompt,
-        providerErrors,
-        contextUsed: hasUsefulContext(productContext),
-        message:
-          "Hugging Face, Gemini and Cloudflare were unavailable, so the premium image was generated with the optional OpenAI fallback.",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unknown OpenAI error.";
-
-      providerErrors.push(`OpenAI: ${cleanText(message, 1200)}`);
     }
 
     return NextResponse.json(
       {
         error:
-          "All premium image providers failed. Use Copy Prompt + Import Enhanced Result as backup.",
+          "No configured cloud provider returned a usable premium image. The app can use the local MODNet/BEN2 catalog backup.",
         provider: "none",
         usedFallback: true,
         presetUsed: preset,
@@ -1140,7 +1161,7 @@ export async function POST(request: NextRequest) {
         providerErrors,
         contextUsed: hasUsefulContext(productContext),
         message:
-          "Automatic premium image generation failed. You can still use the manual backup workflow.",
+          "Cloud premium generation was unavailable or rejected by NCS quality validation.",
       },
       { status: 502 }
     );
@@ -1153,7 +1174,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "Premium image generation failed. You can still use Copy Prompt + Import Enhanced Result as backup.",
+          "Premium image generation failed. The app can still use the local MODNet/BEN2 backup.",
       },
       { status: 500 }
     );

@@ -1799,72 +1799,217 @@ export default function AddProductPage() {
     return uploadFile(generatedFile, "studio-cloud-generated");
   }
 
-  async function generatePremiumPhotoWithCloudAi() {
-    setPhotoStudioStatus({
-      type: "idle",
-      message:
-        "NCS Cloud AI is creating the premium e-commerce image first. Hugging Face is the primary provider; other configured cloud providers are automatic backups...",
-    });
+  async function compareCloudImageWithSource(
+    sourceUrl: string,
+    candidateUrl: string
+  ) {
+    try {
+      const [sourceImage, candidateImage] = await Promise.all([
+        loadCanvasImage(sourceUrl),
+        loadCanvasImage(candidateUrl),
+      ]);
 
-    const response = await fetch("/api/generate-premium-product-image", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        imageUrl: selectedPhotoStudioSourceImage,
-        preset: {
-          id: Number(selectedPhotoStudioPreset.id || 1),
-          name: selectedPhotoStudioPreset.name,
-          description: selectedPhotoStudioPreset.description,
-          backgroundStyle: selectedPhotoStudioPreset.backgroundStyle,
-          bestFor: selectedPhotoStudioPreset.recommendedFor,
-        },
-        productContext: buildProductContextPayload(),
-      }),
-    });
+      const sampleSize = 64;
+      const sourceCanvas = document.createElement("canvas");
+      const candidateCanvas = document.createElement("canvas");
+      sourceCanvas.width = sampleSize;
+      sourceCanvas.height = sampleSize;
+      candidateCanvas.width = sampleSize;
+      candidateCanvas.height = sampleSize;
 
-    const result = (await response.json()) as {
-      enhancedImageUrl?: string;
-      provider?: string;
-      model?: string;
-      message?: string;
-      error?: string;
-      providerErrors?: string[];
-    };
+      const sourceCtx = sourceCanvas.getContext("2d", {
+        willReadFrequently: true,
+      });
+      const candidateCtx = candidateCanvas.getContext("2d", {
+        willReadFrequently: true,
+      });
 
-    if (!response.ok || !result.enhancedImageUrl) {
-      const providerDetails = Array.isArray(result.providerErrors)
-        ? result.providerErrors.filter(Boolean).join(" | ")
-        : "";
+      if (!sourceCtx || !candidateCtx) {
+        return null;
+      }
 
-      throw new Error(
-        [
-          result.error || "Cloud AI could not generate the premium image.",
-          providerDetails,
-        ]
-          .filter(Boolean)
-          .join(" ")
+      sourceCtx.drawImage(sourceImage, 0, 0, sampleSize, sampleSize);
+      candidateCtx.drawImage(candidateImage, 0, 0, sampleSize, sampleSize);
+
+      const sourcePixels = sourceCtx.getImageData(
+        0,
+        0,
+        sampleSize,
+        sampleSize
+      ).data;
+      const candidatePixels = candidateCtx.getImageData(
+        0,
+        0,
+        sampleSize,
+        sampleSize
+      ).data;
+
+      let absoluteDifference = 0;
+      let changedPixels = 0;
+      const pixelCount = sampleSize * sampleSize;
+
+      for (let index = 0; index < sourcePixels.length; index += 4) {
+        const redDifference = Math.abs(
+          (sourcePixels[index] ?? 0) - (candidatePixels[index] ?? 0)
+        );
+        const greenDifference = Math.abs(
+          (sourcePixels[index + 1] ?? 0) -
+            (candidatePixels[index + 1] ?? 0)
+        );
+        const blueDifference = Math.abs(
+          (sourcePixels[index + 2] ?? 0) -
+            (candidatePixels[index + 2] ?? 0)
+        );
+
+        const pixelDifference =
+          (redDifference + greenDifference + blueDifference) / 3;
+
+        absoluteDifference += pixelDifference;
+
+        if (pixelDifference >= 12) {
+          changedPixels += 1;
+        }
+      }
+
+      return {
+        meanDifference: absoluteDifference / Math.max(pixelCount, 1),
+        changedRatio: changedPixels / Math.max(pixelCount, 1),
+      };
+    } catch (error) {
+      console.warn(
+        "NCS cloud output similarity check could not run; keeping provider result eligible:",
+        error
       );
+      return null;
+    }
+  }
+
+  function isMeaningfullyEnhancedCloudImage(
+    comparison: {
+      meanDifference: number;
+      changedRatio: number;
+    } | null
+  ) {
+    if (!comparison) return true;
+
+    // A premium edit must visibly change the presentation. This rejects
+    // providers that simply echo/re-encode the original photograph.
+    return (
+      comparison.meanDifference >= 8 ||
+      comparison.changedRatio >= 0.2
+    );
+  }
+
+  async function generatePremiumPhotoWithCloudAi() {
+    const skippedProviders: string[] = [];
+    const rejectedProviderNotes: string[] = [];
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      setPhotoStudioStatus({
+        type: "idle",
+        message:
+          attempt === 0
+            ? "NCS Cloud AI is creating the premium e-commerce image first. Hugging Face is the primary provider; unchanged results will be rejected automatically..."
+            : "The previous cloud result was too similar to the source photo. Trying the next AI provider automatically...",
+      });
+
+      const response = await fetch("/api/generate-premium-product-image", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          imageUrl: selectedPhotoStudioSourceImage,
+          preset: {
+            id: Number(selectedPhotoStudioPreset.id || 1),
+            name: selectedPhotoStudioPreset.name,
+            description: selectedPhotoStudioPreset.description,
+            backgroundStyle: selectedPhotoStudioPreset.backgroundStyle,
+            bestFor: selectedPhotoStudioPreset.recommendedFor,
+          },
+          productContext: buildProductContextPayload(),
+          skipProviders: skippedProviders,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        enhancedImageUrl?: string;
+        provider?: string;
+        model?: string;
+        message?: string;
+        error?: string;
+        providerErrors?: string[];
+      };
+
+      if (!response.ok || !result.enhancedImageUrl) {
+        const providerDetails = Array.isArray(result.providerErrors)
+          ? result.providerErrors.filter(Boolean).join(" | ")
+          : "";
+
+        throw new Error(
+          [
+            result.error || "Cloud AI could not generate the premium image.",
+            providerDetails,
+            rejectedProviderNotes.join(" | "),
+          ]
+            .filter(Boolean)
+            .join(" ")
+        );
+      }
+
+      const normalizedProvider = (result.provider || "")
+        .trim()
+        .toLowerCase();
+
+      const comparison = await compareCloudImageWithSource(
+        selectedPhotoStudioSourceImage,
+        result.enhancedImageUrl
+      );
+
+      if (!isMeaningfullyEnhancedCloudImage(comparison)) {
+        if (
+          normalizedProvider &&
+          !skippedProviders.includes(normalizedProvider)
+        ) {
+          skippedProviders.push(normalizedProvider);
+        }
+
+        rejectedProviderNotes.push(
+          `${(result.provider || "Cloud AI").toUpperCase()} returned an image that was too similar to the original and was rejected.`
+        );
+
+        if (attempt < 3) {
+          continue;
+        }
+
+        throw new Error(
+          "Cloud providers returned unchanged or near-unchanged images. Switching to the local catalog backup."
+        );
+      }
+
+      setPhotoStudioStatus({
+        type: "idle",
+        message:
+          `Cloud AI generated a meaningfully changed image with ${(result.provider || "AI").toUpperCase()}. Saving it safely to NEW CITY STYLE storage...`,
+      });
+
+      const storedUrl = await saveCloudEnhancedImageToStorage(
+        result.enhancedImageUrl
+      );
+
+      setPhotoStudioEnhancedImage(storedUrl);
+      setPhotoStudioStatus({
+        type: "success",
+        message:
+          result.message ||
+          `Premium photo generated successfully with ${(result.provider || "cloud AI").toUpperCase()}. The result passed NCS unchanged-image validation. Review Original vs Enhanced before using it as the main image.`,
+      });
+      return;
     }
 
-    setPhotoStudioStatus({
-      type: "idle",
-      message:
-        `Cloud AI generated the image with ${(result.provider || "AI").toUpperCase()}. Saving it safely to NEW CITY STYLE storage...`,
-    });
-
-    const storedUrl = await saveCloudEnhancedImageToStorage(
-      result.enhancedImageUrl
+    throw new Error(
+      "No cloud provider returned a meaningfully enhanced premium image."
     );
-
-    setPhotoStudioEnhancedImage(storedUrl);
-    setPhotoStudioStatus({
-      type: "success",
-      message:
-        result.message ||
-        `Premium photo generated successfully with ${(result.provider || "cloud AI").toUpperCase()}. Cloud AI was used as the primary quality engine. Review Original vs Enhanced before using it as the main image.`,
-    });
   }
 
   async function generatePremiumPhotoDirect() {
