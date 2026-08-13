@@ -6,6 +6,9 @@ export const maxDuration = 60;
 const OPENAI_IMAGE_MODEL =
   process.env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-1";
 
+const GEMINI_IMAGE_MODEL =
+  process.env.GEMINI_IMAGE_MODEL?.trim() || "gemini-3.1-flash-image";
+
 const CLOUDFLARE_PRIMARY_MODEL =
   "@cf/runwayml/stable-diffusion-v1-5-img2img";
 
@@ -85,11 +88,35 @@ type CloudflareJsonResponse = {
       };
 };
 
+type GeminiImageResponse = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+        inlineData?: {
+          mimeType?: string;
+          data?: string;
+        };
+        thought?: boolean;
+      }>;
+    };
+    finishReason?: string;
+  }>;
+  promptFeedback?: {
+    blockReason?: string;
+  };
+  error?: {
+    message?: string;
+    status?: string;
+    code?: number;
+  };
+};
+
 type ProviderResult = {
   imageUrl: string;
   revisedPrompt?: string;
   model: string;
-  provider: "cloudflare" | "openai";
+  provider: "cloudflare" | "gemini" | "openai";
 };
 
 class PremiumImageError extends Error {
@@ -533,7 +560,11 @@ async function generateWithCloudflareRetry(
 ): Promise<ProviderResult> {
   let lastError: PremiumImageError | null = null;
 
-  for (let attemptIndex = 0; attemptIndex < CLOUDFLARE_RETRY_DELAYS_MS.length; attemptIndex += 1) {
+  for (
+    let attemptIndex = 0;
+    attemptIndex < CLOUDFLARE_RETRY_DELAYS_MS.length;
+    attemptIndex += 1
+  ) {
     const delay = CLOUDFLARE_RETRY_DELAYS_MS[attemptIndex];
 
     if (delay > 0) {
@@ -579,6 +610,175 @@ async function generateWithCloudflareRetry(
       502
     )
   );
+}
+
+function shouldFallbackFromGemini(status: number, message: string) {
+  const text = message.toLowerCase();
+
+  return (
+    status === 402 ||
+    status === 408 ||
+    status === 409 ||
+    status === 429 ||
+    status >= 500 ||
+    text.includes("quota") ||
+    text.includes("rate limit") ||
+    text.includes("resource_exhausted") ||
+    text.includes("billing") ||
+    text.includes("credits") ||
+    text.includes("temporarily unavailable") ||
+    text.includes("service unavailable") ||
+    text.includes("model not found") ||
+    text.includes("model is not available") ||
+    text.includes("timeout") ||
+    text.includes("timed out")
+  );
+}
+
+async function generateWithGemini(
+  imageBuffer: Buffer,
+  mimeType: string,
+  prompt: string
+): Promise<ProviderResult> {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+
+  if (!apiKey) {
+    throw new PremiumImageError(
+      "GEMINI_API_KEY is not configured.",
+      500
+    );
+  }
+
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(
+        GEMINI_IMAGE_MODEL
+      )}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: prompt,
+                },
+                {
+                  inlineData: {
+                    mimeType,
+                    data: imageBuffer.toString("base64"),
+                  },
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            responseModalities: ["IMAGE"],
+            responseFormat: {
+              image: {
+                aspectRatio: "4:5",
+                imageSize: "1K",
+              },
+            },
+          },
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(45_000),
+      }
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Gemini image request failed.";
+
+    throw new PremiumImageError(
+      message.toLowerCase().includes("timeout")
+        ? "Gemini premium image request timed out."
+        : "Gemini premium image service is temporarily unavailable.",
+      504
+    );
+  }
+
+  let data: GeminiImageResponse;
+
+  try {
+    data = (await response.json()) as GeminiImageResponse;
+  } catch {
+    throw new PremiumImageError(
+      "Gemini returned an unreadable image response.",
+      response.status || 502
+    );
+  }
+
+  if (!response.ok) {
+    const message =
+      cleanText(data.error?.message, 1200) ||
+      "Gemini could not generate the premium product image.";
+
+    const fallbackAllowed = shouldFallbackFromGemini(
+      response.status,
+      message
+    );
+
+    throw new PremiumImageError(
+      message,
+      fallbackAllowed ? response.status || 502 : 422
+    );
+  }
+
+  if (data.promptFeedback?.blockReason) {
+    throw new PremiumImageError(
+      `Gemini blocked this image request: ${data.promptFeedback.blockReason}.`,
+      422
+    );
+  }
+
+  const parts =
+    data.candidates?.flatMap(
+      (candidate) => candidate.content?.parts || []
+    ) || [];
+
+  const imagePart = parts.find(
+    (part) =>
+      part.inlineData?.data &&
+      (part.inlineData.mimeType || "").startsWith("image/")
+  );
+
+  const generatedBase64 = cleanText(
+    imagePart?.inlineData?.data,
+    20_000_000
+  );
+
+  if (!generatedBase64) {
+    const finishReason = cleanText(
+      data.candidates?.[0]?.finishReason,
+      200
+    );
+
+    throw new PremiumImageError(
+      finishReason
+        ? `Gemini returned no image. Finish reason: ${finishReason}.`
+        : "Gemini returned no generated image.",
+      502
+    );
+  }
+
+  const outputMimeType =
+    cleanText(imagePart?.inlineData?.mimeType, 100) || "image/png";
+
+  return {
+    imageUrl: `data:${outputMimeType};base64,${generatedBase64}`,
+    model: GEMINI_IMAGE_MODEL,
+    provider: "gemini",
+  };
 }
 
 async function generateWithOpenAI(
@@ -754,6 +954,36 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+      const geminiResult = await generateWithGemini(
+        imageBuffer,
+        mimeType,
+        premiumPrompt
+      );
+
+      return NextResponse.json({
+        enhancedImageUrl: geminiResult.imageUrl,
+        provider: geminiResult.provider,
+        model: geminiResult.model,
+        usedFallback: true,
+        presetUsed: preset,
+        manualPrompt: premiumPrompt,
+        providerErrors,
+        contextUsed: hasUsefulContext(productContext),
+        message:
+          "Cloudflare was unavailable, so the premium product image was generated with Gemini Image AI.",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unknown Gemini image error.";
+
+      providerErrors.push(
+        `Gemini ${GEMINI_IMAGE_MODEL}: ${cleanText(message, 1200)}`
+      );
+    }
+
+    try {
       const openAiResult = await generateWithOpenAI(
         imageBuffer,
         mimeType,
@@ -771,7 +1001,7 @@ export async function POST(request: NextRequest) {
         providerErrors,
         contextUsed: hasUsefulContext(productContext),
         message:
-          "Cloudflare was unavailable, so the premium image was generated with the optional OpenAI fallback.",
+          "Cloudflare and Gemini were unavailable, so the premium image was generated with the optional OpenAI fallback.",
       });
     } catch (error) {
       const message =
