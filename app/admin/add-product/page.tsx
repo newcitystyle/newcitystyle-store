@@ -72,6 +72,15 @@ type ExistingStockProduct = {
   color: string;
 };
 
+type PhotoStudioPreset = {
+  id: string;
+  shortLabel: string;
+  name: string;
+  description: string;
+  recommendedFor: string;
+  backgroundStyle: string;
+};
+
 type ProductForm = {
   name: string;
   slug: string;
@@ -247,6 +256,72 @@ const commonSizes = [
   "Free Size",
 ];
 
+const ncsPhotoStudioPresets: PhotoStudioPreset[] = [
+  {
+    id: "1",
+    shortLabel: "1",
+    name: "Royal Boutique Wall",
+    description: "Luxury royal blue boutique wall with elegant gold trims and soft premium showroom lighting.",
+    recommendedFor: "Men wear, shirts, jeans, casual collections",
+    backgroundStyle: "royal blue boutique interior, subtle gold trim, clean light floor, premium retail mood",
+  },
+  {
+    id: "2",
+    shortLabel: "2",
+    name: "Luxury Marble Studio",
+    description: "Ivory marble studio with luxury editorial lighting and clean premium presentation.",
+    recommendedFor: "Premium products, featured products, formal wear",
+    backgroundStyle: "ivory marble studio, soft editorial light, subtle luxury floor reflection",
+  },
+  {
+    id: "3",
+    shortLabel: "3",
+    name: "Premium Shelf Store",
+    description: "Premium store background with soft boutique shelves and balanced e-commerce depth.",
+    recommendedFor: "General e-commerce uploads, daily products",
+    backgroundStyle: "premium boutique shelves, softly blurred background, warm retail lighting",
+  },
+  {
+    id: "4",
+    shortLabel: "4",
+    name: "Soft Neutral Studio",
+    description: "Minimal cream-beige fashion studio that keeps the product clean and premium.",
+    recommendedFor: "Women wear, kids wear, colourful products",
+    backgroundStyle: "soft neutral cream studio, clean floor, gentle shadow, modern fashion catalog look",
+  },
+  {
+    id: "5",
+    shortLabel: "5",
+    name: "Ethnic Festive",
+    description: "Warm festive Indian fashion backdrop with elegant premium details.",
+    recommendedFor: "Sarees, kurtis, festive collections",
+    backgroundStyle: "warm festive ethnic backdrop, subtle golden glow, elegant Indian fashion mood",
+  },
+  {
+    id: "6",
+    shortLabel: "6",
+    name: "Kids Fashion Studio",
+    description: "Soft pastel premium kids studio with playful but clean fashion presentation.",
+    recommendedFor: "Kids wear, frocks, boys and girls collections",
+    backgroundStyle: "pastel premium kids studio, clean floor, cheerful yet elegant boutique look",
+  },
+  {
+    id: "7",
+    shortLabel: "7",
+    name: "Dark Luxury Spotlight",
+    description: "Dark luxury scene with spotlight focus for premium hero products.",
+    recommendedFor: "Featured items, luxury promotions, social creatives",
+    backgroundStyle: "deep navy luxury backdrop, controlled spotlight, premium dramatic fashion mood",
+  },
+  {
+    id: "8",
+    shortLabel: "8",
+    name: "Window Light Boutique",
+    description: "Natural boutique corner with premium daylight and elegant interior softness.",
+    recommendedFor: "Elegant daily wear, women tops, lifestyle-rich product shots",
+    backgroundStyle: "soft daylight boutique corner, premium window light, clean refined retail mood",
+  },
+];
 
 export default function AddProductPage() {
   const router = useRouter();
@@ -275,6 +350,84 @@ export default function AddProductPage() {
   const [linkedStockProduct, setLinkedStockProduct] =
     useState<ExistingStockProduct | null>(null);
 
+  const [photoStudioOriginalImages, setPhotoStudioOriginalImages] =
+    useState<string[]>([]);
+  const [selectedStudioSourceIndex, setSelectedStudioSourceIndex] =
+    useState(0);
+  const [selectedPhotoStudioPresetId, setSelectedPhotoStudioPresetId] =
+    useState("1");
+  const [photoStudioEnhancedImage, setPhotoStudioEnhancedImage] =
+    useState("");
+  const [uploadingStudioSource, setUploadingStudioSource] =
+    useState(false);
+  const [uploadingStudioEnhanced, setUploadingStudioEnhanced] =
+    useState(false);
+  const [photoStudioStatus, setPhotoStudioStatus] = useState<AiStatus>({
+    type: "idle",
+    message: "",
+  });
+
+  const photoStudioSourceImages = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            ...photoStudioOriginalImages,
+            form.mainImage,
+          ].filter(Boolean)
+        )
+      ),
+    [photoStudioOriginalImages, form.mainImage]
+  );
+
+  const selectedPhotoStudioSourceImage =
+    photoStudioSourceImages[selectedStudioSourceIndex] ||
+    photoStudioSourceImages[0] ||
+    "";
+
+  const selectedPhotoStudioPreset =
+    ncsPhotoStudioPresets.find(
+      (preset) => preset.id === selectedPhotoStudioPresetId
+    ) || ncsPhotoStudioPresets[0];
+
+  const photoStudioPrompt = useMemo(() => {
+    const productIdentity = [
+      linkedStockProduct?.name || form.name.trim(),
+      linkedStockProduct?.size || form.sizes[0] || "",
+      linkedStockProduct?.color || "",
+      form.brand.trim(),
+      form.category.trim(),
+    ]
+      .filter(Boolean)
+      .join(" • ");
+
+    return [
+      "Use the uploaded product image as the exact product reference.",
+      "Preserve the garment exactly: original colour, print, check pattern, fabric appearance, collar shape, sleeves, buttons, stitching, silhouette and design details must remain unchanged.",
+      "Remove the existing background and distracting environment completely.",
+      "Do not invent tags, accessories, extra props, hands, hangers or packaging.",
+      `Create a premium e-commerce image using the NCS studio preset "${selectedPhotoStudioPreset.name}".`,
+      `Background style: ${selectedPhotoStudioPreset.backgroundStyle}.`,
+      `Recommended use: ${selectedPhotoStudioPreset.recommendedFor}.`,
+      "Center the product neatly, keep proportions natural, add a subtle realistic grounding shadow, and make the result clean, premium and catalog-ready.",
+      "This image is for NEW CITY STYLE. Keep the final result elegant, premium, realistic and suitable for website upload.",
+      productIdentity
+        ? `Known product context: ${productIdentity}. Use this only as supporting identity context; do not print this text inside the image.`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }, [
+    form.brand,
+    form.category,
+    form.name,
+    form.sizes,
+    linkedStockProduct?.color,
+    linkedStockProduct?.name,
+    linkedStockProduct?.size,
+    selectedPhotoStudioPreset,
+  ]);
+
   useEffect(() => {
     loadCollections();
   }, []);
@@ -292,6 +445,19 @@ export default function AddProductPage() {
       }));
     }
   }, [form.mrp, form.price]);
+
+  useEffect(() => {
+    if (!photoStudioSourceImages.length) {
+      if (selectedStudioSourceIndex !== 0) {
+        setSelectedStudioSourceIndex(0);
+      }
+      return;
+    }
+
+    if (selectedStudioSourceIndex >= photoStudioSourceImages.length) {
+      setSelectedStudioSourceIndex(photoStudioSourceImages.length - 1);
+    }
+  }, [photoStudioSourceImages.length, selectedStudioSourceIndex]);
 
   async function loadCollections() {
     const { data, error } = await supabase
@@ -594,6 +760,19 @@ export default function AddProductPage() {
         isActive: row.is_active !== false,
       }));
 
+      setPhotoStudioOriginalImages(
+        asString(row.image)
+          ? [asString(row.image)]
+          : []
+      );
+      setSelectedStudioSourceIndex(0);
+      setPhotoStudioEnhancedImage("");
+      setPhotoStudioStatus({
+        type: "success",
+        message:
+          "Existing product linked. You can now capture or upload product photos, copy the free AI studio prompt and import the best result.",
+      });
+
       setAiStatus({
         type: "success",
         message:
@@ -617,6 +796,10 @@ export default function AddProductPage() {
     setStockSearchResults([]);
     setForm(initialForm);
     setAiStatus({ type: "idle", message: "" });
+    setPhotoStudioOriginalImages([]);
+    setSelectedStudioSourceIndex(0);
+    setPhotoStudioEnhancedImage("");
+    setPhotoStudioStatus({ type: "idle", message: "" });
   }
 
   function createSlug(value: string) {
@@ -626,6 +809,29 @@ export default function AddProductPage() {
       .replace(/['"]/g, "")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
+  }
+
+  function buildProductContextPayload() {
+    return {
+      name: form.name.trim() || linkedStockProduct?.name || "",
+      brand: form.brand.trim(),
+      category: form.category.trim(),
+      subcategory: form.subcategory.trim(),
+      gender: form.gender.trim(),
+      size:
+        linkedStockProduct?.size ||
+        form.sizes.join(", ") ||
+        "",
+      colour:
+        linkedStockProduct?.color ||
+        "",
+      material: form.material.trim(),
+      fabric: form.fabric.trim(),
+      pattern: form.pattern.trim(),
+      sleeveType: form.sleeveType.trim(),
+      fit: form.fitType.trim(),
+      occasion: form.occasion.trim(),
+    };
   }
 
   function setField<K extends keyof ProductForm>(
@@ -725,6 +931,10 @@ export default function AddProductPage() {
       const url = await uploadFile(file, "main");
 
       setField("mainImage", url);
+      setPhotoStudioOriginalImages((current) =>
+        current.includes(url) ? current : [url, ...current]
+      );
+      setSelectedStudioSourceIndex(0);
 
       if (!form.socialPreviewUrl) {
         setField("socialPreviewUrl", url);
@@ -758,7 +968,7 @@ export default function AddProductPage() {
       return;
     }
 
-    const validFiles = files.filter(validateImage);
+    const validFiles: File[] = files.filter((file) => validateImage(file));
 
     if (!validFiles.length) {
       event.target.value = "";
@@ -805,7 +1015,7 @@ export default function AddProductPage() {
       return;
     }
 
-    const validFiles = files.filter(validateImage);
+    const validFiles: File[] = files.filter((file) => validateImage(file));
 
     if (!validFiles.length) {
       event.target.value = "";
@@ -844,11 +1054,252 @@ export default function AddProductPage() {
     }
   }
 
-  async function generateProductDetailsWithAi() {
+  async function uploadPhotoStudioSourceImages(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const files = Array.from(event.target.files || []);
+
+    if (!files.length) return;
+
+    const validFiles: File[] = files.filter((file) => validateImage(file));
+
+    if (!validFiles.length) {
+      event.target.value = "";
+      return;
+    }
+
+    setUploadingStudioSource(true);
+
+    try {
+      const urls = await Promise.all(
+        validFiles.map((file) =>
+          uploadFile(file, "studio-source")
+        )
+      );
+
+      setPhotoStudioOriginalImages((current) =>
+        Array.from(new Set([...current, ...urls]))
+      );
+      setSelectedStudioSourceIndex(0);
+      setPhotoStudioStatus({
+        type: "success",
+        message:
+          "Studio source image uploaded. Choose a preset, copy the prompt into any free AI image app, then import the premium result here.",
+      });
+    } catch (error) {
+      console.error(error);
+      setPhotoStudioStatus({
+        type: "error",
+        message:
+          error instanceof Error
+            ? `Studio source upload failed: ${error.message}`
+            : "Studio source upload failed.",
+      });
+    } finally {
+      setUploadingStudioSource(false);
+      event.target.value = "";
+    }
+  }
+
+  async function importPhotoStudioEnhancedResult(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (!validateImage(file)) {
+      event.target.value = "";
+      return;
+    }
+
+    setUploadingStudioEnhanced(true);
+
+    try {
+      const url = await uploadFile(file, "studio-enhanced");
+      setPhotoStudioEnhancedImage(url);
+      setPhotoStudioStatus({
+        type: "success",
+        message:
+          "Enhanced photo imported successfully. You can now set it as the main image or add it to gallery/lifestyle.",
+      });
+    } catch (error) {
+      console.error(error);
+      setPhotoStudioStatus({
+        type: "error",
+        message:
+          error instanceof Error
+            ? `Enhanced image import failed: ${error.message}`
+            : "Enhanced image import failed.",
+      });
+    } finally {
+      setUploadingStudioEnhanced(false);
+      event.target.value = "";
+    }
+  }
+
+  function useCurrentMainImageAsStudioSource() {
     if (!form.mainImage) {
+      setPhotoStudioStatus({
+        type: "error",
+        message:
+          "Upload the main product image first or capture a studio source photo.",
+      });
+      return;
+    }
+
+    setPhotoStudioOriginalImages((current) =>
+      current.includes(form.mainImage)
+        ? current
+        : [form.mainImage, ...current]
+    );
+    setSelectedStudioSourceIndex(0);
+    setPhotoStudioStatus({
+      type: "success",
+      message:
+        "Current main image added to Photo Studio sources.",
+    });
+  }
+
+  function removePhotoStudioSourceImage(image: string) {
+    setPhotoStudioOriginalImages((current) =>
+      current.filter((item) => item !== image)
+    );
+    setPhotoStudioStatus({
+      type: "idle",
+      message: "",
+    });
+  }
+
+  async function copyPhotoStudioPrompt() {
+    try {
+      await navigator.clipboard.writeText(photoStudioPrompt);
+      setPhotoStudioStatus({
+        type: "success",
+        message:
+          "Studio prompt copied. Open any free AI image app, generate the premium image and import the best result below.",
+      });
+    } catch (error) {
+      console.error(error);
+      setPhotoStudioStatus({
+        type: "error",
+        message:
+          "Could not copy the prompt automatically. You can still copy it manually from the text area.",
+      });
+    }
+  }
+
+  function setEnhancedAsMainImage() {
+    if (!photoStudioEnhancedImage) {
+      setPhotoStudioStatus({
+        type: "error",
+        message:
+          "Import an enhanced result first.",
+      });
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      mainImage: photoStudioEnhancedImage,
+      socialPreviewUrl:
+        current.socialPreviewUrl || photoStudioEnhancedImage,
+    }));
+    setPhotoStudioStatus({
+      type: "success",
+      message:
+        "Enhanced image set as the main product image.",
+    });
+  }
+
+  function addEnhancedToGalleryImages() {
+    if (!photoStudioEnhancedImage) {
+      setPhotoStudioStatus({
+        type: "error",
+        message:
+          "Import an enhanced result first.",
+      });
+      return;
+    }
+
+    if (form.galleryImages.length >= 10) {
+      setPhotoStudioStatus({
+        type: "error",
+        message:
+          "Gallery already has the maximum 10 images.",
+      });
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      galleryImages: current.galleryImages.includes(
+        photoStudioEnhancedImage
+      )
+        ? current.galleryImages
+        : [...current.galleryImages, photoStudioEnhancedImage],
+    }));
+    setPhotoStudioStatus({
+      type: "success",
+      message:
+        "Enhanced image added to the product gallery.",
+    });
+  }
+
+  function addEnhancedToLifestyleImages() {
+    if (!photoStudioEnhancedImage) {
+      setPhotoStudioStatus({
+        type: "error",
+        message:
+          "Import an enhanced result first.",
+      });
+      return;
+    }
+
+    if (form.lifestyleImages.length >= 6) {
+      setPhotoStudioStatus({
+        type: "error",
+        message:
+          "Lifestyle gallery already has the maximum 6 images.",
+      });
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      lifestyleImages: current.lifestyleImages.includes(
+        photoStudioEnhancedImage
+      )
+        ? current.lifestyleImages
+        : [
+            ...current.lifestyleImages,
+            photoStudioEnhancedImage,
+          ],
+    }));
+    setPhotoStudioStatus({
+      type: "success",
+      message:
+        "Enhanced image added to the lifestyle gallery.",
+    });
+  }
+
+  function clearPhotoStudioEnhancedResult() {
+    setPhotoStudioEnhancedImage("");
+    setPhotoStudioStatus({
+      type: "idle",
+      message: "",
+    });
+  }
+
+  async function generateProductDetailsWithAi() {
+    const aiImageUrl =
+      photoStudioEnhancedImage || form.mainImage;
+
+    if (!aiImageUrl) {
       setAiStatus({
         type: "error",
-        message: "Please upload the main product image first.",
+        message:
+          "Please upload or import a product image first.",
       });
       return;
     }
@@ -856,7 +1307,7 @@ export default function AddProductPage() {
     setGeneratingAi(true);
     setAiStatus({
       type: "idle",
-      message: "Gemini is analysing the product image...",
+      message: "AI is analysing the product image...",
     });
 
     try {
@@ -866,13 +1317,17 @@ export default function AddProductPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          imageUrl: form.mainImage,
+          imageUrl: aiImageUrl,
+          productContext: buildProductContextPayload(),
         }),
       });
 
       const result = (await response.json()) as {
         details?: AiProductDetails;
         error?: string;
+        message?: string;
+        provider?: string;
+        usedFallback?: boolean;
       };
 
       if (!response.ok || !result.details) {
@@ -971,10 +1426,15 @@ export default function AddProductPage() {
         tags: Array.from(new Set([...current.tags, ...generatedTags])),
       }));
 
+      const providerLabel = result.provider
+        ? result.provider.toUpperCase()
+        : "AI";
+
       setAiStatus({
         type: "success",
         message:
-          "AI draft generated successfully. Review and edit every field before saving.",
+          result.message ||
+          `Product draft generated successfully with ${providerLabel}. Review and edit every field before saving.`,
       });
     } catch (error) {
       console.error(error);
@@ -1414,6 +1874,10 @@ export default function AddProductPage() {
 
     setForm(initialForm);
     setLinkedStockProduct(null);
+    setPhotoStudioOriginalImages([]);
+    setSelectedStudioSourceIndex(0);
+    setPhotoStudioEnhancedImage("");
+    setPhotoStudioStatus({ type: "idle", message: "" });
     setSaving(false);
 
     router.push(`/admin/products`);
@@ -1430,7 +1894,9 @@ export default function AddProductPage() {
   const uploading =
     uploadingMain ||
     uploadingGallery ||
-    uploadingLifestyle;
+    uploadingLifestyle ||
+    uploadingStudioSource ||
+    uploadingStudioEnhanced;
 
   return (
     <main style={mainStyle}>
@@ -1985,8 +2451,280 @@ export default function AddProductPage() {
               </Panel>
 
               <Panel
+                title="NCS Smart Product Studio"
+                subtitle="Keep the original product photo, choose a premium NCS background preset, copy the free AI prompt, then import the best enhanced result and attach it to this same product. Existing stock, barcode, offline pricing and online stock rules stay untouched."
+              >
+                <div style={photoStudioHeaderActionsStyle}>
+                  <button
+                    type="button"
+                    onClick={useCurrentMainImageAsStudioSource}
+                    style={photoStudioSecondaryButtonStyle}
+                  >
+                    Use Current Main Image as Source
+                  </button>
+                </div>
+
+                <div style={photoStudioUploadGridStyle}>
+                  <UploadBox
+                    uploading={uploadingStudioSource}
+                    label="📷 Take Product Photo"
+                    description="Open camera and upload a raw shop/product photo"
+                    multiple
+                    capture="environment"
+                    onChange={uploadPhotoStudioSourceImages}
+                  />
+
+                  <UploadBox
+                    uploading={uploadingStudioSource}
+                    label="🖼 Upload from Gallery"
+                    description="Choose product images from phone or computer gallery"
+                    multiple
+                    onChange={uploadPhotoStudioSourceImages}
+                  />
+                </div>
+
+                {photoStudioSourceImages.length > 0 && (
+                  <>
+                    <div style={photoStudioSectionLabelStyle}>
+                      Source Product Photos
+                    </div>
+
+                    <div style={photoStudioSourceGridStyle}>
+                      {photoStudioSourceImages.map((image, index) => (
+                        <div
+                          key={`${image}-${index}`}
+                          style={{
+                            ...photoStudioSourceCardStyle,
+                            border:
+                              image === selectedPhotoStudioSourceImage
+                                ? "2px solid #0A2E73"
+                                : "1px solid #E5E7EB",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedStudioSourceIndex(index)
+                            }
+                            style={photoStudioSourceSelectButtonStyle}
+                          >
+                            <img
+                              src={image}
+                              alt={`Studio source ${index + 1}`}
+                              style={photoStudioSourceImageStyle}
+                            />
+                          </button>
+
+                          <div style={photoStudioSourceMetaStyle}>
+                            <span>
+                              {image === form.mainImage
+                                ? "Main Image"
+                                : `Source ${index + 1}`}
+                            </span>
+
+                            {image !== form.mainImage && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  removePhotoStudioSourceImage(image)
+                                }
+                                style={photoStudioMiniDangerButtonStyle}
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                <div style={photoStudioSectionLabelStyle}>
+                  Choose NCS Premium Background Preset
+                </div>
+
+                <div style={photoStudioPresetGridStyle}>
+                  {ncsPhotoStudioPresets.map((preset) => (
+                    <button
+                      type="button"
+                      key={preset.id}
+                      onClick={() =>
+                        setSelectedPhotoStudioPresetId(preset.id)
+                      }
+                      style={{
+                        ...photoStudioPresetCardStyle,
+                        border:
+                          selectedPhotoStudioPresetId === preset.id
+                            ? "2px solid #0A2E73"
+                            : "1px solid #D1D5DB",
+                        background:
+                          selectedPhotoStudioPresetId === preset.id
+                            ? "#EFF6FF"
+                            : "#FFFFFF",
+                      }}
+                    >
+                      <div style={photoStudioPresetNumberStyle}>
+                        {preset.shortLabel}
+                      </div>
+                      <strong style={photoStudioPresetTitleStyle}>
+                        {preset.name}
+                      </strong>
+                      <p style={photoStudioPresetTextStyle}>
+                        {preset.description}
+                      </p>
+                      <small style={photoStudioPresetSmallTextStyle}>
+                        Best for: {preset.recommendedFor}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+
+                <div style={photoStudioPromptCardStyle}>
+                  <div style={photoStudioPromptHeaderStyle}>
+                    <div>
+                      <strong style={photoStudioPromptTitleStyle}>
+                        Free AI Studio Prompt
+                      </strong>
+                      <p style={photoStudioPromptTextStyle}>
+                        Copy this prompt into any free AI image app, upload the selected source image there, generate the premium result, then import that result back here.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={copyPhotoStudioPrompt}
+                      style={photoStudioPrimaryButtonStyle}
+                    >
+                      Copy Prompt
+                    </button>
+                  </div>
+
+                  <textarea
+                    value={photoStudioPrompt}
+                    readOnly
+                    style={photoStudioPromptTextareaStyle}
+                  />
+                </div>
+
+                <div style={photoStudioImportBoxStyle}>
+                  <strong style={photoStudioPromptTitleStyle}>
+                    Import Enhanced Result
+                  </strong>
+                  <p style={photoStudioPromptTextStyle}>
+                    After generating in any free AI app, upload the enhanced image here and then set it as the product main image, gallery image or lifestyle image.
+                  </p>
+
+                  <UploadBox
+                    uploading={uploadingStudioEnhanced}
+                    label="⬆ Import Enhanced AI Result"
+                    description="Upload the premium image generated in any AI app"
+                    multiple={false}
+                    onChange={importPhotoStudioEnhancedResult}
+                  />
+                </div>
+
+                {(selectedPhotoStudioSourceImage || photoStudioEnhancedImage) && (
+                  <div style={photoStudioCompareGridStyle}>
+                    <div style={photoStudioCompareCardStyle}>
+                      <div style={photoStudioCompareLabelStyle}>Original / Source</div>
+                      {selectedPhotoStudioSourceImage ? (
+                        <img
+                          src={selectedPhotoStudioSourceImage}
+                          alt="Original product source"
+                          style={photoStudioCompareImageStyle}
+                        />
+                      ) : (
+                        <div style={photoStudioEmptyPreviewStyle}>No source selected</div>
+                      )}
+                    </div>
+
+                    <div style={photoStudioCompareCardStyle}>
+                      <div style={photoStudioCompareLabelStyle}>Enhanced Result</div>
+                      {photoStudioEnhancedImage ? (
+                        <img
+                          src={photoStudioEnhancedImage}
+                          alt="Enhanced product result"
+                          style={photoStudioCompareImageStyle}
+                        />
+                      ) : (
+                        <div style={photoStudioEmptyPreviewStyle}>Import enhanced result here</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div style={photoStudioResultActionsStyle}>
+                  <button
+                    type="button"
+                    onClick={setEnhancedAsMainImage}
+                    style={photoStudioPrimaryButtonStyle}
+                    disabled={!photoStudioEnhancedImage}
+                  >
+                    Set Enhanced as Main Image
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={addEnhancedToGalleryImages}
+                    style={photoStudioSecondaryButtonStyle}
+                    disabled={!photoStudioEnhancedImage}
+                  >
+                    Add Enhanced to Gallery
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={addEnhancedToLifestyleImages}
+                    style={photoStudioSecondaryButtonStyle}
+                    disabled={!photoStudioEnhancedImage}
+                  >
+                    Add Enhanced to Lifestyle
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={clearPhotoStudioEnhancedResult}
+                    style={photoStudioDangerButtonStyle}
+                    disabled={!photoStudioEnhancedImage}
+                  >
+                    Clear Enhanced Result
+                  </button>
+                </div>
+
+                {photoStudioStatus.message && (
+                  <div
+                    role={photoStudioStatus.type === "error" ? "alert" : "status"}
+                    style={{
+                      ...aiStatusStyle,
+                      borderColor:
+                        photoStudioStatus.type === "error"
+                          ? "#DC2626"
+                          : photoStudioStatus.type === "success"
+                            ? "#15803D"
+                            : "#D4AF37",
+                      background:
+                        photoStudioStatus.type === "error"
+                          ? "#FEF2F2"
+                          : photoStudioStatus.type === "success"
+                            ? "#F0FDF4"
+                            : "#FFFBEA",
+                      color:
+                        photoStudioStatus.type === "error"
+                          ? "#991B1B"
+                          : photoStudioStatus.type === "success"
+                            ? "#166534"
+                            : "#7C5B00",
+                    }}
+                  >
+                    {photoStudioStatus.message}
+                  </div>
+                )}
+              </Panel>
+
+              <Panel
                 title="AI Product Detail Generator"
-                subtitle="Gemini analyses the main image and fills an editable draft. Price, MRP, stock, SKU, sizes, tax and low-stock values are never changed."
+                subtitle="AI analyses the enhanced image when available, otherwise the current main image. Price, MRP, stock, SKU, sizes, tax and low-stock values are never changed."
               >
                 <div style={aiGeneratorCardStyle}>
                   <div>
@@ -2003,15 +2741,26 @@ export default function AddProductPage() {
                   <button
                     type="button"
                     onClick={generateProductDetailsWithAi}
-                    disabled={generatingAi || uploadingMain || !form.mainImage}
+                    disabled={
+                      generatingAi ||
+                      uploadingMain ||
+                      uploadingStudioEnhanced ||
+                      !(photoStudioEnhancedImage || form.mainImage)
+                    }
                     style={{
                       ...aiGenerateButtonStyle,
                       opacity:
-                        generatingAi || uploadingMain || !form.mainImage
+                        generatingAi ||
+                        uploadingMain ||
+                        uploadingStudioEnhanced ||
+                        !(photoStudioEnhancedImage || form.mainImage)
                           ? 0.65
                           : 1,
                       cursor:
-                        generatingAi || uploadingMain || !form.mainImage
+                        generatingAi ||
+                        uploadingMain ||
+                        uploadingStudioEnhanced ||
+                        !(photoStudioEnhancedImage || form.mainImage)
                           ? "not-allowed"
                           : "pointer",
                     }}
@@ -3185,12 +3934,14 @@ function UploadBox({
   description,
   multiple,
   onChange,
+  capture,
 }: {
   uploading: boolean;
   label: string;
   description: string;
   multiple: boolean;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  capture?: "user" | "environment";
 }) {
   return (
     <label style={uploadBoxStyle}>
@@ -3200,6 +3951,7 @@ function UploadBox({
         multiple={multiple}
         onChange={onChange}
         disabled={uploading}
+        capture={capture}
         style={{ display: "none" }}
       />
 
@@ -4029,6 +4781,247 @@ const aiStatusStyle: CSSProperties = {
   fontSize: "14px",
   lineHeight: 1.5,
   fontWeight: 650,
+};
+
+const photoStudioHeaderActionsStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+  marginBottom: "14px",
+};
+
+const photoStudioUploadGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+  gap: "14px",
+};
+
+const photoStudioSectionLabelStyle: CSSProperties = {
+  marginTop: "18px",
+  marginBottom: "10px",
+  color: "#0A2E73",
+  fontSize: "14px",
+  fontWeight: 900,
+  letterSpacing: "0.2px",
+};
+
+const photoStudioSourceGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+  gap: "12px",
+};
+
+const photoStudioSourceCardStyle: CSSProperties = {
+  borderRadius: "14px",
+  overflow: "hidden",
+  background: "#FFFFFF",
+  boxShadow: "0 4px 14px rgba(15,23,42,0.08)",
+};
+
+const photoStudioSourceSelectButtonStyle: CSSProperties = {
+  display: "block",
+  width: "100%",
+  border: "none",
+  background: "transparent",
+  padding: 0,
+  cursor: "pointer",
+};
+
+const photoStudioSourceImageStyle: CSSProperties = {
+  width: "100%",
+  aspectRatio: "1 / 1",
+  objectFit: "cover",
+  display: "block",
+  background: "#F8FAFC",
+};
+
+const photoStudioSourceMetaStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "8px",
+  padding: "10px",
+  color: "#0A2E73",
+  fontWeight: 800,
+  fontSize: "12px",
+};
+
+const photoStudioPresetGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: "12px",
+};
+
+const photoStudioPresetCardStyle: CSSProperties = {
+  textAlign: "left",
+  borderRadius: "16px",
+  padding: "14px",
+  cursor: "pointer",
+};
+
+const photoStudioPresetNumberStyle: CSSProperties = {
+  width: "34px",
+  height: "34px",
+  borderRadius: "999px",
+  background: "#0A2E73",
+  color: "#FFFFFF",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: 900,
+  marginBottom: "8px",
+};
+
+const photoStudioPresetTitleStyle: CSSProperties = {
+  display: "block",
+  color: "#0A2E73",
+  fontSize: "15px",
+  lineHeight: 1.3,
+  marginBottom: "6px",
+};
+
+const photoStudioPresetTextStyle: CSSProperties = {
+  color: "#4B5563",
+  fontSize: "13px",
+  lineHeight: 1.5,
+  margin: "0 0 7px",
+};
+
+const photoStudioPresetSmallTextStyle: CSSProperties = {
+  color: "#64748B",
+  fontSize: "11px",
+  lineHeight: 1.45,
+};
+
+const photoStudioPromptCardStyle: CSSProperties = {
+  marginTop: "18px",
+  border: "1px solid rgba(212,175,55,0.4)",
+  borderRadius: "16px",
+  background: "#FFFCF4",
+  padding: "16px",
+};
+
+const photoStudioPromptHeaderStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: "14px",
+  flexWrap: "wrap",
+  marginBottom: "12px",
+};
+
+const photoStudioPromptTitleStyle: CSSProperties = {
+  display: "block",
+  color: "#0A2E73",
+  fontSize: "16px",
+};
+
+const photoStudioPromptTextStyle: CSSProperties = {
+  color: "#475569",
+  fontSize: "13px",
+  lineHeight: 1.6,
+  margin: "6px 0 0",
+};
+
+const photoStudioPromptTextareaStyle: CSSProperties = {
+  ...largeTextareaStyle,
+  minHeight: "210px",
+  background: "#FFFFFF",
+  fontSize: "13px",
+};
+
+const photoStudioImportBoxStyle: CSSProperties = {
+  marginTop: "18px",
+};
+
+const photoStudioCompareGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+  gap: "14px",
+  marginTop: "18px",
+};
+
+const photoStudioCompareCardStyle: CSSProperties = {
+  border: "1px solid #E5E7EB",
+  borderRadius: "16px",
+  background: "#FFFFFF",
+  overflow: "hidden",
+};
+
+const photoStudioCompareLabelStyle: CSSProperties = {
+  padding: "12px 14px",
+  color: "#0A2E73",
+  fontWeight: 900,
+  background: "#F8FAFC",
+  borderBottom: "1px solid #E5E7EB",
+};
+
+const photoStudioCompareImageStyle: CSSProperties = {
+  width: "100%",
+  aspectRatio: "4 / 5",
+  objectFit: "contain",
+  background: "#FFFFFF",
+  display: "block",
+};
+
+const photoStudioEmptyPreviewStyle: CSSProperties = {
+  width: "100%",
+  aspectRatio: "4 / 5",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  color: "#94A3B8",
+  background: "#F8FAFC",
+  fontWeight: 700,
+  textAlign: "center",
+  padding: "20px",
+};
+
+const photoStudioResultActionsStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "10px",
+  marginTop: "18px",
+};
+
+const photoStudioPrimaryButtonStyle: CSSProperties = {
+  border: "1px solid #D4AF37",
+  borderRadius: "12px",
+  background: "#0A2E73",
+  color: "#FFFFFF",
+  padding: "11px 16px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const photoStudioSecondaryButtonStyle: CSSProperties = {
+  border: "1px solid #0A2E73",
+  borderRadius: "12px",
+  background: "#FFFFFF",
+  color: "#0A2E73",
+  padding: "11px 16px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const photoStudioDangerButtonStyle: CSSProperties = {
+  border: "1px solid #FCA5A5",
+  borderRadius: "12px",
+  background: "#FFFFFF",
+  color: "#DC2626",
+  padding: "11px 16px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const photoStudioMiniDangerButtonStyle: CSSProperties = {
+  border: "1px solid #FCA5A5",
+  borderRadius: "999px",
+  background: "#FFFFFF",
+  color: "#DC2626",
+  padding: "4px 9px",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: "11px",
 };
 
 const saveProductButtonStyle: CSSProperties = {
