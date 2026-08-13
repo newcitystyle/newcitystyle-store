@@ -323,6 +323,366 @@ const ncsPhotoStudioPresets: PhotoStudioPreset[] = [
   },
 ];
 
+let ncsBackgroundRemovalPipelinePromise: Promise<any> | null = null;
+
+async function getNcsBackgroundRemovalPipeline() {
+  if (ncsBackgroundRemovalPipelinePromise) {
+    return ncsBackgroundRemovalPipelinePromise;
+  }
+
+  ncsBackgroundRemovalPipelinePromise = (async () => {
+    const { pipeline } = await import("@huggingface/transformers");
+    const hasWebGpu =
+      typeof navigator !== "undefined" &&
+      "gpu" in (navigator as Navigator & { gpu?: unknown });
+
+    if (hasWebGpu) {
+      try {
+        return await pipeline(
+          "background-removal",
+          "Xenova/modnet",
+          {
+            device: "webgpu",
+            dtype: "fp32",
+          }
+        );
+      } catch (error) {
+        console.warn(
+          "NCS Photo Studio WebGPU startup failed; falling back to browser CPU/WASM.",
+          error
+        );
+      }
+    }
+
+    return pipeline(
+      "background-removal",
+      "Xenova/modnet",
+      {
+        dtype: "q8",
+      }
+    );
+  })().catch((error) => {
+    ncsBackgroundRemovalPipelinePromise = null;
+    throw error;
+  });
+
+  return ncsBackgroundRemovalPipelinePromise;
+}
+
+function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  type = "image/webp",
+  quality = 0.94
+) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob);
+          return;
+        }
+
+        reject(new Error("Unable to create the premium product image."));
+      },
+      type,
+      quality
+    );
+  });
+}
+
+async function loadCanvasImage(url: string) {
+  const response = await fetch(url, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error("Unable to load the selected product photo.");
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () =>
+        reject(new Error("Unable to decode the selected product photo."));
+      element.src = objectUrl;
+    });
+
+    return image;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function roundedRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + safeRadius, y);
+  ctx.arcTo(x + width, y, x + width, y + height, safeRadius);
+  ctx.arcTo(x + width, y + height, x, y + height, safeRadius);
+  ctx.arcTo(x, y + height, x, y, safeRadius);
+  ctx.arcTo(x, y, x + width, y, safeRadius);
+  ctx.closePath();
+}
+
+function drawNcsPremiumBackground(
+  ctx: CanvasRenderingContext2D,
+  presetId: string,
+  width: number,
+  height: number
+) {
+  const floorY = Math.round(height * 0.72);
+
+  ctx.save();
+  ctx.clearRect(0, 0, width, height);
+
+  if (presetId === "1") {
+    const wall = ctx.createLinearGradient(0, 0, width, height);
+    wall.addColorStop(0, "#071A43");
+    wall.addColorStop(0.55, "#0A2E73");
+    wall.addColorStop(1, "#174FA7");
+    ctx.fillStyle = wall;
+    ctx.fillRect(0, 0, width, floorY);
+
+    ctx.strokeStyle = "rgba(212,175,55,0.82)";
+    ctx.lineWidth = 7;
+    roundedRectPath(ctx, 90, 90, width - 180, floorY - 180, 28);
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(212,175,55,0.30)";
+    ctx.lineWidth = 2;
+    roundedRectPath(ctx, 125, 125, width - 250, floorY - 250, 22);
+    ctx.stroke();
+
+    const floor = ctx.createLinearGradient(0, floorY, 0, height);
+    floor.addColorStop(0, "#FAF8F2");
+    floor.addColorStop(1, "#E7E0D2");
+    ctx.fillStyle = floor;
+    ctx.fillRect(0, floorY, width, height - floorY);
+  } else if (presetId === "2") {
+    const base = ctx.createLinearGradient(0, 0, width, height);
+    base.addColorStop(0, "#FFFDF9");
+    base.addColorStop(0.55, "#F5EFE4");
+    base.addColorStop(1, "#E7DED0");
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.strokeStyle = "rgba(170,155,132,0.20)";
+    ctx.lineWidth = 4;
+    for (let i = -height; i < width + height; i += 170) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.bezierCurveTo(
+        i + 120,
+        height * 0.32,
+        i - 80,
+        height * 0.62,
+        i + 160,
+        height
+      );
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = "rgba(255,255,255,0.40)";
+    ctx.fillRect(0, floorY, width, height - floorY);
+  } else if (presetId === "3") {
+    const base = ctx.createLinearGradient(0, 0, width, height);
+    base.addColorStop(0, "#F4EEE3");
+    base.addColorStop(1, "#D9CDBB");
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = "rgba(10,46,115,0.94)";
+    ctx.fillRect(0, 0, 155, floorY);
+    ctx.fillRect(width - 155, 0, 155, floorY);
+
+    ctx.fillStyle = "rgba(212,175,55,0.72)";
+    for (const x of [65, width - 135]) {
+      for (let y = 175; y < floorY - 80; y += 170) {
+        ctx.fillRect(x, y, 70, 5);
+      }
+    }
+
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fillRect(0, floorY, width, height - floorY);
+  } else if (presetId === "4") {
+    const base = ctx.createRadialGradient(
+      width * 0.5,
+      height * 0.34,
+      70,
+      width * 0.5,
+      height * 0.42,
+      width * 0.78
+    );
+    base.addColorStop(0, "#FFFFFF");
+    base.addColorStop(0.58, "#F4EFE7");
+    base.addColorStop(1, "#DFD7CB");
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, width, height);
+  } else if (presetId === "5") {
+    const base = ctx.createLinearGradient(0, 0, width, height);
+    base.addColorStop(0, "#5C1732");
+    base.addColorStop(0.58, "#8B2E46");
+    base.addColorStop(1, "#D0A658");
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.strokeStyle = "rgba(244,210,132,0.62)";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(width / 2, floorY * 0.62, 360, Math.PI, 0);
+    ctx.lineTo(width / 2 + 360, floorY);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(250,235,202,0.28)";
+    ctx.fillRect(0, floorY, width, height - floorY);
+  } else if (presetId === "6") {
+    const base = ctx.createLinearGradient(0, 0, width, height);
+    base.addColorStop(0, "#F7F4FF");
+    base.addColorStop(0.5, "#E8F4FF");
+    base.addColorStop(1, "#FFF4E9");
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, width, height);
+
+    const circles = [
+      [155, 210, 72, "rgba(100,149,237,0.12)"],
+      [1005, 265, 98, "rgba(255,184,193,0.16)"],
+      [190, 1010, 90, "rgba(212,175,55,0.12)"],
+    ] as const;
+    circles.forEach(([x, y, r, color]) => {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    });
+  } else if (presetId === "7") {
+    const base = ctx.createRadialGradient(
+      width * 0.5,
+      height * 0.34,
+      40,
+      width * 0.5,
+      height * 0.45,
+      width * 0.8
+    );
+    base.addColorStop(0, "#304B78");
+    base.addColorStop(0.5, "#13294F");
+    base.addColorStop(1, "#07111F");
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, width, height);
+
+    const spotlight = ctx.createLinearGradient(0, 0, 0, floorY);
+    spotlight.addColorStop(0, "rgba(255,244,210,0.26)");
+    spotlight.addColorStop(1, "rgba(255,244,210,0.01)");
+    ctx.fillStyle = spotlight;
+    ctx.beginPath();
+    ctx.moveTo(width * 0.42, 0);
+    ctx.lineTo(width * 0.18, floorY);
+    ctx.lineTo(width * 0.82, floorY);
+    ctx.lineTo(width * 0.58, 0);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    const base = ctx.createLinearGradient(0, 0, width, height);
+    base.addColorStop(0, "#F7F4EC");
+    base.addColorStop(0.62, "#ECE3D4");
+    base.addColorStop(1, "#D4C5AE");
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = "rgba(255,255,255,0.66)";
+    ctx.fillRect(0, 0, width * 0.31, floorY);
+    ctx.strokeStyle = "rgba(10,46,115,0.18)";
+    ctx.lineWidth = 8;
+    ctx.strokeRect(55, 70, width * 0.24, floorY - 140);
+
+    const light = ctx.createLinearGradient(0, 0, width * 0.65, 0);
+    light.addColorStop(0, "rgba(255,255,255,0.64)");
+    light.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = light;
+    ctx.fillRect(0, 0, width * 0.72, height);
+  }
+
+  const topLight = ctx.createRadialGradient(
+    width * 0.5,
+    height * 0.13,
+    20,
+    width * 0.5,
+    height * 0.25,
+    width * 0.65
+  );
+  topLight.addColorStop(0, "rgba(255,255,255,0.28)");
+  topLight.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = topLight;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.restore();
+}
+
+function findAlphaBounds(canvas: HTMLCanvasElement) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) {
+    return {
+      x: 0,
+      y: 0,
+      width: canvas.width,
+      height: canvas.height,
+    };
+  }
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  let minX = canvas.width;
+  let minY = canvas.height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < canvas.height; y += 2) {
+    for (let x = 0; x < canvas.width; x += 2) {
+      const alpha = data[(y * canvas.width + x) * 4 + 3];
+      if (alpha > 18) {
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    return {
+      x: 0,
+      y: 0,
+      width: canvas.width,
+      height: canvas.height,
+    };
+  }
+
+  const paddingX = Math.round((maxX - minX) * 0.025);
+  const paddingY = Math.round((maxY - minY) * 0.025);
+  const x = Math.max(0, minX - paddingX);
+  const y = Math.max(0, minY - paddingY);
+  const right = Math.min(canvas.width, maxX + paddingX);
+  const bottom = Math.min(canvas.height, maxY + paddingY);
+
+  return {
+    x,
+    y,
+    width: Math.max(1, right - x),
+    height: Math.max(1, bottom - y),
+  };
+}
+
+
 export default function AddProductPage() {
   const router = useRouter();
 
@@ -361,6 +721,8 @@ export default function AddProductPage() {
   const [uploadingStudioSource, setUploadingStudioSource] =
     useState(false);
   const [uploadingStudioEnhanced, setUploadingStudioEnhanced] =
+    useState(false);
+  const [generatingPremiumPhoto, setGeneratingPremiumPhoto] =
     useState(false);
   const [photoStudioStatus, setPhotoStudioStatus] = useState<AiStatus>({
     type: "idle",
@@ -1098,6 +1460,162 @@ export default function AddProductPage() {
     } finally {
       setUploadingStudioSource(false);
       event.target.value = "";
+    }
+  }
+
+  async function generatePremiumPhotoDirect() {
+    if (!selectedPhotoStudioSourceImage) {
+      setPhotoStudioStatus({
+        type: "error",
+        message:
+          "Take or upload a product photo first, then select the source image.",
+      });
+      return;
+    }
+
+    setGeneratingPremiumPhoto(true);
+    setPhotoStudioStatus({
+      type: "idle",
+      message:
+        "Loading the free NCS background-removal model in this browser. The first run can take longer...",
+    });
+
+    try {
+      const segmenter = await getNcsBackgroundRemovalPipeline();
+
+      setPhotoStudioStatus({
+        type: "idle",
+        message:
+          "Removing the background and preparing the premium NCS studio image...",
+      });
+
+      const [sourceImage, output] = await Promise.all([
+        loadCanvasImage(selectedPhotoStudioSourceImage),
+        segmenter(selectedPhotoStudioSourceImage),
+      ]);
+
+      const mask = Array.isArray(output) ? output[0] : null;
+      if (!mask || typeof mask.toCanvas !== "function") {
+        throw new Error(
+          "The local background-removal model did not return a usable mask."
+        );
+      }
+
+      const maskCanvas = mask.toCanvas() as HTMLCanvasElement;
+      const cutoutCanvas = document.createElement("canvas");
+      cutoutCanvas.width = sourceImage.naturalWidth || sourceImage.width;
+      cutoutCanvas.height = sourceImage.naturalHeight || sourceImage.height;
+
+      const cutoutCtx = cutoutCanvas.getContext("2d");
+      if (!cutoutCtx) {
+        throw new Error("This browser could not start the product photo canvas.");
+      }
+
+      cutoutCtx.drawImage(
+        sourceImage,
+        0,
+        0,
+        cutoutCanvas.width,
+        cutoutCanvas.height
+      );
+      cutoutCtx.globalCompositeOperation = "destination-in";
+      cutoutCtx.drawImage(
+        maskCanvas,
+        0,
+        0,
+        cutoutCanvas.width,
+        cutoutCanvas.height
+      );
+      cutoutCtx.globalCompositeOperation = "source-over";
+
+      const bounds = findAlphaBounds(cutoutCanvas);
+      const outputCanvas = document.createElement("canvas");
+      outputCanvas.width = 1200;
+      outputCanvas.height = 1500;
+
+      const ctx = outputCanvas.getContext("2d");
+      if (!ctx) {
+        throw new Error("This browser could not create the premium photo canvas.");
+      }
+
+      drawNcsPremiumBackground(
+        ctx,
+        selectedPhotoStudioPresetId,
+        outputCanvas.width,
+        outputCanvas.height
+      );
+
+      const maxProductWidth = 910;
+      const maxProductHeight = 1125;
+      const scale = Math.min(
+        maxProductWidth / bounds.width,
+        maxProductHeight / bounds.height
+      );
+      const targetWidth = Math.max(1, Math.round(bounds.width * scale));
+      const targetHeight = Math.max(1, Math.round(bounds.height * scale));
+      const targetX = Math.round((outputCanvas.width - targetWidth) / 2);
+      const targetY = Math.round(
+        Math.max(120, outputCanvas.height * 0.49 - targetHeight * 0.48)
+      );
+
+      ctx.save();
+      ctx.fillStyle = "rgba(17,24,39,0.15)";
+      ctx.filter = "blur(18px)";
+      ctx.beginPath();
+      ctx.ellipse(
+        outputCanvas.width / 2,
+        Math.min(outputCanvas.height - 135, targetY + targetHeight + 28),
+        Math.max(135, targetWidth * 0.34),
+        Math.max(18, targetHeight * 0.025),
+        0,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.shadowColor = "rgba(15,23,42,0.24)";
+      ctx.shadowBlur = 34;
+      ctx.shadowOffsetY = 22;
+      ctx.drawImage(
+        cutoutCanvas,
+        bounds.x,
+        bounds.y,
+        bounds.width,
+        bounds.height,
+        targetX,
+        targetY,
+        targetWidth,
+        targetHeight
+      );
+      ctx.restore();
+
+      const finalBlob = await canvasToBlob(outputCanvas, "image/webp", 0.94);
+      const generatedFile = new File(
+        [finalBlob],
+        `ncs-premium-${Date.now()}.webp`,
+        { type: "image/webp" }
+      );
+      const url = await uploadFile(generatedFile, "studio-generated");
+
+      setPhotoStudioEnhancedImage(url);
+      setPhotoStudioStatus({
+        type: "success",
+        message:
+          `Premium photo generated directly with the free local browser engine using preset ${selectedPhotoStudioPreset.shortLabel} – ${selectedPhotoStudioPreset.name}. Review Original vs Enhanced before using it as the main image.`,
+      });
+    } catch (error) {
+      console.error("NCS direct premium photo generation failed:", error);
+      setPhotoStudioStatus({
+        type: "error",
+        message:
+          error instanceof Error
+            ? `Direct premium photo failed: ${error.message} You can still use Copy Prompt + Import Enhanced Result as the backup.`
+            : "Direct premium photo failed. You can still use Copy Prompt + Import Enhanced Result as the backup.",
+      });
+    } finally {
+      setGeneratingPremiumPhoto(false);
     }
   }
 
@@ -1896,7 +2414,8 @@ export default function AddProductPage() {
     uploadingGallery ||
     uploadingLifestyle ||
     uploadingStudioSource ||
-    uploadingStudioEnhanced;
+    uploadingStudioEnhanced ||
+    generatingPremiumPhoto;
 
   return (
     <main style={mainStyle}>
@@ -2452,7 +2971,7 @@ export default function AddProductPage() {
 
               <Panel
                 title="NCS Smart Product Studio"
-                subtitle="Keep the original product photo, choose a premium NCS background preset, copy the free AI prompt, then import the best enhanced result and attach it to this same product. Existing stock, barcode, offline pricing and online stock rules stay untouched."
+                subtitle="Take or upload a product photo, choose an NCS premium background and generate the enhanced e-commerce image directly inside this page. The free external-AI prompt/import path remains available only as a backup. Existing stock, barcode, offline pricing and online stock rules stay untouched."
               >
                 <div style={photoStudioHeaderActionsStyle}>
                   <button
@@ -2580,14 +3099,61 @@ export default function AddProductPage() {
                   ))}
                 </div>
 
+                <div style={photoStudioDirectCardStyle}>
+                  <div>
+                    <strong style={photoStudioDirectTitleStyle}>
+                      ✨ Generate Premium Photo Directly
+                    </strong>
+                    <p style={photoStudioDirectTextStyle}>
+                      Runs the free background-removal model in your browser, keeps the original product pixels, auto-crops and centers the product, adds a premium NCS preset background and creates a 1200 × 1500 WEBP image.
+                    </p>
+                    <small style={photoStudioDirectSmallStyle}>
+                      First run may take longer while the browser loads the local AI model. If direct generation cannot run on a device, use the free AI prompt/import backup below.
+                    </small>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={generatePremiumPhotoDirect}
+                    disabled={
+                      generatingPremiumPhoto ||
+                      uploadingStudioSource ||
+                      !selectedPhotoStudioSourceImage
+                    }
+                    style={{
+                      ...photoStudioGenerateDirectButtonStyle,
+                      opacity:
+                        generatingPremiumPhoto ||
+                        uploadingStudioSource ||
+                        !selectedPhotoStudioSourceImage
+                          ? 0.65
+                          : 1,
+                      cursor:
+                        generatingPremiumPhoto ||
+                        uploadingStudioSource ||
+                        !selectedPhotoStudioSourceImage
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {generatingPremiumPhoto
+                      ? "Generating Premium Photo..."
+                      : `✨ Generate with Preset ${selectedPhotoStudioPreset.shortLabel}`}
+                  </button>
+                </div>
+
+                <div style={photoStudioBackupLabelStyle}>
+                  Backup — External Free AI
+                </div>
+
                 <div style={photoStudioPromptCardStyle}>
                   <div style={photoStudioPromptHeaderStyle}>
                     <div>
                       <strong style={photoStudioPromptTitleStyle}>
-                        Free AI Studio Prompt
+                        Backup Free AI Studio Prompt
                       </strong>
                       <p style={photoStudioPromptTextStyle}>
-                        Copy this prompt into any free AI image app, upload the selected source image there, generate the premium result, then import that result back here.
+                        Use this only if direct generation is unavailable or you want a model/lifestyle-style result from another free AI app. Copy the prompt, upload the selected source image there, then import the result back here.
                       </p>
                     </div>
 
@@ -2745,6 +3311,7 @@ export default function AddProductPage() {
                       generatingAi ||
                       uploadingMain ||
                       uploadingStudioEnhanced ||
+                      generatingPremiumPhoto ||
                       !(photoStudioEnhancedImage || form.mainImage)
                     }
                     style={{
@@ -2753,6 +3320,7 @@ export default function AddProductPage() {
                         generatingAi ||
                         uploadingMain ||
                         uploadingStudioEnhanced ||
+                        generatingPremiumPhoto ||
                         !(photoStudioEnhancedImage || form.mainImage)
                           ? 0.65
                           : 1,
@@ -2760,6 +3328,7 @@ export default function AddProductPage() {
                         generatingAi ||
                         uploadingMain ||
                         uploadingStudioEnhanced ||
+                        generatingPremiumPhoto ||
                         !(photoStudioEnhancedImage || form.mainImage)
                           ? "not-allowed"
                           : "pointer",
@@ -4890,6 +5459,70 @@ const photoStudioPresetSmallTextStyle: CSSProperties = {
   color: "#64748B",
   fontSize: "11px",
   lineHeight: 1.45,
+};
+
+const photoStudioDirectCardStyle: CSSProperties = {
+  marginTop: "18px",
+  padding: "18px",
+  borderRadius: "18px",
+  border: "1px solid rgba(10,46,115,0.24)",
+  background:
+    "linear-gradient(135deg, rgba(10,46,115,0.08), rgba(212,175,55,0.10), #FFFFFF)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "18px",
+  flexWrap: "wrap",
+};
+
+const photoStudioDirectTitleStyle: CSSProperties = {
+  display: "block",
+  color: "#0A2E73",
+  fontSize: "18px",
+  lineHeight: 1.35,
+};
+
+const photoStudioDirectTextStyle: CSSProperties = {
+  margin: "7px 0 0",
+  maxWidth: "720px",
+  color: "#334155",
+  fontSize: "13px",
+  lineHeight: 1.65,
+};
+
+const photoStudioDirectSmallStyle: CSSProperties = {
+  display: "block",
+  marginTop: "7px",
+  maxWidth: "720px",
+  color: "#64748B",
+  fontSize: "11px",
+  lineHeight: 1.55,
+};
+
+const photoStudioGenerateDirectButtonStyle: CSSProperties = {
+  minHeight: "54px",
+  border: "1px solid #D4AF37",
+  borderRadius: "14px",
+  background:
+    "linear-gradient(135deg, #0A2E73 0%, #164CA8 72%, #0A2E73 100%)",
+  color: "#FFFFFF",
+  padding: "13px 20px",
+  fontSize: "14px",
+  fontWeight: 900,
+  boxShadow: "0 10px 24px rgba(10,46,115,0.20)",
+};
+
+const photoStudioBackupLabelStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  marginTop: "20px",
+  padding: "6px 10px",
+  borderRadius: "999px",
+  background: "#FFF7D6",
+  color: "#7C5B00",
+  fontSize: "11px",
+  fontWeight: 900,
+  letterSpacing: "0.3px",
 };
 
 const photoStudioPromptCardStyle: CSSProperties = {
