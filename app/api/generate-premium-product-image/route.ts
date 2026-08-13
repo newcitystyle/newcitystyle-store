@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { InferenceClient } from "@huggingface/inference";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -8,6 +9,11 @@ const OPENAI_IMAGE_MODEL =
 
 const GEMINI_IMAGE_MODEL =
   process.env.GEMINI_IMAGE_MODEL?.trim() || "gemini-3.1-flash-image";
+
+const HUGGINGFACE_IMAGE_MODEL =
+  process.env.HUGGINGFACE_IMAGE_MODEL?.trim() ||
+  process.env.HF_IMAGE_MODEL?.trim() ||
+  "black-forest-labs/FLUX.2-klein-9B";
 
 const CLOUDFLARE_PRIMARY_MODEL =
   "@cf/runwayml/stable-diffusion-v1-5-img2img";
@@ -116,7 +122,7 @@ type ProviderResult = {
   imageUrl: string;
   revisedPrompt?: string;
   model: string;
-  provider: "cloudflare" | "gemini" | "openai";
+  provider: "cloudflare" | "gemini" | "huggingface" | "openai";
 };
 
 class PremiumImageError extends Error {
@@ -781,6 +787,83 @@ async function generateWithGemini(
   };
 }
 
+function getHuggingFaceToken() {
+  return (
+    process.env.HF_TOKEN?.trim() ||
+    process.env.HF_API_KEY?.trim() ||
+    process.env.HUGGINGFACE_API_KEY?.trim() ||
+    ""
+  );
+}
+
+async function generateWithHuggingFace(
+  imageBuffer: Buffer,
+  mimeType: string,
+  prompt: string
+): Promise<ProviderResult> {
+  const token = getHuggingFaceToken();
+
+  if (!token) {
+    throw new PremiumImageError(
+      "HF_TOKEN is not configured.",
+      500
+    );
+  }
+
+  try {
+    const client = new InferenceClient(token);
+    const imageBytes = Uint8Array.from(imageBuffer);
+
+    const output = await client.imageToImage({
+      model: HUGGINGFACE_IMAGE_MODEL,
+      provider: "auto",
+      inputs: new Blob([imageBytes], { type: mimeType }),
+      parameters: {
+        prompt,
+        negative_prompt: buildNegativePrompt(),
+        guidance_scale: 7.5,
+        num_inference_steps: 20,
+        target_size: {
+          width: 1024,
+          height: 1280,
+        },
+      },
+    });
+
+    const outputBuffer = Buffer.from(await output.arrayBuffer());
+
+    if (!outputBuffer.length) {
+      throw new PremiumImageError(
+        "Hugging Face returned an empty generated image.",
+        502
+      );
+    }
+
+    const outputMimeType = output.type || "image/png";
+
+    return {
+      imageUrl: `data:${outputMimeType};base64,${outputBuffer.toString("base64")}`,
+      model: HUGGINGFACE_IMAGE_MODEL,
+      provider: "huggingface",
+    };
+  } catch (error) {
+    if (error instanceof PremiumImageError) {
+      throw error;
+    }
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unknown Hugging Face image error.";
+
+    throw new PremiumImageError(
+      cleanText(message, 1200) ||
+        "Hugging Face could not generate the premium product image.",
+      502
+    );
+  }
+}
+
 async function generateWithOpenAI(
   imageBuffer: Buffer,
   mimeType: string,
@@ -984,6 +1067,39 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+      const huggingFaceResult = await generateWithHuggingFace(
+        imageBuffer,
+        mimeType,
+        premiumPrompt
+      );
+
+      return NextResponse.json({
+        enhancedImageUrl: huggingFaceResult.imageUrl,
+        provider: huggingFaceResult.provider,
+        model: huggingFaceResult.model,
+        usedFallback: true,
+        presetUsed: preset,
+        manualPrompt: premiumPrompt,
+        providerErrors,
+        contextUsed: hasUsefulContext(productContext),
+        message:
+          "Cloudflare and Gemini were unavailable, so the premium image was generated with Hugging Face.",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unknown Hugging Face image error.";
+
+      providerErrors.push(
+        `Hugging Face ${HUGGINGFACE_IMAGE_MODEL}: ${cleanText(
+          message,
+          1200
+        )}`
+      );
+    }
+
+    try {
       const openAiResult = await generateWithOpenAI(
         imageBuffer,
         mimeType,
@@ -1001,7 +1117,7 @@ export async function POST(request: NextRequest) {
         providerErrors,
         contextUsed: hasUsefulContext(productContext),
         message:
-          "Cloudflare and Gemini were unavailable, so the premium image was generated with the optional OpenAI fallback.",
+          "Cloudflare, Gemini and Hugging Face were unavailable, so the premium image was generated with the optional OpenAI fallback.",
       });
     } catch (error) {
       const message =
