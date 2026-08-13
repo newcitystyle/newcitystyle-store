@@ -683,8 +683,8 @@ async function generateWithGemini(
             responseModalities: ["IMAGE"],
             responseFormat: {
               image: {
-                aspectRatio: "4:5",
-                imageSize: "1K",
+                aspectRatio: "ASPECT_RATIO_FOUR_BY_FIVE",
+                imageSize: "IMAGE_SIZE_ONE_K",
               },
             },
           },
