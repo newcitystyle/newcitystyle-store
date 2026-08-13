@@ -6,9 +6,10 @@ export const maxDuration = 60;
 const OPENAI_IMAGE_MODEL =
   process.env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-1";
 
-const CLOUDFLARE_IMAGE_MODEL =
-  process.env.CLOUDFLARE_IMAGE_MODEL?.trim() ||
-  "@cf/runwayml/stable-diffusion-v1-5-img2img";
+const CLOUDFLARE_IMAGE_MODELS = [
+  "@cf/runwayml/stable-diffusion-v1-5-img2img",
+  "@cf/stabilityai/stable-diffusion-xl-base-1.0",
+] as const;
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -61,7 +62,7 @@ type OpenAiImageResponse = {
   };
 };
 
-type CloudflareImageResponse = {
+type CloudflareJsonResponse = {
   success?: boolean;
   errors?: Array<
     | string
@@ -77,11 +78,11 @@ type CloudflareImageResponse = {
       }
   >;
   result?:
+    | string
     | {
         image?: string;
-        output?: string;
-      }
-    | string;
+        output?: string | string[];
+      };
 };
 
 type ProviderResult = {
@@ -93,17 +94,11 @@ type ProviderResult = {
 
 class PremiumImageError extends Error {
   status: number;
-  allowManualFallback: boolean;
 
-  constructor(
-    message: string,
-    status = 500,
-    allowManualFallback = true
-  ) {
+  constructor(message: string, status = 500) {
     super(message);
     this.name = "PremiumImageError";
     this.status = status;
-    this.allowManualFallback = allowManualFallback;
   }
 }
 
@@ -207,26 +202,19 @@ function buildPremiumPrompt(
 You are the premium e-commerce product-image assistant for NEW CITY STYLE.
 
 TASK:
-Transform the supplied source product photo into one premium e-commerce image.
-
-MAIN GOAL:
-Keep the ORIGINAL product exactly recognizable while improving only the presentation.
+Transform the supplied source product photo into one premium e-commerce product-only image.
 
 STRICT PRODUCT PRESERVATION RULES:
-1. Preserve the exact product identity.
-2. Do not change the product design.
-3. Do not change the colour, print, check pattern, embroidery, texture, shape, silhouette, sleeves, collar, borders, stitching or proportions.
-4. Do not add or remove product parts.
-5. Do not add model hands, mannequins, jewelry, props, branding, text, labels or extra accessories.
-6. Remove only unwanted background distractions, clutter, floor noise, rough surroundings, watermarks, tags and shadows that reduce quality.
-7. Keep the product centered and neatly composed.
-8. Use a realistic soft grounding shadow.
-9. Create a clean premium catalog result suitable for website upload.
-10. This must remain a PRODUCT-ONLY image, not a lifestyle model shot.
-11. Output style should look like a premium fashion e-commerce listing image.
-12. Final composition should feel elegant, realistic, polished and sales-ready.
-13. No text, no watermark, no logo overlay, no frame.
-14. Make the result vertical and product-focused, ideally in a 4:5 presentation.
+1. Preserve the exact product identity and overall silhouette.
+2. Preserve the original colour, print, checks, embroidery, fabric appearance, collar, sleeves, borders, buttons, stitching and proportions.
+3. Do not add or remove garment parts.
+4. Do not add a model, mannequin, hands, jewellery, text, logo overlay, price, watermark or promotional badge.
+5. Remove only the existing background, floor clutter, unwanted surroundings, visible watermark/tag distractions and poor presentation.
+6. Keep the complete product visible and centered.
+7. Use realistic clean lighting and a subtle grounding shadow.
+8. Make it premium, realistic and suitable for an e-commerce product page.
+9. Do not invent packaging, branding or accessories.
+10. Keep changes to the garment itself minimal; change the presentation/background, not the product.
 
 BACKGROUND PRESET:
 Preset Name: ${preset.name}
@@ -237,15 +225,36 @@ Best For: ${preset.bestFor}
 TRUSTED PRODUCT RECORD:
 ${trustedRecord}
 
-IMPORTANT:
-- If the source photo is imperfect, improve the presentation without changing the product.
-- Preserve natural product edges.
-- Keep the product fully visible.
-- Use premium clean lighting.
-- Keep the result believable and professional.
-- Do not invent brand packaging.
-- Do not show price tags or promotional text.
+FINAL RESULT:
+A polished, premium, product-only fashion e-commerce image with the original garment faithfully preserved and the selected background style applied.
 `.trim();
+}
+
+function buildNegativePrompt() {
+  return [
+    "changed garment",
+    "different colour",
+    "different pattern",
+    "different print",
+    "extra buttons",
+    "missing buttons",
+    "different collar",
+    "different sleeves",
+    "different embroidery",
+    "extra garment parts",
+    "cropped product",
+    "model",
+    "mannequin",
+    "hands",
+    "jewellery",
+    "text",
+    "watermark",
+    "logo overlay",
+    "price tag",
+    "poster",
+    "duplicate product",
+    "distorted clothing",
+  ].join(", ");
 }
 
 async function downloadImage(imageUrl: string) {
@@ -316,7 +325,7 @@ async function downloadImage(imageUrl: string) {
 }
 
 function getCloudflareErrorMessage(
-  payload: CloudflareImageResponse | null,
+  payload: CloudflareJsonResponse | null,
   fallback = "Cloudflare could not generate the premium product image."
 ) {
   if (!payload) return fallback;
@@ -326,7 +335,7 @@ function getCloudflareErrorMessage(
         .map((item) =>
           typeof item === "string"
             ? item
-            : cleanText(item?.message, 500)
+            : cleanText(item?.message, 800)
         )
         .filter(Boolean)
     : [];
@@ -340,7 +349,7 @@ function getCloudflareErrorMessage(
         .map((item) =>
           typeof item === "string"
             ? item
-            : cleanText(item?.message, 500)
+            : cleanText(item?.message, 800)
         )
         .filter(Boolean)
     : [];
@@ -352,8 +361,8 @@ function getCloudflareErrorMessage(
   return fallback;
 }
 
-function ensureDataUrl(base64OrDataUrl: string) {
-  const cleaned = cleanText(base64OrDataUrl, 20_000_000);
+function ensureImageDataUrl(value: string) {
+  const cleaned = cleanText(value, 20_000_000);
 
   if (!cleaned) return "";
 
@@ -364,13 +373,15 @@ function ensureDataUrl(base64OrDataUrl: string) {
   return `data:image/png;base64,${cleaned}`;
 }
 
-async function generateWithCloudflare(
+async function generateWithCloudflareModel(
+  model: string,
   imageBuffer: Buffer,
-  mimeType: string,
   prompt: string
 ): Promise<ProviderResult> {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
-  const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim();
+  const apiToken =
+    process.env.CLOUDFLARE_API_TOKEN?.trim() ||
+    process.env.CLOUDFLARE_AUTH_TOKEN?.trim();
 
   if (!accountId || !apiToken) {
     throw new PremiumImageError(
@@ -383,7 +394,9 @@ async function generateWithCloudflare(
 
   try {
     response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${CLOUDFLARE_IMAGE_MODEL}`,
+      `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(
+        accountId
+      )}/ai/run/${model}`,
       {
         method: "POST",
         headers: {
@@ -392,9 +405,10 @@ async function generateWithCloudflare(
         },
         body: JSON.stringify({
           prompt,
+          negative_prompt: buildNegativePrompt(),
           image_b64: imageBuffer.toString("base64"),
           num_steps: 20,
-          strength: 0.35,
+          strength: 0.3,
           guidance: 7.5,
         }),
         cache: "no-store",
@@ -409,8 +423,8 @@ async function generateWithCloudflare(
 
     throw new PremiumImageError(
       message.toLowerCase().includes("timeout")
-        ? "Cloudflare premium image request timed out."
-        : "Cloudflare premium image service is temporarily unavailable.",
+        ? `${model} request timed out.`
+        : `${model} is temporarily unavailable.`,
       504
     );
   }
@@ -419,64 +433,70 @@ async function generateWithCloudflare(
     response.headers.get("content-type") || ""
   ).toLowerCase();
 
-  if (contentType.startsWith("image/")) {
+  if (response.ok && contentType.startsWith("image/")) {
     const outputBuffer = Buffer.from(await response.arrayBuffer());
-    const dataUrl = `data:${contentType};base64,${outputBuffer.toString("base64")}`;
+
+    if (!outputBuffer.length) {
+      throw new PremiumImageError(
+        `${model} returned an empty image.`,
+        502
+      );
+    }
 
     return {
-      imageUrl: dataUrl,
-      model: CLOUDFLARE_IMAGE_MODEL,
+      imageUrl: `data:${contentType};base64,${outputBuffer.toString("base64")}`,
+      model,
       provider: "cloudflare",
     };
   }
 
-  let payload: CloudflareImageResponse | null = null;
+  let payload: CloudflareJsonResponse | null = null;
 
   try {
-    payload = (await response.json()) as CloudflareImageResponse;
+    payload = (await response.json()) as CloudflareJsonResponse;
   } catch {
-    if (!response.ok) {
-      throw new PremiumImageError(
-        "Cloudflare returned an unreadable image response.",
-        response.status || 502
-      );
-    }
-
     throw new PremiumImageError(
-      "Cloudflare returned an unexpected image response.",
-      502
+      response.ok
+        ? `${model} returned an unexpected response.`
+        : `${model} returned an unreadable error response.`,
+      response.status || 502
     );
   }
 
-  if (!response.ok || payload?.success === false) {
+  if (!response.ok || payload.success === false) {
     throw new PremiumImageError(
-      getCloudflareErrorMessage(payload),
+      getCloudflareErrorMessage(
+        payload,
+        `${model} could not generate the image.`
+      ),
       response.status || 502
     );
   }
 
   let encodedImage = "";
 
-  if (typeof payload?.result === "string") {
+  if (typeof payload.result === "string") {
     encodedImage = payload.result;
-  } else if (payload?.result?.image) {
-    encodedImage = payload.result.image;
-  } else if (payload?.result?.output) {
-    encodedImage = payload.result.output;
+  } else if (payload.result && typeof payload.result === "object") {
+    encodedImage =
+      cleanText(payload.result.image, 20_000_000) ||
+      (Array.isArray(payload.result.output)
+        ? cleanText(payload.result.output[0], 20_000_000)
+        : cleanText(payload.result.output, 20_000_000));
   }
 
-  const imageUrl = ensureDataUrl(encodedImage);
+  const resultUrl = ensureImageDataUrl(encodedImage);
 
-  if (!imageUrl) {
+  if (!resultUrl) {
     throw new PremiumImageError(
-      "Cloudflare returned no generated image.",
+      `${model} returned no generated image.`,
       502
     );
   }
 
   return {
-    imageUrl,
-    model: CLOUDFLARE_IMAGE_MODEL,
+    imageUrl: resultUrl,
+    model,
     provider: "cloudflare",
   };
 }
@@ -522,7 +542,9 @@ async function generateWithOpenAI(
     });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "OpenAI image request failed.";
+      error instanceof Error
+        ? error.message
+        : "OpenAI image request failed.";
 
     throw new PremiumImageError(
       message.toLowerCase().includes("timeout")
@@ -544,11 +566,11 @@ async function generateWithOpenAI(
   }
 
   if (!response.ok) {
-    const message =
+    throw new PremiumImageError(
       cleanText(data.error?.message, 1000) ||
-      "OpenAI could not generate the premium product image.";
-
-    throw new PremiumImageError(message, response.status || 502);
+        "OpenAI could not generate the premium product image.",
+      response.status || 502
+    );
   }
 
   const result = data.data?.[0];
@@ -610,35 +632,20 @@ export async function POST(request: NextRequest) {
 
     const providerErrors: string[] = [];
 
-    const providers: Array<{
-      name: "cloudflare" | "openai";
-      run: () => Promise<ProviderResult>;
-    }> = [
-      {
-        name: "cloudflare",
-        run: () =>
-          generateWithCloudflare(imageBuffer, mimeType, premiumPrompt),
-      },
-      {
-        name: "openai",
-        run: () =>
-          generateWithOpenAI(imageBuffer, mimeType, premiumPrompt),
-      },
-    ];
-
-    for (let index = 0; index < providers.length; index += 1) {
-      const provider = providers[index];
-
+    for (const model of CLOUDFLARE_IMAGE_MODELS) {
       try {
-        const result = await provider.run();
+        const result = await generateWithCloudflareModel(
+          model,
+          imageBuffer,
+          premiumPrompt
+        );
 
         return NextResponse.json({
           enhancedImageUrl: result.imageUrl,
           provider: result.provider,
           model: result.model,
-          usedFallback: index > 0,
+          usedFallback: model !== CLOUDFLARE_IMAGE_MODELS[0],
           presetUsed: preset,
-          revisedPrompt: result.revisedPrompt,
           manualPrompt: premiumPrompt,
           providerErrors,
           contextUsed: Boolean(
@@ -649,22 +656,53 @@ export async function POST(request: NextRequest) {
               productContext.colour
           ),
           message:
-            index > 0
-              ? `Premium product image generated successfully with ${result.provider.toUpperCase()} after fallback.`
-              : `Premium product image generated successfully with ${result.provider.toUpperCase()}.`,
+            model === CLOUDFLARE_IMAGE_MODELS[0]
+              ? "Premium product image generated successfully with Cloudflare."
+              : "First Cloudflare image model was unavailable, so the premium image was generated with the free Cloudflare backup model.",
         });
       } catch (error) {
         const message =
-          error instanceof PremiumImageError
+          error instanceof Error
             ? error.message
-            : error instanceof Error
-              ? error.message
-              : "Unknown provider error.";
+            : "Unknown Cloudflare error.";
 
-        providerErrors.push(
-          `${provider.name}: ${cleanText(message, 1200)}`
-        );
+        providerErrors.push(`Cloudflare ${model}: ${cleanText(message, 1200)}`);
       }
+    }
+
+    try {
+      const openAiResult = await generateWithOpenAI(
+        imageBuffer,
+        mimeType,
+        premiumPrompt
+      );
+
+      return NextResponse.json({
+        enhancedImageUrl: openAiResult.imageUrl,
+        provider: openAiResult.provider,
+        model: openAiResult.model,
+        usedFallback: true,
+        presetUsed: preset,
+        revisedPrompt: openAiResult.revisedPrompt || "",
+        manualPrompt: premiumPrompt,
+        providerErrors,
+        contextUsed: Boolean(
+          productContext.name ||
+            productContext.brand ||
+            productContext.category ||
+            productContext.size ||
+            productContext.colour
+        ),
+        message:
+          "Cloudflare image models were unavailable, so the premium image was generated with the optional OpenAI fallback.",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unknown OpenAI error.";
+
+      providerErrors.push(`OpenAI: ${cleanText(message, 1200)}`);
     }
 
     return NextResponse.json(
@@ -686,7 +724,7 @@ export async function POST(request: NextRequest) {
         message:
           "Automatic premium image generation failed. You can still use the manual backup workflow.",
       },
-      { status: 500 }
+      { status: 502 }
     );
   } catch (error) {
     console.error(
