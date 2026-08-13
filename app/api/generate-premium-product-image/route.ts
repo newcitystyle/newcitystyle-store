@@ -238,11 +238,12 @@ TASK:
 Edit the supplied source product photo into one world-class, photorealistic, premium e-commerce product-only image. Treat the uploaded garment as the immutable product reference and improve only its presentation.
 
 STRICT PRODUCT PRESERVATION RULES:
-1. Preserve the exact product identity and overall silhouette.
-2. Preserve the original colour, print, checks, embroidery, fabric appearance, collar, sleeves, borders, buttons, stitching and proportions.
-3. Do not add or remove garment parts.
-4. Do not add a model, mannequin, hands, jewellery, text, logo overlay, price, watermark or promotional badge.
-5. Remove only the existing background, floor clutter, unwanted surroundings, visible watermark/tag distractions and poor presentation.
+1. PRODUCT GEOMETRY IS LOCKED. Preserve the exact product identity, silhouette and construction from the source image.
+2. Preserve the exact neckline shape, shoulder width, armhole shape, sleeve state and sleeve length, waist seam/waist position, bodice length, skirt/trouser shape, flare, hem length and all visible construction details. If the source is sleeveless, it MUST remain sleeveless. Never add sleeves, a belt, waistband decoration, collar, pockets, pleats, panels or closures that are not present in the source.
+3. Preserve the original base colour and the actual visible print/embroidery/check placement as faithfully as possible. Do not reinterpret, enlarge, simplify, redraw or replace the pattern. Preserve fabric texture, borders, buttons, stitching and proportions.
+4. Do not add or remove garment parts. Do not redesign the garment to make it look more fashionable.
+5. Do not add a model, mannequin, hands, jewellery, text, logo overlay, price, watermark or promotional badge.
+6. Remove only the existing background, floor clutter, unwanted surroundings, visible watermark/tag distractions and poor presentation.
 6. Keep the complete product visible, upright, centered and naturally proportioned in a vertical 4:5 catalogue composition.
 7. Correct only obvious camera tilt/perspective in the presentation when it can be done without redesigning the garment.
 8. Use photorealistic studio lighting, natural fabric depth, clean edge separation and a subtle physically plausible grounding shadow.
@@ -251,6 +252,12 @@ STRICT PRODUCT PRESERVATION RULES:
 11. The garment itself must remain the same sellable item. Improve presentation, not product design.
 12. The final image MUST visibly differ from the source photograph in background, framing and professional presentation. Never return the original photo unchanged or merely re-encoded.
 13. Remove the original floor/room completely and replace it with the selected premium studio environment while preserving the garment faithfully.
+
+PRODUCT-FIDELITY GATE (MANDATORY):
+Before producing the final image, visually compare the garment against the supplied source. If your edit would change sleeves, neckline, waist construction, belt details, hem length, garment category, silhouette, colour family, or the recognizable print placement, do NOT make that change. Prefer a more conservative edit. The goal is the same real store item photographed professionally, not a redesigned look-alike.
+
+PREMIUM BACKGROUND DIRECTION:
+Create a sophisticated international fashion-catalog studio: warm ivory seamless cyclorama, very subtle limestone/cream tonal depth, soft editorial daylight from the upper-left, gentle natural floor-to-wall sweep and a restrained realistic contact shadow. Keep the environment quiet and luxurious. No frames, shelves, props, furniture, text, gold borders, poster graphics or busy decor for the MAIN catalog preset.
 
 BACKGROUND PRESET:
 Preset Name: ${preset.name}
@@ -276,6 +283,18 @@ function buildNegativePrompt() {
     "missing buttons",
     "different collar",
     "different sleeves",
+    "added sleeves",
+    "short sleeves on sleeveless garment",
+    "changed neckline",
+    "deep v neck",
+    "added belt",
+    "new waistband",
+    "changed waist seam",
+    "changed hem length",
+    "changed flare",
+    "different silhouette",
+    "redesigned garment",
+    "reinterpreted print",
     "different embroidery",
     "extra garment parts",
     "cropped product",
@@ -824,8 +843,8 @@ async function generateWithHuggingFace(
       parameters: {
         prompt,
         negative_prompt: buildNegativePrompt(),
-        guidance_scale: 7.5,
-        num_inference_steps: 20,
+        guidance_scale: 5.5,
+        num_inference_steps: 18,
         target_size: {
           width: 1024,
           height: 1280,
@@ -1035,7 +1054,7 @@ export async function POST(request: NextRequest) {
           providerErrors,
           contextUsed: hasUsefulContext(productContext),
           message:
-            "Premium product image generated with Hugging Face FLUX Kontext and passed to NCS quality validation.",
+            "Premium product image generated with Hugging Face FLUX Kontext in strict product-fidelity mode and passed to NCS client-side validation.",
         });
       } catch (error) {
         providerErrors.push(

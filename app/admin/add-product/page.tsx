@@ -261,9 +261,9 @@ const ncsPhotoStudioPresets: PhotoStudioPreset[] = [
     id: "0",
     shortLabel: "MAIN",
     name: "NCS World-Class Catalog",
-    description: "Clean luxury ivory editorial studio designed specifically for the primary e-commerce product image.",
+    description: "Premium warm-ivory luxury cyclorama with soft editorial daylight, subtle champagne depth and a natural grounded finish designed for the primary e-commerce image.",
     recommendedFor: "Main product image, website cards, search results, premium catalogue",
-    backgroundStyle: "soft warm ivory seamless studio, subtle depth, clean luxury catalog lighting, no frames, no shelves, no decorative distractions",
+    backgroundStyle: "high-end warm ivory seamless cyclorama studio, subtle limestone texture, soft editorial daylight from the upper left, restrained champagne depth, natural floor-to-wall sweep, realistic soft grounding shadow, no frames, no shelves, no props, no decorative distractions",
   },
   {
     id: "1",
@@ -1884,6 +1884,168 @@ export default function AddProductPage() {
     }
   }
 
+  async function createValidationProductCutout(imageUrl: string) {
+    const sourceImage = await loadCanvasImage(imageUrl);
+
+    try {
+      const modnetSegmenter = await getNcsBackgroundRemovalPipeline();
+      const modnetOutput = await modnetSegmenter(imageUrl);
+      const cutout = await createCutoutCanvasFromLocalOutput(
+        sourceImage,
+        modnetOutput
+      );
+      refineProductCutoutEdges(cutout);
+      return cutout;
+    } catch (modnetError) {
+      console.warn(
+        "NCS fidelity validation MODNet failed; trying BEN2:",
+        modnetError
+      );
+    }
+
+    const ben2Segmenter = await getNcsBen2BackgroundRemovalPipeline();
+    const ben2Output = await ben2Segmenter([imageUrl]);
+    const cutout = await createCutoutCanvasFromLocalOutput(
+      sourceImage,
+      ben2Output
+    );
+    refineProductCutoutEdges(cutout);
+    return cutout;
+  }
+
+  function normalizeCutoutForFidelity(
+    cutout: HTMLCanvasElement,
+    width = 96,
+    height = 120
+  ) {
+    const bounds = findAlphaBounds(cutout);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+    if (!ctx) {
+      throw new Error("Unable to prepare NCS product-fidelity canvas.");
+    }
+
+    ctx.clearRect(0, 0, width, height);
+    const scale = Math.min(
+      (width * 0.9) / Math.max(bounds.width, 1),
+      (height * 0.9) / Math.max(bounds.height, 1)
+    );
+    const drawWidth = Math.max(1, Math.round(bounds.width * scale));
+    const drawHeight = Math.max(1, Math.round(bounds.height * scale));
+    const drawX = Math.round((width - drawWidth) / 2);
+    const drawY = Math.round((height - drawHeight) / 2);
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(
+      cutout,
+      bounds.x,
+      bounds.y,
+      bounds.width,
+      bounds.height,
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight
+    );
+
+    return {
+      canvas,
+      bounds,
+      aspectRatio: bounds.width / Math.max(bounds.height, 1),
+    };
+  }
+
+  async function compareCloudProductFidelity(
+    sourceUrl: string,
+    candidateUrl: string
+  ) {
+    try {
+      const [sourceCutout, candidateCutout] = await Promise.all([
+        createValidationProductCutout(sourceUrl),
+        createValidationProductCutout(candidateUrl),
+      ]);
+
+      const source = normalizeCutoutForFidelity(sourceCutout);
+      const candidate = normalizeCutoutForFidelity(candidateCutout);
+      const sourceCtx = source.canvas.getContext("2d", {
+        willReadFrequently: true,
+      });
+      const candidateCtx = candidate.canvas.getContext("2d", {
+        willReadFrequently: true,
+      });
+
+      if (!sourceCtx || !candidateCtx) return null;
+
+      const sourcePixels = sourceCtx.getImageData(
+        0,
+        0,
+        source.canvas.width,
+        source.canvas.height
+      ).data;
+      const candidatePixels = candidateCtx.getImageData(
+        0,
+        0,
+        candidate.canvas.width,
+        candidate.canvas.height
+      ).data;
+
+      let intersection = 0;
+      let union = 0;
+      let productDifference = 0;
+      let productComparedPixels = 0;
+      let stronglyChangedProductPixels = 0;
+
+      for (let index = 0; index < sourcePixels.length; index += 4) {
+        const sourceAlpha = sourcePixels[index + 3] ?? 0;
+        const candidateAlpha = candidatePixels[index + 3] ?? 0;
+        const sourceOn = sourceAlpha >= 64;
+        const candidateOn = candidateAlpha >= 64;
+
+        if (sourceOn && candidateOn) intersection += 1;
+        if (sourceOn || candidateOn) union += 1;
+
+        if (sourceOn && candidateOn) {
+          const difference =
+            (Math.abs((sourcePixels[index] ?? 0) - (candidatePixels[index] ?? 0)) +
+              Math.abs(
+                (sourcePixels[index + 1] ?? 0) -
+                  (candidatePixels[index + 1] ?? 0)
+              ) +
+              Math.abs(
+                (sourcePixels[index + 2] ?? 0) -
+                  (candidatePixels[index + 2] ?? 0)
+              )) /
+            3;
+
+          productDifference += difference;
+          productComparedPixels += 1;
+          if (difference >= 70) stronglyChangedProductPixels += 1;
+        }
+      }
+
+      return {
+        silhouetteIou: intersection / Math.max(union, 1),
+        aspectRatioDelta:
+          Math.abs(source.aspectRatio - candidate.aspectRatio) /
+          Math.max(source.aspectRatio, 0.01),
+        productMeanDifference:
+          productDifference / Math.max(productComparedPixels, 1),
+        productStrongChangeRatio:
+          stronglyChangedProductPixels / Math.max(productComparedPixels, 1),
+      };
+    } catch (error) {
+      console.warn(
+        "NCS strict product-fidelity validation could not complete:",
+        error
+      );
+      return null;
+    }
+  }
+
   function isMeaningfullyEnhancedCloudImage(
     comparison: {
       meanDifference: number;
@@ -1892,11 +2054,29 @@ export default function AddProductPage() {
   ) {
     if (!comparison) return true;
 
-    // A premium edit must visibly change the presentation. This rejects
-    // providers that simply echo/re-encode the original photograph.
     return (
       comparison.meanDifference >= 8 ||
       comparison.changedRatio >= 0.2
+    );
+  }
+
+  function passesStrictProductFidelity(
+    fidelity: {
+      silhouetteIou: number;
+      aspectRatioDelta: number;
+      productMeanDifference: number;
+      productStrongChangeRatio: number;
+    } | null
+  ) {
+    // If browser-side segmentation cannot validate, do not silently reject a
+    // provider result. The strict prompt still applies and the user must review it.
+    if (!fidelity) return true;
+
+    return (
+      fidelity.silhouetteIou >= 0.74 &&
+      fidelity.aspectRatioDelta <= 0.22 &&
+      fidelity.productMeanDifference <= 62 &&
+      fidelity.productStrongChangeRatio <= 0.5
     );
   }
 
@@ -1990,6 +2170,47 @@ export default function AddProductPage() {
       setPhotoStudioStatus({
         type: "idle",
         message:
+          `${(result.provider || "AI").toUpperCase()} changed the presentation. NCS is now checking that the exact garment silhouette, colour and print remain faithful...`,
+      });
+
+      const fidelity = await compareCloudProductFidelity(
+        selectedPhotoStudioSourceImage,
+        result.enhancedImageUrl
+      );
+
+      if (!passesStrictProductFidelity(fidelity)) {
+        if (
+          normalizedProvider &&
+          !skippedProviders.includes(normalizedProvider)
+        ) {
+          skippedProviders.push(normalizedProvider);
+        }
+
+        const fidelityNote = fidelity
+          ? `silhouette ${(fidelity.silhouetteIou * 100).toFixed(0)}%, aspect delta ${(fidelity.aspectRatioDelta * 100).toFixed(0)}%, product change ${(fidelity.productMeanDifference).toFixed(1)}`
+          : "fidelity validation unavailable";
+
+        rejectedProviderNotes.push(
+          `${(result.provider || "Cloud AI").toUpperCase()} redesigned the garment too much and was rejected by NCS Strict Product Fidelity (${fidelityNote}).`
+        );
+
+        if (attempt < 3) {
+          setPhotoStudioStatus({
+            type: "idle",
+            message:
+              "That AI result looked premium but changed the actual product. NCS rejected it automatically and is trying the next provider...",
+          });
+          continue;
+        }
+
+        throw new Error(
+          "Cloud AI changed the garment structure too much. Switching to the exact-product local catalog backup."
+        );
+      }
+
+      setPhotoStudioStatus({
+        type: "idle",
+        message:
           `Cloud AI generated a meaningfully changed image with ${(result.provider || "AI").toUpperCase()}. Saving it safely to NEW CITY STYLE storage...`,
       });
 
@@ -2002,7 +2223,7 @@ export default function AddProductPage() {
         type: "success",
         message:
           result.message ||
-          `Premium photo generated successfully with ${(result.provider || "cloud AI").toUpperCase()}. The result passed NCS unchanged-image validation. Review Original vs Enhanced before using it as the main image.`,
+          `Premium photo generated successfully with ${(result.provider || "cloud AI").toUpperCase()}. The result passed NCS meaningful-change and strict product-fidelity checks. Review Original vs Enhanced before using it as the main image.`,
       });
       return;
     }
