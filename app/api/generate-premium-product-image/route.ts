@@ -13,7 +13,7 @@ const GEMINI_IMAGE_MODEL =
 const HUGGINGFACE_IMAGE_MODEL =
   process.env.HUGGINGFACE_IMAGE_MODEL?.trim() ||
   process.env.HF_IMAGE_MODEL?.trim() ||
-  "black-forest-labs/FLUX.2-klein-9B";
+  "Qwen/Qwen-Image-Edit";
 
 const CLOUDFLARE_PRIMARY_MODEL =
   "@cf/runwayml/stable-diffusion-v1-5-img2img";
@@ -235,7 +235,7 @@ function buildPremiumPrompt(
 You are the premium e-commerce product-image assistant for NEW CITY STYLE.
 
 TASK:
-Transform the supplied source product photo into one premium e-commerce product-only image.
+Edit the supplied source product photo into one world-class, photorealistic, premium e-commerce product-only image. Treat the uploaded garment as the immutable product reference and improve only its presentation.
 
 STRICT PRODUCT PRESERVATION RULES:
 1. Preserve the exact product identity and overall silhouette.
@@ -243,11 +243,12 @@ STRICT PRODUCT PRESERVATION RULES:
 3. Do not add or remove garment parts.
 4. Do not add a model, mannequin, hands, jewellery, text, logo overlay, price, watermark or promotional badge.
 5. Remove only the existing background, floor clutter, unwanted surroundings, visible watermark/tag distractions and poor presentation.
-6. Keep the complete product visible and centered.
-7. Use realistic clean lighting and a subtle grounding shadow.
-8. Make it premium, realistic and suitable for an e-commerce product page.
-9. Do not invent packaging, branding or accessories.
-10. Keep changes to the garment itself minimal; change the presentation/background, not the product.
+6. Keep the complete product visible, upright, centered and naturally proportioned in a vertical 4:5 catalogue composition.
+7. Correct only obvious camera tilt/perspective in the presentation when it can be done without redesigning the garment.
+8. Use photorealistic studio lighting, natural fabric depth, clean edge separation and a subtle physically plausible grounding shadow.
+9. Remove the photographed floor/background and replace it with the selected premium studio environment; avoid poster-like frames, graphic boxes and fake decorative overlays unless the selected preset explicitly requests them.
+10. Do not invent packaging, branding or accessories. Do not smooth away texture, embroidery or print detail.
+11. The garment itself must remain the same sellable item. Improve presentation, not product design.
 
 BACKGROUND PRESET:
 Preset Name: ${preset.name}
@@ -259,7 +260,7 @@ TRUSTED PRODUCT RECORD:
 ${trustedRecord}
 
 FINAL RESULT:
-A polished, premium, product-only fashion e-commerce image with the original garment faithfully preserved and the selected background style applied.
+A photorealistic premium fashion catalogue image, vertical 4:5, with the exact original garment faithfully preserved, professionally presented, and the selected studio style applied. It should look suitable for a high-end international e-commerce product page rather than a simple background-removal composite.
 `.trim();
 }
 
@@ -1005,31 +1006,32 @@ export async function POST(request: NextRequest) {
     const providerErrors: string[] = [];
 
     try {
-      const cloudflareResult = await generateWithCloudflareRetry(
+      const huggingFaceResult = await generateWithHuggingFace(
         imageBuffer,
+        mimeType,
         premiumPrompt
       );
 
       return NextResponse.json({
-        enhancedImageUrl: cloudflareResult.imageUrl,
-        provider: cloudflareResult.provider,
-        model: cloudflareResult.model,
+        enhancedImageUrl: huggingFaceResult.imageUrl,
+        provider: huggingFaceResult.provider,
+        model: huggingFaceResult.model,
         usedFallback: false,
         presetUsed: preset,
         manualPrompt: premiumPrompt,
         providerErrors,
         contextUsed: hasUsefulContext(productContext),
         message:
-          "Premium product image generated successfully with Cloudflare.",
+          "Premium product image generated successfully with Hugging Face Qwen Image Edit as the primary quality engine.",
       });
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : "Unknown Cloudflare error.";
+          : "Unknown Hugging Face image error.";
 
       providerErrors.push(
-        `Cloudflare ${CLOUDFLARE_PRIMARY_MODEL}: ${cleanText(
+        `Hugging Face ${HUGGINGFACE_IMAGE_MODEL}: ${cleanText(
           message,
           1200
         )}`
@@ -1053,7 +1055,7 @@ export async function POST(request: NextRequest) {
         providerErrors,
         contextUsed: hasUsefulContext(productContext),
         message:
-          "Cloudflare was unavailable, so the premium product image was generated with Gemini Image AI.",
+          "Hugging Face was unavailable, so the premium product image was generated with Gemini Image AI.",
       });
     } catch (error) {
       const message =
@@ -1067,32 +1069,31 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const huggingFaceResult = await generateWithHuggingFace(
+      const cloudflareResult = await generateWithCloudflareRetry(
         imageBuffer,
-        mimeType,
         premiumPrompt
       );
 
       return NextResponse.json({
-        enhancedImageUrl: huggingFaceResult.imageUrl,
-        provider: huggingFaceResult.provider,
-        model: huggingFaceResult.model,
+        enhancedImageUrl: cloudflareResult.imageUrl,
+        provider: cloudflareResult.provider,
+        model: cloudflareResult.model,
         usedFallback: true,
         presetUsed: preset,
         manualPrompt: premiumPrompt,
         providerErrors,
         contextUsed: hasUsefulContext(productContext),
         message:
-          "Cloudflare and Gemini were unavailable, so the premium image was generated with Hugging Face.",
+          "Hugging Face and Gemini were unavailable, so the premium product image was generated with Cloudflare.",
       });
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : "Unknown Hugging Face image error.";
+          : "Unknown Cloudflare error.";
 
       providerErrors.push(
-        `Hugging Face ${HUGGINGFACE_IMAGE_MODEL}: ${cleanText(
+        `Cloudflare ${CLOUDFLARE_PRIMARY_MODEL}: ${cleanText(
           message,
           1200
         )}`
@@ -1117,7 +1118,7 @@ export async function POST(request: NextRequest) {
         providerErrors,
         contextUsed: hasUsefulContext(productContext),
         message:
-          "Cloudflare, Gemini and Hugging Face were unavailable, so the premium image was generated with the optional OpenAI fallback.",
+          "Hugging Face, Gemini and Cloudflare were unavailable, so the premium image was generated with the optional OpenAI fallback.",
       });
     } catch (error) {
       const message =

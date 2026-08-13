@@ -1799,13 +1799,11 @@ export default function AddProductPage() {
     return uploadFile(generatedFile, "studio-cloud-generated");
   }
 
-  async function generatePremiumPhotoWithCloudFallback(
-    localErrorMessage: string
-  ) {
+  async function generatePremiumPhotoWithCloudAi() {
     setPhotoStudioStatus({
       type: "idle",
       message:
-        "Local photo engine was unavailable. Trying NCS Cloud AI automatically...",
+        "NCS Cloud AI is creating the premium e-commerce image first. Hugging Face is the primary provider; other configured cloud providers are automatic backups...",
     });
 
     const response = await fetch("/api/generate-premium-product-image", {
@@ -1842,7 +1840,6 @@ export default function AddProductPage() {
 
       throw new Error(
         [
-          `Local engine: ${localErrorMessage}`,
           result.error || "Cloud AI could not generate the premium image.",
           providerDetails,
         ]
@@ -1866,7 +1863,7 @@ export default function AddProductPage() {
       type: "success",
       message:
         result.message ||
-        `Premium photo generated successfully with ${(result.provider || "cloud AI").toUpperCase()} after the local engine fallback. Review Original vs Enhanced before using it as the main image.`,
+        `Premium photo generated successfully with ${(result.provider || "cloud AI").toUpperCase()}. Cloud AI was used as the primary quality engine. Review Original vs Enhanced before using it as the main image.`,
     });
   }
 
@@ -1881,13 +1878,30 @@ export default function AddProductPage() {
     }
 
     setGeneratingPremiumPhoto(true);
-    setPhotoStudioStatus({
-      type: "idle",
-      message:
-        "Trying NCS Local Engine 1 first. If needed, Local Engine 2 will run automatically before any Cloud AI fallback...",
-    });
+    let cloudFailureMessage = "";
 
     try {
+      try {
+        await generatePremiumPhotoWithCloudAi();
+        return;
+      } catch (cloudError) {
+        cloudFailureMessage =
+          cloudError instanceof Error
+            ? cloudError.message
+            : "Cloud AI was unavailable.";
+
+        console.warn(
+          "NCS cloud-first premium image generation failed; using local backup:",
+          cloudError
+        );
+
+        setPhotoStudioStatus({
+          type: "idle",
+          message:
+            "Cloud AI could not complete this image. Using the on-device MODNet/BEN2 catalog engine as the automatic backup...",
+        });
+      }
+
       const sourceImage = await loadCanvasImage(
         selectedPhotoStudioSourceImage
       );
@@ -2057,7 +2071,7 @@ export default function AddProductPage() {
       setPhotoStudioStatus({
         type: "success",
         message:
-          `Premium photo generated locally with ${localEngineUsed} using ${selectedPhotoStudioPreset.shortLabel} – ${selectedPhotoStudioPreset.name}. No cloud image-generation quota was used. ${selectedPhotoStudioPresetId === "0" ? "World-Class Catalog composition applied: clean ivory studio, refined edge, controlled scale and subtle contact shadow." : "This creative preset is best suited to gallery/lifestyle presentation."} Review Original vs Enhanced before using it.`,
+          `Cloud AI was unavailable, so the local backup generated this image with ${localEngineUsed} using ${selectedPhotoStudioPreset.shortLabel} – ${selectedPhotoStudioPreset.name}. ${selectedPhotoStudioPresetId === "0" ? "Clean catalog composition applied: ivory studio, refined edge, controlled scale and subtle contact shadow." : "This creative preset is best suited to gallery/lifestyle presentation."} Review Original vs Enhanced before using it.`,
       });
     } catch (localError) {
       console.error(
@@ -2070,18 +2084,11 @@ export default function AddProductPage() {
           ? localError.message
           : "Both local premium photo engines failed.";
 
-      try {
-        await generatePremiumPhotoWithCloudFallback(localErrorMessage);
-      } catch (cloudError) {
-        console.error("NCS cloud premium photo generation failed:", cloudError);
-        setPhotoStudioStatus({
-          type: "error",
-          message:
-            cloudError instanceof Error
-              ? `Both local engines failed, and Cloud AI was unavailable: ${cloudError.message} You can still use Copy Prompt + Import Enhanced Result as the final backup.`
-              : "Both local engines failed, and Cloud AI was unavailable. You can still use Copy Prompt + Import Enhanced Result as the final backup.",
-        });
-      }
+      setPhotoStudioStatus({
+        type: "error",
+        message:
+          `Cloud AI failed: ${cloudFailureMessage || "Unavailable."} Local backup also failed: ${localErrorMessage} You can still use Copy Prompt + Import Enhanced Result as the final backup.`,
+      });
     } finally {
       setGeneratingPremiumPhoto(false);
     }
@@ -3439,7 +3446,7 @@ export default function AddProductPage() {
 
               <Panel
                 title="NCS Smart Product Studio"
-                subtitle="Take or upload a product photo, choose an NCS premium background and generate the enhanced e-commerce image directly inside this page. The free external-AI prompt/import path remains available only as a backup. Existing stock, barcode, offline pricing and online stock rules stay untouched."
+                subtitle="Take or upload a product photo and generate a premium e-commerce image with NCS Cloud AI first. If Cloud AI is unavailable, the on-device MODNet/BEN2 catalog engine runs automatically as backup. Existing stock, barcode, offline pricing and online stock rules stay untouched."
               >
                 <div style={photoStudioHeaderActionsStyle}>
                   <button
