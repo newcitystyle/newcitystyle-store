@@ -1463,6 +1463,112 @@ export default function AddProductPage() {
     }
   }
 
+  async function saveCloudEnhancedImageToStorage(imageUrl: string) {
+    if (!imageUrl) {
+      throw new Error("Cloud AI returned no enhanced image.");
+    }
+
+    let response: Response;
+
+    try {
+      response = await fetch(imageUrl, { cache: "no-store" });
+    } catch {
+      throw new Error("Cloud AI image could not be prepared for storage.");
+    }
+
+    if (!response.ok) {
+      throw new Error("Cloud AI image could not be downloaded.");
+    }
+
+    const blob = await response.blob();
+    const mimeType = blob.type || "image/png";
+    const extension =
+      mimeType.includes("webp")
+        ? "webp"
+        : mimeType.includes("jpeg") || mimeType.includes("jpg")
+          ? "jpg"
+          : "png";
+
+    const generatedFile = new File(
+      [blob],
+      `ncs-cloud-premium-${Date.now()}.${extension}`,
+      { type: mimeType }
+    );
+
+    return uploadFile(generatedFile, "studio-cloud-generated");
+  }
+
+  async function generatePremiumPhotoWithCloudFallback(
+    localErrorMessage: string
+  ) {
+    setPhotoStudioStatus({
+      type: "idle",
+      message:
+        "Local photo engine was unavailable. Trying NCS Cloud AI automatically...",
+    });
+
+    const response = await fetch("/api/generate-premium-product-image", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        imageUrl: selectedPhotoStudioSourceImage,
+        preset: {
+          id: Number(selectedPhotoStudioPreset.id || 1),
+          name: selectedPhotoStudioPreset.name,
+          description: selectedPhotoStudioPreset.description,
+          backgroundStyle: selectedPhotoStudioPreset.backgroundStyle,
+          bestFor: selectedPhotoStudioPreset.recommendedFor,
+        },
+        productContext: buildProductContextPayload(),
+      }),
+    });
+
+    const result = (await response.json()) as {
+      enhancedImageUrl?: string;
+      provider?: string;
+      model?: string;
+      message?: string;
+      error?: string;
+      providerErrors?: string[];
+    };
+
+    if (!response.ok || !result.enhancedImageUrl) {
+      const providerDetails = Array.isArray(result.providerErrors)
+        ? result.providerErrors.filter(Boolean).join(" | ")
+        : "";
+
+      throw new Error(
+        [
+          `Local engine: ${localErrorMessage}`,
+          result.error || "Cloud AI could not generate the premium image.",
+          providerDetails,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+    }
+
+    setPhotoStudioStatus({
+      type: "idle",
+      message:
+        `Cloud AI generated the image with ${(result.provider || "AI").toUpperCase()}. Saving it safely to NEW CITY STYLE storage...`,
+    });
+
+    const storedUrl = await saveCloudEnhancedImageToStorage(
+      result.enhancedImageUrl
+    );
+
+    setPhotoStudioEnhancedImage(storedUrl);
+    setPhotoStudioStatus({
+      type: "success",
+      message:
+        result.message ||
+        `Premium photo generated successfully with ${(result.provider || "cloud AI").toUpperCase()} after the local engine fallback. Review Original vs Enhanced before using it as the main image.`,
+    });
+  }
+
   async function generatePremiumPhotoDirect() {
     if (!selectedPhotoStudioSourceImage) {
       setPhotoStudioStatus({
@@ -1477,7 +1583,7 @@ export default function AddProductPage() {
     setPhotoStudioStatus({
       type: "idle",
       message:
-        "Loading the free NCS background-removal model in this browser. The first run can take longer...",
+        "Trying the free local NCS photo engine first. If it is unavailable, Cloud AI will be tried automatically...",
     });
 
     try {
@@ -1486,7 +1592,7 @@ export default function AddProductPage() {
       setPhotoStudioStatus({
         type: "idle",
         message:
-          "Removing the background and preparing the premium NCS studio image...",
+          "Removing the background and preparing the premium NCS studio image locally...",
       });
 
       const [sourceImage, output] = await Promise.all([
@@ -1605,15 +1711,26 @@ export default function AddProductPage() {
         message:
           `Premium photo generated directly with the free local browser engine using preset ${selectedPhotoStudioPreset.shortLabel} – ${selectedPhotoStudioPreset.name}. Review Original vs Enhanced before using it as the main image.`,
       });
-    } catch (error) {
-      console.error("NCS direct premium photo generation failed:", error);
-      setPhotoStudioStatus({
-        type: "error",
-        message:
-          error instanceof Error
-            ? `Direct premium photo failed: ${error.message} You can still use Copy Prompt + Import Enhanced Result as the backup.`
-            : "Direct premium photo failed. You can still use Copy Prompt + Import Enhanced Result as the backup.",
-      });
+    } catch (localError) {
+      console.error("NCS local premium photo generation failed:", localError);
+
+      const localErrorMessage =
+        localError instanceof Error
+          ? localError.message
+          : "Local premium photo engine failed.";
+
+      try {
+        await generatePremiumPhotoWithCloudFallback(localErrorMessage);
+      } catch (cloudError) {
+        console.error("NCS cloud premium photo generation failed:", cloudError);
+        setPhotoStudioStatus({
+          type: "error",
+          message:
+            cloudError instanceof Error
+              ? `Automatic premium photo generation failed: ${cloudError.message} You can still use Copy Prompt + Import Enhanced Result as the final backup.`
+              : "Automatic premium photo generation failed. You can still use Copy Prompt + Import Enhanced Result as the final backup.",
+        });
+      }
     } finally {
       setGeneratingPremiumPhoto(false);
     }

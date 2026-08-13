@@ -44,17 +44,11 @@ type StudioPreset = {
   bestFor: string;
 };
 
-type OpenAiImageResponse = {
-  data?: Array<{
-    b64_json?: string;
-    url?: string;
-    revised_prompt?: string;
-  }>;
-  error?: {
-    message?: string;
-    type?: string;
-    code?: string;
-  };
+type ProviderResult = {
+  enhancedImageUrl: string;
+  provider: string;
+  model: string;
+  revisedPrompt?: string;
 };
 
 class PremiumImageError extends Error {
@@ -164,7 +158,9 @@ function buildPremiumPrompt(
   }).filter(([, value]) => Boolean(value));
 
   const trustedRecord = trustedEntries.length
-    ? trustedEntries.map(([label, value]) => `- ${label}: ${value}`).join("\n")
+    ? trustedEntries
+        .map(([label, value]) => `- ${label}: ${value}`)
+        .join("\n")
     : "- No structured product record was supplied.";
 
   return `
@@ -190,7 +186,7 @@ STRICT PRODUCT PRESERVATION RULES:
 11. Output style should look like a premium fashion e-commerce listing image.
 12. Final composition should feel elegant, realistic, polished and sales-ready.
 13. No text, no watermark, no logo overlay, no frame.
-14. Make the result vertical and product-focused, ideally in a 4:5 presentation.
+14. Final composition should be vertical and product-focused.
 
 BACKGROUND PRESET:
 Preset Name: ${preset.name}
@@ -218,7 +214,7 @@ async function downloadImage(imageUrl: string) {
   try {
     imageResponse = await fetch(imageUrl, {
       cache: "no-store",
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(15000),
     });
   } catch {
     throw new PremiumImageError(
@@ -279,11 +275,123 @@ async function downloadImage(imageUrl: string) {
   };
 }
 
+function bufferToDataUrl(buffer: Buffer, mimeType: string) {
+  return `data:${mimeType};base64,${buffer.toString("base64")}`;
+}
+
+async function generateWithCloudflare(
+  imageBuffer: Buffer,
+  mimeType: string,
+  prompt: string
+): Promise<ProviderResult> {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim();
+
+  if (!accountId || !apiToken) {
+    throw new PremiumImageError(
+      "Cloudflare credentials are not configured.",
+      500
+    );
+  }
+
+  const imageDataUrl = bufferToDataUrl(imageBuffer, mimeType);
+
+  const requestBody = {
+    prompt,
+    image: imageDataUrl,
+    num_steps: 20,
+    guidance: 7.5,
+    strength: 0.8,
+  };
+
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/runwayml/stable-diffusion-v1-5-img2img`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+        cache: "no-store",
+        signal: AbortSignal.timeout(45000),
+      }
+    );
+  } catch {
+    throw new PremiumImageError(
+      "Cloudflare premium image service is temporarily unavailable.",
+      504
+    );
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+
+  if (!response.ok) {
+    let errorMessage = "Cloudflare could not generate the premium image.";
+
+    try {
+      const errorJson = (await response.json()) as {
+        errors?: Array<{ message?: string }>;
+      };
+
+      if (Array.isArray(errorJson.errors) && errorJson.errors.length) {
+        errorMessage =
+          cleanText(errorJson.errors[0]?.message, 500) ||
+          errorMessage;
+      }
+    } catch {
+      // ignore
+    }
+
+    throw new PremiumImageError(errorMessage, response.status || 502);
+  }
+
+  if (contentType.startsWith("image/")) {
+    const outputBuffer = Buffer.from(await response.arrayBuffer());
+    return {
+      enhancedImageUrl: bufferToDataUrl(outputBuffer, contentType),
+      provider: "cloudflare",
+      model: "@cf/runwayml/stable-diffusion-v1-5-img2img",
+    };
+  }
+
+  const json = (await response.json()) as {
+    result?: {
+      image?: string;
+      output?: string | string[];
+    };
+  };
+
+  const possibleImage =
+    cleanText(json.result?.image, 10_000_000) ||
+    (Array.isArray(json.result?.output)
+      ? cleanText(json.result?.output[0], 10_000_000)
+      : cleanText(json.result?.output, 10_000_000));
+
+  if (!possibleImage) {
+    throw new PremiumImageError(
+      "Cloudflare returned no generated image.",
+      502
+    );
+  }
+
+  return {
+    enhancedImageUrl: possibleImage.startsWith("data:")
+      ? possibleImage
+      : `data:image/png;base64,${possibleImage}`,
+    provider: "cloudflare",
+    model: "@cf/runwayml/stable-diffusion-v1-5-img2img",
+  };
+}
+
 async function generateWithOpenAI(
   imageBuffer: Buffer,
   mimeType: string,
   prompt: string
-) {
+): Promise<ProviderResult> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
 
   if (!apiKey) {
@@ -316,7 +424,7 @@ async function generateWithOpenAI(
       },
       body: formData,
       cache: "no-store",
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(45000),
     });
   } catch (error) {
     const message =
@@ -330,23 +438,23 @@ async function generateWithOpenAI(
     );
   }
 
-  let data: OpenAiImageResponse;
-
-  try {
-    data = (await response.json()) as OpenAiImageResponse;
-  } catch {
-    throw new PremiumImageError(
-      "OpenAI returned an unreadable image response.",
-      response.status || 502
-    );
-  }
+  const data = (await response.json()) as {
+    data?: Array<{
+      b64_json?: string;
+      url?: string;
+      revised_prompt?: string;
+    }>;
+    error?: {
+      message?: string;
+    };
+  };
 
   if (!response.ok) {
-    const message =
+    throw new PremiumImageError(
       cleanText(data.error?.message, 1000) ||
-      "OpenAI could not generate the premium product image.";
-
-    throw new PremiumImageError(message, response.status || 502);
+        "OpenAI could not generate the premium product image.",
+      response.status || 502
+    );
   }
 
   const result = data.data?.[0];
@@ -360,19 +468,19 @@ async function generateWithOpenAI(
 
   if (result.b64_json) {
     return {
-      imageUrl: `data:image/png;base64,${result.b64_json}`,
+      enhancedImageUrl: `data:image/png;base64,${result.b64_json}`,
       revisedPrompt: cleanText(result.revised_prompt, 2000),
-      model: OPENAI_IMAGE_MODEL,
       provider: "openai",
+      model: OPENAI_IMAGE_MODEL,
     };
   }
 
   if (result.url) {
     return {
-      imageUrl: result.url,
+      enhancedImageUrl: result.url,
       revisedPrompt: cleanText(result.revised_prompt, 2000),
-      model: OPENAI_IMAGE_MODEL,
       provider: "openai",
+      model: OPENAI_IMAGE_MODEL,
     };
   }
 
@@ -406,20 +514,22 @@ export async function POST(request: NextRequest) {
 
     const { imageBuffer, mimeType } = await downloadImage(imageUrl);
 
+    const providerErrors: string[] = [];
+
     try {
-      const result = await generateWithOpenAI(
+      const cloudflareResult = await generateWithCloudflare(
         imageBuffer,
         mimeType,
         premiumPrompt
       );
 
       return NextResponse.json({
-        enhancedImageUrl: result.imageUrl,
-        provider: result.provider,
-        model: result.model,
+        enhancedImageUrl: cloudflareResult.enhancedImageUrl,
+        provider: cloudflareResult.provider,
+        model: cloudflareResult.model,
         usedFallback: false,
         presetUsed: preset,
-        revisedPrompt: result.revisedPrompt,
+        revisedPrompt: cloudflareResult.revisedPrompt || "",
         manualPrompt: premiumPrompt,
         contextUsed: Boolean(
           productContext.name ||
@@ -429,33 +539,72 @@ export async function POST(request: NextRequest) {
             productContext.colour
         ),
         message:
-          "Premium product image generated successfully.",
+          "Premium product image generated successfully using Cloudflare.",
       });
     } catch (error) {
       if (error instanceof PremiumImageError) {
-        return NextResponse.json(
-          {
-            error: error.message,
-            provider: "none",
-            usedFallback: true,
-            presetUsed: preset,
-            manualPrompt: premiumPrompt,
-            contextUsed: Boolean(
-              productContext.name ||
-                productContext.brand ||
-                productContext.category ||
-                productContext.size ||
-                productContext.colour
-            ),
-            message:
-              "Cloud premium generation failed. Use the manual backup prompt and import the enhanced result.",
-          },
-          { status: error.status }
-        );
+        providerErrors.push(`Cloudflare: ${error.message}`);
+      } else {
+        providerErrors.push("Cloudflare: Unknown error.");
       }
-
-      throw error;
     }
+
+    try {
+      const openAiResult = await generateWithOpenAI(
+        imageBuffer,
+        mimeType,
+        premiumPrompt
+      );
+
+      return NextResponse.json({
+        enhancedImageUrl: openAiResult.enhancedImageUrl,
+        provider: openAiResult.provider,
+        model: openAiResult.model,
+        usedFallback: true,
+        presetUsed: preset,
+        revisedPrompt: openAiResult.revisedPrompt || "",
+        manualPrompt: premiumPrompt,
+        contextUsed: Boolean(
+          productContext.name ||
+            productContext.brand ||
+            productContext.category ||
+            productContext.size ||
+            productContext.colour
+        ),
+        providerErrors,
+        message:
+          "Premium product image generated successfully using fallback provider.",
+      });
+    } catch (error) {
+      if (error instanceof PremiumImageError) {
+        providerErrors.push(`OpenAI: ${error.message}`);
+      } else {
+        providerErrors.push("OpenAI: Unknown error.");
+      }
+    }
+
+    return NextResponse.json(
+      {
+        error:
+          "All premium image providers failed. Use Copy Prompt + Import Enhanced Result as backup.",
+        provider: "none",
+        model: "",
+        usedFallback: true,
+        presetUsed: preset,
+        manualPrompt: premiumPrompt,
+        contextUsed: Boolean(
+          productContext.name ||
+            productContext.brand ||
+            productContext.category ||
+            productContext.size ||
+            productContext.colour
+        ),
+        providerErrors,
+        message:
+          "Cloud premium generation failed. Use manual backup prompt and import the enhanced result.",
+      },
+      { status: 502 }
+    );
   } catch (error) {
     console.error(
       "Generate premium product image route error:",
