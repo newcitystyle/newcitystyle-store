@@ -2453,7 +2453,7 @@ export default function AddProductPage() {
       setPhotoStudioStatus({
         type: "error",
         message:
-          `Cloud AI failed: ${cloudFailureMessage || "Unavailable."} Local backup also failed: ${localErrorMessage} You can still use Copy Prompt + Import Enhanced Result as the final backup.`,
+          `Premium photo generation failed. Cloud AI: ${cloudFailureMessage || "Unavailable."} Local backup: ${localErrorMessage}. Please try another photo or preset.`,
       });
     } finally {
       setGeneratingPremiumPhoto(false);
@@ -3946,10 +3946,10 @@ export default function AddProductPage() {
                       ✨ Generate Premium Photo Directly
                     </strong>
                     <p style={photoStudioDirectTextStyle}>
-                      Runs dual local background-removal engines in your browser, preserves the original garment pixels, refines the transparent edge, auto-crops and composes a 1200 × 1500 WEBP image. Use MAIN – NCS World-Class Catalog for the primary website image; the other presets are better suited to gallery/lifestyle presentation.
+                      One-click premium product generation. NCS Cloud AI is tried first for a true boutique-style e-commerce result; if cloud generation is unavailable, the on-device MODNet/BEN2 engine creates a safe catalog fallback while preserving the original garment pixels.
                     </p>
                     <small style={photoStudioDirectSmallStyle}>
-                      First run may take longer while the browser loads the local AI model. If direct generation cannot run on a device, use the free AI prompt/import backup below.
+                      MAIN – NCS World-Class Catalog uses a light luxury boutique scene with soft top light, blurred clothing displays and a clean premium retail depth. No manual prompt or import step is required.
                     </small>
                   </div>
 
@@ -3983,54 +3983,6 @@ export default function AddProductPage() {
                   </button>
                 </div>
 
-                <div style={photoStudioBackupLabelStyle}>
-                  Backup — External Free AI
-                </div>
-
-                <div style={photoStudioPromptCardStyle}>
-                  <div style={photoStudioPromptHeaderStyle}>
-                    <div>
-                      <strong style={photoStudioPromptTitleStyle}>
-                        Backup Free AI Studio Prompt
-                      </strong>
-                      <p style={photoStudioPromptTextStyle}>
-                        Use this only if direct generation is unavailable or you want a model/lifestyle-style result from another free AI app. Copy the prompt, upload the selected source image there, then import the result back here.
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={copyPhotoStudioPrompt}
-                      style={photoStudioPrimaryButtonStyle}
-                    >
-                      Copy Prompt
-                    </button>
-                  </div>
-
-                  <textarea
-                    value={photoStudioPrompt}
-                    readOnly
-                    style={photoStudioPromptTextareaStyle}
-                  />
-                </div>
-
-                <div style={photoStudioImportBoxStyle}>
-                  <strong style={photoStudioPromptTitleStyle}>
-                    Import Enhanced Result
-                  </strong>
-                  <p style={photoStudioPromptTextStyle}>
-                    After generating in any free AI app, upload the enhanced image here and then set it as the product main image, gallery image or lifestyle image.
-                  </p>
-
-                  <UploadBox
-                    uploading={uploadingStudioEnhanced}
-                    label="⬆ Import Enhanced AI Result"
-                    description="Upload the premium image generated in any AI app"
-                    multiple={false}
-                    onChange={importPhotoStudioEnhancedResult}
-                  />
-                </div>
-
                 {(selectedPhotoStudioSourceImage || photoStudioEnhancedImage) && (
                   <div style={photoStudioCompareGridStyle}>
                     <div style={photoStudioCompareCardStyle}>
@@ -4055,7 +4007,7 @@ export default function AddProductPage() {
                           style={photoStudioCompareImageStyle}
                         />
                       ) : (
-                        <div style={photoStudioEmptyPreviewStyle}>Import enhanced result here</div>
+                        <div style={photoStudioEmptyPreviewStyle}>Premium result will appear here</div>
                       )}
                     </div>
                   </div>

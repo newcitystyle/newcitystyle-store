@@ -257,7 +257,7 @@ PRODUCT-FIDELITY GATE (MANDATORY):
 Before producing the final image, visually compare the garment against the supplied source. If your edit would change sleeves, neckline, waist construction, belt details, hem length, garment category, silhouette, colour family, or the recognizable print placement, do NOT make that change. Prefer a more conservative edit. The goal is the same real store item photographed professionally, not a redesigned look-alike.
 
 PREMIUM BACKGROUND DIRECTION:
-Create a sophisticated international fashion-catalog studio: warm ivory seamless cyclorama, very subtle limestone/cream tonal depth, soft editorial daylight from the upper-left, gentle natural floor-to-wall sweep and a restrained realistic contact shadow. Keep the environment quiet and luxurious. No frames, shelves, props, furniture, text, gold borders, poster graphics or busy decor for the MAIN catalog preset.
+Create a realistic luxury NEW CITY STYLE boutique atmosphere designed for a premium e-commerce product page. Use a light warm ivory / cream / soft beige store interior with elegant soft light falling from above onto the garment. Keep the garment as the only sharp hero subject. In the far background and along the left and right edges, show tasteful clothing racks or hanging garments, but keep them softly blurred with shallow depth of field so they never compete with the product. Use subtle champagne/brass retail accents, refined wall panels, a clean light floor, gentle natural floor-to-wall depth and a restrained realistic contact shadow. The scene must feel like a high-end fashion boutique photograph, not a plain cutout, not a poster and not a graphic mockup. No readable text, logos, price tags, people, mannequins, props touching the product, decorative frames or busy clutter.
 
 BACKGROUND PRESET:
 Preset Name: ${preset.name}
@@ -269,7 +269,7 @@ TRUSTED PRODUCT RECORD:
 ${trustedRecord}
 
 FINAL RESULT:
-A photorealistic premium fashion catalogue image, vertical 4:5, with the exact original garment faithfully preserved, professionally presented, and the selected studio style applied. It should look suitable for a high-end international e-commerce product page rather than a simple background-removal composite.
+A photorealistic premium fashion catalogue image, vertical 4:5, with the exact original garment faithfully preserved and professionally presented inside a softly blurred luxury boutique environment with overhead light and subtle clothing displays at the sides. It must look like a premium international fashion-store product photograph, never like a simple background-removal composite.
 `.trim();
 }
 
