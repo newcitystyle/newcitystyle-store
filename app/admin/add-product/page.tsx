@@ -324,6 +324,7 @@ const ncsPhotoStudioPresets: PhotoStudioPreset[] = [
 ];
 
 let ncsBackgroundRemovalPipelinePromise: Promise<any> | null = null;
+let ncsBen2BackgroundRemovalPipelinePromise: Promise<any> | null = null;
 
 async function getNcsBackgroundRemovalPipeline() {
   if (ncsBackgroundRemovalPipelinePromise) {
@@ -348,7 +349,7 @@ async function getNcsBackgroundRemovalPipeline() {
         );
       } catch (error) {
         console.warn(
-          "NCS Photo Studio WebGPU startup failed; falling back to browser CPU/WASM.",
+          "NCS Photo Studio MODNet WebGPU startup failed; falling back to browser CPU/WASM.",
           error
         );
       }
@@ -367,6 +368,245 @@ async function getNcsBackgroundRemovalPipeline() {
   });
 
   return ncsBackgroundRemovalPipelinePromise;
+}
+
+async function getNcsBen2BackgroundRemovalPipeline() {
+  if (ncsBen2BackgroundRemovalPipelinePromise) {
+    return ncsBen2BackgroundRemovalPipelinePromise;
+  }
+
+  ncsBen2BackgroundRemovalPipelinePromise = (async () => {
+    const { pipeline } = await import("@huggingface/transformers");
+    const hasWebGpu =
+      typeof navigator !== "undefined" &&
+      "gpu" in (navigator as Navigator & { gpu?: unknown });
+
+    if (hasWebGpu) {
+      try {
+        return await pipeline(
+          "background-removal",
+          "onnx-community/BEN2-ONNX",
+          {
+            device: "webgpu",
+          }
+        );
+      } catch (error) {
+        console.warn(
+          "NCS Photo Studio BEN2 WebGPU startup failed; falling back to browser CPU/WASM.",
+          error
+        );
+      }
+    }
+
+    return pipeline(
+      "background-removal",
+      "onnx-community/BEN2-ONNX"
+    );
+  })().catch((error) => {
+    ncsBen2BackgroundRemovalPipelinePromise = null;
+    throw error;
+  });
+
+  return ncsBen2BackgroundRemovalPipelinePromise;
+}
+
+function getFirstBackgroundRemovalResult(output: any) {
+  if (Array.isArray(output)) {
+    return output[0] ?? null;
+  }
+
+  if (
+    output &&
+    typeof output === "object" &&
+    0 in (output as Record<number, unknown>)
+  ) {
+    return (output as Record<number, unknown>)[0] ?? null;
+  }
+
+  return output ?? null;
+}
+
+async function rawImageLikeToCanvas(rawImage: any) {
+  if (!rawImage) {
+    throw new Error("The local engine returned an empty mask.");
+  }
+
+  if (typeof rawImage.toCanvas === "function") {
+    const canvas = await Promise.resolve(rawImage.toCanvas());
+    if (canvas instanceof HTMLCanvasElement) {
+      return canvas;
+    }
+  }
+
+  const width = Number(rawImage.width || rawImage.size?.[0] || 0);
+  const height = Number(rawImage.height || rawImage.size?.[1] || 0);
+  const channels = Number(rawImage.channels || 0);
+  const data = rawImage.data as
+    | Uint8Array
+    | Uint8ClampedArray
+    | undefined;
+
+  if (!width || !height || !data?.length) {
+    throw new Error("The local engine returned an unsupported mask format.");
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("This browser could not prepare the local mask canvas.");
+  }
+
+  const imageData = ctx.createImageData(width, height);
+
+  for (let pixelIndex = 0; pixelIndex < width * height; pixelIndex += 1) {
+    const sourceIndex = pixelIndex * Math.max(channels, 1);
+    const targetIndex = pixelIndex * 4;
+
+    if (channels === 4) {
+      imageData.data[targetIndex] = data[sourceIndex] ?? 0;
+      imageData.data[targetIndex + 1] = data[sourceIndex + 1] ?? 0;
+      imageData.data[targetIndex + 2] = data[sourceIndex + 2] ?? 0;
+      imageData.data[targetIndex + 3] = data[sourceIndex + 3] ?? 255;
+    } else if (channels === 3) {
+      imageData.data[targetIndex] = data[sourceIndex] ?? 0;
+      imageData.data[targetIndex + 1] = data[sourceIndex + 1] ?? 0;
+      imageData.data[targetIndex + 2] = data[sourceIndex + 2] ?? 0;
+      imageData.data[targetIndex + 3] = 255;
+    } else {
+      const value = data[sourceIndex] ?? 0;
+      imageData.data[targetIndex] = value;
+      imageData.data[targetIndex + 1] = value;
+      imageData.data[targetIndex + 2] = value;
+      imageData.data[targetIndex + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+function normalizeMaskCanvas(
+  sourceMaskCanvas: HTMLCanvasElement,
+  targetWidth: number,
+  targetHeight: number
+) {
+  const scaledCanvas = document.createElement("canvas");
+  scaledCanvas.width = targetWidth;
+  scaledCanvas.height = targetHeight;
+
+  const ctx = scaledCanvas.getContext("2d", {
+    willReadFrequently: true,
+  });
+
+  if (!ctx) {
+    throw new Error("This browser could not normalize the product mask.");
+  }
+
+  ctx.clearRect(0, 0, targetWidth, targetHeight);
+  ctx.drawImage(sourceMaskCanvas, 0, 0, targetWidth, targetHeight);
+
+  const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
+  const pixels = imageData.data;
+
+  let alphaHasVariation = false;
+  let firstAlpha = pixels[3] ?? 255;
+
+  for (let index = 3; index < pixels.length; index += 64) {
+    if (Math.abs((pixels[index] ?? 255) - firstAlpha) > 4) {
+      alphaHasVariation = true;
+      break;
+    }
+  }
+
+  for (let index = 0; index < pixels.length; index += 4) {
+    const red = pixels[index] ?? 0;
+    const green = pixels[index + 1] ?? 0;
+    const blue = pixels[index + 2] ?? 0;
+    const alpha = pixels[index + 3] ?? 255;
+
+    const luminance = Math.round(
+      red * 0.299 + green * 0.587 + blue * 0.114
+    );
+
+    const maskValue = alphaHasVariation ? alpha : luminance;
+
+    pixels[index] = 255;
+    pixels[index + 1] = 255;
+    pixels[index + 2] = 255;
+    pixels[index + 3] = maskValue;
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return scaledCanvas;
+}
+
+async function createCutoutCanvasFromLocalOutput(
+  sourceImage: HTMLImageElement,
+  output: any
+) {
+  const result = getFirstBackgroundRemovalResult(output);
+  const maskLike =
+    result &&
+    typeof result === "object" &&
+    "mask" in result &&
+    (result as { mask?: unknown }).mask
+      ? (result as { mask: unknown }).mask
+      : result;
+
+  const rawMaskCanvas = await rawImageLikeToCanvas(maskLike);
+
+  const sourceWidth = sourceImage.naturalWidth || sourceImage.width;
+  const sourceHeight = sourceImage.naturalHeight || sourceImage.height;
+
+  const maskCanvas = normalizeMaskCanvas(
+    rawMaskCanvas,
+    sourceWidth,
+    sourceHeight
+  );
+
+  const cutoutCanvas = document.createElement("canvas");
+  cutoutCanvas.width = sourceWidth;
+  cutoutCanvas.height = sourceHeight;
+
+  const cutoutCtx = cutoutCanvas.getContext("2d");
+  if (!cutoutCtx) {
+    throw new Error("This browser could not start the product photo canvas.");
+  }
+
+  cutoutCtx.drawImage(
+    sourceImage,
+    0,
+    0,
+    cutoutCanvas.width,
+    cutoutCanvas.height
+  );
+  cutoutCtx.globalCompositeOperation = "destination-in";
+  cutoutCtx.drawImage(
+    maskCanvas,
+    0,
+    0,
+    cutoutCanvas.width,
+    cutoutCanvas.height
+  );
+  cutoutCtx.globalCompositeOperation = "source-over";
+
+  const bounds = findAlphaBounds(cutoutCanvas);
+  const foregroundAreaRatio =
+    (bounds.width * bounds.height) /
+    Math.max(1, cutoutCanvas.width * cutoutCanvas.height);
+
+  if (
+    bounds.width < 24 ||
+    bounds.height < 24 ||
+    foregroundAreaRatio < 0.002
+  ) {
+    throw new Error("The local engine returned an unusable foreground mask.");
+  }
+
+  return cutoutCanvas;
 }
 
 function canvasToBlob(
@@ -1583,56 +1823,87 @@ export default function AddProductPage() {
     setPhotoStudioStatus({
       type: "idle",
       message:
-        "Trying the free local NCS photo engine first. If it is unavailable, Cloud AI will be tried automatically...",
+        "Trying NCS Local Engine 1 first. If needed, Local Engine 2 will run automatically before any Cloud AI fallback...",
     });
 
     try {
-      const segmenter = await getNcsBackgroundRemovalPipeline();
+      const sourceImage = await loadCanvasImage(
+        selectedPhotoStudioSourceImage
+      );
+
+      let cutoutCanvas: HTMLCanvasElement | null = null;
+      let localEngineUsed = "";
+      const localEngineErrors: string[] = [];
+
+      try {
+        setPhotoStudioStatus({
+          type: "idle",
+          message:
+            "Local Engine 1 (MODNet): removing the background on this device...",
+        });
+
+        const modnetSegmenter =
+          await getNcsBackgroundRemovalPipeline();
+        const modnetOutput = await modnetSegmenter(
+          selectedPhotoStudioSourceImage
+        );
+
+        cutoutCanvas = await createCutoutCanvasFromLocalOutput(
+          sourceImage,
+          modnetOutput
+        );
+        localEngineUsed = "MODNet";
+      } catch (modnetError) {
+        const message =
+          modnetError instanceof Error
+            ? modnetError.message
+            : "MODNet failed.";
+
+        localEngineErrors.push(`MODNet: ${message}`);
+        console.warn("NCS MODNet local engine failed:", modnetError);
+
+        setPhotoStudioStatus({
+          type: "idle",
+          message:
+            "Local Engine 1 could not isolate this product. Trying Local Engine 2 (BEN2) automatically. The first BEN2 download can take longer, then the browser will cache it...",
+        });
+
+        try {
+          const ben2Segmenter =
+            await getNcsBen2BackgroundRemovalPipeline();
+          const ben2Output = await ben2Segmenter([
+            selectedPhotoStudioSourceImage,
+          ]);
+
+          cutoutCanvas = await createCutoutCanvasFromLocalOutput(
+            sourceImage,
+            ben2Output
+          );
+          localEngineUsed = "BEN2";
+        } catch (ben2Error) {
+          const ben2Message =
+            ben2Error instanceof Error
+              ? ben2Error.message
+              : "BEN2 failed.";
+
+          localEngineErrors.push(`BEN2: ${ben2Message}`);
+          console.warn("NCS BEN2 local engine failed:", ben2Error);
+        }
+      }
+
+      if (!cutoutCanvas) {
+        throw new Error(
+          localEngineErrors.length
+            ? localEngineErrors.join(" | ")
+            : "Both local background-removal engines failed."
+        );
+      }
 
       setPhotoStudioStatus({
         type: "idle",
         message:
-          "Removing the background and preparing the premium NCS studio image locally...",
+          `${localEngineUsed} removed the background locally. Preparing the selected NCS premium studio background...`,
       });
-
-      const [sourceImage, output] = await Promise.all([
-        loadCanvasImage(selectedPhotoStudioSourceImage),
-        segmenter(selectedPhotoStudioSourceImage),
-      ]);
-
-      const mask = Array.isArray(output) ? output[0] : null;
-      if (!mask || typeof mask.toCanvas !== "function") {
-        throw new Error(
-          "The local background-removal model did not return a usable mask."
-        );
-      }
-
-      const maskCanvas = mask.toCanvas() as HTMLCanvasElement;
-      const cutoutCanvas = document.createElement("canvas");
-      cutoutCanvas.width = sourceImage.naturalWidth || sourceImage.width;
-      cutoutCanvas.height = sourceImage.naturalHeight || sourceImage.height;
-
-      const cutoutCtx = cutoutCanvas.getContext("2d");
-      if (!cutoutCtx) {
-        throw new Error("This browser could not start the product photo canvas.");
-      }
-
-      cutoutCtx.drawImage(
-        sourceImage,
-        0,
-        0,
-        cutoutCanvas.width,
-        cutoutCanvas.height
-      );
-      cutoutCtx.globalCompositeOperation = "destination-in";
-      cutoutCtx.drawImage(
-        maskCanvas,
-        0,
-        0,
-        cutoutCanvas.width,
-        cutoutCanvas.height
-      );
-      cutoutCtx.globalCompositeOperation = "source-over";
 
       const bounds = findAlphaBounds(cutoutCanvas);
       const outputCanvas = document.createElement("canvas");
@@ -1709,15 +1980,18 @@ export default function AddProductPage() {
       setPhotoStudioStatus({
         type: "success",
         message:
-          `Premium photo generated directly with the free local browser engine using preset ${selectedPhotoStudioPreset.shortLabel} – ${selectedPhotoStudioPreset.name}. Review Original vs Enhanced before using it as the main image.`,
+          `Premium photo generated locally with ${localEngineUsed} using preset ${selectedPhotoStudioPreset.shortLabel} – ${selectedPhotoStudioPreset.name}. No cloud image-generation quota was used. Review Original vs Enhanced before using it as the main image.`,
       });
     } catch (localError) {
-      console.error("NCS local premium photo generation failed:", localError);
+      console.error(
+        "NCS dual local premium photo generation failed:",
+        localError
+      );
 
       const localErrorMessage =
         localError instanceof Error
           ? localError.message
-          : "Local premium photo engine failed.";
+          : "Both local premium photo engines failed.";
 
       try {
         await generatePremiumPhotoWithCloudFallback(localErrorMessage);
@@ -1727,8 +2001,8 @@ export default function AddProductPage() {
           type: "error",
           message:
             cloudError instanceof Error
-              ? `Automatic premium photo generation failed: ${cloudError.message} You can still use Copy Prompt + Import Enhanced Result as the final backup.`
-              : "Automatic premium photo generation failed. You can still use Copy Prompt + Import Enhanced Result as the final backup.",
+              ? `Both local engines failed, and Cloud AI was unavailable: ${cloudError.message} You can still use Copy Prompt + Import Enhanced Result as the final backup.`
+              : "Both local engines failed, and Cloud AI was unavailable. You can still use Copy Prompt + Import Enhanced Result as the final backup.",
         });
       }
     } finally {
