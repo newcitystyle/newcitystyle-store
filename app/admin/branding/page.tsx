@@ -1434,7 +1434,7 @@ export default function BrandingPage() {
                       <span>🌐</span>
                     )}
 
-                    <span>newcitystyle.in</span>
+                    <span>newcitystyle.store</span>
                   </div>
                 </div>
 
