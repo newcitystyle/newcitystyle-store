@@ -700,14 +700,14 @@ export default function EditProductPage() {
     return `NCS${productPart}${timePart}${index}${randomPart}`;
   }
 
-  async function splitSareeStockPreset() {
+  async function createIndividualSareeVariants() {
     if (!productId || splittingSareeVariants) return;
 
-    const split = [2, 2, 2, 3, 1];
+    const split = Array.from({ length: 10 }, () => 1);
     const requiredTotal = split.reduce((sum, quantity) => sum + quantity, 0);
 
     const confirmed = window.confirm(
-      "Split this 10-stock saree into 5 separate design variants as 2 + 2 + 2 + 3 + 1?\n\nExisting product will NOT be deleted. Each new design gets a separate barcode."
+      "Convert this 10-stock saree into 10 individual saree designs (1 stock each)?\n\nExisting product will NOT be deleted. Every saree gets its own barcode, price and photo."
     );
     if (!confirmed) return;
 
@@ -796,7 +796,7 @@ export default function EditProductPage() {
       if (parentError) throw parentError;
 
       await loadProduct();
-      alert("Saree stock split successfully: 2 + 2 + 2 + 3 + 1. Now add each design photo and online price below, then Save Product.");
+      alert("10 individual saree variants created successfully. Each saree now has stock 1 and can have its own barcode, price and photo. Add details below, then Save Product.");
     } catch (error) {
       console.error(error);
       alert(error instanceof Error ? `Unable to split saree stock: ${error.message}` : "Unable to split saree stock.");
@@ -1977,22 +1977,24 @@ export default function EditProductPage() {
                   🔒 Barcode, SKU and physical stock are locked. They continue to sync from Purchase Stock and POS.
                 </div>
 
-                <div style={{ marginTop: 14, padding: 14, border: "1px solid #eadca8", borderRadius: 14, background: "#fffdf5" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                    <div>
-                      <strong style={{ display: "block", color: "#0A2E73" }}>Saree Design Split</strong>
-                      <small style={{ color: "#667085" }}>For this 10-stock saree, create 5 physical design variants: 2 + 2 + 2 + 3 + 1. Existing product is preserved.</small>
+                {(form.category.toLowerCase().includes("saree") || form.name.toLowerCase().includes("saree")) && totalVariantStock === 10 && variantBarcodes.length <= 1 && (
+                  <div style={{ marginTop: 14, padding: 14, border: "1px solid #eadca8", borderRadius: 14, background: "#fffdf5" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                      <div>
+                        <strong style={{ display: "block", color: "#0A2E73" }}>10 Individual Sarees</strong>
+                        <small style={{ color: "#667085" }}>Create 10 separate saree designs from this 10-stock item. Each saree will have stock 1, its own barcode, its own price and its own photo. Existing product is preserved.</small>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={createIndividualSareeVariants}
+                        disabled={splittingSareeVariants}
+                        style={{ minHeight: 40, padding: "0 14px", border: 0, borderRadius: 10, background: "#0A2E73", color: "#fff", fontWeight: 850, cursor: "pointer", opacity: splittingSareeVariants ? 0.55 : 1 }}
+                      >
+                        {splittingSareeVariants ? "Creating..." : "Create 10 Individual Sarees"}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={splitSareeStockPreset}
-                      disabled={splittingSareeVariants || totalVariantStock !== 10 || variantBarcodes.length > 1}
-                      style={{ minHeight: 40, padding: "0 14px", border: 0, borderRadius: 10, background: "#0A2E73", color: "#fff", fontWeight: 850, cursor: "pointer", opacity: splittingSareeVariants || totalVariantStock !== 10 || variantBarcodes.length > 1 ? 0.55 : 1 }}
-                    >
-                      {splittingSareeVariants ? "Splitting..." : "Split 2 + 2 + 2 + 3 + 1"}
-                    </button>
                   </div>
-                </div>
+                )}
 
                 {variantBarcodes.length > 0 && (
                   <div className="variant-reference-card">
