@@ -693,113 +693,52 @@ export default function EditProductPage() {
     }
   }
 
-  function createVariantBarcode(index: number) {
-    const productPart = String(productId || "0").replace(/\D/g, "").slice(-5) || "0";
-    const timePart = Date.now().toString().slice(-7);
-    const randomPart = Math.floor(10 + Math.random() * 89).toString();
-    return `NCS${productPart}${timePart}${index}${randomPart}`;
-  }
-
   async function createIndividualSareeVariants() {
     if (!productId || splittingSareeVariants) return;
-
-    const split = Array.from({ length: 10 }, () => 1);
-    const requiredTotal = split.reduce((sum, quantity) => sum + quantity, 0);
 
     const confirmed = window.confirm(
       "Convert this 10-stock saree into 10 individual saree designs (1 stock each)?\n\nExisting product will NOT be deleted. Every saree gets its own barcode, price and photo."
     );
+
     if (!confirmed) return;
 
     setSplittingSareeVariants(true);
+
     try {
-      const { data: freshVariants, error: variantsError } = await supabase
-        .from("product_variants")
-        .select("id,product_id,size,color,sku,barcode,stock,reserved_stock,online_stock_limit,sell_online,mrp")
-        .eq("product_id", productId)
-        .order("id", { ascending: true });
+      const { data, error } = await supabase.rpc(
+        "ncs_split_saree_10_variants",
+        {
+          p_product_id: Number(productId),
+        }
+      );
 
-      if (variantsError) throw variantsError;
-
-      const rows = (freshVariants || []) as Record<string, unknown>[];
-      if (rows.length > 1) {
-        throw new Error("This product already has multiple physical variants. Use the variant editor below instead of splitting again.");
+      if (error) {
+        throw new Error(error.message);
       }
 
-      const source = rows[0] || null;
-      const sourceReserved = source ? asNumber(source.reserved_stock) : 0;
-      if (sourceReserved > 0) {
-        throw new Error("This stock has reserved quantity. Complete/cancel the reservation before splitting physical variants.");
+      const result = (data || {}) as {
+        success?: boolean;
+        variants_created?: number;
+        total_stock?: number;
+      };
+
+      if (result.success === false) {
+        throw new Error("Saree split did not complete.");
       }
-
-      const sourcePhysicalStock = source ? asNumber(source.stock) : Number(form.stock || 0);
-      if (sourcePhysicalStock !== requiredTotal) {
-        throw new Error(`This preset needs exactly ${requiredTotal} stock, but current physical stock is ${sourcePhysicalStock}.`);
-      }
-
-      const baseMrp = source ? asNumber(source.mrp) || Number(form.mrp || 0) : Number(form.mrp || 0);
-      const baseSellOnline = source ? source.sell_online === true : form.sellOnline;
-      const baseOnlineTotal = source ? asNumber(source.online_stock_limit) : Number(form.onlineStockLimit || 0);
-      const firstBarcode = source ? asString(source.barcode) : form.barcode.trim();
-      const firstSku = source ? asString(source.sku) : form.sku.trim();
-      const baseSize = source ? asString(source.size) : "Free Size";
-      const baseColor = source ? asString(source.color) : "";
-
-      if (source) {
-        const { error: updateError } = await supabase
-          .from("product_variants")
-          .update({
-            stock: split[0],
-            reserved_stock: 0,
-            variant_name: "Design 1",
-            online_stock_limit: baseSellOnline ? Math.min(split[0], baseOnlineTotal || split[0]) : 0,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", asNumber(source.id));
-        if (updateError) throw updateError;
-      }
-
-      const startIndex = source ? 1 : 0;
-      const newRows = split.slice(startIndex).map((quantity, offset) => {
-        const designIndex = startIndex + offset + 1;
-        return {
-          product_id: Number(productId),
-          size: baseSize || "Free Size",
-          color: baseColor || null,
-          sku: designIndex === 1 && firstSku ? firstSku : `NCS-${productId}-D${designIndex}`,
-          barcode: designIndex === 1 && firstBarcode ? firstBarcode : createVariantBarcode(designIndex),
-          stock: quantity,
-          reserved_stock: 0,
-          mrp: baseMrp,
-          low_stock_limit: getOptionalNumber(form.lowStockLimit, 5),
-          sell_online: baseSellOnline,
-          online_stock_limit: baseSellOnline ? quantity : 0,
-          variant_name: `Design ${designIndex}`,
-          online_price: null,
-          main_image: null,
-          gallery_images: [],
-          updated_at: new Date().toISOString(),
-        };
-      });
-
-      if (newRows.length > 0) {
-        const { error: insertError } = await supabase
-          .from("product_variants")
-          .insert(newRows);
-        if (insertError) throw insertError;
-      }
-
-      const { error: parentError } = await supabase
-        .from("products")
-        .update({ stock: requiredTotal, updated_at: new Date().toISOString() })
-        .eq("id", productId);
-      if (parentError) throw parentError;
 
       await loadProduct();
-      alert("10 individual saree variants created successfully. Each saree now has stock 1 and can have its own barcode, price and photo. Add details below, then Save Product.");
+
+      alert(
+        "10 individual sarees created successfully. Each saree now has stock 1, its own barcode, its own price and its own photo. Add the 10 photos/prices below, then Save Product."
+      );
     } catch (error) {
-      console.error(error);
-      alert(error instanceof Error ? `Unable to split saree stock: ${error.message}` : "Unable to split saree stock.");
+      console.error("Saree split RPC failed:", error);
+
+      alert(
+        error instanceof Error
+          ? `Unable to split saree stock: ${error.message}`
+          : "Unable to split saree stock."
+      );
     } finally {
       setSplittingSareeVariants(false);
     }
