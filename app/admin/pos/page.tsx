@@ -1293,6 +1293,26 @@ function GroupedProductCard({
   );
 }
 
+type PosFestivalOffer = {
+  id: string;
+  discount: number;
+  title: string;
+  subtitle: string;
+  className: string;
+};
+
+const POS_FESTIVAL_OFFERS: PosFestivalOffer[] = [
+  { id: "offer20", discount: 20, title: "STYLE STARTER", subtitle: "Festival fashion special", className: "coral" },
+  { id: "offer30", discount: 30, title: "FAMILY FEST", subtitle: "Selected styles celebration", className: "violet" },
+  { id: "offer40", discount: 40, title: "FESTIVE FLASH", subtitle: "Limited-time fashion drop", className: "emerald" },
+  { id: "offer50", discount: 50, title: "HALF PRICE FEST", subtitle: "Selected collection special", className: "sunset" },
+  { id: "offer60", discount: 60, title: "MEGA FESTIVAL", subtitle: "Big savings on selected styles", className: "aqua" },
+  { id: "offer70", discount: 70, title: "FINAL FESTIVAL DROP", subtitle: "Selected clearance styles", className: "berry" },
+];
+
+const POS_OFFER_CORNERS = ["topLeft", "topRight", "bottomLeft", "bottomRight"] as const;
+type PosOfferCorner = (typeof POS_OFFER_CORNERS)[number];
+
 export default function PosPage() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const quickItemNameInputRef = useRef<HTMLInputElement | null>(null);
@@ -1311,6 +1331,7 @@ export default function PosPage() {
     creditCustomers: 0,
   });
   const [loadingOverview, setLoadingOverview] = useState(true);
+  const [showOwnerSummary, setShowOwnerSummary] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
 const [selectedCategory, setSelectedCategory] =
@@ -1384,6 +1405,11 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
   >("info");
 
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const [billFocusCollapsed, setBillFocusCollapsed] = useState(false);
+  const [festivalOffer, setFestivalOffer] = useState<PosFestivalOffer | null>(null);
+  const [festivalOfferCorner, setFestivalOfferCorner] = useState<PosOfferCorner>("bottomRight");
+  const festivalOfferHideTimerRef = useRef<number | null>(null);
+
   const [isCompletingSale, setIsCompletingSale] = useState(false);
   const [completedSale, setCompletedSale] =
     useState<CompletedSale | null>(null);
@@ -1402,6 +1428,49 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
   const [showQuickItem, setShowQuickItem] = useState(false);
   const [quickItemForm, setQuickItemForm] =
     useState<QuickItemForm>(EMPTY_QUICK_ITEM_FORM);
+  const [quickDraftItems, setQuickDraftItems] = useState<CartItem[]>([]);
+
+
+  useEffect(() => {
+    let lastOfferId = "";
+
+    const showRandomFestivalOffer = () => {
+      const availableOffers = POS_FESTIVAL_OFFERS.filter(
+        (offer) => offer.id !== lastOfferId,
+      );
+      const pool = availableOffers.length > 0 ? availableOffers : POS_FESTIVAL_OFFERS;
+      const nextOffer = pool[Math.floor(Math.random() * pool.length)];
+      const nextCorner = POS_OFFER_CORNERS[
+        Math.floor(Math.random() * POS_OFFER_CORNERS.length)
+      ];
+
+      lastOfferId = nextOffer.id;
+      setFestivalOffer(nextOffer);
+      setFestivalOfferCorner(nextCorner);
+
+      if (festivalOfferHideTimerRef.current !== null) {
+        window.clearTimeout(festivalOfferHideTimerRef.current);
+      }
+
+      festivalOfferHideTimerRef.current = window.setTimeout(() => {
+        setFestivalOffer(null);
+        festivalOfferHideTimerRef.current = null;
+      }, 5000);
+    };
+
+    // Show one card shortly after opening POS so the design can be seen/tested,
+    // then continue at the requested two-minute interval.
+    const firstOfferTimer = window.setTimeout(showRandomFestivalOffer, 12000);
+    const offerInterval = window.setInterval(showRandomFestivalOffer, 2 * 60 * 1000);
+
+    return () => {
+      window.clearTimeout(firstOfferTimer);
+      window.clearInterval(offerInterval);
+      if (festivalOfferHideTimerRef.current !== null) {
+        window.clearTimeout(festivalOfferHideTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -3140,6 +3209,7 @@ if (!variantsError) {
   }
 
   function openQuickItem() {
+    setQuickDraftItems([]);
     setQuickItemForm((current) => ({
       ...EMPTY_QUICK_ITEM_FORM,
       category:
@@ -3224,11 +3294,10 @@ if (!variantsError) {
       quickRemainingStock: remainingStock,
     };
 
-    setCartItems((current) => [...current, quickItem]);
+    setQuickDraftItems((current) => [...current, quickItem]);
 
-    // Multi-add Quick Item workflow:
-    // Keep the modal open so the cashier can enter the next unregistered item.
-    // Preserve the selected category to speed up repeated entry.
+    // Batch quick-entry workflow: stage each row first.
+    // The cashier adds all staged rows to the actual bill in one final action.
     setQuickItemForm({
       ...EMPTY_QUICK_ITEM_FORM,
       category,
@@ -3240,7 +3309,31 @@ if (!variantsError) {
     });
 
     showNotice(
-      `${name} added to the bill. Enter the next quick item or close when finished.`,
+      `${name} added to Quick Items. Enter the next item.`,
+      "success",
+    );
+  }
+
+  function removeQuickDraftItem(itemKey: string) {
+    setQuickDraftItems((current) =>
+      current.filter((item) => item.key !== itemKey),
+    );
+  }
+
+  function commitQuickItemsToBill() {
+    if (quickDraftItems.length === 0) {
+      showNotice("Add at least one Quick Item row first.", "info");
+      return;
+    }
+
+    setCartItems((current) => [...current, ...quickDraftItems]);
+    setBillFocusCollapsed(false);
+    const addedCount = quickDraftItems.length;
+    setQuickDraftItems([]);
+    setQuickItemForm(EMPTY_QUICK_ITEM_FORM);
+    setShowQuickItem(false);
+    showNotice(
+      `${addedCount} quick item${addedCount === 1 ? "" : "s"} added to the bill.`,
       "success",
     );
   }
@@ -3406,6 +3499,7 @@ if (!variantsError) {
     });
 
     rememberSelectedProduct(product);
+    setBillFocusCollapsed(false);
 
     showNotice(
       `${product.name} added to bill.`,
@@ -6629,7 +6723,13 @@ if (!variantsError) {
   }
 
   return (
-    <main className={`ncsPosPage ${cartItems.length > 0 ? "ncsPosBillingFocus" : ""}`}>
+    <main
+      className={`ncsPosPage ${
+        cartItems.length > 0 && !billFocusCollapsed
+          ? "ncsPosBillingFocus"
+          : ""
+      }`}
+    >
       {notice && (
         <div
           className={`ncsPosNotice ncsPosNotice-${noticeType}`}
@@ -6647,41 +6747,30 @@ if (!variantsError) {
         </div>
       )}
 
-      <section
-        className={`ncsOfflineStatusBar ${
-          isOnline ? "online" : "offline"
-        }`}
-      >
-        <div>
-          <span className="ncsOfflineStatusDot" />
-          <strong>
-            {isOnline ? "ONLINE" : "OFFLINE MODE"}
-          </strong>
-          <small>
-            {isOnline
-              ? pendingOfflineBills > 0
-                ? `${pendingOfflineBills} bill(s) waiting to sync`
-                : "Cloud connection available"
-              : "Billing works locally. Data will sync automatically."}
-          </small>
-        </div>
-
-        {pendingOfflineBills > 0 && (
-          <button
-            type="button"
-            onClick={() => void syncOfflineBillsNow()}
-            disabled={!isOnline || syncingOfflineBills}
-          >
-            {syncingOfflineBills
-              ? "Syncing..."
-              : `Sync ${pendingOfflineBills} Bill(s)`}
-          </button>
-        )}
-      </section>
-
       <section className="ncsPosHeader">
         <div>
           <span className="ncsPosEyebrow">
+            <i
+              className={`ncsPosCloudDot ${
+                isOnline
+                  ? pendingOfflineBills > 0
+                    ? "pending"
+                    : "online"
+                  : "offline"
+              }`}
+              title={
+                isOnline
+                  ? pendingOfflineBills > 0
+                    ? `${pendingOfflineBills} bill(s) waiting to sync`
+                    : "Online"
+                  : "Offline mode"
+              }
+              onClick={
+                isOnline && pendingOfflineBills > 0 && !syncingOfflineBills
+                  ? () => void syncOfflineBillsNow()
+                  : undefined
+              }
+            />
             NEW CITY STYLE • PREMIUM POS
           </span>
 
@@ -6754,6 +6843,17 @@ if (!variantsError) {
 
           <button
             type="button"
+            className={`ncsPosOwnerSummaryButton ${showOwnerSummary ? "active" : ""}`}
+            onClick={() => setShowOwnerSummary((current) => !current)}
+            aria-expanded={showOwnerSummary}
+            title="Show owner-only sales and credit summary"
+          >
+            <span>◉</span>
+            Owner Summary
+          </button>
+
+          <button
+            type="button"
             className="ncsPosRefreshButton"
             onClick={() => {
               void loadProducts();
@@ -6773,9 +6873,67 @@ if (!variantsError) {
             Refresh Stock
           </button>
         </div>
+
+        {showOwnerSummary &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div
+              className="ncsPosOwnerSummaryLayer"
+              role="presentation"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  setShowOwnerSummary(false);
+                }
+              }}
+            >
+              <div
+                className="ncsPosOwnerSummaryPopover"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Owner sales and credit summary"
+              >
+                <button
+                  type="button"
+                  className="ncsPosOwnerSummaryClose"
+                  onClick={() => setShowOwnerSummary(false)}
+                  aria-label="Close owner summary"
+                >
+                  ×
+                </button>
+
+                <div className="ncsPosOwnerSummaryTitle">
+                  <span>OWNER VIEW</span>
+                  <strong>Business Summary</strong>
+                  <small>Tap Owner Summary again or × to hide these figures.</small>
+                </div>
+
+                <div className="ncsPosOwnerSummaryGrid">
+                  <article className="ncsPosOwnerMetric">
+                    <span>TODAY&apos;S SALES</span>
+                    <strong>{loadingOverview ? "Loading..." : formatCurrency(posOverview.todaySales)}</strong>
+                    <small>{posOverview.todayBills} bill{posOverview.todayBills === 1 ? "" : "s"} today</small>
+                    <div>
+                      <em>Cash <b>{formatCurrency(posOverview.todayCash)}</b></em>
+                      <em>UPI / Card <b>{formatCurrency(posOverview.todayDigital)}</b></em>
+                    </div>
+                  </article>
+
+                  <article className="ncsPosOwnerMetric ncsPosOwnerMetricCredit">
+                    <span>CUSTOMER CREDIT</span>
+                    <strong>{loadingOverview ? "Loading..." : formatCurrency(posOverview.customerCredit)}</strong>
+                    <small>{posOverview.creditCustomers} customer{posOverview.creditCustomers === 1 ? "" : "s"} pending</small>
+                    <div>
+                      <em>Live dues <b>{posOverview.creditCustomers}</b></em>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )}
       </section>
 
-      <section className="ncsPosQuickStats" aria-label="POS live summary">
+      <section className="ncsPosQuickStats ncsPosQuickStatsLegacy" aria-label="POS live summary">
         <article className="ncsPosQuickCard ncsPosSalesCard">
           <div className="ncsPosQuickGlow" />
 
@@ -6918,23 +7076,24 @@ if (!variantsError) {
       <section
         className={`ncsPosAiPanel ${posAiExpanded ? "expanded" : "collapsed"}`}
       >
-        {!posAiExpanded ? (
-          <button
-            type="button"
-            className="ncsPosAiMascotRunner"
-            onClick={() => setPosAiExpanded(true)}
-            aria-label="Open NCS AI Billing Assistant"
-          >
-            <span className="ncsPosAiMascotCharacter" aria-hidden="true">
-              <span className="ncsPosAiMascotPerson">🧑‍💼</span>
-              <span className="ncsPosAiMascotCart">🛒</span>
+        <button
+          type="button"
+          className="ncsPosAiMascotRunner ncsPosAiRealCoupleLauncher"
+          onClick={() => setPosAiExpanded((current) => !current)}
+          aria-label={posAiExpanded ? "Close NCS AI Billing Assistant" : "Open NCS AI Billing Assistant"}
+          aria-expanded={posAiExpanded}
+        >
+          <span className="ncsPosPremiumAiButton" aria-hidden="true">
+            <span className="ncsPosPremiumAiSpark">✦</span>
+            <span className="ncsPosPremiumAiCopy">
+              <b>Ask NCS AI</b>
+              <small>Billing Assistant</small>
             </span>
-            <span className="ncsPosAiMascotBubble">
-              <b>NCS AI</b>
-              <small>Tap me</small>
-            </span>
-          </button>
-        ) : (
+            <span className="ncsPosPremiumAiArrow">›</span>
+          </span>
+        </button>
+
+        {posAiExpanded && (
           <button
             type="button"
             className="ncsPosAiCompactToggle"
@@ -7499,6 +7658,45 @@ if (!variantsError) {
             </div>
 
             <div className="ncsPosBillHeaderActions">
+              {cartItems.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    className="ncsPosBillAddNextItem"
+                    onClick={() => {
+                      setBillFocusCollapsed(true);
+                      window.setTimeout(() => {
+                        searchInputRef.current?.focus();
+                        searchInputRef.current?.select();
+                      }, 120);
+                    }}
+                    title="Return to products and add the next item"
+                  >
+                    ＋ Products
+                  </button>
+
+                  <button
+                    type="button"
+                    className="ncsPosBillQuickItem"
+                    onClick={openQuickItem}
+                    title="Add an unregistered quick item without leaving the bill"
+                  >
+                    ⚡ Quick Item
+                  </button>
+
+                  {billFocusCollapsed && (
+                    <button
+                      type="button"
+                      className="ncsPosBillExpandButton"
+                      onClick={() => setBillFocusCollapsed(false)}
+                      title="Expand the current bill"
+                    >
+                      ⛶ Expand Bill
+                    </button>
+                  )}
+                </>
+              )}
+
               <button
                 type="button"
                 className="ncsPosBillNextCustomer"
@@ -7511,6 +7709,7 @@ if (!variantsError) {
 
               <button
                 type="button"
+                className="ncsPosBillQueueButton"
                 onClick={() => setShowHeldBills(true)}
                 title="Customer queue"
               >
@@ -7538,136 +7737,97 @@ if (!variantsError) {
             </div>
           </div>
 
-          <div className="ncsPosCustomerCard">
-            <div className="ncsPosCustomerTitle">
-              <span>👤</span>
-
-              <div>
+          <div className="ncsPosCustomerCard ncsPosCustomerCardCompact">
+            <div className="ncsPosCustomerCompactRow">
+              <div className="ncsPosCustomerMiniLabel" title="Customer details">
+                <span>👤</span>
                 <strong>Customer</strong>
-                <small>
-                  Optional for cash sales
-                </small>
               </div>
-            </div>
 
-            <div className="ncsPosCustomerFields">
               <input
+                className="ncsPosCustomerCompactName"
                 value={customerName}
                 onChange={(event) =>
-                  setCustomerName(
-                    event.target.value
-                  )
+                  setCustomerName(event.target.value)
                 }
                 placeholder="Customer name"
               />
 
               <input
+                className="ncsPosCustomerCompactPhone"
                 value={customerPhone}
                 onChange={(event) =>
                   setCustomerPhone(
-                    event.target.value.replace(
-                      /[^0-9+]/g,
-                      ""
-                    )
+                    event.target.value.replace(/[^0-9+]/g, "")
                   )
                 }
                 placeholder="Mobile number"
                 inputMode="tel"
               />
+
+              <label className="ncsPosWhatsAppInline">
+                <input
+                  type="checkbox"
+                  checked={customerWhatsAppOptIn}
+                  onChange={(event) =>
+                    setCustomerWhatsAppOptIn(event.target.checked)
+                  }
+                />
+                <span>WhatsApp Offers</span>
+              </label>
             </div>
 
-            <div className="ncsPosRewardLookup">
-              {rewardLookupLoading ? (
-                <span>Checking customer rewards...</span>
-              ) : rewardCustomerFound ? (
-                <>
-                  <div>
-                    <span>Returning Customer</span>
-                    <strong>
-                      Available Rewards: {availableRewardPoints} points
-                    </strong>
-                    <small>
-                      ₹100 purchase = 1 point • 1 point = ₹1
-                    </small>
-                  </div>
+            {(rewardLookupLoading || rewardCustomerFound) && (
+              <div className="ncsPosRewardLookup ncsPosRewardLookupCompact">
+                {rewardLookupLoading ? (
+                  <span>Checking rewards...</span>
+                ) : (
+                  <>
+                    <div>
+                      <span>Rewards</span>
+                      <strong>{availableRewardPoints} points available</strong>
+                    </div>
 
-                  <label>
-                    <span>Use Points</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max={Math.min(
-                        availableRewardPoints,
-                        grandTotalBeforeRewards,
-                      )}
-                      step="1"
-                      value={
-                        rewardPointsToUse === 0
-                          ? ""
-                          : rewardPointsToUse
-                      }
-                      onChange={(event) =>
-                        setRewardPointsToUse(
-                          Math.floor(
-                            Math.min(
-                              availableRewardPoints,
-                              grandTotalBeforeRewards,
-                              Math.max(
-                                0,
-                                toNumber(event.target.value),
+                    <label>
+                      <span>Use</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max={Math.min(
+                          availableRewardPoints,
+                          grandTotalBeforeRewards,
+                        )}
+                        step="1"
+                        value={
+                          rewardPointsToUse === 0
+                            ? ""
+                            : rewardPointsToUse
+                        }
+                        onChange={(event) =>
+                          setRewardPointsToUse(
+                            Math.floor(
+                              Math.min(
+                                availableRewardPoints,
+                                grandTotalBeforeRewards,
+                                Math.max(0, toNumber(event.target.value)),
                               ),
                             ),
-                          ),
-                        )
-                      }
-                      placeholder="0"
-                    />
-                  </label>
-                </>
-              ) : customerPhone.replace(/\D/g, "").length === 10 ? (
-                <span>
-                  New customer — rewards start after this bill.
-                </span>
-              ) : (
-                <span>
-                  Enter 10-digit mobile number to load customer name and
-                  reward points.
-                </span>
-              )}
-            </div>
-
-            <label className="ncsPosMarketingConsent">
-              <input
-                type="checkbox"
-                checked={customerWhatsAppOptIn}
-                onChange={(event) =>
-                  setCustomerWhatsAppOptIn(
-                    event.target.checked
-                  )
-                }
-              />
-
-              <span className="ncsPosMarketingConsentCopy">
-                <strong>Customer agreed to receive WhatsApp offers</strong>
-                <small>
-                  Existing opted-in customers are selected automatically.
-                </small>
-              </span>
-
-              <span className="ncsPosOfferTicker" aria-label="Current store offers">
-                <span className="ncsPosOfferTickerTrack">
-                  <b>🎁 Shop ₹3,000 • Get an umbrella free</b>
-                  <b>🪙 Every purchase earns reward coins</b>
-                  <b>✨ Members receive exclusive offers</b>
-                  <b>🎁 Shop ₹3,000 • Get an umbrella free</b>
-                </span>
-              </span>
-            </label>
+                          )
+                        }
+                        placeholder="0"
+                      />
+                    </label>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="ncsPosCartTableHeader" aria-hidden="true">
             <span>Item</span>
             <span>MRP</span>
+            <span>Size</span>
+            <span>Colour</span>
             <span>Sell</span>
             <span>Qty</span>
             <span>Disc %</span>
@@ -7729,6 +7889,16 @@ if (!variantsError) {
                   <div className="ncsPosTableMoneyCell">
                     <span className="ncsPosMobileCellLabel">MRP</span>
                     <strong>{formatCurrency(item.mrp)}</strong>
+                  </div>
+
+                  <div className="ncsPosVariantMiniCell">
+                    <span className="ncsPosMobileCellLabel">Size</span>
+                    <strong>{item.size || "—"}</strong>
+                  </div>
+
+                  <div className="ncsPosVariantMiniCell">
+                    <span className="ncsPosMobileCellLabel">Colour</span>
+                    <strong>{item.color || "—"}</strong>
                   </div>
 
                   <label className="ncsPosInlineMoneyInput">
@@ -7829,32 +7999,34 @@ if (!variantsError) {
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    className="ncsPosOwnerCostButton"
-                    onClick={() =>
-                      void openOwnerCostInfo(item)
-                    }
-                    disabled={
-                      loadingOwnerCostKey === item.key
-                    }
-                    aria-label={`Cost details for ${item.name}`}
-                    title="Owner cost & supplier details"
-                  >
-                    {loadingOwnerCostKey === item.key
-                      ? "…"
-                      : "ⓘ"}
-                  </button>
+                  <div className="ncsPosRowActions">
+                    <button
+                      type="button"
+                      className="ncsPosOwnerCostButton"
+                      onClick={() =>
+                        void openOwnerCostInfo(item)
+                      }
+                      disabled={
+                        loadingOwnerCostKey === item.key
+                      }
+                      aria-label={`Cost details for ${item.name}`}
+                      title="Owner cost & supplier details"
+                    >
+                      {loadingOwnerCostKey === item.key
+                        ? "…"
+                        : "ⓘ"}
+                    </button>
 
-                  <button
-                    type="button"
-                    className="ncsPosRemoveItem"
-                    onClick={() => removeCartItem(item.key)}
-                    aria-label={`Remove ${item.name}`}
-                    title="Remove item"
-                  >
-                    ×
-                  </button>
+                    <button
+                      type="button"
+                      className="ncsPosRemoveItem"
+                      onClick={() => removeCartItem(item.key)}
+                      aria-label={`Remove ${item.name}`}
+                      title="Remove item"
+                    >
+                      ×
+                    </button>
+                  </div>
                 </article>
               ))
             )}
@@ -7977,18 +8149,6 @@ if (!variantsError) {
               </div>
             )}
 
-            <div className="ncsPosTotalLine">
-              <div>
-                <span>Total Payable</span>
-                <small>
-                  MRP / selling price already includes GST
-                </small>
-              </div>
-
-              <strong>
-                {formatCurrency(finalPayable)}
-              </strong>
-            </div>
           </div>
 
           <div className="ncsPosPaymentSection">
@@ -8046,6 +8206,48 @@ if (!variantsError) {
                   {method.label}
                 </button>
               ))}
+            </div>
+
+            <div className="ncsPosTotalLine">
+              <div>
+                <span>Total Payable</span>
+                <small>
+                  MRP / selling price already includes GST
+                </small>
+              </div>
+
+              <strong>
+                {formatCurrency(finalPayable)}
+              </strong>
+
+              <button
+                type="button"
+                className="ncsPosCompleteButton ncsPosCompleteButtonInline"
+                onClick={handleCompleteSale}
+                disabled={
+                  cartItems.length === 0 ||
+                  isCompletingSale
+                }
+              >
+                <span>
+                  {isCompletingSale ? "…" : "✓"}
+                </span>
+                <div>
+                  <strong>
+                    {isCompletingSale
+                      ? "Saving Sale..."
+                      : "Complete Sale"}
+                  </strong>
+                  <small>
+                    {paymentMethod === "credit"
+                      ? `Due ${formatCurrency(
+                          creditDueAmount
+                        )}`
+                      : formatCurrency(finalPayable)}
+                  </small>
+                </div>
+                <b>{isCompletingSale ? "⌛" : "→"}</b>
+              </button>
             </div>
 
             {paymentMethod === "credit" && (
@@ -8246,14 +8448,14 @@ if (!variantsError) {
             </header>
 
             <form onSubmit={addQuickItemToCart}>
-              <div className="ncsPosQuickItemGrid">
-                <label className="ncsPosQuickWide">
+              <div className="ncsPosQuickItemGrid ncsPosQuickSingleLine">
+                <label className="ncsPosQuickNameField">
                   <span>Item Name *</span>
                   <input
                     ref={quickItemNameInputRef}
                     autoFocus
                     value={quickItemForm.name}
-                    placeholder="Example: Men Shirt"
+                    placeholder="Item name"
                     onChange={(event) =>
                       setQuickItemForm((current) => ({
                         ...current,
@@ -8276,49 +8478,27 @@ if (!variantsError) {
                   >
                     {Array.from(
                       new Set([
-                        "Men",
-                        "Women",
-                        "Kids",
-                        "Sarees",
-                        "Shirts",
-                        "Jeans",
-                        "Kurtis",
-                        "Innerwear",
-                        "Others",
+                        "Men", "Women", "Kids", "Sarees", "Shirts", "Jeans",
+                        "Kurtis", "Innerwear", "Others",
                         ...categories.filter((item) => item !== "All"),
                       ]),
                     ).map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
+                      <option key={category} value={category}>{category}</option>
                     ))}
                   </select>
                 </label>
 
                 <label>
-                  <span>Quantity *</span>
+                  <span>Qty *</span>
                   <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={
-                      quickItemForm.quantity > 0
-                        ? quickItemForm.quantity
-                        : ""
-                    }
-                    placeholder="Enter quantity"
+                    type="number" min="1" step="1"
+                    value={quickItemForm.quantity > 0 ? quickItemForm.quantity : ""}
+                    placeholder="Qty"
                     onChange={(event) => {
                       const rawValue = event.target.value;
-
                       setQuickItemForm((current) => ({
                         ...current,
-                        quantity:
-                          rawValue === ""
-                            ? 0
-                            : Math.max(
-                                1,
-                                Math.floor(Number(rawValue) || 1),
-                              ),
+                        quantity: rawValue === "" ? 0 : Math.max(1, Math.floor(Number(rawValue) || 1)),
                       }));
                     }}
                   />
@@ -8327,129 +8507,117 @@ if (!variantsError) {
                 <label>
                   <span>MRP *</span>
                   <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
+                    type="number" min="0.01" step="0.01"
                     value={quickItemForm.mrp || ""}
-                    placeholder="Product MRP"
-                    onChange={(event) =>
-                      setQuickItemForm((current) => ({
-                        ...current,
-                        mrp: Math.max(
-                          0,
-                          Number(event.target.value) || 0,
-                        ),
-                      }))
-                    }
+                    placeholder="MRP"
+                    onChange={(event) => setQuickItemForm((current) => ({
+                      ...current, mrp: Math.max(0, Number(event.target.value) || 0),
+                    }))}
                   />
                 </label>
 
                 <label>
-                  <span>Purchase Price (Optional)</span>
+                  <span>Purchase</span>
                   <input
-                    type="number"
-                    min="0"
-                    step="0.01"
+                    type="number" min="0" step="0.01"
                     value={quickItemForm.purchasePrice || ""}
-                    placeholder="For profit reports"
-                    onChange={(event) =>
-                      setQuickItemForm((current) => ({
-                        ...current,
-                        purchasePrice: Math.max(
-                          0,
-                          Number(event.target.value) || 0,
-                        ),
-                      }))
-                    }
+                    placeholder="Cost"
+                    onChange={(event) => setQuickItemForm((current) => ({
+                      ...current, purchasePrice: Math.max(0, Number(event.target.value) || 0),
+                    }))}
                   />
                 </label>
 
                 <label>
-                  <span>GST % (Optional)</span>
+                  <span>GST %</span>
                   <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
+                    type="number" min="0" max="100" step="0.01"
                     value={quickItemForm.taxPercent || ""}
                     placeholder="0"
-                    onChange={(event) =>
-                      setQuickItemForm((current) => ({
-                        ...current,
-                        taxPercent: Math.max(
-                          0,
-                          Number(event.target.value) || 0,
-                        ),
-                      }))
-                    }
+                    onChange={(event) => setQuickItemForm((current) => ({
+                      ...current, taxPercent: Math.max(0, Number(event.target.value) || 0),
+                    }))}
                   />
                 </label>
+
+                <label className="ncsPosQuickKeepInline">
+                  <span>Keep</span>
+                  <input
+                    type="checkbox"
+                    checked={quickItemForm.saveAsProduct}
+                    onChange={(event) => setQuickItemForm((current) => ({
+                      ...current, saveAsProduct: event.target.checked,
+                    }))}
+                    title="Keep this item in Product Catalogue"
+                  />
+                </label>
+
+                <button type="submit" className="ncsPosQuickStageButton">
+                  ＋ Add Row
+                </button>
               </div>
 
-              <label className="ncsPosQuickSaveToggle">
-                <input
-                  type="checkbox"
-                  checked={quickItemForm.saveAsProduct}
-                  onChange={(event) =>
-                    setQuickItemForm((current) => ({
-                      ...current,
-                      saveAsProduct: event.target.checked,
-                    }))
-                  }
-                />
-                <span>
-                  <strong>Keep this item in Product Catalogue</strong>
-                  <small>
-                    Turn this on when the same item may be sold again.
-                  </small>
-                </span>
-              </label>
-
               {quickItemForm.saveAsProduct && (
-                <label className="ncsPosQuickRemaining">
-                  <span>Remaining Stock After This Bill</span>
+                <label className="ncsPosQuickRemaining ncsPosQuickRemainingInline">
+                  <span>Remaining Stock After Bill</span>
                   <input
-                    type="number"
-                    min="0"
-                    step="1"
+                    type="number" min="0" step="1"
                     value={quickItemForm.remainingStock}
-                    onChange={(event) =>
-                      setQuickItemForm((current) => ({
-                        ...current,
-                        remainingStock: Math.max(
-                          0,
-                          Math.floor(Number(event.target.value) || 0),
-                        ),
-                      }))
-                    }
+                    onChange={(event) => setQuickItemForm((current) => ({
+                      ...current, remainingStock: Math.max(0, Math.floor(Number(event.target.value) || 0)),
+                    }))}
                   />
-                  <small>
-                    Example: customer buys 1 and 5 are still in the shop, enter 5.
-                  </small>
                 </label>
               )}
 
-              <div className="ncsPosQuickInfo">
-                <b>Bill Only:</b> sale total, payment, rewards, customer credit
-                and reports will be recorded. Stock tracking starts only when
-                “Keep this item” is enabled.
+              <div className="ncsPosQuickDraftArea">
+                <div className="ncsPosQuickDraftHeader">
+                  <strong>Quick Items</strong>
+                  <span>{quickDraftItems.length} ready</span>
+                </div>
+                {quickDraftItems.length === 0 ? (
+                  <div className="ncsPosQuickDraftEmpty">Enter an item above and press + Add Row.</div>
+                ) : (
+                  <div className="ncsPosQuickDraftRows">
+                    {quickDraftItems.map((item, index) => (
+                      <div className="ncsPosQuickDraftRow" key={item.key}>
+                        <b>{String(index + 1).padStart(2, "0")}</b>
+                        <strong title={item.name}>{item.name}</strong>
+                        <span>{item.category}</span>
+                        <span>Qty {item.quantity}</span>
+                        <span>MRP {formatCurrency(item.mrp)}</span>
+                        <span>{item.quickPurchasePrice ? `Cost ${formatCurrency(item.quickPurchasePrice)}` : "Cost —"}</span>
+                        <span>GST {item.taxPercent || 0}%</span>
+                        <span>{item.quickSaveAsProduct ? "Keep ✓" : "Bill only"}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeQuickDraftItem(item.key)}
+                          aria-label={`Remove ${item.name} from Quick Items`}
+                          title="Remove row"
+                        >×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <footer>
                 <button
                   type="button"
                   className="ncsPosQuickCancel"
-                  onClick={() => setShowQuickItem(false)}
+                  onClick={() => { setQuickDraftItems([]); setShowQuickItem(false); }}
                 >
-                  Done / Close
+                  Cancel
                 </button>
 
                 <button
-                  type="submit"
+                  type="button"
                   className="ncsPosQuickAdd"
+                  onClick={commitQuickItemsToBill}
+                  disabled={quickDraftItems.length === 0}
                 >
-                  <span>＋</span>
-                  Add to Bill
+                  <span>✓</span>
+                  Add {quickDraftItems.length || ""} to Bill
                 </button>
               </footer>
             </form>
@@ -8878,6 +9046,44 @@ if (!variantsError) {
         </div>
       )}
 
+
+      {festivalOffer && (
+        <aside
+          className={`ncsPosFestivalOffer ${festivalOffer.className} ${festivalOfferCorner}`}
+          role="status"
+          aria-live="polite"
+        >
+          <button
+            type="button"
+            className="ncsPosFestivalOfferClose"
+            onClick={() => setFestivalOffer(null)}
+            aria-label="Close festival offer"
+            title="Close offer"
+          >
+            ×
+          </button>
+
+          <div className="ncsPosFestivalOfferTopline">
+            <span>NEW CITY STYLE</span>
+            <i>FESTIVAL OFFER</i>
+          </div>
+
+          <div className="ncsPosFestivalOfferBody">
+            <strong>{festivalOffer.discount}%</strong>
+            <section>
+              <b>OFF</b>
+              <h3>{festivalOffer.title}</h3>
+              <p>{festivalOffer.subtitle}</p>
+            </section>
+          </div>
+
+          <footer>
+            <span>Selected styles only</span>
+            <b>5 SEC</b>
+          </footer>
+        </aside>
+      )}
+
       <style jsx global>{`
         * {
           box-sizing: border-box;
@@ -9004,12 +9210,34 @@ if (!variantsError) {
         }
 
         .ncsPosEyebrow {
-          display: block;
+          display: flex;
+          align-items: center;
+          gap: 8px;
           margin-bottom: 7px;
           color: ${GOLD};
           font-size: 11px;
           font-weight: 900;
           letter-spacing: 1.7px;
+        }
+
+        .ncsPosCloudDot {
+          width: 9px;
+          height: 9px;
+          flex: 0 0 9px;
+          border-radius: 999px;
+          background: #22c55e;
+          box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12), 0 0 12px rgba(34, 197, 94, 0.65);
+        }
+
+        .ncsPosCloudDot.pending {
+          background: #f4b400;
+          box-shadow: 0 0 0 4px rgba(244, 180, 0, 0.12), 0 0 12px rgba(244, 180, 0, 0.6);
+          cursor: pointer;
+        }
+
+        .ncsPosCloudDot.offline {
+          background: #ef4444;
+          box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.12), 0 0 12px rgba(239, 68, 68, 0.55);
         }
 
         .ncsPosHeader h1 {
@@ -9819,6 +10047,210 @@ if (!variantsError) {
           }
         }
 
+        /* COMPACT OWNER-ONLY BUSINESS SUMMARY: keeps billing workspace open */
+        .ncsPosQuickStatsLegacy {
+          display: none !important;
+        }
+
+        .ncsPosOwnerSummaryButton {
+          min-height: 45px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 0 14px;
+          border: 1px solid rgba(212, 175, 55, 0.58);
+          border-radius: 12px;
+          background: rgba(3, 21, 63, 0.5);
+          color: #ffffff;
+          font-family: inherit;
+          font-size: 11px;
+          font-weight: 900;
+          cursor: pointer;
+          transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+        }
+
+        .ncsPosOwnerSummaryButton:hover,
+        .ncsPosOwnerSummaryButton.active {
+          transform: translateY(-1px);
+          border-color: ${GOLD};
+          background: rgba(212, 175, 55, 0.16);
+          color: #ffffff;
+        }
+
+        .ncsPosOwnerSummaryButton > span {
+          color: ${GOLD};
+          font-size: 12px;
+        }
+
+        .ncsPosOwnerSummaryLayer {
+          position: fixed;
+          inset: 0;
+          z-index: 12000;
+          display: flex;
+          align-items: flex-start;
+          justify-content: flex-end;
+          padding: 92px 24px 24px;
+          background: rgba(3, 21, 63, 0.12);
+          backdrop-filter: blur(2px);
+        }
+
+        .ncsPosOwnerSummaryPopover {
+          position: relative;
+          z-index: 1;
+          width: min(560px, calc(100vw - 48px));
+          padding: 15px;
+          border: 1px solid rgba(212, 175, 55, 0.55);
+          border-radius: 18px;
+          background: rgba(255, 255, 255, 0.995);
+          color: ${DEEP_BLUE};
+          box-shadow: 0 24px 70px rgba(3, 21, 63, 0.34);
+          animation: ncsPosOwnerSummaryIn 0.18s ease-out both;
+        }
+
+        .ncsPosOwnerSummaryClose {
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          width: 30px;
+          height: 30px;
+          display: grid;
+          place-items: center;
+          border: 0;
+          border-radius: 9px;
+          background: #eef3fb;
+          color: ${ROYAL_BLUE};
+          font-size: 20px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .ncsPosOwnerSummaryTitle {
+          padding: 2px 40px 11px 2px;
+        }
+
+        .ncsPosOwnerSummaryTitle span,
+        .ncsPosOwnerSummaryTitle strong,
+        .ncsPosOwnerSummaryTitle small {
+          display: block;
+        }
+
+        .ncsPosOwnerSummaryTitle span {
+          color: #9a7414;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 0.14em;
+        }
+
+        .ncsPosOwnerSummaryTitle strong {
+          margin-top: 3px;
+          color: ${DEEP_BLUE};
+          font-size: 16px;
+          font-weight: 950;
+        }
+
+        .ncsPosOwnerSummaryTitle small {
+          margin-top: 3px;
+          color: #74809a;
+          font-size: 9px;
+          font-weight: 700;
+        }
+
+        .ncsPosOwnerSummaryGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .ncsPosOwnerMetric {
+          min-width: 0;
+          padding: 13px 14px;
+          border: 1px solid rgba(10, 46, 115, 0.1);
+          border-radius: 14px;
+          background: linear-gradient(145deg, #f8faff, #ffffff);
+          box-shadow: 0 8px 20px rgba(10, 46, 115, 0.06);
+        }
+
+        .ncsPosOwnerMetricCredit {
+          background: linear-gradient(145deg, #fffaf0, #ffffff);
+        }
+
+        .ncsPosOwnerMetric > span {
+          display: block;
+          color: #9a7414;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 0.08em;
+        }
+
+        .ncsPosOwnerMetric > strong {
+          display: block;
+          margin-top: 4px;
+          color: ${ROYAL_BLUE};
+          font-size: 20px;
+          font-weight: 1000;
+          letter-spacing: -0.4px;
+        }
+
+        .ncsPosOwnerMetric > small {
+          display: block;
+          margin-top: 2px;
+          color: #7a8498;
+          font-size: 9px;
+          font-weight: 750;
+        }
+
+        .ncsPosOwnerMetric > div {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-top: 10px;
+        }
+
+        .ncsPosOwnerMetric em {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 5px 7px;
+          border-radius: 8px;
+          background: #eef3fb;
+          color: #667085;
+          font-size: 8px;
+          font-style: normal;
+          font-weight: 800;
+        }
+
+        .ncsPosOwnerMetric em b {
+          color: ${DEEP_BLUE};
+          font-size: 9px;
+          font-weight: 950;
+        }
+
+        @keyframes ncsPosOwnerSummaryIn {
+          from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        @media (max-width: 900px) {
+          .ncsPosOwnerSummaryLayer {
+            padding: 78px 14px 14px;
+          }
+
+          .ncsPosOwnerSummaryPopover {
+            width: min(520px, calc(100vw - 28px));
+          }
+        }
+
+        @media (max-width: 620px) {
+          .ncsPosOwnerSummaryButton {
+            flex: 1;
+          }
+
+          .ncsPosOwnerSummaryGrid {
+            grid-template-columns: 1fr;
+          }
+        }
+
         @media (prefers-reduced-motion: reduce) {
           .ncsPosAiPanel.collapsed {
             right: 18px;
@@ -10179,6 +10611,57 @@ if (!variantsError) {
           font-weight: 900;
         }
 
+        .ncsPosBillAddNextItem,
+        .ncsPosBillQuickItem,
+        .ncsPosBillExpandButton {
+          min-height: 38px;
+          padding: 0 14px;
+          border-radius: 12px;
+          border: 1px solid rgba(212, 175, 55, .72);
+          font-size: 12px;
+          font-weight: 950;
+          white-space: nowrap;
+          cursor: pointer;
+          transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+        }
+
+        .ncsPosBillAddNextItem {
+          background: #ffffff;
+          color: ${DEEP_BLUE};
+          box-shadow: 0 8px 20px rgba(3, 21, 63, .10);
+        }
+
+        .ncsPosBillQuickItem {
+          background: linear-gradient(135deg, #f8df78, ${GOLD});
+          color: ${DEEP_BLUE};
+          box-shadow: 0 9px 22px rgba(212, 175, 55, .24);
+        }
+
+        .ncsPosBillExpandButton {
+          background: rgba(255, 255, 255, .10);
+          color: #ffffff;
+        }
+
+        .ncsPosBillAddNextItem:hover,
+        .ncsPosBillQuickItem:hover,
+        .ncsPosBillExpandButton:hover {
+          transform: translateY(-1px);
+        }
+
+        .ncsPosBillingFocus .ncsPosBillHeader {
+          position: sticky;
+          top: 0;
+          z-index: 30;
+        }
+
+        .ncsPosBillingFocus .ncsPosBillHeaderActions {
+          flex-wrap: nowrap;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+          max-width: 100%;
+        }
+
         /*
          * NCS INDEPENDENT BILLING LAYER
          *
@@ -10199,13 +10682,10 @@ if (!variantsError) {
           top: 8px !important;
           right: 8px;
           bottom: 8px;
-          left: auto;
-          width: min(
-            970px,
-            calc(100vw - 665px)
-          );
-          min-width: 700px;
-          max-width: calc(100vw - 130px);
+          left: 104px;
+          width: auto;
+          min-width: 0;
+          max-width: none;
           min-height: 0 !important;
           max-height: none !important;
           height: auto;
@@ -10302,11 +10782,9 @@ if (!variantsError) {
           top: 18px;
           right: 18px;
           bottom: 18px;
-          width: min(
-            940px,
-            calc(100vw - 690px)
-          );
-          min-width: 670px;
+          left: 114px;
+          width: auto;
+          min-width: 0;
           border-radius: 28px;
           background: rgba(3, 21, 63, .08);
           filter: blur(18px);
@@ -10315,13 +10793,17 @@ if (!variantsError) {
 
         @media (max-width: 1380px) {
           .ncsPosBillingFocus .ncsPosBillPanel {
-            width: min(820px, calc(100vw - 525px));
-            min-width: 620px;
+            left: 96px;
+            right: 8px;
+            width: auto;
+            min-width: 0;
           }
 
           .ncsPosBillingFocus .ncsPosBillPanel::after {
-            width: min(790px, calc(100vw - 550px));
-            min-width: 590px;
+            left: 106px;
+            right: 18px;
+            width: auto;
+            min-width: 0;
           }
         }
 
@@ -10329,8 +10811,9 @@ if (!variantsError) {
           .ncsPosBillingFocus .ncsPosBillPanel {
             top: 8px !important;
             right: 8px;
-            bottom: 12px;
-            width: calc(100vw - 210px);
+            bottom: 8px;
+            left: 88px;
+            width: auto;
             min-width: 0;
             max-width: none;
           }
@@ -10852,6 +11335,47 @@ if (!variantsError) {
           color: #ffffff;
           font-size: 17px;
           cursor: pointer;
+        }
+
+        /* Billing focus primary actions: keep text buttons readable and separate. */
+        .ncsPosBillHeaderActions .ncsPosBillAddNextItem,
+        .ncsPosBillHeaderActions .ncsPosBillQuickItem,
+        .ncsPosBillHeaderActions .ncsPosBillExpandButton {
+          width: auto !important;
+          min-width: 118px;
+          height: 40px !important;
+          flex: 0 0 auto;
+          padding: 0 16px !important;
+          border-radius: 12px !important;
+          font-size: 12px !important;
+          line-height: 1 !important;
+          font-weight: 950 !important;
+          letter-spacing: .15px;
+          white-space: nowrap;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .ncsPosBillHeaderActions .ncsPosBillAddNextItem {
+          border: 1px solid rgba(255,255,255,.34) !important;
+          background: linear-gradient(135deg, #164ca8, #0a2e73) !important;
+          color: #ffffff !important;
+          box-shadow: 0 8px 20px rgba(3,21,63,.22);
+        }
+
+        .ncsPosBillHeaderActions .ncsPosBillQuickItem {
+          border: 1px solid rgba(255,226,111,.9) !important;
+          background: linear-gradient(135deg, #f6d960, #d4af37) !important;
+          color: #03153f !important;
+          box-shadow: 0 8px 20px rgba(212,175,55,.24);
+        }
+
+        .ncsPosBillHeaderActions .ncsPosBillExpandButton {
+          min-width: 110px;
+          border: 1px solid rgba(212,175,55,.7) !important;
+          background: rgba(255,255,255,.10) !important;
+          color: #ffffff !important;
         }
 
         .ncsPosCloseMobileCart {
@@ -12418,6 +12942,344 @@ if (!variantsError) {
           }
         }
 
+
+        /* NCS 2026 COUNTER-COMPACT ITEM ROW + FESTIVAL CARD FINISH */
+        .ncsPosCartTableHeader,
+        .ncsPosCartItemTableRow {
+          grid-template-columns: 300px 82px 112px 128px 102px minmax(118px, 1fr) 78px !important;
+          gap: 7px !important;
+        }
+
+        .ncsPosCartTableHeader {
+          padding-left: 12px !important;
+          padding-right: 12px !important;
+        }
+
+        .ncsPosCartItemTableRow {
+          min-height: 62px;
+          padding: 7px 6px !important;
+          overflow: visible !important;
+        }
+
+        .ncsPosCartProductCell {
+          grid-template-columns: 38px minmax(0, 1fr) !important;
+          gap: 7px !important;
+        }
+
+        .ncsPosCartThumbnail {
+          width: 38px !important;
+          height: 44px !important;
+        }
+
+        .ncsPosCartProductInfo {
+          min-width: 0;
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr);
+          align-items: center;
+          column-gap: 6px;
+          row-gap: 1px;
+        }
+
+        .ncsPosCartProductInfo .ncsPosItemSerial {
+          grid-row: 1 / span 2;
+          align-self: start;
+          margin-top: 1px;
+        }
+
+        .ncsPosCartProductInfo h3 {
+          grid-column: 2;
+          margin: 0 !important;
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 10px !important;
+        }
+
+        .ncsPosCartBrandName,
+        .ncsPosCartProductInfo p {
+          grid-column: 2;
+          margin: 0 !important;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .ncsPosCartProductInfo p {
+          display: inline-flex !important;
+          flex-wrap: nowrap !important;
+          gap: 5px !important;
+          font-size: 7px !important;
+        }
+
+        .ncsPosQuickItemBadge {
+          margin-left: 5px !important;
+          padding: 1px 4px !important;
+          font-size: 6px !important;
+          vertical-align: 1px;
+        }
+
+        .ncsPosQuantityTableCell > div {
+          grid-template-columns: 34px minmax(40px, 1fr) 34px !important;
+          height: 36px !important;
+          border: 1px solid rgba(10,46,115,.22) !important;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 4px 10px rgba(10,46,115,.06);
+        }
+
+        .ncsPosQuantityTableCell button {
+          width: 34px !important;
+          height: 34px !important;
+          font-size: 18px !important;
+          line-height: 1 !important;
+          font-weight: 950 !important;
+        }
+
+        .ncsPosQuantityTableCell button:first-child {
+          background: linear-gradient(180deg, #eaf1ff, #d7e4fb) !important;
+          color: #0a2e73 !important;
+          border-right: 1px solid rgba(10,46,115,.12) !important;
+        }
+
+        .ncsPosQuantityTableCell button:last-child {
+          background: linear-gradient(180deg, #f8df68, #d4af37) !important;
+          color: #03153f !important;
+          border-left: 1px solid rgba(146,118,17,.18) !important;
+        }
+
+        .ncsPosQuantityTableCell button:hover {
+          filter: brightness(1.04);
+          transform: translateY(-1px);
+        }
+
+        .ncsPosItemLineTotal {
+          text-align: right;
+          padding-right: 4px;
+        }
+
+        .ncsPosRowActions {
+          width: 74px !important;
+          min-width: 74px !important;
+          display: grid !important;
+          grid-template-columns: 30px 38px;
+          justify-content: end !important;
+          gap: 5px !important;
+          cursor: default !important;
+        }
+
+        .ncsPosRemoveItem {
+          width: 38px !important;
+          height: 32px !important;
+          display: inline-grid !important;
+          place-items: center;
+          border: 1px solid #8d1515 !important;
+          border-radius: 10px !important;
+          background: linear-gradient(145deg, #e14141, #9f1616) !important;
+          color: #fff !important;
+          font-size: 18px !important;
+          font-weight: 950 !important;
+          box-shadow: 0 7px 15px rgba(159,22,22,.22) !important;
+        }
+
+        .ncsPosRemoveItem:hover {
+          background: linear-gradient(145deg, #f04b4b, #7c0d0d) !important;
+          transform: translateY(-1px);
+        }
+
+        .ncsPosBillQueueButton {
+          border-color: rgba(212,175,55,.92) !important;
+          background: linear-gradient(145deg, #f6dc66, #d4af37) !important;
+          color: #03153f !important;
+          box-shadow: 0 8px 18px rgba(212,175,55,.20), inset 0 1px 0 rgba(255,255,255,.55) !important;
+        }
+
+        .ncsPosBillQueueButton:hover {
+          filter: brightness(1.05);
+          transform: translateY(-1px);
+        }
+
+        .ncsPosFestivalOffer {
+          position: fixed;
+          z-index: 10050;
+          width: min(360px, calc(100vw - 30px));
+          aspect-ratio: 1.586 / 1;
+          max-height: 228px;
+          overflow: hidden;
+          border: 1px solid rgba(255,255,255,.64);
+          border-radius: 22px;
+          color: #fff;
+          box-shadow: 0 24px 70px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.40);
+          animation: ncsFestivalCardIn .38s cubic-bezier(.2,.9,.25,1.1), ncsFestivalCardGlow 1.6s ease-in-out infinite alternate;
+          backdrop-filter: blur(16px);
+        }
+
+        .ncsPosFestivalOffer.topLeft { top: 18px; left: 18px; }
+        .ncsPosFestivalOffer.topRight { top: 18px; right: 18px; }
+        .ncsPosFestivalOffer.bottomLeft { bottom: 18px; left: 18px; }
+        .ncsPosFestivalOffer.bottomRight { bottom: 18px; right: 18px; }
+
+        .ncsPosFestivalOffer.coral { background: radial-gradient(circle at 86% 14%, rgba(255,231,122,.92), transparent 28%), linear-gradient(135deg,#ff6a3d,#f02f68 52%,#8c1b73); }
+        .ncsPosFestivalOffer.violet { background: radial-gradient(circle at 18% 15%, rgba(105,239,255,.72), transparent 30%), linear-gradient(135deg,#5c2dc5,#9837d8 48%,#ff4f98); }
+        .ncsPosFestivalOffer.emerald { background: radial-gradient(circle at 83% 18%, rgba(255,234,113,.85), transparent 28%), linear-gradient(135deg,#0c9c73,#0e786c 52%,#124d67); }
+        .ncsPosFestivalOffer.sunset { background: radial-gradient(circle at 20% 12%, rgba(255,244,171,.9), transparent 27%), linear-gradient(135deg,#ff9f1c,#ff5b35 48%,#de2b64); }
+        .ncsPosFestivalOffer.aqua { background: radial-gradient(circle at 80% 18%, rgba(233,255,137,.82), transparent 28%), linear-gradient(135deg,#00a8cc,#087ca7 50%,#3f4bbb); }
+        .ncsPosFestivalOffer.berry { background: radial-gradient(circle at 18% 12%, rgba(255,205,232,.75), transparent 27%), linear-gradient(135deg,#c52973,#812b82 52%,#451e68); }
+
+        .ncsPosFestivalOffer::before,
+        .ncsPosFestivalOffer::after {
+          content: "";
+          position: absolute;
+          border-radius: 999px;
+          background: rgba(255,255,255,.13);
+          pointer-events: none;
+        }
+
+        .ncsPosFestivalOffer::before { width: 150px; height: 150px; right: -42px; bottom: -62px; }
+        .ncsPosFestivalOffer::after { width: 86px; height: 86px; right: 28px; top: 40px; border: 1px solid rgba(255,255,255,.18); background: transparent; }
+
+        .ncsPosFestivalOfferClose {
+          position: absolute;
+          z-index: 3;
+          top: 10px;
+          right: 10px;
+          width: 28px;
+          height: 28px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(255,255,255,.55);
+          border-radius: 50%;
+          background: rgba(20,20,28,.25);
+          color: #fff;
+          font-size: 18px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .ncsPosFestivalOfferTopline {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 16px 48px 8px 18px;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: .12em;
+        }
+
+        .ncsPosFestivalOfferTopline i {
+          padding: 5px 8px;
+          border: 1px solid rgba(255,255,255,.42);
+          border-radius: 999px;
+          background: rgba(255,255,255,.14);
+          font-style: normal;
+          letter-spacing: .08em;
+        }
+
+        .ncsPosFestivalOfferBody {
+          position: relative;
+          z-index: 1;
+          display: grid;
+          grid-template-columns: auto 1fr;
+          align-items: center;
+          gap: 14px;
+          padding: 4px 18px 10px;
+        }
+
+        .ncsPosFestivalOfferBody > strong {
+          font-size: clamp(54px, 5vw, 72px);
+          line-height: .9;
+          letter-spacing: -.06em;
+          text-shadow: 0 5px 20px rgba(0,0,0,.17);
+        }
+
+        .ncsPosFestivalOfferBody section > b {
+          display: inline-block;
+          margin-bottom: 3px;
+          font-size: 18px;
+          letter-spacing: .14em;
+        }
+
+        .ncsPosFestivalOfferBody h3 {
+          margin: 0;
+          font-size: 18px;
+          line-height: 1.05;
+        }
+
+        .ncsPosFestivalOfferBody p {
+          margin: 5px 0 0;
+          color: rgba(255,255,255,.88);
+          font-size: 10px;
+          font-weight: 700;
+        }
+
+        .ncsPosFestivalOffer footer {
+          position: absolute;
+          z-index: 1;
+          left: 18px;
+          right: 18px;
+          bottom: 13px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding-top: 8px;
+          border-top: 1px solid rgba(255,255,255,.25);
+          font-size: 8px;
+          font-weight: 850;
+        }
+
+        .ncsPosFestivalOffer footer b {
+          padding: 3px 6px;
+          border-radius: 6px;
+          background: rgba(255,255,255,.16);
+          letter-spacing: .08em;
+        }
+
+        @keyframes ncsFestivalCardIn {
+          from { opacity: 0; transform: translateY(18px) scale(.94) rotate(-1deg); }
+          to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+        }
+
+        @keyframes ncsFestivalCardGlow {
+          from { box-shadow: 0 20px 55px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.36); }
+          to { box-shadow: 0 26px 78px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.50); }
+        }
+
+        @media (max-width: 1220px) {
+          .ncsPosCartTableHeader,
+          .ncsPosCartItemTableRow {
+            grid-template-columns: minmax(210px, 1fr) 76px 96px 118px 92px 106px 74px !important;
+          }
+        }
+
+        @media (max-width: 820px) {
+          .ncsPosCartItemTableRow {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+          .ncsPosCartProductInfo {
+            display: block;
+          }
+          .ncsPosCartProductInfo .ncsPosItemSerial,
+          .ncsPosCartProductInfo h3,
+          .ncsPosCartBrandName,
+          .ncsPosCartProductInfo p {
+            display: block;
+            grid-column: auto;
+          }
+          .ncsPosRowActions {
+            grid-column: 1 / -1;
+            justify-self: end;
+          }
+          .ncsPosFestivalOffer {
+            width: min(330px, calc(100vw - 24px));
+          }
+          .ncsPosFestivalOffer.topLeft,
+          .ncsPosFestivalOffer.topRight { top: 12px; left: 12px; right: auto; }
+          .ncsPosFestivalOffer.bottomLeft,
+          .ncsPosFestivalOffer.bottomRight { bottom: 12px; left: 12px; right: auto; }
+        }
+
         @media (min-width: 1081px) and (max-height: 850px) {
           .ncsPosBillHeader {
             min-height: 66px;
@@ -13753,6 +14615,141 @@ if (!variantsError) {
           }
         }
 
+        /* Compact customer strip: keeps billing area open while preserving customer, WhatsApp and rewards. */
+        .ncsPosCustomerCardCompact {
+          padding: 8px 12px;
+        }
+
+        .ncsPosCustomerCompactRow {
+          display: grid;
+          grid-template-columns: auto minmax(180px, 1.1fr) minmax(150px, .8fr) auto;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .ncsPosCustomerMiniLabel {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          color: ${DEEP_BLUE};
+          white-space: nowrap;
+        }
+
+        .ncsPosCustomerMiniLabel > span {
+          width: 28px;
+          height: 28px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 9px;
+          background: rgba(212, 175, 55, 0.15);
+          font-size: 13px;
+        }
+
+        .ncsPosCustomerMiniLabel strong {
+          font-size: 10px;
+          font-weight: 950;
+        }
+
+        .ncsPosCustomerCompactRow > input {
+          width: 100%;
+          min-width: 0;
+          height: 34px;
+          padding: 0 10px;
+          border: 1px solid #e1e6ee;
+          border-radius: 9px;
+          outline: none;
+          background: #fff;
+          color: ${CHARCOAL};
+          font-family: inherit;
+          font-size: 10px;
+          font-weight: 700;
+        }
+
+        .ncsPosCustomerCompactRow > input:focus {
+          border-color: ${GOLD};
+          box-shadow: 0 0 0 3px rgba(212,175,55,.12);
+        }
+
+        .ncsPosWhatsAppInline {
+          height: 34px;
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          padding: 0 11px;
+          border: 1px solid rgba(31, 157, 85, .28);
+          border-radius: 9px;
+          background: #f4fff8;
+          color: #12683b;
+          font-size: 9px;
+          font-weight: 900;
+          white-space: nowrap;
+          cursor: pointer;
+        }
+
+        .ncsPosWhatsAppInline input {
+          width: 16px;
+          height: 16px;
+          margin: 0;
+          accent-color: #1f9d55;
+        }
+
+        .ncsPosRewardLookupCompact {
+          margin-top: 6px;
+          min-height: 34px;
+          padding: 5px 8px;
+          border-radius: 9px;
+        }
+
+        .ncsPosRewardLookupCompact div {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .ncsPosRewardLookupCompact div span,
+        .ncsPosRewardLookupCompact div strong {
+          margin: 0;
+          display: inline;
+        }
+
+        .ncsPosRewardLookupCompact div strong {
+          font-size: 10px;
+        }
+
+        .ncsPosRewardLookupCompact label {
+          min-width: 110px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .ncsPosRewardLookupCompact label span {
+          margin: 0;
+          white-space: nowrap;
+        }
+
+        .ncsPosRewardLookupCompact input {
+          width: 72px;
+          min-height: 30px;
+          height: 30px;
+        }
+
+        @media (max-width: 900px) {
+          .ncsPosCustomerCompactRow {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .ncsPosCustomerMiniLabel {
+            grid-column: 1 / -1;
+          }
+
+          .ncsPosWhatsAppInline {
+            grid-column: 1 / -1;
+            justify-content: center;
+          }
+        }
+
         .ncsPosNextCustomerButton {
           min-height: 48px;
           border: 1px solid rgba(212, 175, 55, 0.66);
@@ -14765,7 +15762,7 @@ if (!variantsError) {
 
         .ncsPosCartTableHeader {
           display: grid;
-          grid-template-columns: minmax(230px, 1.8fr) 92px 104px 132px 100px 120px 34px;
+          grid-template-columns: minmax(230px, 1.8fr) 92px 104px 132px 100px 120px 76px;
           align-items: center;
           gap: 8px;
           flex: 0 0 auto;
@@ -15002,7 +15999,7 @@ if (!variantsError) {
 
           .ncsPosCartTableHeader,
           .ncsPosCartItemTableRow {
-            grid-template-columns: minmax(205px, 1.65fr) 78px 92px 118px 88px 104px 30px;
+            grid-template-columns: minmax(205px, 1.65fr) 78px 92px 118px 88px 104px 72px;
             gap: 6px;
           }
         }
@@ -15090,6 +16087,107 @@ if (!variantsError) {
           }
         }
 
+        /* NCS COMPACT BILL ACTIONS + PREMIUM PAYMENT FINISH */
+        .ncsPosRowActions {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 6px;
+          min-width: 70px;
+        }
+
+        .ncsPosRowActions .ncsPosRemoveItem {
+          width: 32px;
+          height: 32px;
+          flex: 0 0 32px;
+          border: 1px solid #8f1d1d;
+          border-radius: 9px;
+          background: linear-gradient(145deg, #c82929 0%, #8f1515 100%);
+          color: #fff;
+          box-shadow: 0 5px 12px rgba(143, 21, 21, 0.22);
+          font-size: 15px;
+          font-weight: 950;
+        }
+
+        .ncsPosRowActions .ncsPosRemoveItem:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 7px 16px rgba(143, 21, 21, 0.3);
+        }
+
+        .ncsPosTotalLine {
+          border: 1px solid rgba(212, 175, 55, 0.9) !important;
+          background:
+            radial-gradient(circle at 88% 18%, rgba(255,255,255,.22), transparent 18%),
+            linear-gradient(112deg, #03153f 0%, #0a2e73 48%, #164ca8 78%, #d4af37 150%) !important;
+          box-shadow: 0 10px 24px rgba(10, 46, 115, 0.2), inset 0 1px 0 rgba(255,255,255,.13) !important;
+        }
+
+        .ncsPosTotalLine span,
+        .ncsPosTotalLine small,
+        .ncsPosTotalLine strong {
+          color: #fff !important;
+        }
+
+        .ncsPosTotalLine > div > span {
+          color: #f5d96a !important;
+          font-weight: 950 !important;
+          letter-spacing: .02em;
+        }
+
+        .ncsPosPaymentButton {
+          position: relative;
+          overflow: hidden;
+          min-height: 56px;
+          border: 1px solid rgba(212,175,55,.55) !important;
+          border-radius: 13px !important;
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.13), rgba(255,255,255,0) 42%),
+            linear-gradient(135deg, #0a2e73 0%, #123f91 55%, #08245f 100%) !important;
+          color: #fff !important;
+          box-shadow: 0 8px 18px rgba(10,46,115,.16), inset 0 1px 0 rgba(255,255,255,.18);
+          font-weight: 900 !important;
+          transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+        }
+
+        .ncsPosPaymentButton::after {
+          content: "";
+          position: absolute;
+          inset: 0 auto 0 -45%;
+          width: 36%;
+          transform: skewX(-18deg);
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,.22), transparent);
+          transition: left .35s ease;
+          pointer-events: none;
+        }
+
+        .ncsPosPaymentButton:hover {
+          transform: translateY(-2px);
+          border-color: #f0cd54 !important;
+          box-shadow: 0 11px 24px rgba(10,46,115,.24), 0 0 0 1px rgba(212,175,55,.12);
+        }
+
+        .ncsPosPaymentButton:hover::after {
+          left: 120%;
+        }
+
+        .ncsPosPaymentButton span {
+          color: #f4d15d !important;
+          font-size: 15px !important;
+        }
+
+        .ncsPosPaymentButton.ncsPosPaymentActive {
+          border-color: #b78c10 !important;
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.38), rgba(255,255,255,0) 42%),
+            linear-gradient(135deg, #f5d85c 0%, #d4af37 52%, #b9870e 100%) !important;
+          color: #03153f !important;
+          box-shadow: 0 10px 22px rgba(212,175,55,.34), inset 0 1px 0 rgba(255,255,255,.55);
+        }
+
+        .ncsPosPaymentButton.ncsPosPaymentActive span {
+          color: #03153f !important;
+        }
+
         /* FINAL FULL BILL VIEW: no internal bill/summary scroll */
         @media (min-width: 1081px) {
           .ncsPosBillPanel {
@@ -15118,23 +16216,45 @@ if (!variantsError) {
 
           .ncsPosSummary {
             display: grid !important;
-            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
             max-height: none !important;
             height: auto !important;
             overflow: visible !important;
-            padding: 16px !important;
-            gap: 10px !important;
+            padding: 10px 12px !important;
+            gap: 7px !important;
           }
 
           .ncsPosDiscountField,
           .ncsPosRoundOffField {
-            grid-column: span 2 !important;
-            min-height: 56px !important;
+            grid-column: span 1 !important;
+            min-height: 48px !important;
+            padding: 7px 8px !important;
           }
 
           .ncsPosSummaryLine {
-            min-height: 56px !important;
-            padding: 10px 12px !important;
+            min-height: 48px !important;
+            padding: 7px 8px !important;
+          }
+
+          .ncsPosSummaryLine span,
+          .ncsPosDiscountField > span,
+          .ncsPosRoundOffField > span {
+            font-size: 7px !important;
+            line-height: 1.15 !important;
+          }
+
+          .ncsPosSummaryLine strong {
+            font-size: 11px !important;
+          }
+
+          .ncsPosDiscountField > div,
+          .ncsPosRoundOffField > div {
+            min-height: 31px !important;
+            height: 31px !important;
+          }
+
+          .ncsPosRoundOffLine {
+            display: none !important;
           }
 
           .ncsPosRoundOffLine,
@@ -15147,8 +16267,8 @@ if (!variantsError) {
 
           .ncsPosTotalLine {
             grid-column: 1 / -1 !important;
-            min-height: 88px !important;
-            margin-top: 4px !important;
+            min-height: 68px !important;
+            margin-top: 2px !important;
           }
 
           .ncsPosPaymentSection {
@@ -15160,6 +16280,414 @@ if (!variantsError) {
           .ncsPosWorkspace {
             align-items: start !important;
           }
+        }
+
+
+        /* QUICK ITEM — wide, low-height counter layout */
+        .ncsPosQuickItemModal {
+          width: min(980px, calc(100vw - 36px)) !important;
+          max-height: min(640px, calc(100vh - 34px)) !important;
+          border-radius: 22px !important;
+          overflow-y: auto !important;
+        }
+
+        .ncsPosQuickItemModal > header {
+          padding: 13px 18px !important;
+          align-items: center !important;
+        }
+
+        .ncsPosQuickItemModal > header h2 {
+          margin-top: 2px !important;
+          font-size: 21px !important;
+        }
+
+        .ncsPosQuickItemModal > header p {
+          margin-top: 4px !important;
+          max-width: 760px !important;
+          font-size: 11px !important;
+          line-height: 1.35 !important;
+        }
+
+        .ncsPosQuickItemModal > header::after {
+          right: 76px !important;
+          bottom: -24px !important;
+          font-size: 58px !important;
+        }
+
+        .ncsPosQuickItemModal > header > button {
+          width: 34px !important;
+          height: 34px !important;
+          font-size: 21px !important;
+        }
+
+        .ncsPosQuickItemModal form {
+          padding: 16px 18px 14px !important;
+        }
+
+        .ncsPosQuickItemGrid {
+          grid-template-columns: 2fr 1.15fr .8fr 1fr !important;
+          gap: 11px 12px !important;
+          align-items: end !important;
+        }
+
+        .ncsPosQuickWide {
+          grid-column: span 2 !important;
+        }
+
+        .ncsPosQuickItemGrid label,
+        .ncsPosQuickRemaining {
+          gap: 5px !important;
+        }
+
+        .ncsPosQuickItemGrid label > span,
+        .ncsPosQuickRemaining > span {
+          font-size: 11px !important;
+        }
+
+        .ncsPosQuickItemGrid input,
+        .ncsPosQuickItemGrid select,
+        .ncsPosQuickRemaining input {
+          min-height: 42px !important;
+          padding: 0 12px !important;
+          border-radius: 10px !important;
+          font-size: 13px !important;
+        }
+
+        .ncsPosQuickSaveToggle {
+          margin-top: 12px !important;
+          padding: 10px 12px !important;
+          align-items: center !important;
+        }
+
+        .ncsPosQuickSaveToggle input {
+          width: 18px !important;
+          height: 18px !important;
+          margin-top: 0 !important;
+        }
+
+        .ncsPosQuickSaveToggle span {
+          display: flex !important;
+          align-items: center !important;
+          gap: 10px !important;
+          flex-wrap: wrap !important;
+        }
+
+        .ncsPosQuickSaveToggle strong {
+          font-size: 12px !important;
+        }
+
+        .ncsPosQuickSaveToggle small {
+          font-size: 9px !important;
+        }
+
+        .ncsPosQuickRemaining {
+          margin-top: 10px !important;
+          padding: 10px 12px !important;
+          grid-template-columns: 230px 180px 1fr !important;
+          align-items: center !important;
+        }
+
+        .ncsPosQuickInfo {
+          margin-top: 10px !important;
+          padding: 9px 12px !important;
+          font-size: 10px !important;
+          line-height: 1.35 !important;
+        }
+
+        .ncsPosQuickItemModal footer {
+          position: sticky !important;
+          bottom: -14px !important;
+          z-index: 4 !important;
+          display: flex !important;
+          justify-content: flex-end !important;
+          align-items: center !important;
+          gap: 10px !important;
+          margin: 12px -18px -14px !important;
+          padding: 11px 18px !important;
+          border-top: 1px solid rgba(10, 46, 115, .10) !important;
+          background: rgba(255,255,255,.96) !important;
+          backdrop-filter: blur(10px) !important;
+        }
+
+        .ncsPosQuickCancel,
+        .ncsPosQuickAdd {
+          min-width: 150px !important;
+          min-height: 42px !important;
+          padding: 0 18px !important;
+          border-radius: 10px !important;
+          font-size: 13px !important;
+        }
+
+        .ncsPosQuickCancel {
+          border-color: rgba(10,46,115,.20) !important;
+          color: #0a2e73 !important;
+        }
+
+        .ncsPosQuickAdd {
+          background: linear-gradient(135deg, #d4af37, #f0cf5d) !important;
+          border-color: #d4af37 !important;
+          color: #03153f !important;
+          box-shadow: 0 10px 22px rgba(212,175,55,.24) !important;
+        }
+
+        @media (max-width: 900px) {
+          .ncsPosQuickItemModal {
+            width: min(760px, calc(100vw - 24px)) !important;
+            max-height: calc(100vh - 20px) !important;
+          }
+
+          .ncsPosQuickItemGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+
+          .ncsPosQuickWide {
+            grid-column: 1 / -1 !important;
+          }
+
+          .ncsPosQuickRemaining {
+            grid-template-columns: 1fr !important;
+          }
+        }
+
+        @media (max-width: 560px) {
+          .ncsPosQuickItemGrid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .ncsPosQuickWide {
+            grid-column: auto !important;
+          }
+
+          .ncsPosQuickItemModal footer {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+          }
+
+          .ncsPosQuickCancel,
+          .ncsPosQuickAdd {
+            min-width: 0 !important;
+            width: 100% !important;
+          }
+        }
+
+
+
+        /* NCS 2026 QUICK BATCH + COMPACT BILL ROW + STATIC 3D AI */
+        .ncsPosQuickItemModal {
+          width: min(1380px, calc(100vw - 32px)) !important;
+          max-height: min(720px, calc(100vh - 28px)) !important;
+        }
+
+        .ncsPosQuickItemModal > header p {
+          max-width: 980px !important;
+        }
+
+        .ncsPosQuickSingleLine {
+          display: grid !important;
+          grid-template-columns: minmax(260px, 2.2fr) minmax(120px, .95fr) 80px 105px 115px 88px 64px 112px !important;
+          gap: 9px !important;
+          align-items: end !important;
+        }
+
+        .ncsPosQuickSingleLine label { min-width: 0 !important; }
+        .ncsPosQuickNameField { grid-column: auto !important; }
+        .ncsPosQuickSingleLine input,
+        .ncsPosQuickSingleLine select {
+          width: 100% !important;
+          min-width: 0 !important;
+          min-height: 40px !important;
+        }
+
+        .ncsPosQuickKeepInline {
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: center !important;
+          justify-content: flex-end !important;
+          gap: 5px !important;
+        }
+        .ncsPosQuickKeepInline input {
+          width: 22px !important;
+          height: 22px !important;
+          min-height: 22px !important;
+          accent-color: #d4af37;
+        }
+
+        .ncsPosQuickStageButton {
+          min-height: 40px;
+          border: 1px solid #d4af37;
+          border-radius: 10px;
+          background: linear-gradient(135deg, #0a2e73, #164ca8);
+          color: #fff;
+          font: inherit;
+          font-size: 11px;
+          font-weight: 950;
+          cursor: pointer;
+          box-shadow: 0 8px 18px rgba(10,46,115,.18);
+        }
+
+        .ncsPosQuickRemainingInline {
+          margin-top: 9px !important;
+          display: grid !important;
+          grid-template-columns: 220px 150px !important;
+          justify-content: start !important;
+          gap: 10px !important;
+        }
+
+        .ncsPosQuickDraftArea {
+          margin-top: 12px;
+          border: 1px solid rgba(10,46,115,.12);
+          border-radius: 13px;
+          overflow: hidden;
+          background: #f7f9fd;
+        }
+        .ncsPosQuickDraftHeader {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 8px 11px;
+          background: linear-gradient(90deg, #03153f, #0a2e73);
+          color: #fff;
+          font-size: 10px;
+        }
+        .ncsPosQuickDraftHeader span { color: #f2d45b; font-weight: 900; }
+        .ncsPosQuickDraftEmpty { padding: 14px; color: #778195; font-size: 10px; text-align: center; }
+        .ncsPosQuickDraftRows { max-height: 230px; overflow: auto; }
+        .ncsPosQuickDraftRow {
+          display: grid;
+          grid-template-columns: 34px minmax(180px,1.65fr) 110px 72px 115px 118px 82px 92px 38px;
+          gap: 7px;
+          align-items: center;
+          min-height: 42px;
+          padding: 6px 9px;
+          border-top: 1px solid rgba(10,46,115,.08);
+          background: #fff;
+          color: #39465b;
+          font-size: 9px;
+        }
+        .ncsPosQuickDraftRow > b { color: #a68416; }
+        .ncsPosQuickDraftRow > strong { color: #03153f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ncsPosQuickDraftRow > button {
+          width: 30px; height: 30px; border: 0; border-radius: 8px;
+          background: linear-gradient(145deg,#cf3030,#8f1515); color: #fff;
+          font-size: 16px; font-weight: 950; cursor: pointer;
+        }
+        .ncsPosQuickAdd:disabled { opacity: .45; cursor: not-allowed; box-shadow: none !important; }
+
+        /* Product column is deliberately compact; price/qty/actions get cleaner room. */
+        .ncsPosCartTableHeader,
+        .ncsPosCartItemTableRow {
+          grid-template-columns: minmax(250px, 320px) 84px 112px 138px 108px 122px 82px !important;
+          justify-content: space-between;
+          column-gap: 10px !important;
+        }
+        .ncsPosCartProductInfo h3 {
+          max-width: 215px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .ncsPosQuantityTableCell > div {
+          grid-template-columns: 38px minmax(44px,1fr) 38px !important;
+          height: 36px !important;
+        }
+        .ncsPosQuantityTableCell button {
+          width: 38px !important; height: 36px !important;
+          background: #0a2e73 !important; color: #fff !important;
+          font-size: 16px !important;
+        }
+        .ncsPosQuantityTableCell button:last-child {
+          background: linear-gradient(135deg,#f1d15c,#d4af37) !important;
+          color: #03153f !important;
+        }
+        .ncsPosRowActions {
+          display: grid !important;
+          grid-template-columns: 34px 38px !important;
+          gap: 6px !important;
+          min-width: 78px !important;
+          justify-content: end !important;
+        }
+        .ncsPosOwnerCostButton {
+          width: 34px !important; height: 32px !important; min-width: 34px !important;
+          position: static !important; transform: none !important; margin: 0 !important;
+        }
+        .ncsPosRowActions .ncsPosRemoveItem {
+          width: 38px !important; height: 32px !important; flex-basis: 38px !important;
+          position: static !important; transform: none !important; margin: 0 !important;
+        }
+
+        /* Static 3D NCS AI mascot in the right corner; only the eyes/bubble animate. */
+        .ncsPosAiPanel.collapsed {
+          left: auto !important;
+          right: 18px !important;
+          bottom: 18px !important;
+          width: 150px !important;
+          animation: none !important;
+          transform: none !important;
+        }
+        .ncsPosAiPanel.collapsed:hover,
+        .ncsPosAiPanel.collapsed:focus-within { animation: none !important; }
+        .ncsPosAiMascotRunner { width: 150px !important; min-height: 104px !important; gap: 4px !important; align-items: flex-end !important; }
+        .ncsPosAi3dMascot {
+          position: relative; width: 68px; height: 96px; display: block;
+          filter: drop-shadow(0 12px 13px rgba(3,21,63,.28));
+        }
+        .ncsPosAi3dHead {
+          position: absolute; left: 12px; top: 2px; width: 44px; height: 42px;
+          border-radius: 47% 47% 44% 44%;
+          background: radial-gradient(circle at 35% 24%, #fff5df 0 8%, #e7b78d 34%, #a55f3f 100%);
+          box-shadow: inset -6px -7px 10px rgba(80,32,18,.24), inset 4px 4px 9px rgba(255,255,255,.5);
+          z-index: 3;
+        }
+        .ncsPosAi3dHead::before {
+          content:""; position:absolute; left:3px; right:3px; top:-4px; height:15px;
+          border-radius:50% 50% 38% 38%; background:linear-gradient(135deg,#1b2232,#06080d);
+        }
+        .ncsPosAiEye {
+          position:absolute; top:19px; width:5px; height:6px; border-radius:50%; background:#111827;
+          animation:ncsAiBlink 4.2s infinite; transform-origin:center;
+        }
+        .ncsPosAiEye.left { left:12px; } .ncsPosAiEye.right { right:12px; }
+        .ncsPosAiSmile {
+          position:absolute; left:17px; top:29px; width:11px; height:5px;
+          border-bottom:2px solid #7c352c; border-radius:0 0 12px 12px;
+        }
+        .ncsPosAi3dBody {
+          position:absolute; left:7px; top:37px; width:54px; height:48px;
+          border-radius:18px 18px 10px 10px;
+          background:linear-gradient(145deg,#1d58b8 0%,#0a2e73 48%,#03153f 100%);
+          box-shadow:inset 6px 5px 11px rgba(255,255,255,.14), inset -8px -8px 12px rgba(0,0,0,.25);
+        }
+        .ncsPosAi3dBody::before, .ncsPosAi3dBody::after {
+          content:""; position:absolute; top:7px; width:9px; height:34px; border-radius:9px; background:#d4af37;
+        }
+        .ncsPosAi3dBody::before { left:-5px; transform:rotate(13deg); }
+        .ncsPosAi3dBody::after { right:-5px; transform:rotate(-13deg); }
+        .ncsPosAiTie {
+          position:absolute; left:24px; top:7px; width:7px; height:24px;
+          clip-path:polygon(50% 0,100% 22%,70% 100%,30% 100%,0 22%); background:#d4af37;
+        }
+        .ncsPosAi3dBase {
+          position:absolute; left:11px; bottom:0; width:46px; height:19px; display:flex; align-items:center; justify-content:center;
+          border-radius:8px 8px 12px 12px; background:linear-gradient(145deg,#f0d062,#b98e14);
+          color:#03153f; font-size:9px; font-weight:1000; letter-spacing:.08em; box-shadow:0 5px 10px rgba(3,21,63,.2);
+        }
+        .ncsPosAiMascotBubble {
+          position:absolute !important; right:64px !important; top:4px !important; min-width:72px;
+          padding:7px 9px !important; border-radius:12px 12px 3px 12px !important;
+          background:#fff !important; border:1px solid rgba(212,175,55,.7) !important;
+          box-shadow:0 8px 18px rgba(3,21,63,.16) !important;
+          animation:ncsAiAskBubble 7s ease-in-out infinite !important;
+        }
+        .ncsPosAiMascotBubble b { color:#0a2e73 !important; font-size:10px !important; }
+        .ncsPosAiMascotBubble small { color:#a17c13 !important; font-size:7px !important; }
+        @keyframes ncsAiBlink { 0%,45%,49%,100%{transform:scaleY(1)} 46%,48%{transform:scaleY(.08)} }
+        @keyframes ncsAiAskBubble { 0%,12%,48%,100%{opacity:0;transform:translateY(4px) scale(.94)} 18%,40%{opacity:1;transform:translateY(0) scale(1)} }
+
+        @media (max-width: 1100px) {
+          .ncsPosQuickSingleLine { grid-template-columns: repeat(4,minmax(0,1fr)) !important; }
+          .ncsPosQuickNameField { grid-column: span 2 !important; }
+          .ncsPosQuickDraftRow { grid-template-columns: 30px minmax(140px,1fr) 80px 60px 90px 34px; }
+          .ncsPosQuickDraftRow > span:nth-of-type(n+5) { display:none; }
         }
 
         @media (min-width: 1081px) and (max-height: 850px) {
@@ -15177,8 +16705,542 @@ if (!variantsError) {
             height: auto !important;
           }
         }
-      `}
-</style>
+
+
+        /* NCS POS final polish */
+        .ncsPosQuickDraftRow { min-height:48px !important; font-size:11px !important; font-weight:800 !important; letter-spacing:.01em; }
+        .ncsPosQuickDraftRow > b { font-size:10px !important; font-weight:1000 !important; }
+        .ncsPosQuickDraftRow > strong { font-size:12px !important; font-weight:1000 !important; color:#03153f !important; }
+        .ncsPosQuickDraftRow > span { font-size:10px !important; font-weight:850 !important; color:#334155 !important; }
+        .ncsPosQuickDraftRow > button { width:34px !important; height:32px !important; font-size:18px !important; font-weight:1000 !important; }
+
+        .ncsPosCartTableHeader,
+        .ncsPosCartItemTableRow { grid-template-columns:minmax(230px,300px) 84px 112px 138px 108px minmax(104px,1fr) 100px !important; }
+        .ncsPosRowActions { position:relative !important; inset:auto !important; display:flex !important; align-items:center !important; justify-content:flex-end !important; gap:10px !important; width:100px !important; min-width:100px !important; overflow:visible !important; }
+        .ncsPosRowActions .ncsPosOwnerCostButton,
+        .ncsPosRowActions .ncsPosRemoveItem { position:relative !important; inset:auto !important; left:auto !important; right:auto !important; top:auto !important; bottom:auto !important; transform:none !important; margin:0 !important; flex:0 0 auto !important; z-index:2 !important; }
+        .ncsPosRowActions .ncsPosOwnerCostButton { width:38px !important; min-width:38px !important; height:34px !important; border:1px solid rgba(212,175,55,.78) !important; border-radius:10px !important; background:#fffaf0 !important; color:#0a2e73 !important; font-size:16px !important; }
+        .ncsPosRowActions .ncsPosRemoveItem { width:44px !important; min-width:44px !important; height:34px !important; border:1px solid #8d1111 !important; border-radius:10px !important; background:linear-gradient(145deg,#d92f2f,#a91414) !important; color:#fff !important; font-size:19px !important; box-shadow:0 5px 12px rgba(185,28,28,.20) !important; }
+
+        .ncsPosAiPanel.collapsed { position:fixed !important; left:auto !important; right:18px !important; bottom:18px !important; width:220px !important; height:142px !important; z-index:17050 !important; animation:none !important; transform:none !important; pointer-events:auto !important; }
+        .ncsPosAiMascotRunner { position:relative !important; width:220px !important; min-height:142px !important; display:block !important; overflow:visible !important; border:0 !important; background:transparent !important; box-shadow:none !important; cursor:pointer !important; }
+        .ncsPosAi3dMascot,.ncsPosAi3dHead,.ncsPosAi3dBody,.ncsPosAi3dBase { display:none !important; }
+        .ncsPosAiCoupleMascot { position:absolute; right:4px; bottom:0; width:132px; height:138px; filter:drop-shadow(0 10px 12px rgba(3,21,63,.24)); }
+        .ncsPosAiManFigure,.ncsPosAiWomanFigure { position:absolute; bottom:14px; width:58px; height:122px; }
+        .ncsPosAiManFigure { left:3px; } .ncsPosAiWomanFigure { right:3px; }
+        .ncsPosAiPersonHead { position:absolute; top:0; left:13px; width:34px; height:36px; display:block; border-radius:47% 47% 45% 45%; background:radial-gradient(circle at 34% 24%,#fff0d6 0 9%,#d99b6d 38%,#975239 100%); box-shadow:inset -5px -5px 9px rgba(70,30,18,.20),inset 3px 3px 6px rgba(255,255,255,.42); z-index:5; }
+        .ncsPosAiPersonHead::before { content:""; position:absolute; left:2px; right:2px; top:-4px; height:14px; border-radius:55% 55% 38% 38%; background:linear-gradient(145deg,#161616,#050505); }
+        .ncsPosAiPersonHead.woman::before { left:-1px; right:-1px; height:20px; border-radius:60% 60% 48% 48%; box-shadow:0 8px 0 -5px #080808; }
+        .ncsPosAiPersonHead.woman::after { content:""; position:absolute; left:16px; top:6px; width:3px; height:3px; border-radius:50%; background:#b91c1c; z-index:7; }
+        .ncsPosAiPersonHead .ncsPosAiEye { top:17px !important; width:4px !important; height:5px !important; background:#111827 !important; animation:ncsAiBlink 4.2s infinite !important; }
+        .ncsPosAiPersonHead .ncsPosAiEye.left { left:9px !important; } .ncsPosAiPersonHead .ncsPosAiEye.right { right:9px !important; }
+        .ncsPosAiPersonHead .ncsPosAiSmile { left:12px !important; top:26px !important; width:10px !important; height:4px !important; border-bottom:2px solid #7c352c !important; }
+        .ncsPosAiManShirt { position:absolute; left:7px; top:32px; width:46px; height:48px; border-radius:13px 13px 7px 7px; background:linear-gradient(145deg,#fff 0%,#f6f2e9 58%,#d8d3c8 100%); box-shadow:inset -5px -5px 8px rgba(3,21,63,.10),inset 4px 4px 8px rgba(255,255,255,.8); z-index:3; }
+        .ncsPosAiManShirt::before,.ncsPosAiManShirt::after { content:""; position:absolute; top:5px; width:10px; height:38px; border-radius:8px; background:linear-gradient(#d99b6d,#b8714e); z-index:-1; }
+        .ncsPosAiManShirt::before { left:-6px; transform:rotate(8deg); } .ncsPosAiManShirt::after { right:-6px; transform:rotate(-8deg); }
+        .ncsPosAiManPancha { position:absolute; left:8px; bottom:4px; width:44px; height:48px; border-radius:3px 3px 8px 8px; background:linear-gradient(90deg,#fffdf7 0 45%,#e2bd3e 45% 51%,#fffdf7 51% 100%); border-bottom:5px solid #d4af37; box-shadow:inset -5px 0 8px rgba(3,21,63,.07); }
+        .ncsPosAiWomanBlouse { position:absolute; left:10px; top:34px; width:40px; height:34px; border-radius:12px 12px 5px 5px; background:linear-gradient(145deg,#a4143d,#6f0b2b); box-shadow:inset 4px 4px 7px rgba(255,255,255,.12); z-index:3; }
+        .ncsPosAiWomanSaree { position:absolute; left:4px; bottom:3px; width:52px; height:69px; clip-path:polygon(25% 0,78% 0,100% 100%,0 100%); background:linear-gradient(135deg,#153f9d 0 58%,#0a2e73 58% 72%,#d4af37 72% 78%,#1550ae 78% 100%); border-bottom:5px solid #d4af37; box-shadow:inset -8px -7px 10px rgba(3,21,63,.18); z-index:2; }
+        .ncsPosAiWomanSaree::before { content:""; position:absolute; left:3px; top:6px; width:35px; height:14px; border-radius:8px; background:linear-gradient(135deg,#1d58b8,#d4af37); transform:rotate(-18deg); }
+        .ncsPosAiCoupleBase { position:absolute; left:25px; bottom:0; width:82px; height:20px; display:grid; place-items:center; border-radius:8px 8px 12px 12px; background:linear-gradient(145deg,#f3d35e,#b98e14); color:#03153f; font-size:9px; font-weight:1000; letter-spacing:.14em; box-shadow:0 5px 10px rgba(3,21,63,.18); z-index:8; }
+        .ncsPosAiMascotBubble.alwaysVisible { position:absolute !important; right:118px !important; top:28px !important; min-width:96px !important; display:block !important; opacity:1 !important; visibility:visible !important; transform:none !important; animation:none !important; padding:9px 10px !important; border:1px solid rgba(212,175,55,.88) !important; border-radius:14px 14px 4px 14px !important; background:linear-gradient(145deg,#fff,#fff9e8) !important; box-shadow:0 8px 18px rgba(3,21,63,.15) !important; text-align:left !important; }
+        .ncsPosAiMascotBubble.alwaysVisible b { display:block; color:#0a2e73 !important; font-size:11px !important; font-weight:1000 !important; }
+        .ncsPosAiMascotBubble.alwaysVisible small { display:block; margin-top:2px; color:#9b7a12 !important; font-size:8px !important; font-weight:850 !important; }
+
+        /* NCS POS 2026 final counter polish: realistic persistent AI couple + spacious actions */
+        .ncsPosAiPanel .ncsPosAiRealCoupleLauncher {
+          position: fixed !important;
+          right: 14px !important;
+          bottom: 14px !important;
+          left: auto !important;
+          top: auto !important;
+          width: 170px !important;
+          height: 220px !important;
+          min-height: 0 !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          border: 0 !important;
+          border-radius: 22px !important;
+          background: transparent !important;
+          box-shadow: none !important;
+          overflow: visible !important;
+          z-index: 19050 !important;
+          cursor: pointer !important;
+          transform: none !important;
+          animation: none !important;
+        }
+        .ncsPosAiRealCoupleImage {
+          position:absolute; right:0; bottom:0; width:154px; height:auto; display:block;
+          border-radius:22px 22px 18px 18px;
+          filter:drop-shadow(0 16px 24px rgba(3,21,63,.28));
+          pointer-events:none; user-select:none;
+        }
+        .ncsPosAiRealCouplePulse {
+          position:absolute; right:9px; bottom:9px; width:12px; height:12px; border-radius:999px;
+          background:#22c55e; border:3px solid #fff; box-shadow:0 0 0 0 rgba(34,197,94,.45);
+          animation:ncsRealAiPulse 2.2s ease-out infinite;
+        }
+        @keyframes ncsRealAiPulse { 0%{box-shadow:0 0 0 0 rgba(34,197,94,.46)} 70%{box-shadow:0 0 0 11px rgba(34,197,94,0)} 100%{box-shadow:0 0 0 0 rgba(34,197,94,0)} }
+        .ncsPosAiPanel.expanded .ncsPosAiRealCoupleLauncher { display:block !important; opacity:1 !important; visibility:visible !important; pointer-events:auto !important; }
+
+        .ncsPosBillHeader h2 {
+          display:inline-flex !important; align-items:center; justify-content:center; min-width:92px;
+          margin-top:4px !important; padding:6px 12px !important; border-radius:12px !important;
+          background:linear-gradient(135deg,#f7d75b,#d4af37) !important; color:#03153f !important;
+          border:1px solid rgba(255,255,255,.45); box-shadow:0 6px 16px rgba(212,175,55,.20);
+          font-size:16px !important; font-weight:1000 !important; line-height:1 !important;
+        }
+
+        .ncsPosCartTableHeader,
+        .ncsPosCartItemTableRow {
+          grid-template-columns:minmax(230px,280px) 78px 112px 138px 108px minmax(104px,1fr) 126px !important;
+        }
+        .ncsPosRowActions { width:126px !important; min-width:126px !important; gap:12px !important; padding-right:4px !important; }
+        .ncsPosRowActions .ncsPosOwnerCostButton { width:42px !important; min-width:42px !important; height:36px !important; }
+        .ncsPosRowActions .ncsPosRemoveItem { width:50px !important; min-width:50px !important; height:36px !important; }
+
+        .ncsPosQuickDraftRow { min-height:50px !important; }
+        .ncsPosQuickDraftRow > b { font-size:12px !important; font-weight:1000 !important; }
+        .ncsPosQuickDraftRow > strong { font-size:14px !important; font-weight:1000 !important; color:#03153f !important; }
+        .ncsPosQuickDraftRow > span { font-size:12px !important; font-weight:950 !important; color:#1e293b !important; }
+
+        /* ATM-card-like colourful rotating festival creatives */
+        .ncsPosFestivalOffer {
+          width:min(338px,calc(100vw - 28px)) !important; max-height:none !important; border-radius:18px !important;
+          border:2px solid rgba(255,255,255,.72) !important; transform:rotate(-2deg);
+          box-shadow:0 22px 55px rgba(3,21,63,.34),0 0 0 4px rgba(255,255,255,.13) inset !important;
+          overflow:hidden !important; isolation:isolate;
+        }
+        .ncsPosFestivalOffer::before {
+          content:"✦  ◆  ●  ✦  ▲  ◆  ✦" !important; position:absolute !important; inset:0 !important; width:auto !important; height:auto !important;
+          padding:18px !important; border-radius:0 !important; background:repeating-linear-gradient(120deg,transparent 0 32px,rgba(255,255,255,.08) 32px 35px) !important;
+          color:rgba(255,255,255,.42) !important; font-size:16px; letter-spacing:22px; transform:rotate(7deg) scale(1.15); z-index:0;
+        }
+        .ncsPosFestivalOffer::after {
+          content:"" !important; position:absolute !important; right:-40px !important; top:-55px !important; width:180px !important; height:180px !important;
+          border:20px solid rgba(255,255,255,.13) !important; border-radius:50% !important; background:transparent !important; z-index:0;
+        }
+        .ncsPosFestivalOfferTopline,.ncsPosFestivalOfferBody,.ncsPosFestivalOffer footer { position:relative !important; z-index:2 !important; }
+        .ncsPosFestivalOfferBody > strong { color:#fff36a !important; -webkit-text-stroke:1px rgba(3,21,63,.18); text-shadow:0 5px 18px rgba(0,0,0,.24) !important; }
+        .ncsPosFestivalOfferBody h3 { font-size:20px !important; font-weight:1000 !important; text-transform:uppercase; }
+        .ncsPosFestivalOfferClose { z-index:5 !important; background:#111827 !important; border:2px solid #fff !important; box-shadow:0 5px 12px rgba(0,0,0,.24) !important; }
+
+
+
+        /* NCS POS 2026 animated South Indian AI couple + variant columns */
+        .ncsPosCartTableHeader,
+        .ncsPosCartItemTableRow {
+          grid-template-columns:
+            minmax(220px,1.6fr) 76px 70px 90px 112px 138px 108px minmax(116px,.9fr) 126px !important;
+          column-gap:10px !important;
+        }
+        .ncsPosVariantMiniCell {
+          min-width:0; height:36px; display:flex; align-items:center; justify-content:center;
+          padding:0 8px; border:1px solid #d9e2ef; border-radius:10px;
+          background:linear-gradient(180deg,#ffffff,#f7f9fc); color:#0a2e73;
+        }
+        .ncsPosVariantMiniCell strong {
+          display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+          font-size:11px; font-weight:950; text-align:center;
+        }
+        .ncsPosItemLineTotal strong {
+          display:inline-flex !important; align-items:center; justify-content:center;
+          min-width:84px; min-height:34px; padding:6px 10px !important;
+          border-radius:10px !important; color:#fff !important;
+          background:linear-gradient(145deg,#1f9d55,#0f7a3a) !important;
+          border:1px solid rgba(255,255,255,.55) !important;
+          box-shadow:0 6px 14px rgba(15,122,58,.20) !important;
+          font-size:12px !important; font-weight:1000 !important;
+        }
+        .ncsPosItemLineTotal small { margin-top:4px !important; color:#15803d !important; font-weight:900 !important; }
+
+        .ncsPosAiRealCoupleImage { display:none !important; }
+        .ncsPosAiPanel .ncsPosAiRealCoupleLauncher {
+          width:210px !important; height:210px !important; right:14px !important; bottom:12px !important;
+          overflow:visible !important; background:transparent !important;
+        }
+        .ncsPosAiAnimatedCouple {
+          position:absolute; right:0; bottom:0; width:172px; height:198px;
+          filter:drop-shadow(0 14px 20px rgba(3,21,63,.24));
+          animation:ncsCoupleFloat 3.8s ease-in-out infinite;
+          transform-origin:50% 100%; pointer-events:none;
+        }
+        @keyframes ncsCoupleFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
+        .ncsPosAiAnimatedMan,.ncsPosAiAnimatedWoman {
+          position:absolute; bottom:24px; width:74px; height:154px;
+          animation:ncsPersonBreathe 3.2s ease-in-out infinite; transform-origin:50% 100%;
+        }
+        .ncsPosAiAnimatedMan { left:9px; }
+        .ncsPosAiAnimatedWoman { right:8px; animation-delay:.35s; }
+        @keyframes ncsPersonBreathe { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(1.018)} }
+        .ncsPosAiAnimatedHead {
+          position:absolute; left:20px; top:0; width:38px; height:43px; z-index:7;
+          border-radius:48% 48% 44% 44%;
+          background:radial-gradient(circle at 34% 24%,#ffe8cd 0 12%,#d99a6c 44%,#98543c 100%);
+          box-shadow:inset -5px -5px 8px rgba(70,30,18,.18),inset 4px 4px 7px rgba(255,255,255,.35);
+        }
+        .ncsPosAiAnimatedHead::before {
+          content:""; position:absolute; left:0; right:0; top:-5px; height:17px;
+          border-radius:58% 58% 38% 38%; background:linear-gradient(145deg,#171717,#020202);
+        }
+        .ncsPosAiAnimatedHead.woman::before { height:22px; left:-3px; right:-3px; border-radius:60% 60% 50% 50%; }
+        .ncsPosAiAnimatedHead .eye {
+          position:absolute; top:20px; width:4px; height:5px; border-radius:50%; background:#111827;
+          animation:ncsAiBlink 4.1s infinite; transform-origin:center;
+        }
+        .ncsPosAiAnimatedHead .eye.left { left:10px; } .ncsPosAiAnimatedHead .eye.right { right:10px; }
+        .ncsPosAiAnimatedHead .smile {
+          position:absolute; left:14px; top:30px; width:11px; height:5px; border-bottom:2px solid #7c352c; border-radius:50%;
+        }
+        .ncsPosAiAnimatedHead .bindi {
+          position:absolute; left:18px; top:13px; width:3px; height:3px; border-radius:50%; background:#b91c1c; z-index:8;
+        }
+        .ncsPosAiAnimatedShirt {
+          position:absolute; left:12px; top:39px; width:56px; height:58px; z-index:4; border-radius:16px 16px 8px 8px;
+          background:linear-gradient(145deg,#fff 0%,#f5f1e8 64%,#d4cec2 100%);
+          box-shadow:inset -6px -6px 9px rgba(3,21,63,.08),inset 5px 5px 9px rgba(255,255,255,.8);
+        }
+        .ncsPosAiAnimatedPancha {
+          position:absolute; left:14px; bottom:0; width:52px; height:66px; z-index:2; border-radius:4px 4px 9px 9px;
+          background:linear-gradient(90deg,#fffdf7 0 44%,#d4af37 44% 50%,#fffdf7 50% 100%);
+          border-bottom:6px solid #d4af37;
+        }
+        .ncsPosAiAnimatedBlouse {
+          position:absolute; left:14px; top:42px; width:52px; height:43px; z-index:4; border-radius:15px 15px 6px 6px;
+          background:linear-gradient(145deg,#8b143a,#5c0827);
+        }
+        .ncsPosAiAnimatedSaree {
+          position:absolute; left:6px; bottom:0; width:67px; height:96px; z-index:3;
+          clip-path:polygon(25% 0,78% 0,100% 100%,0 100%);
+          background:linear-gradient(135deg,#1f58ba 0 48%,#0a2e73 48% 66%,#d4af37 66% 72%,#1b4fa5 72% 100%);
+          border-bottom:6px solid #d4af37;
+        }
+        .ncsPosAiAnimatedSaree::before {
+          content:""; position:absolute; left:7px; top:8px; width:45px; height:17px; border-radius:10px;
+          background:linear-gradient(135deg,#2b6bd0,#d4af37); transform:rotate(-18deg);
+        }
+        .ncsPosAiAnimatedArm {
+          position:absolute; top:50px; width:12px; height:50px; border-radius:10px;
+          background:linear-gradient(#d99a6c,#b56e4e); z-index:1; transform-origin:50% 10%;
+        }
+        .ncsPosAiAnimatedMan .armLeft { left:7px; transform:rotate(8deg); }
+        .ncsPosAiAnimatedMan .armRight { right:7px; animation:ncsAiWave 2.8s ease-in-out infinite; }
+        .ncsPosAiAnimatedWoman .armLeft { left:6px; transform:rotate(8deg); }
+        .ncsPosAiAnimatedWoman .armRight { right:6px; transform:rotate(-8deg); }
+        @keyframes ncsAiWave { 0%,55%,100%{transform:rotate(-7deg)} 65%{transform:rotate(-28deg)} 75%{transform:rotate(-4deg)} 84%{transform:rotate(-24deg)} }
+        .ncsPosAiAnimatedBase {
+          position:absolute; left:19px; bottom:0; width:134px; height:27px; display:grid; place-items:center; z-index:12;
+          border-radius:10px 10px 14px 14px; background:linear-gradient(145deg,#f5d65b,#b88b10);
+          color:#03153f; font-size:10px; font-weight:1000; letter-spacing:.12em; box-shadow:0 6px 14px rgba(3,21,63,.18);
+        }
+        .ncsPosAiPanel .ncsPosAiMascotBubble.alwaysVisible {
+          right:126px !important; top:48px !important; min-width:108px !important; z-index:20 !important;
+          animation:ncsAiAskBubble 5.2s ease-in-out infinite !important;
+        }
+        .ncsPosAiRealCouplePulse { right:10px !important; bottom:12px !important; z-index:25 !important; }
+
+        @media (max-width: 1200px) {
+          .ncsPosCartTableHeader, .ncsPosCartItemTableRow {
+            grid-template-columns:minmax(210px,1.45fr) 72px 62px 78px 106px 128px 100px minmax(110px,.85fr) 118px !important;
+            column-gap:8px !important;
+          }
+        }
+
+        @media (max-width: 900px) {
+          .ncsPosAiPanel .ncsPosAiRealCoupleLauncher { width:124px !important; height:168px !important; right:8px !important; bottom:8px !important; }
+          .ncsPosAiRealCoupleImage { width:116px !important; }
+        }
+
+
+        /* NCS POS 2026 usability pass: compact total action + persistent funny AI couple */
+        .ncsPosTotalLine {
+          display:grid !important;
+          grid-template-columns:minmax(220px,1fr) auto minmax(240px,320px) !important;
+          align-items:center !important;
+          gap:14px !important;
+          padding:10px 12px !important;
+        }
+        .ncsPosTotalLine > strong {
+          min-width:150px !important;
+          padding:8px 14px !important;
+          border-radius:12px !important;
+          background:linear-gradient(145deg,#ef4444,#b91c1c) !important;
+          color:#fff !important;
+          box-shadow:0 8px 18px rgba(185,28,28,.22) !important;
+          text-align:center !important;
+        }
+        .ncsPosCompleteButtonInline {
+          width:100% !important;
+          min-height:48px !important;
+          margin:0 !important;
+          padding:6px 10px !important;
+          border-radius:12px !important;
+          box-shadow:0 9px 20px rgba(10,46,115,.18) !important;
+        }
+        .ncsPosCompleteButtonInline > span { width:30px !important; height:30px !important; border-radius:9px !important; }
+        .ncsPosCompleteButtonInline strong { font-size:11px !important; }
+        .ncsPosCompleteButtonInline small { margin-top:1px !important; font-size:9px !important; }
+        .ncsPosPaymentSection > .ncsPosCompleteButton:not(.ncsPosCompleteButtonInline) { display:none !important; }
+        .ncsPosPaymentSection { padding-bottom:10px !important; }
+
+        /* Keep Ask NCS visible at all times without covering Products / Quick Item / bill actions. */
+        .ncsPosAiPanel.collapsed,
+        .ncsPosAiPanel.expanded {
+          pointer-events:none !important;
+        }
+        .ncsPosAiPanel.collapsed {
+          position:fixed !important;
+          left:auto !important;
+          right:12px !important;
+          bottom:10px !important;
+          width:152px !important;
+          height:164px !important;
+          z-index:18000 !important;
+          overflow:visible !important;
+          animation:none !important;
+          transform:none !important;
+        }
+        .ncsPosAiPanel.expanded {
+          position:fixed !important;
+          right:166px !important;
+          bottom:14px !important;
+          width:min(560px,calc(100vw - 200px)) !important;
+          max-height:min(42vh,390px) !important;
+          z-index:17950 !important;
+          overflow:auto !important;
+          pointer-events:auto !important;
+        }
+        .ncsPosAiPanel .ncsPosAiRealCoupleLauncher {
+          position:fixed !important;
+          right:10px !important;
+          bottom:10px !important;
+          width:148px !important;
+          height:162px !important;
+          min-height:0 !important;
+          z-index:18050 !important;
+          pointer-events:auto !important;
+        }
+        .ncsPosAiAnimatedCouple {
+          right:0 !important;
+          bottom:0 !important;
+          width:132px !important;
+          height:154px !important;
+          animation:ncsFunnyCoupleBob 3.1s ease-in-out infinite !important;
+        }
+        @keyframes ncsFunnyCoupleBob {
+          0%,100%{transform:translateY(0) rotate(-.3deg)}
+          50%{transform:translateY(-4px) rotate(.7deg)}
+        }
+        .ncsPosAiAnimatedMan,.ncsPosAiAnimatedWoman {
+          bottom:22px !important;
+          width:59px !important;
+          height:118px !important;
+        }
+        .ncsPosAiAnimatedMan { left:4px !important; }
+        .ncsPosAiAnimatedWoman { right:4px !important; }
+        .ncsPosAiAnimatedHead {
+          left:13px !important;
+          width:36px !important;
+          height:39px !important;
+          border-radius:46% 46% 48% 48% !important;
+          animation:ncsFunnyHeadTilt 4.2s ease-in-out infinite !important;
+        }
+        .ncsPosAiAnimatedWoman .ncsPosAiAnimatedHead { animation-delay:.5s !important; }
+        @keyframes ncsFunnyHeadTilt {
+          0%,82%,100%{transform:rotate(0)}
+          88%{transform:rotate(-4deg)}
+          94%{transform:rotate(3deg)}
+        }
+        .ncsPosAiAnimatedMan .ncsPosAiAnimatedHead::before {
+          left:-1px !important; right:-3px !important; top:-7px !important; height:17px !important;
+          border-radius:68% 36% 54% 32% !important;
+          transform:rotate(-6deg) !important;
+          background:linear-gradient(145deg,#161616,#020202 72%) !important;
+          box-shadow:7px -2px 0 -4px #020202,12px 0 0 -7px #020202 !important;
+        }
+        .ncsPosAiAnimatedMan .ncsPosAiAnimatedHead::after {
+          content:""; position:absolute; left:12px; top:27px; width:13px; height:5px;
+          border-radius:50% 50% 65% 65%; background:#2a1712;
+          box-shadow:-5px 1px 0 -2px #2a1712,5px 1px 0 -2px #2a1712;
+          transform:rotate(-2deg); z-index:9;
+        }
+        .ncsPosAiAnimatedWoman .ncsPosAiAnimatedHead::before {
+          left:-4px !important; right:-4px !important; top:-6px !important; height:23px !important;
+          border-radius:58% 58% 44% 44% !important;
+          background:linear-gradient(145deg,#151515,#020202) !important;
+          box-shadow:18px 9px 0 -7px #050505,22px 15px 0 -8px #050505,25px 21px 0 -9px #050505 !important;
+        }
+        .ncsPosAiAnimatedWoman .ncsPosAiAnimatedHead::after {
+          content:"✿"; position:absolute; right:-8px; top:8px; color:#fff7d6;
+          font-size:10px; line-height:1; text-shadow:0 1px 2px rgba(0,0,0,.25); z-index:10;
+        }
+        .ncsPosAiAnimatedHead .funCheek {
+          position:absolute; top:25px; width:5px; height:3px; border-radius:50%; background:rgba(244,114,105,.36);
+        }
+        .ncsPosAiAnimatedHead .funCheek.left { left:5px; }
+        .ncsPosAiAnimatedHead .funCheek.right { right:5px; }
+        .ncsPosAiAnimatedHead .eye { top:18px !important; width:4px !important; height:5px !important; }
+        .ncsPosAiAnimatedHead .smile { top:29px !important; }
+        .ncsPosAiAnimatedShirt { left:8px !important; top:36px !important; width:46px !important; height:45px !important; }
+        .ncsPosAiAnimatedPancha { left:10px !important; width:42px !important; height:49px !important; }
+        .ncsPosAiAnimatedBlouse { left:10px !important; top:38px !important; width:43px !important; height:37px !important; }
+        .ncsPosAiAnimatedSaree { left:4px !important; width:54px !important; height:73px !important; }
+        .ncsPosAiAnimatedArm { top:44px !important; width:10px !important; height:39px !important; }
+        .ncsPosAiAnimatedBase {
+          left:12px !important; bottom:0 !important; width:108px !important; height:23px !important;
+          border-radius:9px 9px 12px 12px !important; font-size:9px !important;
+        }
+        .ncsPosAiPanel .ncsPosAiMascotBubble.alwaysVisible {
+          right:88px !important; top:35px !important; min-width:82px !important; padding:7px 8px !important;
+          border-radius:12px 12px 4px 12px !important; z-index:18100 !important;
+          animation:ncsAskBubblePop 5.6s ease-in-out infinite !important;
+        }
+        @keyframes ncsAskBubblePop {
+          0%,18%,78%,100%{opacity:1;transform:translateY(0) scale(1)}
+          84%{opacity:.82;transform:translateY(-3px) scale(.97)}
+        }
+        .ncsPosAiPanel .ncsPosAiMascotBubble.alwaysVisible b { font-size:10px !important; }
+        .ncsPosAiPanel .ncsPosAiMascotBubble.alwaysVisible small { font-size:7px !important; }
+        .ncsPosAiRealCouplePulse { right:4px !important; bottom:4px !important; width:10px !important; height:10px !important; }
+
+        @media (max-width: 900px) {
+          .ncsPosTotalLine { grid-template-columns:1fr auto !important; }
+          .ncsPosCompleteButtonInline { grid-column:1 / -1 !important; }
+          .ncsPosAiPanel.expanded { right:10px !important; width:calc(100vw - 20px) !important; bottom:180px !important; }
+        }
+
+
+        /* NCS 2026 compact animated sun mascot + payment-first total layout */
+        .ncsPosAiAnimatedCouple{display:none !important;}
+        .ncsPosAiSunMascot{position:absolute;right:2px;bottom:0;width:132px;height:150px;display:block;filter:drop-shadow(0 12px 14px rgba(3,21,63,.24));animation:ncsSunFloat 3.6s ease-in-out infinite;}
+        @keyframes ncsSunFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+        .ncsPosAiSunRays{position:absolute;left:33px;top:0;width:66px;height:66px;z-index:1;animation:ncsSunSpin 18s linear infinite;}
+        @keyframes ncsSunSpin{to{transform:rotate(360deg)}}
+        .ncsPosAiSunRays i{--ray:0;position:absolute;left:29px;top:-8px;width:9px;height:18px;border-radius:70% 70% 30% 30%;background:linear-gradient(180deg,#ffd84f,#ef9b20);transform-origin:4.5px 41px;transform:rotate(calc(var(--ray) * 30deg));box-shadow:inset 0 1px 2px rgba(255,255,255,.55);}
+        .ncsPosAiSunFace{position:absolute;left:35px;top:13px;width:62px;height:62px;border-radius:50%;background:radial-gradient(circle at 35% 25%,#fff7d4 0 12%,#ffc95b 45%,#ed8f25 100%);border:4px solid #fff3bd;box-shadow:inset -6px -7px 10px rgba(172,80,14,.18),inset 5px 5px 7px rgba(255,255,255,.48);z-index:3;}
+        .ncsPosAiSunFace .eye{position:absolute;top:24px;width:8px;height:12px;border-radius:50%;background:#24130d;animation:ncsSunBlink 4.5s infinite;}
+        .ncsPosAiSunFace .eye.left{left:15px}.ncsPosAiSunFace .eye.right{right:15px}
+        @keyframes ncsSunBlink{0%,44%,48%,100%{transform:scaleY(1)}46%{transform:scaleY(.08)}}
+        .ncsPosAiSunFace .brow{position:absolute;top:15px;width:13px;height:5px;border-top:3px solid #3a2118;border-radius:50%;}.ncsPosAiSunFace .brow.left{left:11px;transform:rotate(-7deg)}.ncsPosAiSunFace .brow.right{right:11px;transform:rotate(7deg)}
+        .ncsPosAiSunFace .nose{position:absolute;left:29px;top:33px;width:4px;height:7px;border-radius:50%;background:rgba(147,73,22,.38)}
+        .ncsPosAiSunFace .smile{position:absolute;left:18px;top:41px;width:26px;height:13px;border-bottom:5px solid #7c2d12;border-radius:0 0 50% 50%;}
+        .ncsPosAiSunBody{position:absolute;left:39px;top:72px;width:54px;height:49px;border-radius:18px 18px 12px 12px;background:linear-gradient(145deg,#fff6e6,#f5e2b8);border:2px solid #e4b84b;z-index:2;display:grid;place-items:center;color:#0a2e73;line-height:1;}
+        .ncsPosAiSunBody b{font-size:17px;font-weight:1000}.ncsPosAiSunBody small{font-size:9px;font-weight:1000;color:#d29d19;margin-top:-12px}
+        .ncsPosAiSunScarf{position:absolute;left:79px;top:75px;width:43px;height:12px;border-radius:0 10px 10px 0;background:linear-gradient(90deg,#ff7a1a 0 33%,#fff 33% 66%,#19a35a 66%);transform:rotate(10deg);z-index:1;animation:ncsScarfWave 2.2s ease-in-out infinite;}
+        @keyframes ncsScarfWave{0%,100%{transform:rotate(8deg) translateX(0)}50%{transform:rotate(14deg) translateX(2px)}}
+        .ncsPosAiSunArm{position:absolute;top:78px;width:12px;height:45px;border-radius:10px;background:linear-gradient(#e7a464,#b96936);z-index:1}.ncsPosAiSunArm.wave{left:24px;transform-origin:50% 85%;animation:ncsSunWave 1.8s ease-in-out infinite}.ncsPosAiSunArm.side{right:25px;transform:rotate(-8deg)}
+        @keyframes ncsSunWave{0%,100%{transform:rotate(25deg)}50%{transform:rotate(58deg)}}
+        .ncsPosAiSunLeg{position:absolute;bottom:8px;width:18px;height:35px;border-radius:5px 5px 10px 10px;background:linear-gradient(#d84435,#a91f24);z-index:1}.ncsPosAiSunLeg.left{left:43px}.ncsPosAiSunLeg.right{right:43px}.ncsPosAiSunLeg::after{content:"";position:absolute;bottom:-5px;left:-3px;width:24px;height:9px;border-radius:9px;background:#6b341f}
+        .ncsPosAiPanel .ncsPosAiMascotBubble.alwaysVisible{right:96px !important;top:43px !important;min-width:86px !important;z-index:18100 !important;}
+        .ncsPosPaymentSection{display:flex !important;flex-direction:column !important;}
+        .ncsPosPaymentGrid{order:1 !important;}
+        .ncsPosTotalLine{order:2 !important;margin-top:10px !important;}
+        .ncsPosCreditPanel{order:3 !important;}
+
+
+        /* NCS 2026 premium Ask NCS AI launcher — mascot removed */
+        .ncsPosAiPanel .ncsPosAiMascotRunner.ncsPosAiRealCoupleLauncher {
+          position: fixed !important;
+          right: 22px !important;
+          bottom: 22px !important;
+          width: auto !important;
+          height: auto !important;
+          min-width: 178px !important;
+          padding: 0 !important;
+          border: 0 !important;
+          border-radius: 18px !important;
+          background: transparent !important;
+          box-shadow: none !important;
+          overflow: visible !important;
+          z-index: 18050 !important;
+          transform: none !important;
+          animation: none !important;
+        }
+        .ncsPosAiSunMascot,
+        .ncsPosAiAnimatedCouple,
+        .ncsPosAiRealCouplePulse,
+        .ncsPosAiMascotBubble { display:none !important; }
+        .ncsPosPremiumAiButton {
+          position: relative;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-width: 178px;
+          min-height: 58px;
+          padding: 9px 12px 9px 10px;
+          border: 1px solid rgba(212,175,55,.96);
+          border-radius: 18px;
+          background:
+            linear-gradient(115deg, rgba(255,255,255,.12), transparent 32%),
+            linear-gradient(135deg, #03153f 0%, #0a2e73 55%, #164ca8 100%);
+          box-shadow: 0 14px 34px rgba(3,21,63,.26), inset 0 1px 0 rgba(255,255,255,.16);
+          color: #fff;
+          overflow: hidden;
+          isolation: isolate;
+        }
+        .ncsPosPremiumAiButton::before {
+          content: "";
+          position: absolute;
+          top: -45%;
+          left: -35%;
+          width: 38%;
+          height: 190%;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,.34), transparent);
+          transform: rotate(18deg);
+          animation: ncsPremiumAiShine 4.2s ease-in-out infinite;
+          z-index: -1;
+        }
+        .ncsPosPremiumAiSpark {
+          width: 38px;
+          height: 38px;
+          border-radius: 12px;
+          display: grid;
+          place-items: center;
+          flex: 0 0 auto;
+          color: #03153f;
+          font-size: 20px;
+          font-weight: 1000;
+          background: linear-gradient(145deg,#ffe885,#d4af37 62%,#b88a0d);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.72), 0 5px 12px rgba(0,0,0,.15);
+        }
+        .ncsPosPremiumAiCopy {
+          display:flex;
+          flex-direction:column;
+          align-items:flex-start;
+          line-height:1.05;
+          white-space:nowrap;
+        }
+        .ncsPosPremiumAiCopy b { font-size:14px; font-weight:1000; letter-spacing:.2px; }
+        .ncsPosPremiumAiCopy small { margin-top:4px; font-size:9px; font-weight:800; color:#f8df8a; letter-spacing:.45px; text-transform:uppercase; }
+        .ncsPosPremiumAiArrow {
+          margin-left:auto;
+          font-size:24px;
+          font-weight:700;
+          color:#f6d75f;
+          transition:transform .18s ease;
+        }
+        .ncsPosAiMascotRunner:hover .ncsPosPremiumAiButton {
+          transform: translateY(-2px);
+          box-shadow: 0 17px 38px rgba(3,21,63,.32), inset 0 1px 0 rgba(255,255,255,.2);
+        }
+        .ncsPosAiMascotRunner:hover .ncsPosPremiumAiArrow { transform:translateX(3px); }
+        .ncsPosAiMascotRunner:focus-visible .ncsPosPremiumAiButton {
+          outline: 3px solid rgba(212,175,55,.35);
+          outline-offset: 3px;
+        }
+        @keyframes ncsPremiumAiShine {
+          0%, 66% { left:-40%; opacity:0; }
+          72% { opacity:1; }
+          92%,100% { left:125%; opacity:0; }
+        }
+        @media (max-width: 760px) {
+          .ncsPosAiPanel .ncsPosAiMascotRunner.ncsPosAiRealCoupleLauncher { right:12px !important; bottom:12px !important; min-width:154px !important; }
+          .ncsPosPremiumAiButton { min-width:154px; min-height:52px; padding:7px 10px 7px 8px; }
+          .ncsPosPremiumAiSpark { width:34px; height:34px; }
+          .ncsPosPremiumAiCopy b { font-size:12px; }
+          .ncsPosPremiumAiCopy small { font-size:8px; }
+        }
+      `}</style>
     </main>
   );
 }
