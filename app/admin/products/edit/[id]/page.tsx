@@ -247,7 +247,17 @@ export default function EditProductPage() {
     sku: string;
     barcode: string;
     stock: number;
+    reservedStock: number;
+    variantName: string;
+    mrp: string;
+    onlinePrice: string;
+    mainImage: string;
+    galleryImages: string[];
+    sellOnline: boolean;
+    onlineStockLimit: number;
   }>>([]);
+  const [uploadingVariantId, setUploadingVariantId] = useState<number | null>(null);
+  const [splittingSareeVariants, setSplittingSareeVariants] = useState(false);
 
   const [form, setForm] = useState<ProductForm>(initialForm);
   const [originalBrand, setOriginalBrand] = useState("");
@@ -378,7 +388,7 @@ export default function EditProductPage() {
 
       const { data: variants, error: variantsError } = await supabase
         .from("product_variants")
-        .select("id,size,color,sku,barcode,stock,reserved_stock,online_stock_limit,sell_online")
+        .select("id,size,color,sku,barcode,stock,reserved_stock,online_stock_limit,sell_online,variant_name,mrp,online_price,main_image,gallery_images")
         .eq("product_id", productId)
         .order("id", { ascending: true });
 
@@ -393,6 +403,14 @@ export default function EditProductPage() {
         sku: asString(variant.sku),
         barcode: asString(variant.barcode),
         stock: Math.max(0, asNumber(variant.stock) - asNumber(variant.reserved_stock)),
+        reservedStock: Math.max(0, asNumber(variant.reserved_stock)),
+        variantName: asString(variant.variant_name),
+        mrp: asNumber(variant.mrp) > 0 ? String(asNumber(variant.mrp)) : "",
+        onlinePrice: asNumber(variant.online_price) > 0 ? String(asNumber(variant.online_price)) : "",
+        mainImage: asString(variant.main_image),
+        galleryImages: asStringArray(variant.gallery_images),
+        sellOnline: variant.sell_online === true,
+        onlineStockLimit: Math.max(0, asNumber(variant.online_stock_limit)),
       }));
 
       setVariantBarcodes(cleanVariants);
@@ -599,6 +617,192 @@ export default function EditProductPage() {
     }
 
     return data.publicUrl;
+  }
+
+  function updateVariantField(
+    variantId: number,
+    field: "variantName" | "mrp" | "onlinePrice" | "mainImage" | "galleryImages" | "sellOnline" | "onlineStockLimit",
+    value: string | string[] | boolean | number,
+  ) {
+    setVariantBarcodes((current) =>
+      current.map((variant) =>
+        variant.id === variantId
+          ? ({ ...variant, [field]: value } as typeof variant)
+          : variant,
+      ),
+    );
+  }
+
+  async function uploadVariantMainImage(
+    variantId: number,
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!validateImage(file)) {
+      event.target.value = "";
+      return;
+    }
+
+    setUploadingVariantId(variantId);
+    try {
+      const url = await uploadFile(file, `variants/${variantId}/main`);
+      updateVariantField(variantId, "mainImage", url);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? `Variant image upload failed: ${error.message}` : "Variant image upload failed.");
+    } finally {
+      setUploadingVariantId(null);
+      event.target.value = "";
+    }
+  }
+
+  async function uploadVariantGalleryImages(
+    variantId: number,
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+
+    const currentVariant = variantBarcodes.find((variant) => variant.id === variantId);
+    const currentGallery = currentVariant?.galleryImages || [];
+    if (currentGallery.length + files.length > 8) {
+      alert("Maximum 8 gallery images are allowed for each variant.");
+      event.target.value = "";
+      return;
+    }
+
+    const validFiles = files.filter(validateImage);
+    if (!validFiles.length) {
+      event.target.value = "";
+      return;
+    }
+
+    setUploadingVariantId(variantId);
+    try {
+      const urls = await Promise.all(
+        validFiles.map((file) => uploadFile(file, `variants/${variantId}/gallery`)),
+      );
+      updateVariantField(variantId, "galleryImages", [...currentGallery, ...urls]);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? `Variant gallery upload failed: ${error.message}` : "Variant gallery upload failed.");
+    } finally {
+      setUploadingVariantId(null);
+      event.target.value = "";
+    }
+  }
+
+  function createVariantBarcode(index: number) {
+    const productPart = String(productId || "0").replace(/\D/g, "").slice(-5) || "0";
+    const timePart = Date.now().toString().slice(-7);
+    const randomPart = Math.floor(10 + Math.random() * 89).toString();
+    return `NCS${productPart}${timePart}${index}${randomPart}`;
+  }
+
+  async function splitSareeStockPreset() {
+    if (!productId || splittingSareeVariants) return;
+
+    const split = [2, 2, 2, 3, 1];
+    const requiredTotal = split.reduce((sum, quantity) => sum + quantity, 0);
+
+    const confirmed = window.confirm(
+      "Split this 10-stock saree into 5 separate design variants as 2 + 2 + 2 + 3 + 1?\n\nExisting product will NOT be deleted. Each new design gets a separate barcode."
+    );
+    if (!confirmed) return;
+
+    setSplittingSareeVariants(true);
+    try {
+      const { data: freshVariants, error: variantsError } = await supabase
+        .from("product_variants")
+        .select("id,product_id,size,color,sku,barcode,stock,reserved_stock,online_stock_limit,sell_online,mrp")
+        .eq("product_id", productId)
+        .order("id", { ascending: true });
+
+      if (variantsError) throw variantsError;
+
+      const rows = (freshVariants || []) as Record<string, unknown>[];
+      if (rows.length > 1) {
+        throw new Error("This product already has multiple physical variants. Use the variant editor below instead of splitting again.");
+      }
+
+      const source = rows[0] || null;
+      const sourceReserved = source ? asNumber(source.reserved_stock) : 0;
+      if (sourceReserved > 0) {
+        throw new Error("This stock has reserved quantity. Complete/cancel the reservation before splitting physical variants.");
+      }
+
+      const sourcePhysicalStock = source ? asNumber(source.stock) : Number(form.stock || 0);
+      if (sourcePhysicalStock !== requiredTotal) {
+        throw new Error(`This preset needs exactly ${requiredTotal} stock, but current physical stock is ${sourcePhysicalStock}.`);
+      }
+
+      const baseMrp = source ? asNumber(source.mrp) || Number(form.mrp || 0) : Number(form.mrp || 0);
+      const baseSellOnline = source ? source.sell_online === true : form.sellOnline;
+      const baseOnlineTotal = source ? asNumber(source.online_stock_limit) : Number(form.onlineStockLimit || 0);
+      const firstBarcode = source ? asString(source.barcode) : form.barcode.trim();
+      const firstSku = source ? asString(source.sku) : form.sku.trim();
+      const baseSize = source ? asString(source.size) : "Free Size";
+      const baseColor = source ? asString(source.color) : "";
+
+      if (source) {
+        const { error: updateError } = await supabase
+          .from("product_variants")
+          .update({
+            stock: split[0],
+            reserved_stock: 0,
+            variant_name: "Design 1",
+            online_stock_limit: baseSellOnline ? Math.min(split[0], baseOnlineTotal || split[0]) : 0,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", asNumber(source.id));
+        if (updateError) throw updateError;
+      }
+
+      const startIndex = source ? 1 : 0;
+      const newRows = split.slice(startIndex).map((quantity, offset) => {
+        const designIndex = startIndex + offset + 1;
+        return {
+          product_id: Number(productId),
+          size: baseSize || "Free Size",
+          color: baseColor || null,
+          sku: designIndex === 1 && firstSku ? firstSku : `NCS-${productId}-D${designIndex}`,
+          barcode: designIndex === 1 && firstBarcode ? firstBarcode : createVariantBarcode(designIndex),
+          stock: quantity,
+          reserved_stock: 0,
+          mrp: baseMrp,
+          low_stock_limit: getOptionalNumber(form.lowStockLimit, 5),
+          sell_online: baseSellOnline,
+          online_stock_limit: baseSellOnline ? quantity : 0,
+          variant_name: `Design ${designIndex}`,
+          online_price: null,
+          main_image: null,
+          gallery_images: [],
+          updated_at: new Date().toISOString(),
+        };
+      });
+
+      if (newRows.length > 0) {
+        const { error: insertError } = await supabase
+          .from("product_variants")
+          .insert(newRows);
+        if (insertError) throw insertError;
+      }
+
+      const { error: parentError } = await supabase
+        .from("products")
+        .update({ stock: requiredTotal, updated_at: new Date().toISOString() })
+        .eq("id", productId);
+      if (parentError) throw parentError;
+
+      await loadProduct();
+      alert("Saree stock split successfully: 2 + 2 + 2 + 3 + 1. Now add each design photo and online price below, then Save Product.");
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? `Unable to split saree stock: ${error.message}` : "Unable to split saree stock.");
+    } finally {
+      setSplittingSareeVariants(false);
+    }
   }
 
   async function uploadMainImage(
@@ -1237,31 +1441,34 @@ export default function EditProductPage() {
       if (error) throw error;
 
       if (variantBarcodes.length > 0) {
-        const variantIds = variantBarcodes.map((variant) => variant.id);
-
-        const { error: variantUpdateError } = await supabase
-          .from("product_variants")
-          .update({
-            mrp: getOptionalNumber(form.mrp, 0),
-            low_stock_limit: getOptionalNumber(form.lowStockLimit, 5),
-            sell_online: form.sellOnline,
-          })
-          .in("id", variantIds);
-
-        if (variantUpdateError) throw variantUpdateError;
-
         for (const variant of variantBarcodes) {
-          const { error: variantOnlineError } = await supabase
+          const effectiveVariantSellOnline = form.sellOnline && variant.sellOnline;
+          const variantMrp = getOptionalNumber(variant.mrp, getOptionalNumber(form.mrp, 0));
+          const variantOnlinePrice = getOptionalNumber(variant.onlinePrice, 0);
+          const safeOnlineQuantity = effectiveVariantSellOnline
+            ? Math.min(Math.max(0, Number(variant.onlineStockLimit || 0)), Math.max(0, variant.stock))
+            : 0;
+
+          if (variantOnlinePrice > 0 && variantMrp > 0 && variantOnlinePrice > variantMrp) {
+            throw new Error(`${variant.variantName || variant.size || "Variant"}: online price cannot be greater than MRP.`);
+          }
+
+          const { error: variantUpdateError } = await supabase
             .from("product_variants")
             .update({
-              online_stock_limit: form.sellOnline
-                ? Math.max(0, variant.stock)
-                : 0,
-              sell_online: form.sellOnline,
+              variant_name: variant.variantName.trim() || null,
+              mrp: variantMrp,
+              online_price: variantOnlinePrice > 0 ? variantOnlinePrice : null,
+              main_image: variant.mainImage || null,
+              gallery_images: variant.galleryImages,
+              low_stock_limit: getOptionalNumber(form.lowStockLimit, 5),
+              online_stock_limit: safeOnlineQuantity,
+              sell_online: effectiveVariantSellOnline,
+              updated_at: new Date().toISOString(),
             })
             .eq("id", variant.id);
 
-          if (variantOnlineError) throw variantOnlineError;
+          if (variantUpdateError) throw variantUpdateError;
         }
       } else {
         const { error: onlineStockError } = await supabase.rpc(
@@ -1770,17 +1977,135 @@ export default function EditProductPage() {
                   🔒 Barcode, SKU and physical stock are locked. They continue to sync from Purchase Stock and POS.
                 </div>
 
+                <div style={{ marginTop: 14, padding: 14, border: "1px solid #eadca8", borderRadius: 14, background: "#fffdf5" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div>
+                      <strong style={{ display: "block", color: "#0A2E73" }}>Saree Design Split</strong>
+                      <small style={{ color: "#667085" }}>For this 10-stock saree, create 5 physical design variants: 2 + 2 + 2 + 3 + 1. Existing product is preserved.</small>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={splitSareeStockPreset}
+                      disabled={splittingSareeVariants || totalVariantStock !== 10 || variantBarcodes.length > 1}
+                      style={{ minHeight: 40, padding: "0 14px", border: 0, borderRadius: 10, background: "#0A2E73", color: "#fff", fontWeight: 850, cursor: "pointer", opacity: splittingSareeVariants || totalVariantStock !== 10 || variantBarcodes.length > 1 ? 0.55 : 1 }}
+                    >
+                      {splittingSareeVariants ? "Splitting..." : "Split 2 + 2 + 2 + 3 + 1"}
+                    </button>
+                  </div>
+                </div>
+
                 {variantBarcodes.length > 0 && (
                   <div className="variant-reference-card">
-                    <strong>Variant Barcodes</strong>
-                    <div className="variant-reference-list">
-                      {variantBarcodes.map((variant) => (
-                        <div key={variant.id}>
-                          <span>{variant.size || "Standard"}{variant.color ? ` • ${variant.color}` : ""}</span>
-                          <code>{variant.barcode || "No barcode"}</code>
-                          <small>Stock: {variant.stock}</small>
-                        </div>
-                      ))}
+                    <strong>Variant / Design Online Details</strong>
+                    <p style={{ margin: "6px 0 12px", color: "#667085", fontSize: 12 }}>
+                      Leave a variant photo/price blank to use the main product photo/price. This keeps existing same-photo different-size products working exactly as before.
+                    </p>
+                    <div style={{ display: "grid", gap: 12 }}>
+                      {variantBarcodes.map((variant, index) => {
+                        const effectiveImage = variant.mainImage || form.mainImage;
+                        return (
+                          <div key={variant.id} style={{ padding: 14, border: "1px solid #e4e7ec", borderRadius: 14, background: "#fff" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                              <div>
+                                <strong style={{ color: "#0A2E73" }}>{variant.variantName || `Variant ${index + 1}`}</strong>
+                                <div style={{ marginTop: 4, fontSize: 12, color: "#475467" }}>
+                                  {[variant.size || "Standard", variant.color].filter(Boolean).join(" • ")} • Stock {variant.stock}
+                                </div>
+                                <code style={{ display: "inline-block", marginTop: 5 }}>{variant.barcode || "No barcode"}</code>
+                              </div>
+                              <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 750 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={variant.sellOnline}
+                                  disabled={!form.sellOnline}
+                                  onChange={(event) => updateVariantField(variant.id, "sellOnline", event.target.checked)}
+                                />
+                                Sell this variant online
+                              </label>
+                            </div>
+
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginTop: 12 }}>
+                              <Field label="Design / Variant Name">
+                                <input
+                                  value={variant.variantName}
+                                  onChange={(event) => updateVariantField(variant.id, "variantName", event.target.value)}
+                                  placeholder={`Design ${index + 1}`}
+                                  style={inputStyle}
+                                />
+                              </Field>
+                              <Field label="Variant MRP">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={variant.mrp}
+                                  onChange={(event) => updateVariantField(variant.id, "mrp", event.target.value)}
+                                  placeholder={form.mrp || "Use parent MRP"}
+                                  style={inputStyle}
+                                />
+                              </Field>
+                              <Field label="Online Price">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={variant.onlinePrice}
+                                  onChange={(event) => updateVariantField(variant.id, "onlinePrice", event.target.value)}
+                                  placeholder={form.price || "Use parent price"}
+                                  style={inputStyle}
+                                />
+                              </Field>
+                              <Field label="Online Quantity">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={variant.stock}
+                                  disabled={!form.sellOnline || !variant.sellOnline}
+                                  value={variant.sellOnline ? variant.onlineStockLimit : 0}
+                                  onChange={(event) => updateVariantField(variant.id, "onlineStockLimit", Math.min(variant.stock, Math.max(0, Number(event.target.value || 0))))}
+                                  style={inputStyle}
+                                />
+                              </Field>
+                            </div>
+
+                            <div style={{ display: "grid", gridTemplateColumns: "minmax(120px, 160px) 1fr", gap: 12, marginTop: 10, alignItems: "center" }}>
+                              <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 12, overflow: "hidden", border: "1px solid #e4e7ec", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                {effectiveImage ? (
+                                  <img src={effectiveImage} alt={variant.variantName || `Variant ${index + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                ) : (
+                                  <span style={{ color: "#98a2b3", fontSize: 12 }}>No image</span>
+                                )}
+                              </div>
+                              <div style={{ display: "grid", gap: 8 }}>
+                                <label style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: 40, padding: "0 12px", borderRadius: 10, border: "1px solid #d4af37", background: "#fffaf0", color: "#0A2E73", fontWeight: 800, cursor: "pointer" }}>
+                                  {uploadingVariantId === variant.id ? "Uploading..." : "Upload Separate Variant Photo"}
+                                  <input
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    hidden
+                                    disabled={uploadingVariantId === variant.id}
+                                    onChange={(event) => uploadVariantMainImage(variant.id, event)}
+                                  />
+                                </label>
+                                <label style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: 38, padding: "0 12px", borderRadius: 10, border: "1px solid #d0d5dd", background: "#fff", color: "#344054", fontWeight: 750, cursor: "pointer" }}>
+                                  Add Variant Gallery ({variant.galleryImages.length}/8)
+                                  <input
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    multiple
+                                    hidden
+                                    disabled={uploadingVariantId === variant.id}
+                                    onChange={(event) => uploadVariantGalleryImages(variant.id, event)}
+                                  />
+                                </label>
+                                {variant.mainImage && (
+                                  <button type="button" onClick={() => updateVariantField(variant.id, "mainImage", "")} style={{ minHeight: 34, border: 0, background: "transparent", color: "#b42318", fontWeight: 750, cursor: "pointer" }}>
+                                    Use Parent Photo Instead
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

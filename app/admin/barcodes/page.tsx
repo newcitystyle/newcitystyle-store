@@ -526,13 +526,13 @@ export default function BarcodesPage() {
       JsBarcode(previewSvgRef.current, previewCode, {
         format: "CODE128",
         width: previewModuleWidth,
-        height: 62,
+        height: 82,
         displayValue: true,
         font: "Arial",
         fontOptions: "bold",
-        fontSize: 14,
-        textMargin: 2,
-        margin: 1,
+        fontSize: 12,
+        textMargin: 1,
+        margin: 0,
         background: "#FFFFFF",
         lineColor: "#000000",
       });
@@ -752,18 +752,18 @@ export default function BarcodesPage() {
     // short/unique codes get thicker modules, while long codes remain compact
     // enough to fit safely inside a 49 mm TSC TE244 label.
     const moduleWidth =
-      cleanBarcode.length <= 10 ? 3 : cleanBarcode.length <= 16 ? 2.5 : 2.15;
+      cleanBarcode.length <= 10 ? 2.6 : cleanBarcode.length <= 16 ? 2.25 : 2.0;
 
     JsBarcode(svg, cleanBarcode, {
       format: "CODE128",
       width: moduleWidth,
-      height: 62,
+      height: 82,
       displayValue: true,
       font: "Arial",
       fontOptions: "bold",
-      fontSize: 14,
-      textMargin: 2,
-      margin: 1,
+      fontSize: 12,
+      textMargin: 1,
+      margin: 0,
       background: "#FFFFFF",
       lineColor: "#000000",
     });
@@ -820,11 +820,13 @@ export default function BarcodesPage() {
         gap: 0,
       },
       "tsc-te244-2up": {
-        pageWidth: 100,
-        pageHeight: 30,
-        labelWidth: 49,
+        // Exact 2 inch × 1 inch labels, two labels across.
+        // 2 in = 50.8 mm, 1 in = 25.4 mm.
+        pageWidth: 101.6,
+        pageHeight: 25.4,
+        labelWidth: 50.8,
         columns: 2,
-        gap: 2,
+        gap: 0,
       },
     };
 
@@ -974,7 +976,7 @@ export default function BarcodesPage() {
               align-items: center;
               justify-content: center;
               margin: 0;
-              padding: 0.7mm 1mm;
+              padding: 0.25mm 0.45mm;
               overflow: hidden;
               text-align: center;
               break-inside: avoid;
@@ -988,8 +990,8 @@ export default function BarcodesPage() {
             }
 
             .store {
-              margin: 0 0 0.25mm;
-              font-size: 8px;
+              margin: 0 0 0.05mm;
+              font-size: 6px;
               font-weight: 900;
               letter-spacing: 0.7px;
             }
@@ -998,7 +1000,7 @@ export default function BarcodesPage() {
               width: 100%;
               margin: 0;
               overflow: hidden;
-              font-size: 8px;
+              font-size: 7px;
               font-weight: 700;
               line-height: 1.15;
               text-overflow: ellipsis;
@@ -1006,8 +1008,8 @@ export default function BarcodesPage() {
             }
 
             .variant {
-              margin: 0.2mm 0 0;
-              padding: 0.3mm 1mm;
+              margin: 0.05mm 0 0;
+              padding: 0.15mm 0.7mm;
               border: 1px solid #000;
               border-radius: 1mm;
               font-size: 7px;
@@ -1020,15 +1022,15 @@ export default function BarcodesPage() {
               display: flex;
               align-items: center;
               justify-content: center;
-              margin-top: 0.1mm;
-              padding: 0 0.25mm;
+              margin-top: 0;
+              padding: 0 0.1mm;
               overflow: hidden;
             }
 
             .barcode svg {
-              width: calc(100% - 0.5mm);
-              max-width: 46.5mm;
-              height: ${selectedSize.pageHeight <= 25 ? 12.4 : 14.6}mm;
+              width: calc(100% - 0.2mm);
+              max-width: 50.2mm;
+              height: ${selectedSize.pageHeight <= 25.5 ? 16.4 : 18.2}mm;
               display: block;
               overflow: visible;
               shape-rendering: crispEdges;
@@ -1039,7 +1041,7 @@ export default function BarcodesPage() {
             .barcode svg text {
               fill: #000000 !important;
               font-family: Arial, Helvetica, sans-serif !important;
-              font-size: 14px !important;
+              font-size: 12px !important;
               font-weight: 900 !important;
               letter-spacing: 0.35px;
               opacity: 1 !important;
@@ -1050,9 +1052,9 @@ export default function BarcodesPage() {
               display: flex;
               align-items: center;
               justify-content: center;
-              margin-top: 0.1mm;
-              padding-bottom: 0.4mm;
-              font-size: 11px;
+              margin-top: 0;
+              padding-bottom: 0.1mm;
+              font-size: 10.5px;
               font-weight: 950;
               line-height: 1;
               white-space: nowrap;
