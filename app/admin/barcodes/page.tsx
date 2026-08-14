@@ -519,19 +519,25 @@ export default function BarcodesPage() {
     if (!previewItem?.barcode || !previewSvgRef.current) return;
 
     try {
-      JsBarcode(previewSvgRef.current, previewItem.barcode, {
+      const previewCode = previewItem.barcode.trim();
+      const previewModuleWidth =
+        previewCode.length <= 10 ? 3 : previewCode.length <= 16 ? 2.5 : 2.15;
+
+      JsBarcode(previewSvgRef.current, previewCode, {
         format: "CODE128",
-        width: 2,
-        height: 48,
+        width: previewModuleWidth,
+        height: 62,
         displayValue: true,
         font: "Arial",
         fontOptions: "bold",
-        fontSize: 13,
-        textMargin: 3,
-        margin: 4,
+        fontSize: 14,
+        textMargin: 2,
+        margin: 1,
         background: "#FFFFFF",
         lineColor: "#000000",
       });
+
+      previewSvgRef.current.setAttribute("preserveAspectRatio", "xMidYMid meet");
     } catch (error) {
       console.error("Barcode preview error:", error);
     }
@@ -740,20 +746,29 @@ export default function BarcodesPage() {
       "svg",
     );
 
-    JsBarcode(svg, barcode, {
+    const cleanBarcode = barcode.trim();
+
+    // Scanner-first rendering:
+    // short/unique codes get thicker modules, while long codes remain compact
+    // enough to fit safely inside a 49 mm TSC TE244 label.
+    const moduleWidth =
+      cleanBarcode.length <= 10 ? 3 : cleanBarcode.length <= 16 ? 2.5 : 2.15;
+
+    JsBarcode(svg, cleanBarcode, {
       format: "CODE128",
-      width: 2,
-      height: 48,
+      width: moduleWidth,
+      height: 62,
       displayValue: true,
       font: "Arial",
       fontOptions: "bold",
-      fontSize: 13,
-      textMargin: 3,
-      margin: 4,
+      fontSize: 14,
+      textMargin: 2,
+      margin: 1,
       background: "#FFFFFF",
       lineColor: "#000000",
     });
 
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
     return svg.outerHTML;
   }
 
@@ -1002,13 +1017,18 @@ export default function BarcodesPage() {
 
             .barcode {
               width: 100%;
-              margin-top: 0.15mm;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              margin-top: 0.1mm;
+              padding: 0 0.25mm;
               overflow: hidden;
             }
 
             .barcode svg {
-              width: 100%;
-              height: ${selectedSize.pageHeight <= 25 ? 10.8 : 12.3}mm;
+              width: calc(100% - 0.5mm);
+              max-width: 46.5mm;
+              height: ${selectedSize.pageHeight <= 25 ? 12.4 : 14.6}mm;
               display: block;
               overflow: visible;
               shape-rendering: crispEdges;
@@ -1019,9 +1039,9 @@ export default function BarcodesPage() {
             .barcode svg text {
               fill: #000000 !important;
               font-family: Arial, Helvetica, sans-serif !important;
-              font-size: 13px !important;
+              font-size: 14px !important;
               font-weight: 900 !important;
-              letter-spacing: 0.55px;
+              letter-spacing: 0.35px;
               opacity: 1 !important;
             }
 
