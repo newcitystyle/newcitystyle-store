@@ -1526,6 +1526,66 @@ export default function AdminDashboardPage() {
         </div>
       </section>
 
+      <section className="executivePulseStrip">
+        <div className="executivePulseLead">
+          <span>OWNER EXECUTIVE PULSE</span>
+          <strong>
+            {todayOwnerProfit.lossAlerts > 0
+              ? "Immediate margin attention"
+              : todayOwnerProfit.lowProfitAlerts > 0 ||
+                  dashboardStats.lowStockProducts > 0 ||
+                  dashboardStats.pendingOrders > 0
+                ? "Business needs follow-up"
+                : "Business is under control"}
+          </strong>
+          <small>
+            Live command summary from POS, profit, inventory and online operations.
+          </small>
+        </div>
+
+        <div className="executivePulseMetric">
+          <span>TODAY SALES</span>
+          <strong>{formatCurrency(business.todaySales)}</strong>
+          <small>{business.todayBills} transaction(s)</small>
+        </div>
+
+        <div className="executivePulseMetric profit">
+          <span>ACTUAL PROFIT</span>
+          <strong>{formatCurrency(todayOwnerProfit.actualProfit)}</strong>
+          <small>{todayOwnerProfit.margin.toFixed(1)}% tracked margin</small>
+        </div>
+
+        <div className="executivePulseMetric money">
+          <span>MONEY POSITION</span>
+          <strong>
+            {formatCurrency(
+              business.cashBalance + business.digitalBalance,
+            )}
+          </strong>
+          <small>Cash + digital estimate</small>
+        </div>
+
+        <div
+          className={`executivePulseMetric attention ${
+            todayOwnerProfit.lossAlerts > 0 ||
+            todayOwnerProfit.lowProfitAlerts > 0 ||
+            dashboardStats.lowStockProducts > 0 ||
+            dashboardStats.pendingOrders > 0
+              ? "active"
+              : ""
+          }`}
+        >
+          <span>ACTION LOAD</span>
+          <strong>
+            {todayOwnerProfit.lossAlerts +
+              todayOwnerProfit.lowProfitAlerts +
+              dashboardStats.lowStockProducts +
+              dashboardStats.pendingOrders}
+          </strong>
+          <small>Profit + stock + order alerts</small>
+        </div>
+      </section>
+
       {errorMessage && (
         <div className="message errorMessage">
           {errorMessage}
@@ -2174,7 +2234,11 @@ export default function AdminDashboardPage() {
       </section>
 
       <section className="commerceGrid">
-        <article className="panel">
+        <article
+          className={`panel recentOrdersPanel ${
+            recentOrders.length === 0 ? "emptyCompact" : ""
+          }`}
+        >
           <div className="sectionHeader">
             <div>
               <span>ONLINE STORE</span>
@@ -2264,6 +2328,14 @@ export default function AdminDashboardPage() {
             ))}
           </div>
         </article>
+      </section>
+
+      <section className="executiveSectionLabel">
+        <div>
+          <span>STORE • FINANCE • ONLINE</span>
+          <h2>Executive Business Summary</h2>
+        </div>
+        <small>High-level operating position at a glance</small>
       </section>
 
       <section className="catalogueKpis">
@@ -3799,13 +3871,897 @@ export default function AdminDashboardPage() {
           }
         }
 
+
+        /* =========================================================
+           PREMIUM DASHBOARD V2 — OWNER EXECUTIVE VIEW
+           Pure presentation upgrade. Existing data/routes stay intact.
+           ========================================================= */
+
+        .dashboardPage {
+          position: relative;
+          background:
+            radial-gradient(
+              circle at 0% 0%,
+              rgba(212, 175, 55, 0.18),
+              transparent 25%
+            ),
+            radial-gradient(
+              circle at 100% 18%,
+              rgba(10, 46, 115, 0.10),
+              transparent 24%
+            ),
+            linear-gradient(
+              180deg,
+              #f7f2e7 0%,
+              #fbfaf6 42%,
+              #ffffff 100%
+            );
+        }
+
+        .dashboardPage::before {
+          content: "";
+          position: fixed;
+          inset: 0;
+          pointer-events: none;
+          opacity: 0.28;
+          background-image:
+            linear-gradient(
+              rgba(10, 46, 115, 0.028) 1px,
+              transparent 1px
+            ),
+            linear-gradient(
+              90deg,
+              rgba(10, 46, 115, 0.028) 1px,
+              transparent 1px
+            );
+          background-size: 32px 32px;
+          mask-image:
+            linear-gradient(
+              to bottom,
+              rgba(0, 0, 0, 0.55),
+              transparent 72%
+            );
+        }
+
+        .hero {
+          min-height: 190px;
+          padding: 30px 32px;
+          border-radius: 28px;
+          border: 1px solid rgba(244, 220, 129, 0.48);
+          box-shadow:
+            0 28px 70px rgba(3, 21, 63, 0.24),
+            inset 0 1px 0 rgba(255, 255, 255, 0.10);
+        }
+
+        .hero::after {
+          content: "";
+          position: absolute;
+          inset: 1px;
+          pointer-events: none;
+          border-radius: 27px;
+          border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .hero > div:not(.heroMotion) {
+          position: relative;
+          z-index: 3;
+        }
+
+        .hero h1 {
+          max-width: 780px;
+          font-size: clamp(30px, 4vw, 48px);
+          line-height: 1.04;
+          letter-spacing: -1.6px;
+        }
+
+        .hero p {
+          max-width: 780px;
+          color: rgba(255, 255, 255, 0.76);
+          font-size: 12px;
+        }
+
+        .heroActions {
+          align-self: center;
+          padding: 7px;
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          border-radius: 16px;
+          background: rgba(255, 255, 255, 0.055);
+          backdrop-filter: blur(16px);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        .heroActions button,
+        :global(.newBillButton) {
+          min-height: 42px;
+          border-radius: 11px !important;
+        }
+
+        .executivePulseStrip {
+          position: relative;
+          z-index: 4;
+          display: grid;
+          grid-template-columns:
+            minmax(260px, 1.65fr)
+            repeat(4, minmax(150px, 1fr));
+          gap: 10px;
+          margin: -20px 18px 24px;
+          padding: 10px;
+          border: 1px solid rgba(212, 175, 55, 0.34);
+          border-radius: 20px;
+          background:
+            linear-gradient(
+              145deg,
+              rgba(255, 255, 255, 0.94),
+              rgba(255, 251, 239, 0.92)
+            );
+          backdrop-filter: blur(18px);
+          box-shadow:
+            0 20px 45px rgba(3, 21, 63, 0.14),
+            inset 0 1px 0 #ffffff;
+        }
+
+        .executivePulseLead,
+        .executivePulseMetric {
+          position: relative;
+          min-width: 0;
+          min-height: 93px;
+          overflow: hidden;
+          padding: 14px 15px;
+          border-radius: 14px;
+        }
+
+        .executivePulseLead {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          border: 1px solid rgba(212, 175, 55, 0.30);
+          background:
+            radial-gradient(
+              circle at 100% 0%,
+              rgba(212, 175, 55, 0.22),
+              transparent 42%
+            ),
+            linear-gradient(
+              135deg,
+              #03153f,
+              #0a2e73
+            );
+          color: #ffffff;
+        }
+
+        .executivePulseLead span,
+        .executivePulseMetric span {
+          color: #d4af37;
+          font-size: 7px;
+          font-weight: 950;
+          letter-spacing: 1px;
+        }
+
+        .executivePulseLead strong {
+          margin-top: 6px;
+          font-size: 15px;
+          line-height: 1.25;
+        }
+
+        .executivePulseLead small {
+          margin-top: 6px;
+          color: rgba(255, 255, 255, 0.60);
+          font-size: 7px;
+          line-height: 1.45;
+        }
+
+        .executivePulseMetric {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          border: 1px solid rgba(10, 46, 115, 0.08);
+          background:
+            linear-gradient(
+              145deg,
+              rgba(255, 255, 255, 0.98),
+              rgba(248, 250, 255, 0.96)
+            );
+          box-shadow:
+            inset 0 1px 0 #ffffff,
+            0 8px 20px rgba(10, 46, 115, 0.055);
+        }
+
+        .executivePulseMetric::after {
+          content: "";
+          position: absolute;
+          right: -26px;
+          bottom: -36px;
+          width: 90px;
+          height: 90px;
+          border-radius: 50%;
+          background: rgba(10, 46, 115, 0.045);
+        }
+
+        .executivePulseMetric.profit::after {
+          background: rgba(18, 183, 106, 0.10);
+        }
+
+        .executivePulseMetric.money::after {
+          background: rgba(212, 175, 55, 0.13);
+        }
+
+        .executivePulseMetric.attention::after {
+          background: rgba(247, 144, 9, 0.10);
+        }
+
+        .executivePulseMetric.attention.active {
+          border-color: rgba(240, 68, 56, 0.22);
+          background:
+            linear-gradient(
+              145deg,
+              #fffdf9,
+              #fff7f4
+            );
+        }
+
+        .executivePulseMetric strong {
+          position: relative;
+          z-index: 2;
+          margin-top: 7px;
+          overflow: hidden;
+          color: #0a2e73;
+          font-size: 18px;
+          font-weight: 950;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .executivePulseMetric small {
+          position: relative;
+          z-index: 2;
+          margin-top: 5px;
+          color: #7b8494;
+          font-size: 6.5px;
+        }
+
+        .primaryKpis {
+          gap: 12px;
+          margin-bottom: 18px;
+        }
+
+        :global(.businessKpi) {
+          min-height: 136px !important;
+          border-radius: 20px !important;
+          box-shadow:
+            0 16px 34px rgba(3, 21, 63, 0.16) !important;
+          transition:
+            transform 0.24s ease,
+            box-shadow 0.24s ease,
+            border-color 0.24s ease;
+        }
+
+        :global(.businessKpi:hover) {
+          transform: translateY(-3px);
+          border-color: rgba(255, 229, 140, 0.60) !important;
+          box-shadow:
+            0 22px 44px rgba(3, 21, 63, 0.22) !important;
+        }
+
+        .todayOwnerProfitPanel {
+          padding: 22px;
+          border: 1px solid rgba(212, 175, 55, 0.42);
+          border-radius: 24px;
+          background:
+            radial-gradient(
+              circle at 0% 0%,
+              rgba(212, 175, 55, 0.16),
+              transparent 29%
+            ),
+            linear-gradient(
+              135deg,
+              #ffffff 0%,
+              #fbf8ee 60%,
+              #f7f9fe 100%
+            );
+          box-shadow:
+            0 18px 46px rgba(3, 21, 63, 0.10);
+        }
+
+        .todayProfitHeader {
+          padding-bottom: 16px;
+          border-bottom: 1px solid rgba(10, 46, 115, 0.08);
+        }
+
+        .todayProfitHeader h2 {
+          font-size: clamp(24px, 3vw, 34px);
+          letter-spacing: -0.8px;
+        }
+
+        .todayProfitGrid {
+          gap: 10px;
+          margin-top: 16px;
+        }
+
+        .todayProfitMetric {
+          min-height: 112px;
+          padding: 15px;
+          border-radius: 16px;
+          border: 1px solid rgba(10, 46, 115, 0.08);
+          background:
+            linear-gradient(
+              145deg,
+              rgba(255, 255, 255, 0.96),
+              rgba(247, 249, 253, 0.96)
+            );
+          box-shadow: 0 9px 24px rgba(10, 46, 115, 0.055);
+        }
+
+        .todayProfitMetric.heroMetric {
+          color: #ffffff;
+          border-color: rgba(212, 175, 55, 0.52);
+          background:
+            radial-gradient(
+              circle at 100% 0%,
+              rgba(212, 175, 55, 0.22),
+              transparent 44%
+            ),
+            linear-gradient(
+              135deg,
+              #03153f,
+              #0a2e73
+            );
+          box-shadow: 0 18px 38px rgba(3, 21, 63, 0.20);
+        }
+
+        .secondaryKpis {
+          gap: 10px;
+        }
+
+        :global(.miniKpi) {
+          min-height: 96px !important;
+          border-radius: 16px !important;
+          border-color: rgba(212, 175, 55, 0.30) !important;
+          box-shadow: 0 10px 26px rgba(3, 21, 63, 0.11);
+          transition:
+            transform 0.22s ease,
+            box-shadow 0.22s ease;
+        }
+
+        :global(.miniKpi:hover) {
+          transform: translateY(-2px);
+          box-shadow: 0 15px 32px rgba(3, 21, 63, 0.17);
+        }
+
+        .googleBusinessPanel,
+        .quickActionsPanel,
+        .panel {
+          border: 1px solid rgba(10, 46, 115, 0.075);
+          border-radius: 22px;
+          background:
+            linear-gradient(
+              145deg,
+              rgba(255, 255, 255, 0.98),
+              rgba(252, 250, 244, 0.98)
+            );
+          box-shadow:
+            0 14px 36px rgba(3, 21, 63, 0.075);
+        }
+
+        /* Keep Profit Intelligence as a dark executive panel.
+           The previous V2 override made the background white while
+           the original text remained white, which hid the content. */
+        .profitIntelligencePanel {
+          border: 1px solid rgba(212, 175, 55, 0.48);
+          border-radius: 22px;
+          background:
+            radial-gradient(
+              circle at 92% 0%,
+              rgba(212, 175, 55, 0.22),
+              transparent 28%
+            ),
+            linear-gradient(
+              135deg,
+              #03153f,
+              #0a2e73 68%,
+              #174da4
+            );
+          box-shadow:
+            0 18px 42px rgba(3, 21, 63, 0.18);
+          color: #ffffff;
+        }
+
+        .profitIntelligencePanel .sectionHeader h2,
+        .profitIntelligencePanel .profitHeader h2 {
+          color: #ffffff !important;
+        }
+
+        .profitIntelligencePanel .profitSubtitle {
+          color: rgba(255, 255, 255, 0.70) !important;
+        }
+
+        .profitIntelligencePanel .profitMetricCard {
+          border-color: rgba(255, 255, 255, 0.14);
+          background: rgba(255, 255, 255, 0.075);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .profitIntelligencePanel .profitMetricCard.highlight {
+          border-color: rgba(212, 175, 55, 0.56);
+          background:
+            linear-gradient(
+              145deg,
+              rgba(212, 175, 55, 0.18),
+              rgba(255, 255, 255, 0.07)
+            );
+        }
+
+        .profitIntelligencePanel .profitMetricCard span {
+          color: #f1d26a !important;
+        }
+
+        .profitIntelligencePanel .profitMetricCard strong {
+          color: #ffffff !important;
+        }
+
+        .profitIntelligencePanel .profitMetricCard small {
+          color: rgba(255, 255, 255, 0.64) !important;
+        }
+
+        .googleBusinessPanel {
+          color: #0a2e73;
+          background:
+            radial-gradient(
+              circle at 100% 0%,
+              rgba(212, 175, 55, 0.07),
+              transparent 31%
+            ),
+            linear-gradient(
+              145deg,
+              #ffffff,
+              #fbfcff
+            );
+        }
+
+        .googleBusinessPanel .sectionHeader h2 {
+          color: #0a2e73 !important;
+        }
+
+        .googleBusinessPanel .googleBusinessSubtitle {
+          color: #667085 !important;
+        }
+
+        .sectionHeader {
+          align-items: center;
+          margin-bottom: 16px;
+        }
+
+        .sectionHeader > div > span {
+          letter-spacing: 1.1px;
+        }
+
+        .sectionHeader h2 {
+          margin-top: 4px;
+          color: #0a2e73;
+          font-size: 20px;
+          letter-spacing: -0.35px;
+        }
+
+        .quickActionsPanel {
+          position: relative;
+          overflow: hidden;
+          padding: 18px;
+          border-color: rgba(212, 175, 55, 0.30);
+        }
+
+        .quickActionsPanel::before {
+          content: "";
+          position: absolute;
+          right: -80px;
+          top: -110px;
+          width: 240px;
+          height: 240px;
+          border-radius: 50%;
+          background:
+            radial-gradient(
+              circle,
+              rgba(212, 175, 55, 0.12),
+              transparent 66%
+            );
+          pointer-events: none;
+        }
+
+        .quickActionGrid {
+          grid-template-columns: repeat(7, minmax(0, 1fr));
+          gap: 8px;
+        }
+
+        :global(.quickAction) {
+          min-height: 118px !important;
+          border-radius: 16px !important;
+          border-color: rgba(212, 175, 55, 0.30) !important;
+          box-shadow:
+            0 10px 25px rgba(3, 21, 63, 0.13);
+          transition:
+            transform 0.22s ease,
+            box-shadow 0.22s ease,
+            border-color 0.22s ease !important;
+        }
+
+        :global(.quickAction:hover) {
+          transform: translateY(-4px) scale(1.01);
+          border-color: rgba(255, 229, 140, 0.72) !important;
+          box-shadow:
+            0 18px 34px rgba(3, 21, 63, 0.20);
+        }
+
+        .analyticsGrid {
+          grid-template-columns:
+            minmax(0, 1.8fr)
+            minmax(300px, 0.8fr);
+          gap: 18px;
+        }
+
+        .salesTrendPanel {
+          position: relative;
+          overflow: hidden;
+          background:
+            radial-gradient(
+              circle at 0% 0%,
+              rgba(212, 175, 55, 0.09),
+              transparent 32%
+            ),
+            linear-gradient(
+              145deg,
+              #ffffff,
+              #fafbff
+            );
+        }
+
+        .salesTrendPanel::after {
+          content: "";
+          position: absolute;
+          left: 22px;
+          right: 22px;
+          bottom: 28px;
+          height: 1px;
+          background:
+            linear-gradient(
+              90deg,
+              transparent,
+              rgba(10, 46, 115, 0.12),
+              transparent
+            );
+          pointer-events: none;
+        }
+
+        .trendChart {
+          height: 300px;
+          gap: 8px;
+          padding: 18px 12px 2px;
+          border-radius: 16px;
+          background:
+            linear-gradient(
+              180deg,
+              rgba(10, 46, 115, 0.025),
+              rgba(255, 255, 255, 0)
+            );
+        }
+
+        .trendColumn {
+          min-width: 0;
+          transition: transform 0.2s ease;
+        }
+
+        .trendColumn:hover {
+          transform: translateY(-3px);
+        }
+
+        .trendColumn:hover .trendValue {
+          color: #0a2e73;
+          transform: scale(1.04);
+        }
+
+        .trendTrack {
+          border: 1px solid rgba(10, 46, 115, 0.055);
+          background:
+            linear-gradient(
+              180deg,
+              rgba(10, 46, 115, 0.035),
+              rgba(10, 46, 115, 0.01)
+            );
+        }
+
+        .trendBar {
+          position: relative;
+          overflow: hidden;
+          background:
+            linear-gradient(
+              180deg,
+              #f5dc82 0%,
+              #d4af37 36%,
+              #0a2e73 100%
+            );
+          box-shadow:
+            0 8px 18px rgba(10, 46, 115, 0.16),
+            inset 0 1px 0 rgba(255, 255, 255, 0.45);
+        }
+
+        .trendBar::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background:
+            linear-gradient(
+              110deg,
+              transparent 25%,
+              rgba(255, 255, 255, 0.52) 45%,
+              transparent 65%
+            );
+          transform: translateX(-130%);
+          animation: premiumBarShine 3.8s ease-in-out infinite;
+        }
+
+        .alertPanel {
+          background:
+            radial-gradient(
+              circle at 100% 0%,
+              rgba(240, 68, 56, 0.07),
+              transparent 30%
+            ),
+            linear-gradient(
+              145deg,
+              #ffffff,
+              #fffaf8
+            );
+        }
+
+        .alertList {
+          gap: 9px;
+        }
+
+        :global(.alertRow) {
+          border-radius: 14px !important;
+          box-shadow: 0 7px 18px rgba(3, 21, 63, 0.045);
+          transition:
+            transform 0.2s ease,
+            box-shadow 0.2s ease !important;
+        }
+
+        :global(.alertRow:hover) {
+          transform: translateX(3px);
+          box-shadow: 0 10px 22px rgba(3, 21, 63, 0.08);
+        }
+
+        .detailGrid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          align-items: stretch;
+          gap: 14px;
+        }
+
+        .detailGrid > .panel {
+          height: 100%;
+          min-height: 310px;
+        }
+
+        .compactList {
+          height: 100%;
+          align-content: start;
+        }
+
+        .compactRow {
+          min-height: 61px;
+          border-radius: 13px;
+          border: 1px solid rgba(10, 46, 115, 0.075);
+          background:
+            linear-gradient(
+              145deg,
+              #ffffff,
+              #fbfcff
+            );
+          box-shadow: 0 5px 14px rgba(3, 21, 63, 0.035);
+          transition:
+            transform 0.18s ease,
+            border-color 0.18s ease,
+            box-shadow 0.18s ease;
+        }
+
+        .compactRow:hover {
+          transform: translateY(-1px);
+          border-color: rgba(212, 175, 55, 0.32);
+          box-shadow: 0 9px 20px rgba(3, 21, 63, 0.065);
+        }
+
+        .commerceGrid {
+          grid-template-columns:
+            minmax(0, 0.82fr)
+            minmax(0, 1.18fr);
+          align-items: stretch;
+          gap: 16px;
+        }
+
+        .recentOrdersPanel.emptyCompact {
+          min-height: 0;
+        }
+
+        .recentOrdersPanel.emptyCompact :global(.emptyState) {
+          min-height: 132px !important;
+          padding: 18px !important;
+        }
+
+        .commerceGrid > .panel:last-child {
+          background:
+            radial-gradient(
+              circle at 100% 0%,
+              rgba(212, 175, 55, 0.09),
+              transparent 31%
+            ),
+            linear-gradient(
+              145deg,
+              #ffffff,
+              #fafcff
+            );
+        }
+
+        .visitorMetrics {
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 7px;
+        }
+
+        :global(.visitorMetric) {
+          min-height: 76px;
+          display: flex !important;
+          flex-direction: column;
+          justify-content: center;
+          border: 1px solid rgba(212, 175, 55, 0.28);
+          border-radius: 14px !important;
+          box-shadow: 0 9px 22px rgba(3, 21, 63, 0.10);
+        }
+
+        .popularPages > div {
+          border-radius: 11px;
+          transition:
+            background 0.18s ease,
+            transform 0.18s ease;
+        }
+
+        .popularPages > div:hover {
+          background: rgba(212, 175, 55, 0.07);
+          transform: translateX(2px);
+        }
+
+        .executiveSectionLabel {
+          display: flex;
+          align-items: flex-end;
+          justify-content: space-between;
+          gap: 20px;
+          margin: 26px 2px 11px;
+          padding: 0 3px;
+        }
+
+        .executiveSectionLabel span {
+          color: #d4af37;
+          font-size: 7px;
+          font-weight: 950;
+          letter-spacing: 1.3px;
+        }
+
+        .executiveSectionLabel h2 {
+          margin: 3px 0 0;
+          color: #0a2e73;
+          font-size: 18px;
+          letter-spacing: -0.35px;
+        }
+
+        .executiveSectionLabel small {
+          color: #7b8494;
+          font-size: 8px;
+        }
+
+        .catalogueKpis {
+          gap: 9px;
+          padding: 10px;
+          border: 1px solid rgba(212, 175, 55, 0.20);
+          border-radius: 20px;
+          background:
+            linear-gradient(
+              145deg,
+              rgba(255, 255, 255, 0.82),
+              rgba(255, 251, 239, 0.78)
+            );
+          box-shadow: 0 13px 32px rgba(3, 21, 63, 0.055);
+        }
+
+        @keyframes premiumBarShine {
+          0%,
+          58% {
+            transform: translateX(-130%);
+          }
+
+          78%,
+          100% {
+            transform: translateX(130%);
+          }
+        }
+
+        @media (max-width: 1350px) {
+          .executivePulseStrip {
+            grid-template-columns:
+              minmax(240px, 1.6fr)
+              repeat(2, minmax(150px, 1fr));
+          }
+
+          .executivePulseLead {
+            grid-row: span 2;
+          }
+
+          .quickActionGrid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 980px) {
+          .executivePulseStrip {
+            margin: 14px 0 22px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .executivePulseLead {
+            grid-column: 1 / -1;
+            grid-row: auto;
+          }
+
+          .quickActionGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .detailGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .detailGrid > .panel {
+            min-height: 0;
+          }
+
+          .commerceGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .visitorMetrics {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+
         @media (max-width: 720px) {
           .dashboardPage {
             padding: 12px 8px 30px;
           }
 
           .hero {
+            min-height: auto;
             padding: 20px;
+            border-radius: 22px;
+          }
+
+          .hero h1 {
+            font-size: 30px;
+            letter-spacing: -1px;
+          }
+
+          .executivePulseStrip {
+            grid-template-columns: 1fr;
+            margin: 12px 0 20px;
+            padding: 8px;
+            border-radius: 16px;
+          }
+
+          .executivePulseLead {
+            grid-column: auto;
+          }
+
+          .executivePulseLead,
+          .executivePulseMetric {
+            min-height: 82px;
+          }
+
+          .executiveSectionLabel {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 5px;
           }
 
           .heroOrbTwo,

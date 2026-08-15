@@ -42,113 +42,239 @@ type AdminLayoutProps = {
   children: ReactNode;
 };
 
-const menuItems = [
-  { label: "Dashboard", href: "/admin/dashboard", icon: "🏠" },
-  { label: "Owner Control Center", href: "/admin/owner-control", icon: "🎯" },
-  { label: "Business Action Center", href: "/admin/business-action-center", icon: "🚦" },
-  { label: "Products", href: "/admin/products", icon: "🛍️" },
-  { label: "Add Product", href: "/admin/add-product", icon: "➕" },
-  { label: "Categories", href: "/admin/categories", icon: "🏷️" },
-  { label: "Collections", href: "/admin/collections", icon: "✨" },
-  { label: "Orders", href: "/admin/orders", icon: "📦" },
-  { label: "Billing / POS", href: "/admin/pos", icon: "🧾" },
-  { label: "Invoice Studio", href: "/admin/invoice-studio", icon: "🖨️" },
-  { label: "Daily Expenses", href: "/admin/expenses", icon: "💸" },
+type AdminMenuItem = {
+  label: string;
+  href: string;
+  icon: string;
+};
+
+type AdminMenuGroup = {
+  id: string;
+  label: string;
+  icon: string;
+  items: AdminMenuItem[];
+};
+
+const menuGroups: AdminMenuGroup[] = [
   {
-    label: "Cash & Bank Book",
-    href: "/admin/cash-bank-book",
-    icon: "🏦",
+    id: "overview",
+    label: "Overview",
+    icon: "◈",
+    items: [
+      { label: "Dashboard", href: "/admin/dashboard", icon: "🏠" },
+      {
+        label: "Owner Control Center",
+        href: "/admin/owner-control",
+        icon: "🎯",
+      },
+      {
+        label: "Business Action Center",
+        href: "/admin/business-action-center",
+        icon: "🚦",
+      },
+    ],
   },
   {
-    label: "Bank Cheques",
-    href: "/admin/cheque-reminders",
-    icon: "📝",
+    id: "sales",
+    label: "Sales & Billing",
+    icon: "▣",
+    items: [
+      { label: "Orders", href: "/admin/orders", icon: "📦" },
+      { label: "Billing / POS", href: "/admin/pos", icon: "🧾" },
+      {
+        label: "Invoice Studio",
+        href: "/admin/invoice-studio",
+        icon: "🖨️",
+      },
+      {
+        label: "POS Return History",
+        href: "/admin/pos-returns",
+        icon: "↩",
+      },
+      { label: "Returns", href: "/admin/returns", icon: "↩️" },
+      {
+        label: "Sales History",
+        href: "/admin/sales-history",
+        icon: "📊",
+      },
+      {
+        label: "Billing Reports",
+        href: "/admin/billing-reports",
+        icon: "📈",
+      },
+    ],
   },
   {
-    label: "Party Ledgers",
-    href: "/admin/party-ledgers",
-    icon: "📒",
+    id: "inventory",
+    label: "Inventory",
+    icon: "▦",
+    items: [
+      { label: "Products", href: "/admin/products", icon: "🛍️" },
+      {
+        label: "Add Product",
+        href: "/admin/add-product",
+        icon: "➕",
+      },
+      {
+        label: "Categories",
+        href: "/admin/categories",
+        icon: "🏷️",
+      },
+      {
+        label: "Collections",
+        href: "/admin/collections",
+        icon: "✨",
+      },
+      {
+        label: "Purchase Stock",
+        href: "/admin/purchases",
+        icon: "📥",
+      },
+      {
+        label: "Purchase History",
+        href: "/admin/purchase-history",
+        icon: "📚",
+      },
+      {
+        label: "Suppliers",
+        href: "/admin/suppliers",
+        icon: "🏭",
+      },
+      {
+        label: "Barcodes & Stock",
+        href: "/admin/barcodes",
+        icon: "▥",
+      },
+      {
+        label: "Stock Intelligence",
+        href: "/admin/stock-intelligence",
+        icon: "🧠",
+      },
+      {
+        label: "Profit Intelligence",
+        href: "/admin/profit-intelligence",
+        icon: "💹",
+      },
+      {
+        label: "Low Stock Report",
+        href: "/admin/low-stock-report",
+        icon: "⚠️",
+      },
+    ],
   },
   {
-    label: "Reconciliation",
-    href: "/admin/reconciliation",
-    icon: "✅",
-  },
-  { label: "Purchase Stock", href: "/admin/purchases", icon: "📥" },
-  {
-    label: "Purchase History",
-    href: "/admin/purchase-history",
-    icon: "📚",
-  },
-  {
-    label: "Suppliers",
-    href: "/admin/suppliers",
-    icon: "🏭",
-  },
-  {
-    label: "Barcodes & Stock",
-    href: "/admin/barcodes",
-    icon: "▥",
-  },
-  {
-    label: "Stock Intelligence",
-    href: "/admin/stock-intelligence",
-    icon: "🧠",
-  },
-  {
-    label: "Profit Intelligence",
-    href: "/admin/profit-intelligence",
-    icon: "💹",
-  },
-  {
-    label: "Low Stock Report",
-    href: "/admin/low-stock-report",
-    icon: "⚠️",
-  },
-  {
-    label: "POS Return History",
-    href: "/admin/pos-returns",
-    icon: "↩",
-  },
-  { label: "Returns", href: "/admin/returns", icon: "↩️" },
-  { label: "Customers", href: "/admin/customers", icon: "👥" },
-  { label: "Customer Retention", href: "/admin/customer-retention", icon: "💎" },
-  {
-    label: "Customer Requests",
-    href: "/admin/customer-requests",
-    icon: "🔔",
+    id: "finance",
+    label: "Finance",
+    icon: "₹",
+    items: [
+      {
+        label: "Daily Expenses",
+        href: "/admin/expenses",
+        icon: "💸",
+      },
+      {
+        label: "Cash & Bank Book",
+        href: "/admin/cash-bank-book",
+        icon: "🏦",
+      },
+      {
+        label: "Bank Cheques",
+        href: "/admin/cheque-reminders",
+        icon: "📝",
+      },
+      {
+        label: "Party Ledgers",
+        href: "/admin/party-ledgers",
+        icon: "📒",
+      },
+      {
+        label: "Reconciliation",
+        href: "/admin/reconciliation",
+        icon: "✅",
+      },
+      {
+        label: "Customer Dues",
+        href: "/admin/customer-dues",
+        icon: "💰",
+      },
+      {
+        label: "Payments",
+        href: "/admin/payments",
+        icon: "💳",
+      },
+    ],
   },
   {
-    label: "Customer Dues",
-    href: "/admin/customer-dues",
-    icon: "💰",
+    id: "customers",
+    label: "Customers",
+    icon: "◎",
+    items: [
+      {
+        label: "Customers",
+        href: "/admin/customers",
+        icon: "👥",
+      },
+      {
+        label: "Customer Retention",
+        href: "/admin/customer-retention",
+        icon: "💎",
+      },
+      {
+        label: "Customer Requests",
+        href: "/admin/customer-requests",
+        icon: "🔔",
+      },
+      { label: "Reviews", href: "/admin/reviews", icon: "⭐" },
+      { label: "Coupons", href: "/admin/coupons", icon: "🎟️" },
+    ],
   },
-  { label: "Reviews", href: "/admin/reviews", icon: "⭐" },
-  { label: "Coupons", href: "/admin/coupons", icon: "🎟️" },
-  { label: "Marketing", href: "/admin/marketing", icon: "📣" },
   {
-    label: "Digital Card Studio",
-    href: "/admin/digital-card-studio",
-    icon: "🪄",
-  },
-  { label: "Home Preview", href: "/admin/home-preview", icon: "🖥️" },
-  { label: "Branding", href: "/admin/branding", icon: "🎨" },
-  { label: "Payments", href: "/admin/payments", icon: "💳" },
-  { label: "Shipping", href: "/admin/shipping", icon: "🚚" },
-  { label: "SEO", href: "/admin/seo", icon: "🔍" },
-  { label: "Analytics", href: "/admin/analytics", icon: "📊" },
-  { label: "Sales History", href: "/admin/sales-history", icon: "📊" },
-  {
-    label: "Billing Reports",
-    href: "/admin/billing-reports",
-    icon: "📈",
-  },
-  {
-    label: "Store Details",
-    href: "/admin/store-settings",
-    icon: "⚙️",
+    id: "growth",
+    label: "Growth & Store",
+    icon: "✦",
+    items: [
+      {
+        label: "Marketing",
+        href: "/admin/marketing",
+        icon: "📣",
+      },
+      {
+        label: "Digital Card Studio",
+        href: "/admin/digital-card-studio",
+        icon: "🪄",
+      },
+      {
+        label: "Home Preview",
+        href: "/admin/home-preview",
+        icon: "🖥️",
+      },
+      {
+        label: "Branding",
+        href: "/admin/branding",
+        icon: "🎨",
+      },
+      {
+        label: "Shipping",
+        href: "/admin/shipping",
+        icon: "🚚",
+      },
+      { label: "SEO", href: "/admin/seo", icon: "🔍" },
+      {
+        label: "Analytics",
+        href: "/admin/analytics",
+        icon: "📊",
+      },
+      {
+        label: "Store Details",
+        href: "/admin/store-settings",
+        icon: "⚙️",
+      },
+    ],
   },
 ];
+
+const allMenuItems = menuGroups.flatMap((group) => group.items);
+
 
 
 
@@ -639,11 +765,143 @@ export default function AdminLayout({
   const [hasAdminAccess, setHasAdminAccess] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [menuSearch, setMenuSearch] = useState("");
+  const [openMenuGroup, setOpenMenuGroup] = useState("overview");
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [commandQuery, setCommandQuery] = useState("");
+  const [favoriteHrefs, setFavoriteHrefs] = useState<string[]>([]);
+  const [recentHrefs, setRecentHrefs] = useState<string[]>([]);
   const [adminEmail, setAdminEmail] = useState("");
   const [offlinePosAccess, setOfflinePosAccess] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
 
   const isLoginPage = pathname === "/admin/login";
+
+  const activeMenuGroup = useMemo(
+    () =>
+      menuGroups.find((group) =>
+        group.items.some((item) => {
+          if (item.href === "/admin/dashboard") {
+            return pathname === "/admin" || pathname === "/admin/dashboard";
+          }
+
+          if (item.href === "/admin/products") {
+            return pathname === "/admin/products";
+          }
+
+          return (
+            pathname === item.href ||
+            pathname.startsWith(`${item.href}/`)
+          );
+        }),
+      ) || menuGroups[0],
+    [pathname],
+  );
+
+  const normalizedMenuSearch = menuSearch.trim().toLowerCase();
+
+  const searchedMenuGroups = useMemo(() => {
+    if (!normalizedMenuSearch) return menuGroups;
+
+    return menuGroups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) =>
+          `${item.label} ${group.label}`
+            .toLowerCase()
+            .includes(normalizedMenuSearch),
+        ),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [normalizedMenuSearch]);
+
+  useEffect(() => {
+    if (!normalizedMenuSearch) {
+      setOpenMenuGroup(activeMenuGroup.id);
+    }
+  }, [activeMenuGroup.id, normalizedMenuSearch]);
+
+  useEffect(() => {
+    try {
+      const favoritesRaw = window.localStorage.getItem(
+        "ncs_admin_favorite_hrefs_v1",
+      );
+      const recentsRaw = window.localStorage.getItem(
+        "ncs_admin_recent_hrefs_v1",
+      );
+
+      if (favoritesRaw) {
+        const parsed = JSON.parse(favoritesRaw);
+        if (Array.isArray(parsed)) {
+          setFavoriteHrefs(parsed.filter((value) => typeof value === "string"));
+        }
+      }
+
+      if (recentsRaw) {
+        const parsed = JSON.parse(recentsRaw);
+        if (Array.isArray(parsed)) {
+          setRecentHrefs(parsed.filter((value) => typeof value === "string"));
+        }
+      }
+    } catch {
+      setFavoriteHrefs([]);
+      setRecentHrefs([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isLoginPage || offlinePosAccess) return;
+
+    const currentItem = allMenuItems.find((item) => isActiveRoute(item.href));
+    if (!currentItem) return;
+
+    setRecentHrefs((current) => {
+      const next = [
+        currentItem.href,
+        ...current.filter((href) => href !== currentItem.href),
+      ].slice(0, 4);
+
+      window.localStorage.setItem(
+        "ncs_admin_recent_hrefs_v1",
+        JSON.stringify(next),
+      );
+
+      return next;
+    });
+  }, [isLoginPage, offlinePosAccess, pathname]);
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setCommandOpen(false);
+        return;
+      }
+
+      const isCommandShortcut =
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === "k";
+
+      if (!isCommandShortcut) return;
+
+      event.preventDefault();
+
+      if (
+        isLoginPage ||
+        offlinePosAccess
+      ) {
+        return;
+      }
+
+      setCommandOpen(true);
+      setCommandQuery("");
+    };
+
+    window.addEventListener("keydown", handleShortcut);
+
+    return () => {
+      window.removeEventListener("keydown", handleShortcut);
+    };
+  }, [isLoginPage, offlinePosAccess]);
 
   useEffect(() => {
     if (isLoginPage) {
@@ -825,6 +1083,53 @@ export default function AdminLayout({
     }
   }
 
+  const favoriteItems = useMemo(
+    () =>
+      favoriteHrefs
+        .map((href) => allMenuItems.find((item) => item.href === href))
+        .filter((item): item is AdminMenuItem => Boolean(item))
+        .slice(0, 5),
+    [favoriteHrefs],
+  );
+
+  const recentItems = useMemo(
+    () =>
+      recentHrefs
+        .map((href) => allMenuItems.find((item) => item.href === href))
+        .filter((item): item is AdminMenuItem => Boolean(item))
+        .slice(0, 4),
+    [recentHrefs],
+  );
+
+  const commandItems = useMemo(() => {
+    const query = commandQuery.trim().toLowerCase();
+
+    if (!query) {
+      return allMenuItems.slice(0, 18);
+    }
+
+    return allMenuItems
+      .filter((item) =>
+        `${item.label} ${item.href}`.toLowerCase().includes(query),
+      )
+      .slice(0, 18);
+  }, [commandQuery]);
+
+  function toggleFavorite(href: string) {
+    setFavoriteHrefs((current) => {
+      const next = current.includes(href)
+        ? current.filter((value) => value !== href)
+        : [href, ...current].slice(0, 5);
+
+      window.localStorage.setItem(
+        "ncs_admin_favorite_hrefs_v1",
+        JSON.stringify(next),
+      );
+
+      return next;
+    });
+  }
+
   function isActiveRoute(href: string) {
     if (href === "/admin/dashboard") {
       return pathname === "/admin" || pathname === "/admin/dashboard";
@@ -953,6 +1258,75 @@ export default function AdminLayout({
         />
       )}
 
+      {commandOpen && !offlinePosAccess && (
+        <div
+          className="ncsCommandOverlay"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) {
+              setCommandOpen(false);
+            }
+          }}
+        >
+          <section
+            className="ncsCommandPalette"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Admin command palette"
+          >
+            <div className="ncsCommandHeader">
+              <div>
+                <span>NEW CITY STYLE</span>
+                <strong>Command Palette</strong>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCommandOpen(false)}
+                aria-label="Close command palette"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="ncsCommandSearchWrap">
+              <span>⌕</span>
+              <input
+                autoFocus
+                value={commandQuery}
+                onChange={(event) => setCommandQuery(event.target.value)}
+                placeholder="Type page or action..."
+              />
+              <kbd>ESC</kbd>
+            </div>
+
+            <div className="ncsCommandResults">
+              {commandItems.map((item) => (
+                <Link
+                  key={`command-${item.href}`}
+                  href={item.href}
+                  className="ncsCommandResult"
+                  onClick={() => setCommandOpen(false)}
+                >
+                  <span className="ncsCommandResultIcon">{item.icon}</span>
+                  <div>
+                    <strong>{item.label}</strong>
+                    <small>{item.href}</small>
+                  </div>
+                  <span className="ncsCommandResultArrow">↗</span>
+                </Link>
+              ))}
+
+              {commandItems.length === 0 && (
+                <div className="ncsCommandEmpty">
+                  No matching page found.
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
       <aside
         className={`ncsSidebar ${
           sidebarOpen ? "ncsSidebarOpen" : ""
@@ -986,24 +1360,251 @@ export default function AdminLayout({
           </div>
         </div>
 
-        <nav className="ncsMenu">
-          {(offlinePosAccess
-            ? menuItems.filter((item) => item.href === "/admin/pos")
-            : menuItems
-          ).map((item) => (
+        <nav className="ncsMenu" aria-label="Admin navigation">
+          {offlinePosAccess ? (
             <Link
-              key={item.href}
-              href={item.href}
+              href="/admin/pos"
               className={
-                isActiveRoute(item.href)
+                isActiveRoute("/admin/pos")
                   ? "ncsMenuItem ncsActiveMenuItem"
                   : "ncsMenuItem"
               }
+              title="Billing / POS"
             >
-              <span className="ncsMenuIcon">{item.icon}</span>
-              <span className="ncsMenuLabel">{item.label}</span>
+              <span className="ncsMenuIcon">🧾</span>
+              <span className="ncsMenuLabel">Billing / POS</span>
             </Link>
-          ))}
+          ) : sidebarCollapsed ? (
+            <div className="ncsCollapsedGroupRail">
+              {menuGroups.map((group) => {
+                const groupActive = group.id === activeMenuGroup.id;
+
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    className={
+                      groupActive
+                        ? "ncsCollapsedGroupButton ncsCollapsedGroupButtonActive"
+                        : "ncsCollapsedGroupButton"
+                    }
+                    title={group.label}
+                    aria-label={`Open ${group.label}`}
+                    onClick={() => {
+                      setSidebarCollapsed(false);
+                      setOpenMenuGroup(group.id);
+                    }}
+                  >
+                    <span>{group.icon}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <>
+              <div className="ncsMenuSearchWrap">
+                <span className="ncsMenuSearchIcon">⌕</span>
+                <input
+                  value={menuSearch}
+                  onChange={(event) => setMenuSearch(event.target.value)}
+                  className="ncsMenuSearch"
+                  placeholder="Search menu..."
+                  aria-label="Search admin menu"
+                />
+                {menuSearch && (
+                  <button
+                    type="button"
+                    className="ncsMenuSearchClear"
+                    onClick={() => setMenuSearch("")}
+                    aria-label="Clear menu search"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                className="ncsCommandTrigger"
+                onClick={() => {
+                  setCommandOpen(true);
+                  setCommandQuery("");
+                }}
+              >
+                <span>⌘</span>
+                <strong>Command Palette</strong>
+                <kbd>Ctrl K</kbd>
+              </button>
+
+              {(favoriteItems.length > 0 || recentItems.length > 0) &&
+                !normalizedMenuSearch && (
+                  <div className="ncsMenuSmartArea">
+                    {favoriteItems.length > 0 && (
+                      <div className="ncsSmartBlock">
+                        <div className="ncsSmartBlockHeader">
+                          <span>★ FAVORITES</span>
+                          <small>{favoriteItems.length}</small>
+                        </div>
+
+                        <div className="ncsSmartLinks">
+                          {favoriteItems.map((item) => (
+                            <Link
+                              key={`favorite-${item.href}`}
+                              href={item.href}
+                              className={
+                                isActiveRoute(item.href)
+                                  ? "ncsSmartLink ncsSmartLinkActive"
+                                  : "ncsSmartLink"
+                              }
+                            >
+                              <span>{item.icon}</span>
+                              <strong>{item.label}</strong>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {recentItems.length > 0 && (
+                      <div className="ncsSmartBlock">
+                        <div className="ncsSmartBlockHeader">
+                          <span>RECENT</span>
+                          <small>{recentItems.length}</small>
+                        </div>
+
+                        <div className="ncsSmartLinks">
+                          {recentItems.map((item) => (
+                            <Link
+                              key={`recent-${item.href}`}
+                              href={item.href}
+                              className="ncsSmartLink"
+                            >
+                              <span>{item.icon}</span>
+                              <strong>{item.label}</strong>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              <div className="ncsMenuGroups">
+                {searchedMenuGroups.map((group) => {
+                  const groupHasActiveItem = group.items.some((item) =>
+                    isActiveRoute(item.href),
+                  );
+
+                  const groupOpen =
+                    normalizedMenuSearch.length > 0 ||
+                    openMenuGroup === group.id;
+
+                  return (
+                    <div
+                      key={group.id}
+                      className={
+                        groupHasActiveItem
+                          ? "ncsMenuGroup ncsMenuGroupActive"
+                          : "ncsMenuGroup"
+                      }
+                    >
+                      <button
+                        type="button"
+                        className="ncsMenuGroupButton"
+                        onClick={() =>
+                          setOpenMenuGroup((current) =>
+                            current === group.id ? "" : group.id,
+                          )
+                        }
+                        aria-expanded={groupOpen}
+                      >
+                        <span className="ncsMenuGroupIcon">
+                          {group.icon}
+                        </span>
+
+                        <span className="ncsMenuGroupLabel">
+                          {group.label}
+                        </span>
+
+                        <span className="ncsMenuGroupCount">
+                          {group.items.length}
+                        </span>
+
+                        <span
+                          className={
+                            groupOpen
+                              ? "ncsMenuGroupChevron ncsMenuGroupChevronOpen"
+                              : "ncsMenuGroupChevron"
+                          }
+                        >
+                          ›
+                        </span>
+                      </button>
+
+                      <div
+                        className="ncsMenuGroupItems"
+                        style={{
+                          display: groupOpen ? "grid" : "none",
+                        }}
+                      >
+                          {group.items.map((item) => (
+                            <Link
+                              key={item.href}
+                              href={item.href}
+                              title={item.label}
+                              className={
+                                isActiveRoute(item.href)
+                                  ? "ncsMenuItem ncsActiveMenuItem"
+                                  : "ncsMenuItem"
+                              }
+                            >
+                              <span className="ncsMenuIcon">
+                                {item.icon}
+                              </span>
+                              <span className="ncsMenuLabel">
+                                {item.label}
+                              </span>
+                              <button
+                                type="button"
+                                className={
+                                  favoriteHrefs.includes(item.href)
+                                    ? "ncsFavoriteButton ncsFavoriteButtonActive"
+                                    : "ncsFavoriteButton"
+                                }
+                                aria-label={
+                                  favoriteHrefs.includes(item.href)
+                                    ? `Remove ${item.label} from favorites`
+                                    : `Add ${item.label} to favorites`
+                                }
+                                title={
+                                  favoriteHrefs.includes(item.href)
+                                    ? "Remove favorite"
+                                    : "Add favorite"
+                                }
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  toggleFavorite(item.href);
+                                }}
+                              >
+                                ★
+                              </button>
+                            </Link>
+                          ))}
+                        </div>
+                    </div>
+                  );
+                })}
+
+                {searchedMenuGroups.length === 0 && (
+                  <div className="ncsMenuEmpty">
+                    <strong>No menu found</strong>
+                    <span>Try another keyword.</span>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </nav>
 
         <div className="ncsSidebarBottom">
@@ -1417,8 +2018,7 @@ export default function AdminLayout({
           display: flex;
           flex-direction: column;
           padding: 22px 17px;
-          overflow-x: hidden;
-          overflow-y: auto;
+          overflow: visible;
           background:
             radial-gradient(
               circle at 25% 0%,
@@ -1445,8 +2045,8 @@ export default function AdminLayout({
           display: flex;
           align-items: center;
           gap: 13px;
-          min-height: 76px;
-          padding: 5px 7px 20px;
+          min-height: 68px;
+          padding: 3px 7px 14px;
           border-bottom: 1px solid rgba(255, 255, 255, 0.13);
         }
 
@@ -1492,60 +2092,687 @@ export default function AdminLayout({
         }
 
         .ncsMenu {
+          min-height: 0;
+          display: flex;
+          flex: 1;
+          flex-direction: column;
+          gap: 10px;
+          margin-top: 14px;
+        }
+
+        .ncsMenuSearchWrap {
+          position: relative;
+          flex: 0 0 auto;
+        }
+
+        .ncsMenuSearch {
+          width: 100%;
+          height: 42px;
+          padding: 0 38px 0 38px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          outline: none;
+          border-radius: 12px;
+          background:
+            linear-gradient(
+              145deg,
+              rgba(255, 255, 255, 0.10),
+              rgba(255, 255, 255, 0.055)
+            );
+          color: #ffffff;
+          font: inherit;
+          font-size: 11px;
+          font-weight: 700;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+          transition:
+            border-color 0.2s ease,
+            background 0.2s ease,
+            box-shadow 0.2s ease;
+        }
+
+        .ncsMenuSearch::placeholder {
+          color: rgba(255, 255, 255, 0.48);
+        }
+
+        .ncsMenuSearch:focus {
+          border-color: rgba(212, 175, 55, 0.72);
+          background: rgba(255, 255, 255, 0.11);
+          box-shadow:
+            0 0 0 3px rgba(212, 175, 55, 0.09),
+            inset 0 1px 0 rgba(255, 255, 255, 0.07);
+        }
+
+        .ncsMenuSearchIcon {
+          position: absolute;
+          z-index: 2;
+          left: 14px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #f1d26a;
+          font-size: 18px;
+          line-height: 1;
+          pointer-events: none;
+        }
+
+        .ncsMenuSearchClear {
+          position: absolute;
+          z-index: 2;
+          right: 8px;
+          top: 50%;
+          width: 28px;
+          height: 28px;
+          transform: translateY(-50%);
+          border: 0;
+          border-radius: 8px;
+          background: transparent;
+          color: rgba(255, 255, 255, 0.68);
+          font-size: 18px;
+          cursor: pointer;
+        }
+
+        .ncsMenuSearchClear:hover {
+          background: rgba(255, 255, 255, 0.08);
+          color: #ffffff;
+        }
+
+        .ncsMenuGroups {
+          min-height: 0;
+          max-height: calc(100vh - 365px);
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 7px;
+          overflow-x: hidden;
+          overflow-y: auto;
+          padding: 1px 2px 4px 0;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(212, 175, 55, 0.36) transparent;
+        }
+
+        .ncsMenuGroups::-webkit-scrollbar {
+          width: 4px;
+        }
+
+        .ncsMenuGroups::-webkit-scrollbar-thumb {
+          border-radius: 999px;
+          background: rgba(212, 175, 55, 0.36);
+        }
+
+        .ncsMenuGroup {
+          position: relative;
+          display: block;
+          flex: 0 0 auto;
+          width: 100%;
+          height: auto !important;
+          min-height: 47px;
+          overflow: hidden !important;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 13px;
+          background:
+            linear-gradient(
+              145deg,
+              rgba(255, 255, 255, 0.055),
+              rgba(255, 255, 255, 0.025)
+            );
+          transition:
+            border-color 0.2s ease,
+            background 0.2s ease,
+            box-shadow 0.2s ease;
+        }
+
+        .ncsMenuGroupActive {
+          margin-bottom: 2px;
+          border-color: rgba(212, 175, 55, 0.34);
+          background:
+            radial-gradient(
+              circle at 100% 0%,
+              rgba(212, 175, 55, 0.12),
+              transparent 38%
+            ),
+            rgba(255, 255, 255, 0.045);
+          box-shadow: inset 3px 0 0 rgba(212, 175, 55, 0.72);
+        }
+
+        .ncsMenuGroupButton {
+          position: relative;
+          z-index: 3;
+          flex: 0 0 auto;
+          width: 100%;
+          min-height: 47px;
           display: grid;
-          gap: 6px;
-          margin-top: 18px;
+          grid-template-columns: 30px minmax(0, 1fr) auto 18px;
+          align-items: center;
+          gap: 9px;
+          padding: 0 11px;
+          border: 0;
+          background: transparent;
+          color: #ffffff;
+          font-family: inherit;
+          cursor: pointer;
+          text-align: left;
+        }
+
+        .ncsMenuGroupButton:hover {
+          background: rgba(255, 255, 255, 0.055);
+        }
+
+        .ncsMenuGroupIcon {
+          width: 30px;
+          height: 30px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(212, 175, 55, 0.26);
+          border-radius: 9px;
+          background: rgba(212, 175, 55, 0.08);
+          color: #f1d26a;
+          font-size: 15px;
+          font-weight: 950;
+        }
+
+        .ncsMenuGroupLabel {
+          min-width: 0;
+          overflow: hidden;
+          font-size: 12px;
+          font-weight: 850;
+          letter-spacing: 0.05px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .ncsMenuGroupCount {
+          min-width: 22px;
+          height: 20px;
+          display: grid;
+          place-items: center;
+          padding: 0 6px;
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.055);
+          color: rgba(255, 255, 255, 0.57);
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        .ncsMenuGroupChevron {
+          color: rgba(255, 255, 255, 0.58);
+          font-size: 20px;
+          line-height: 1;
+          transform: rotate(0deg);
+          transition: transform 0.2s ease;
+        }
+
+        .ncsMenuGroupChevronOpen {
+          transform: rotate(90deg);
+          color: #f1d26a;
+        }
+
+        .ncsMenuGroupItems {
+          position: relative !important;
+          width: 100%;
+          height: auto !important;
+          min-height: 0;
+          grid-auto-flow: row;
+          grid-auto-rows: minmax(40px, auto);
+          gap: 4px;
+          padding: 0 7px 7px 7px;
+          overflow: hidden !important;
+          animation: ncsMenuGroupReveal 0.22s ease both;
         }
 
         .ncsMenuItem {
+          position: relative;
           width: 100%;
-          min-height: 47px;
+          min-height: 40px;
           display: flex;
+          flex: 0 0 auto;
           align-items: center;
-          gap: 12px;
-          padding: 0 14px;
+          gap: 9px;
+          padding: 0 10px;
           border: 1px solid transparent;
-          border-radius: 11px;
-          color: rgba(255, 255, 255, 0.84) !important;
-          font-size: 14px;
-          font-weight: 700;
+          border-radius: 9px;
+          color: rgba(255, 255, 255, 0.76) !important;
+          font-size: 11px;
+          font-weight: 720;
           line-height: 1;
           text-decoration: none !important;
           white-space: nowrap;
           transition:
-            transform 0.2s ease,
-            background 0.2s ease,
-            border-color 0.2s ease,
-            color 0.2s ease;
+            transform 0.18s ease,
+            background 0.18s ease,
+            border-color 0.18s ease,
+            color 0.18s ease;
         }
 
         .ncsMenuItem:hover {
-          transform: translateX(3px);
-          border-color: rgba(255, 255, 255, 0.11);
-          background: rgba(255, 255, 255, 0.08);
+          transform: translateX(2px);
+          border-color: rgba(255, 255, 255, 0.09);
+          background: rgba(255, 255, 255, 0.065);
           color: #ffffff !important;
         }
 
         .ncsActiveMenuItem {
-          border-color: rgba(255, 255, 255, 0.5);
-          background: linear-gradient(135deg, #d4af37, #f1d26a);
+          border-color: rgba(255, 255, 255, 0.38);
+          background:
+            linear-gradient(
+              135deg,
+              #d4af37,
+              #f1d26a
+            );
           color: #0a2e73 !important;
-          box-shadow: 0 10px 25px rgba(212, 175, 55, 0.23);
+          box-shadow: 0 8px 20px rgba(212, 175, 55, 0.19);
         }
 
         .ncsMenuIcon {
-          width: 27px;
+          width: 24px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           flex-shrink: 0;
-          font-size: 18px;
+          font-size: 15px;
         }
 
         .ncsMenuLabel {
           display: block;
           overflow: hidden;
           text-overflow: ellipsis;
+        }
+
+        .ncsMenuEmpty {
+          display: grid;
+          gap: 4px;
+          padding: 18px 12px;
+          border: 1px dashed rgba(255, 255, 255, 0.13);
+          border-radius: 12px;
+          color: rgba(255, 255, 255, 0.56);
+          text-align: center;
+        }
+
+        .ncsMenuEmpty strong {
+          color: #f1d26a;
+          font-size: 11px;
+        }
+
+        .ncsMenuEmpty span {
+          font-size: 9px;
+        }
+
+        .ncsCollapsedGroupRail {
+          display: grid;
+          gap: 7px;
+        }
+
+        .ncsCollapsedGroupButton {
+          width: 100%;
+          height: 48px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          border-radius: 12px;
+          background: rgba(255, 255, 255, 0.045);
+          color: #f1d26a;
+          font-size: 17px;
+          font-weight: 950;
+          cursor: pointer;
+          transition:
+            transform 0.18s ease,
+            border-color 0.18s ease,
+            background 0.18s ease;
+        }
+
+        .ncsCollapsedGroupButton:hover {
+          transform: translateY(-1px);
+          border-color: rgba(212, 175, 55, 0.48);
+          background: rgba(212, 175, 55, 0.10);
+        }
+
+        .ncsCollapsedGroupButtonActive {
+          border-color: rgba(212, 175, 55, 0.70);
+          background:
+            linear-gradient(
+              145deg,
+              rgba(212, 175, 55, 0.22),
+              rgba(212, 175, 55, 0.08)
+            );
+          box-shadow: 0 7px 18px rgba(212, 175, 55, 0.14);
+        }
+
+        @keyframes ncsMenuGroupReveal {
+          from {
+            opacity: 0;
+            transform: translateY(-5px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .ncsCommandTrigger {
+          width: 100%;
+          min-height: 36px;
+          display: grid;
+          grid-template-columns: 24px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 8px;
+          padding: 0 10px;
+          border: 1px solid rgba(212, 175, 55, 0.26);
+          border-radius: 10px;
+          background:
+            linear-gradient(
+              145deg,
+              rgba(212, 175, 55, 0.10),
+              rgba(255, 255, 255, 0.035)
+            );
+          color: #ffffff;
+          cursor: pointer;
+          text-align: left;
+        }
+
+        .ncsCommandTrigger > span {
+          color: #f1d26a;
+          font-size: 14px;
+          font-weight: 950;
+        }
+
+        .ncsCommandTrigger strong {
+          overflow: hidden;
+          font-size: 10px;
+          font-weight: 850;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .ncsCommandTrigger kbd {
+          padding: 3px 6px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 6px;
+          background: rgba(255, 255, 255, 0.06);
+          color: rgba(255, 255, 255, 0.58);
+          font-size: 7px;
+          font-family: inherit;
+          font-weight: 800;
+        }
+
+        .ncsMenuSmartArea {
+          display: grid;
+          gap: 6px;
+        }
+
+        .ncsSmartBlock {
+          padding: 7px;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 11px;
+          background: rgba(255, 255, 255, 0.035);
+        }
+
+        .ncsSmartBlockHeader {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          padding: 1px 3px 6px;
+        }
+
+        .ncsSmartBlockHeader span {
+          color: #f1d26a;
+          font-size: 7px;
+          font-weight: 950;
+          letter-spacing: 0.8px;
+        }
+
+        .ncsSmartBlockHeader small {
+          color: rgba(255, 255, 255, 0.42);
+          font-size: 7px;
+        }
+
+        .ncsSmartLinks {
+          display: flex;
+          gap: 5px;
+          overflow-x: auto;
+          scrollbar-width: none;
+        }
+
+        .ncsSmartLinks::-webkit-scrollbar {
+          display: none;
+        }
+
+        .ncsSmartLink {
+          min-width: 0;
+          max-width: 115px;
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 6px 8px;
+          border: 1px solid rgba(255, 255, 255, 0.07);
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.04);
+          color: rgba(255, 255, 255, 0.74) !important;
+          font-size: 8px;
+          text-decoration: none !important;
+          white-space: nowrap;
+        }
+
+        .ncsSmartLink strong {
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .ncsSmartLinkActive {
+          border-color: rgba(212, 175, 55, 0.44);
+          background: rgba(212, 175, 55, 0.12);
+          color: #f5dd87 !important;
+        }
+
+        .ncsFavoriteButton {
+          width: 24px;
+          height: 24px;
+          margin-left: auto;
+          flex: 0 0 auto;
+          border: 0;
+          border-radius: 7px;
+          background: transparent;
+          color: rgba(255, 255, 255, 0.18);
+          font-size: 12px;
+          cursor: pointer;
+        }
+
+        .ncsFavoriteButton:hover {
+          background: rgba(212, 175, 55, 0.10);
+          color: rgba(241, 210, 106, 0.70);
+        }
+
+        .ncsFavoriteButtonActive {
+          color: #f1d26a;
+          text-shadow: 0 0 10px rgba(212, 175, 55, 0.45);
+        }
+
+        .ncsCommandOverlay {
+          position: fixed;
+          z-index: 500;
+          inset: 0;
+          display: flex;
+          align-items: flex-start;
+          justify-content: center;
+          padding: 10vh 20px 20px;
+          background: rgba(2, 11, 36, 0.54);
+          backdrop-filter: blur(9px);
+        }
+
+        .ncsCommandPalette {
+          width: min(680px, 100%);
+          max-height: 72vh;
+          overflow: hidden;
+          border: 1px solid rgba(212, 175, 55, 0.40);
+          border-radius: 20px;
+          background:
+            radial-gradient(
+              circle at 100% 0%,
+              rgba(212, 175, 55, 0.15),
+              transparent 30%
+            ),
+            linear-gradient(
+              145deg,
+              #03153f,
+              #0a2e73
+            );
+          box-shadow: 0 35px 90px rgba(0, 0, 0, 0.38);
+          color: #ffffff;
+        }
+
+        .ncsCommandHeader {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+          padding: 16px 18px 13px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+        }
+
+        .ncsCommandHeader > div {
+          display: grid;
+          gap: 3px;
+        }
+
+        .ncsCommandHeader span {
+          color: #f1d26a;
+          font-size: 7px;
+          font-weight: 950;
+          letter-spacing: 1px;
+        }
+
+        .ncsCommandHeader strong {
+          font-size: 17px;
+        }
+
+        .ncsCommandHeader button {
+          width: 34px;
+          height: 34px;
+          border: 1px solid rgba(255, 255, 255, 0.11);
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.06);
+          color: #ffffff;
+          font-size: 20px;
+          cursor: pointer;
+        }
+
+        .ncsCommandSearchWrap {
+          display: grid;
+          grid-template-columns: 26px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 9px;
+          margin: 14px;
+          padding: 0 12px;
+          border: 1px solid rgba(212, 175, 55, 0.30);
+          border-radius: 12px;
+          background: rgba(255, 255, 255, 0.08);
+        }
+
+        .ncsCommandSearchWrap > span {
+          color: #f1d26a;
+          font-size: 18px;
+        }
+
+        .ncsCommandSearchWrap input {
+          width: 100%;
+          height: 46px;
+          border: 0;
+          outline: 0;
+          background: transparent;
+          color: #ffffff;
+          font: inherit;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .ncsCommandSearchWrap input::placeholder {
+          color: rgba(255, 255, 255, 0.44);
+        }
+
+        .ncsCommandSearchWrap kbd {
+          padding: 4px 7px;
+          border: 1px solid rgba(255, 255, 255, 0.11);
+          border-radius: 7px;
+          background: rgba(255, 255, 255, 0.05);
+          color: rgba(255, 255, 255, 0.52);
+          font-size: 7px;
+          font-family: inherit;
+          font-weight: 850;
+        }
+
+        .ncsCommandResults {
+          max-height: 50vh;
+          overflow-y: auto;
+          display: grid;
+          gap: 5px;
+          padding: 0 14px 14px;
+        }
+
+        .ncsCommandResult {
+          display: grid;
+          grid-template-columns: 40px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 10px;
+          min-height: 54px;
+          padding: 7px 10px;
+          border: 1px solid rgba(255, 255, 255, 0.07);
+          border-radius: 11px;
+          background: rgba(255, 255, 255, 0.045);
+          color: #ffffff !important;
+          text-decoration: none !important;
+          transition:
+            transform 0.18s ease,
+            border-color 0.18s ease,
+            background 0.18s ease;
+        }
+
+        .ncsCommandResult:hover {
+          transform: translateY(-1px);
+          border-color: rgba(212, 175, 55, 0.36);
+          background: rgba(212, 175, 55, 0.10);
+        }
+
+        .ncsCommandResultIcon {
+          width: 36px;
+          height: 36px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(212, 175, 55, 0.24);
+          border-radius: 10px;
+          background: rgba(212, 175, 55, 0.08);
+          font-size: 17px;
+        }
+
+        .ncsCommandResult > div {
+          min-width: 0;
+          display: grid;
+          gap: 4px;
+        }
+
+        .ncsCommandResult strong {
+          overflow: hidden;
+          font-size: 11px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .ncsCommandResult small {
+          overflow: hidden;
+          color: rgba(255, 255, 255, 0.46);
+          font-size: 7px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .ncsCommandResultArrow {
+          color: #f1d26a;
+          font-size: 15px;
+        }
+
+        .ncsCommandEmpty {
+          padding: 24px;
+          color: rgba(255, 255, 255, 0.56);
+          text-align: center;
+          font-size: 11px;
         }
 
         .ncsSidebarBottom {
@@ -1701,6 +2928,10 @@ export default function AdminLayout({
         .ncsSidebarCollapsed .ncsAdminText,
         .ncsSidebarCollapsed .ncsViewStoreButton:not(:hover) {
           display: none;
+        }
+
+        .ncsSidebarCollapsed .ncsMenu {
+          margin-top: 12px;
         }
 
         .ncsSidebarCollapsed .ncsMenuItem {
