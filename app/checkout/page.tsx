@@ -18,6 +18,9 @@ type CartItem = {
   price: number;
   quantity: number;
   size?: string | null;
+  design_unit_id?: number | null;
+  variant_id?: number | null;
+  barcode?: string | null;
 };
 
 type CheckoutDetails = {
@@ -103,7 +106,7 @@ export default function CheckoutPage() {
       let cartQuery = supabase
         .from("cart")
         .select(
-          "id,product_id,name,image,price,quantity,size"
+          "id,product_id,name,image,price,quantity,size,design_unit_id,variant_id,barcode"
         )
         .order("id", { ascending: false });
 
@@ -290,6 +293,15 @@ export default function CheckoutPage() {
     const cleanItems = cartItems.map((item) => ({
       ...item,
       size: item.size || null,
+      design_unit_id:
+        Number(item.design_unit_id || 0) > 0
+          ? Number(item.design_unit_id)
+          : null,
+      variant_id:
+        Number(item.variant_id || 0) > 0
+          ? Number(item.variant_id)
+          : null,
+      barcode: item.barcode || null,
     }));
 
     localStorage.setItem(
@@ -488,6 +500,11 @@ export default function CheckoutPage() {
                     <p>Quantity: {item.quantity}</p>
                     {item.size && (
                       <p>Size: {item.size}</p>
+                    )}
+                    {item.barcode && (
+                      <p className="trackingMeta">
+                        Item Ref: {item.barcode}
+                      </p>
                     )}
                     <strong>
                       ₹
@@ -759,6 +776,11 @@ export default function CheckoutPage() {
         .orderItem strong {
           color: #d4af37;
           font-size: 18px;
+        }
+
+        .trackingMeta {
+          opacity: 0.72;
+          font-size: 11px !important;
         }
 
         .summaryRows {

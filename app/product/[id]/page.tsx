@@ -600,6 +600,24 @@ export default function ProductPage() {
     setSelectedSize(size); setQuantity(1);
   }
 
+  function getSelectedDesignVariantForCart() {
+    if (!designMode || !selectedDesignId || !selectedSize) return null;
+
+    const variant = variantRefs.find(
+      (item) => item.size === selectedSize
+    );
+    if (!variant) return null;
+
+    const link = availableDesignVariantLinks.find(
+      (item) =>
+        item.designUnitId === selectedDesignId &&
+        item.variantId === variant.id
+    );
+    if (!link) return null;
+
+    return variant;
+  }
+
   async function addToCart(goToCart = true): Promise<boolean> {
     if (!product || addingToCart) return false;
 
@@ -638,13 +656,30 @@ export default function ProductPage() {
         return false;
       }
 
-      const { data: existingItem } = await supabase
+      const selectedCartVariant = getSelectedDesignVariantForCart();
+
+      if (designMode && !selectedCartVariant) {
+        throw new Error(
+          "The selected design and size are no longer available. Please select again."
+        );
+      }
+
+      let existingItemQuery = supabase
         .from("cart")
         .select("*")
         .eq("user_id", user.id)
         .eq("product_id", product.id)
         .eq("size", selectedSize)
-        .eq("image", selectedImage || images[0] || "")
+        .eq("image", selectedImage || images[0] || "");
+
+      if (designMode && selectedDesignId) {
+        existingItemQuery = existingItemQuery.eq(
+          "design_unit_id",
+          selectedDesignId
+        );
+      }
+
+      const { data: existingItem } = await existingItemQuery
         .limit(1)
         .maybeSingle();
 
@@ -672,6 +707,18 @@ export default function ProductPage() {
           quantity,
           size: selectedSize,
           color: null,
+          design_unit_id:
+            designMode && selectedDesignId
+              ? selectedDesignId
+              : null,
+          variant_id:
+            designMode && selectedCartVariant
+              ? selectedCartVariant.id
+              : null,
+          barcode:
+            designMode && selectedCartVariant
+              ? selectedCartVariant.barcode || null
+              : null,
         });
 
         if (error) throw error;
