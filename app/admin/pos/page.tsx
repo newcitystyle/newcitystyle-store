@@ -95,6 +95,9 @@ type PosProduct = {
   quickPurchasePrice?: number;
   quickSaveAsProduct?: boolean;
   quickRemainingStock?: number;
+  designUnitId?: number | null;
+  designName?: string;
+  designImageUrl?: string;
 };
 
 type CartItem = PosProduct & {
@@ -132,6 +135,36 @@ type PosProductGroup = {
 };
 
 type ProductViewMode = "smart" | "brands" | "all";
+
+type PosDesignChoice = {
+  mappingId: number;
+  productId: number;
+  variantId: number;
+  designUnitId: number;
+  designName: string;
+  imageUrl: string;
+  status: string;
+  sortOrder: number;
+};
+
+type PosDesignUnitRow = {
+  id: number;
+  product_id: number;
+  design_name?: string | null;
+  image_url?: string | null;
+  status?: string | null;
+  sort_order?: number | string | null;
+};
+
+type PosDesignVariantRow = {
+  id: number;
+  product_id: number;
+  design_unit_id: number;
+  variant_id: number;
+  status?: string | null;
+};
+
+const POS_DESIGN_CACHE_KEY = "ncs_pos_design_choices_v1";
 
 type QuickItemForm = {
   name: string;
@@ -1322,6 +1355,11 @@ export default function PosPage() {
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [loadError, setLoadError] = useState("");
 
+  const [designChoicesByVariant, setDesignChoicesByVariant] =
+    useState<Record<string, PosDesignChoice[]>>({});
+  const [designPickerProduct, setDesignPickerProduct] =
+    useState<PosProduct | null>(null);
+
   const [posOverview, setPosOverview] = useState<PosOverview>({
     todaySales: 0,
     todayBills: 0,
@@ -2130,6 +2168,80 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
     }
   }, []);
 
+  const loadDesignChoices = useCallback(async () => {
+    const readCachedChoices = () => {
+      try {
+        const raw = window.localStorage.getItem(POS_DESIGN_CACHE_KEY);
+        if (!raw) return {} as Record<string, PosDesignChoice[]>;
+        const parsed = JSON.parse(raw) as Record<string, PosDesignChoice[]>;
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {} as Record<string, PosDesignChoice[]>;
+      }
+    };
+
+    if (!isBrowserOnline()) {
+      setDesignChoicesByVariant(readCachedChoices());
+      return;
+    }
+
+    try {
+      const [designResponse, mappingResponse] = await Promise.all([
+        supabase
+          .from("product_design_units")
+          .select("id,product_id,design_name,image_url,status,sort_order")
+          .neq("status", "hidden")
+          .order("sort_order", { ascending: true }),
+        supabase
+          .from("product_design_unit_variants")
+          .select("id,product_id,design_unit_id,variant_id,status")
+          .eq("status", "available"),
+      ]);
+
+      if (designResponse.error) throw designResponse.error;
+      if (mappingResponse.error) throw mappingResponse.error;
+
+      const units = (designResponse.data || []) as unknown as PosDesignUnitRow[];
+      const mappings = (mappingResponse.data || []) as unknown as PosDesignVariantRow[];
+      const unitMap = new Map<number, PosDesignUnitRow>();
+      units.forEach((unit) => unitMap.set(Number(unit.id), unit));
+
+      const next: Record<string, PosDesignChoice[]> = {};
+      mappings.forEach((mapping) => {
+        const variantId = Number(mapping.variant_id);
+        const designUnitId = Number(mapping.design_unit_id);
+        const unit = unitMap.get(designUnitId);
+        if (!variantId || !designUnitId || !unit) return;
+        const key = String(variantId);
+        const choice: PosDesignChoice = {
+          mappingId: Number(mapping.id),
+          productId: Number(mapping.product_id || unit.product_id),
+          variantId,
+          designUnitId,
+          designName: unit.design_name?.trim() || `Design ${designUnitId}`,
+          imageUrl: unit.image_url?.trim() || "",
+          status: mapping.status?.trim() || "available",
+          sortOrder: Math.max(0, toNumber(unit.sort_order)),
+        };
+        next[key] = [...(next[key] || []), choice];
+      });
+
+      Object.keys(next).forEach((key) => {
+        next[key] = next[key].sort((a, b) => a.sortOrder - b.sortOrder || a.designUnitId - b.designUnitId);
+      });
+
+      setDesignChoicesByVariant(next);
+      try {
+        window.localStorage.setItem(POS_DESIGN_CACHE_KEY, JSON.stringify(next));
+      } catch (cacheError) {
+        console.info("Unable to cache POS design choices:", cacheError);
+      }
+    } catch (error) {
+      console.info("POS design choices unavailable; using last saved design cache:", error);
+      setDesignChoicesByVariant(readCachedChoices());
+    }
+  }, []);
+
   const loadProducts = useCallback(async () => {
     setLoadingProducts(true);
     setLoadError("");
@@ -2545,7 +2657,8 @@ if (!variantsError) {
 
   useEffect(() => {
     void loadProducts();
-  }, [loadProducts]);
+    void loadDesignChoices();
+  }, [loadProducts, loadDesignChoices]);
 
   useEffect(() => {
     let refreshTimer: number | null = null;
@@ -2581,6 +2694,16 @@ if (!variantsError) {
         },
         scheduleRefresh
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "product_design_units" },
+        () => void loadDesignChoices()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "product_design_unit_variants" },
+        () => void loadDesignChoices()
+      )
       .subscribe();
 
     const handleFocus = () => {
@@ -2612,7 +2735,7 @@ if (!variantsError) {
 
       void supabase.removeChannel(channel);
     };
-  }, [loadProducts]);
+  }, [loadProducts, loadDesignChoices]);
 
   const lookupCustomerRewards = useCallback(
     async (rawPhone: string) => {
@@ -3451,63 +3574,67 @@ if (!variantsError) {
     });
   }
 
-  function addProductToCart(product: PosProduct) {
+  function addProductDirectlyToCart(product: PosProduct) {
     if (getAvailableStock(product) <= 0) {
-      showNotice(
-        `${product.name} is out of stock.`,
-        "error"
-      );
+      showNotice(`${product.name} is out of stock.`, "error");
       return;
     }
 
     setCartItems((currentItems) => {
-      const existingItem = currentItems.find(
-        (item) => item.key === product.key
-      );
-
+      const existingItem = currentItems.find((item) => item.key === product.key);
       if (existingItem) {
-        if (
-          existingItem.quantity >=
-          getAvailableStock(product)
-        ) {
-          showNotice(
-            `Only ${product.stock} item(s) available.`,
-            "error"
-          );
-
+        if (product.designUnitId) {
+          showNotice(`${product.designName || product.name} is already in this bill.`, "info");
           return currentItems;
         }
-
-        return currentItems.map((item) =>
-          item.key === product.key
-            ? {
-                ...item,
-                quantity: item.quantity + 1,
-              }
-            : item
-        );
+        if (existingItem.quantity >= getAvailableStock(product)) {
+          showNotice(`Only ${product.stock} item(s) available.`, "error");
+          return currentItems;
+        }
+        return currentItems.map((item) => item.key === product.key ? { ...item, quantity: item.quantity + 1 } : item);
       }
-
-      return [
-        ...currentItems,
-        {
-          ...product,
-          quantity: 1,
-          discountPercent: 0,
-        },
-      ];
+      return [...currentItems, { ...product, quantity: 1, discountPercent: 0 }];
     });
 
     rememberSelectedProduct(product);
     setBillFocusCollapsed(false);
-
-    showNotice(
-      `${product.name} added to bill.`,
-      "success"
-    );
-
+    showNotice(product.designUnitId ? `${product.designName || "Selected design"} added to bill.` : `${product.name} added to bill.`, "success");
     setSearchQuery("");
     searchInputRef.current?.focus();
+  }
+
+  function addProductToCart(product: PosProduct) {
+    if (getAvailableStock(product) <= 0) {
+      showNotice(`${product.name} is out of stock.`, "error");
+      return;
+    }
+    if (!product.variantId || product.isQuickItem) {
+      addProductDirectlyToCart(product);
+      return;
+    }
+    const choices = designChoicesByVariant[String(product.variantId)] || [];
+    const unusedChoices = choices.filter((choice) => !cartItems.some((item) => item.variantId === product.variantId && item.designUnitId === choice.designUnitId));
+    if (choices.length === 0) {
+      addProductDirectlyToCart(product);
+      return;
+    }
+    if (unusedChoices.length === 1) {
+      const choice = unusedChoices[0];
+      addProductDirectlyToCart({ ...product, key: `${product.key}-design-${choice.designUnitId}`, imageUrl: choice.imageUrl || product.imageUrl, designUnitId: choice.designUnitId, designName: choice.designName, designImageUrl: choice.imageUrl });
+      return;
+    }
+    if (unusedChoices.length === 0) {
+      showNotice("All available designs for this size are already in the current bill.", "info");
+      return;
+    }
+    setDesignPickerProduct(product);
+  }
+
+  function selectPosDesign(choice: PosDesignChoice) {
+    const product = designPickerProduct;
+    if (!product) return;
+    setDesignPickerProduct(null);
+    addProductDirectlyToCart({ ...product, key: `${product.key}-design-${choice.designUnitId}`, imageUrl: choice.imageUrl || product.imageUrl, designUnitId: choice.designUnitId, designName: choice.designName, designImageUrl: choice.imageUrl });
   }
 
   function getTopPosAiMatches(command: PosAiCommand) {
@@ -6349,6 +6476,34 @@ if (!variantsError) {
       const invoiceNumber =
         result.invoice_number || "Invoice created";
 
+      let designSyncWarning = "";
+      const soldDesignItems = cartItems
+        .filter((item) => !item.isQuickItem && Boolean(item.designUnitId) && Boolean(item.variantId))
+        .map((item) => ({
+          product_id: item.productId,
+          variant_id: item.variantId,
+          design_unit_id: item.designUnitId,
+          quantity: item.quantity,
+        }));
+
+      if (soldDesignItems.length > 0) {
+        try {
+          const { data: designData, error: designError } = await supabase.rpc(
+            "ncs_mark_pos_designs_sold_v1",
+            { p_items: soldDesignItems },
+          );
+          if (designError) throw designError;
+          const designResult = (designData || {}) as { success?: boolean; message?: string };
+          if (designResult.success === false) {
+            throw new Error(designResult.message || "Design stock could not be updated.");
+          }
+          await loadDesignChoices();
+        } catch (designError) {
+          console.error("Sale completed, but exact design online status update failed:", designError);
+          designSyncWarning = designError instanceof Error ? designError.message : "Exact design online status update failed.";
+        }
+      }
+
       let syncedCustomerId: number | null = null;
       let customerSyncWarning = "";
 
@@ -6673,6 +6828,7 @@ if (!variantsError) {
       ]);
 
       const completionWarnings = [
+        designSyncWarning ? `Design warning: ${designSyncWarning}` : "",
         customerSyncWarning
           ? `Customer warning: ${customerSyncWarning}`
           : "",
@@ -6730,6 +6886,37 @@ if (!variantsError) {
           : ""
       }`}
     >
+      {designPickerProduct && typeof document !== "undefined" && createPortal(
+        <div className="ncsPosDesignPickerBackdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDesignPickerProduct(null); }}>
+          <section className="ncsPosDesignPicker" role="dialog" aria-modal="true" aria-label="Select sold design">
+            <header>
+              <div>
+                <span>COMMON BARCODE • ONE TAP</span>
+                <h2>Select the shirt you are selling</h2>
+                <p>{designPickerProduct.name}{designPickerProduct.size ? ` • Size ${designPickerProduct.size}` : ""}{designPickerProduct.barcode ? ` • ${designPickerProduct.barcode}` : ""}</p>
+              </div>
+              <button type="button" onClick={() => setDesignPickerProduct(null)} aria-label="Close design picker">×</button>
+            </header>
+            <div className="ncsPosDesignPickerGrid">
+              {(designChoicesByVariant[String(designPickerProduct.variantId || "")] || [])
+                .filter((choice) => !cartItems.some((item) => item.variantId === designPickerProduct.variantId && item.designUnitId === choice.designUnitId))
+                .map((choice, index) => (
+                  <button key={`${choice.mappingId}-${choice.designUnitId}`} type="button" className="ncsPosDesignChoice" onClick={() => selectPosDesign(choice)}>
+                    <div className="ncsPosDesignChoiceImage">
+                      {choice.imageUrl ? <img src={choice.imageUrl} alt={choice.designName} /> : <span>NCS</span>}
+                      <b>{index + 1}</b>
+                    </div>
+                    <strong>{choice.designName}</strong>
+                    <small>Tap this photo if this is the item at the counter</small>
+                  </button>
+                ))}
+            </div>
+            <footer><span>Only the tapped design + this size will be hidden online after the bill completes.</span></footer>
+          </section>
+        </div>,
+        document.body,
+      )}
+
       {notice && (
         <div
           className={`ncsPosNotice ncsPosNotice-${noticeType}`}
@@ -7872,6 +8059,12 @@ if (!variantsError) {
                       {!item.isQuickItem && item.brand && (
                         <span className="ncsPosCartBrandName">
                           {item.brand}
+                        </span>
+                      )}
+
+                      {item.designUnitId && (
+                        <span className="ncsPosCartDesignName">
+                          ◉ {item.designName || `Design ${item.designUnitId}`}
                         </span>
                       )}
 
@@ -17240,6 +17433,18 @@ if (!variantsError) {
           .ncsPosPremiumAiCopy b { font-size:12px; }
           .ncsPosPremiumAiCopy small { font-size:8px; }
         }
+
+        .ncsPosDesignPickerBackdrop{position:fixed;inset:0;z-index:25000;display:grid;place-items:center;padding:18px;background:rgba(3,21,63,.62);backdrop-filter:blur(7px)}
+        .ncsPosDesignPicker{width:min(920px,calc(100vw - 28px));max-height:min(88vh,760px);overflow:hidden;border:1px solid rgba(212,175,55,.72);border-radius:24px;background:#fff;box-shadow:0 30px 90px rgba(3,21,63,.38)}
+        .ncsPosDesignPicker>header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px 20px 16px;background:linear-gradient(135deg,#03153f,#0a2e73);color:#fff}
+        .ncsPosDesignPicker>header span{color:#d4af37;font-size:9px;font-weight:1000;letter-spacing:1.2px}.ncsPosDesignPicker>header h2{margin:4px 0 2px;font-size:22px;font-weight:1000}.ncsPosDesignPicker>header p{margin:0;color:rgba(255,255,255,.76);font-size:11px;font-weight:750}
+        .ncsPosDesignPicker>header>button{width:38px;height:38px;flex:0 0 auto;border:1px solid rgba(255,255,255,.36);border-radius:12px;background:rgba(255,255,255,.10);color:#fff;font-size:24px;cursor:pointer}
+        .ncsPosDesignPickerGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;max-height:560px;overflow:auto;padding:16px;background:linear-gradient(180deg,#fff,#f8f4ec)}
+        .ncsPosDesignChoice{min-width:0;padding:8px;border:1px solid #dbe3ee;border-radius:16px;background:#fff;text-align:left;cursor:pointer;box-shadow:0 8px 20px rgba(3,21,63,.08);transition:.14s ease}.ncsPosDesignChoice:hover{transform:translateY(-2px);border-color:#d4af37;box-shadow:0 12px 28px rgba(3,21,63,.14)}
+        .ncsPosDesignChoiceImage{position:relative;width:100%;aspect-ratio:4/5;overflow:hidden;border-radius:12px;background:#eef2f7}.ncsPosDesignChoiceImage img{width:100%;height:100%;object-fit:cover;display:block}.ncsPosDesignChoiceImage>span{width:100%;height:100%;display:grid;place-items:center;color:#0a2e73;font-weight:1000}.ncsPosDesignChoiceImage b{position:absolute;right:7px;top:7px;min-width:26px;height:26px;display:grid;place-items:center;padding:0 7px;border-radius:999px;background:#d4af37;color:#03153f;font-size:11px;font-weight:1000}
+        .ncsPosDesignChoice>strong{display:block;margin:8px 2px 2px;color:#03153f;font-size:11px;font-weight:1000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ncsPosDesignChoice>small{display:block;margin:0 2px 2px;color:#64748b;font-size:8px;font-weight:750;line-height:1.35}.ncsPosDesignPicker>footer{padding:10px 16px 12px;border-top:1px solid #edf1f5;color:#0a2e73;font-size:9px;font-weight:850;text-align:center}
+        .ncsPosCartDesignName{display:inline-flex;align-items:center;width:max-content;max-width:100%;margin-top:3px;padding:2px 7px;border:1px solid rgba(212,175,55,.55);border-radius:999px;background:#fff8df;color:#7a5a00;font-size:8px;font-weight:950;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        @media(max-width:760px){.ncsPosDesignPickerBackdrop{padding:8px}.ncsPosDesignPicker{width:calc(100vw - 16px);border-radius:18px}.ncsPosDesignPicker>header{padding:14px}.ncsPosDesignPicker>header h2{font-size:18px}.ncsPosDesignPickerGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;padding:10px;max-height:64vh}}
       `}</style>
     </main>
   );
