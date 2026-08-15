@@ -68,6 +68,14 @@ type DesignUnit = {
   sortOrder: number;
 };
 
+type DesignVariantLink = {
+  id: number;
+  productId: number;
+  designUnitId: number;
+  variantId: number;
+  status: "available" | "sold_out" | "hidden";
+};
+
 type ProductForm = {
   name: string;
   slug: string;
@@ -271,6 +279,8 @@ export default function EditProductPage() {
   const [splittingSareeVariants, setSplittingSareeVariants] = useState(false);
 
   const [designUnits, setDesignUnits] = useState<DesignUnit[]>([]);
+  const [designVariantLinks, setDesignVariantLinks] = useState<DesignVariantLink[]>([]);
+  const [selectedDesignVariantIds, setSelectedDesignVariantIds] = useState<number[]>([]);
   const [loadingDesignUnits, setLoadingDesignUnits] = useState(false);
   const [uploadingDesignUnits, setUploadingDesignUnits] = useState(false);
   const [generatingDesignNames, setGeneratingDesignNames] = useState(false);
@@ -767,53 +777,51 @@ export default function EditProductPage() {
 
   async function loadDesignUnits(targetProductId: number) {
     if (!targetProductId) return;
-
     setLoadingDesignUnits(true);
 
     try {
-      const { data, error } = await supabase
-        .from("product_design_units")
-        .select("id,product_id,parent_variant_id,parent_barcode,design_name,image_url,unit_quantity,status,sort_order")
-        .eq("product_id", targetProductId)
-        .order("sort_order", { ascending: true })
-        .order("id", { ascending: true });
+      const [{ data, error }, { data: linkData, error: linkError }] = await Promise.all([
+        supabase.from("product_design_units")
+          .select("id,product_id,parent_variant_id,parent_barcode,design_name,image_url,unit_quantity,status,sort_order")
+          .eq("product_id", targetProductId)
+          .order("sort_order", { ascending: true }).order("id", { ascending: true }),
+        supabase.from("product_design_unit_variants")
+          .select("id,product_id,design_unit_id,variant_id,status")
+          .eq("product_id", targetProductId).order("id", { ascending: true }),
+      ]);
 
       if (error) {
-        console.info("Design units are not available yet:", error.message);
-        setDesignUnits([]);
-        setDesignUnitStatus({
-          type: "error",
-          message:
-            "Same-barcode design storage is not ready yet. Run the supplied SQL once in Supabase, then refresh this page.",
-        });
+        setDesignUnits([]); setDesignVariantLinks([]);
+        setDesignUnitStatus({ type: "error", message: "Design storage is not ready. Run the supplied Supabase SQL, then refresh." });
         return;
       }
 
       const rows = ((data || []) as Record<string, unknown>[]).map((row) => ({
-        id: asNumber(row.id),
-        productId: asNumber(row.product_id),
-        parentVariantId: asNumber(row.parent_variant_id) || null,
-        parentBarcode: asString(row.parent_barcode),
-        designName: asString(row.design_name),
-        imageUrl: asString(row.image_url),
+        id: asNumber(row.id), productId: asNumber(row.product_id),
+        parentVariantId: asNumber(row.parent_variant_id) || null, parentBarcode: asString(row.parent_barcode),
+        designName: asString(row.design_name), imageUrl: asString(row.image_url),
         unitQuantity: Math.max(1, asNumber(row.unit_quantity) || 1),
-        status:
-          row.status === "sold_out" || row.status === "hidden"
-            ? row.status
-            : "available",
+        status: row.status === "sold_out" || row.status === "hidden" ? row.status : "available",
         sortOrder: Math.max(0, asNumber(row.sort_order)),
       })) as DesignUnit[];
 
-      setDesignUnits(rows);
+      const links: DesignVariantLink[] = linkError
+        ? rows.filter((row) => row.parentVariantId).map((row, index) => ({
+            id: -(index + 1), productId: row.productId, designUnitId: row.id, variantId: Number(row.parentVariantId),
+            status: row.status === "sold_out" ? "sold_out" : row.status === "hidden" ? "hidden" : "available",
+          }))
+        : ((linkData || []) as Record<string, unknown>[]).map((row) => ({
+            id: asNumber(row.id), productId: asNumber(row.product_id), designUnitId: asNumber(row.design_unit_id),
+            variantId: asNumber(row.variant_id),
+            status: row.status === "sold_out" || row.status === "hidden" ? row.status : "available",
+          })) as DesignVariantLink[];
+
+      setDesignUnits(rows); setDesignVariantLinks(links);
       setDesignUnitStatus({
         type: rows.length ? "success" : "idle",
-        message: rows.length
-          ? `${rows.length} individual design photo${rows.length === 1 ? "" : "s"} linked to this existing barcode stock.`
-          : "",
+        message: rows.length ? `${rows.length} unique design photo${rows.length === 1 ? "" : "s"} loaded. One photo can be linked to multiple sizes.` : "",
       });
-    } finally {
-      setLoadingDesignUnits(false);
-    }
+    } finally { setLoadingDesignUnits(false); }
   }
 
   function getSameBarcodeDesignTarget() {
@@ -828,109 +836,49 @@ export default function EditProductPage() {
     return variantBarcodes[0] || null;
   }
 
-  async function uploadSameBarcodeDesignPhotos(
-    event: ChangeEvent<HTMLInputElement>
-  ) {
+  async function uploadSameBarcodeDesignPhotos(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files || []);
     if (!files.length || !productId) return;
 
-    const targetVariant = getSameBarcodeDesignTarget();
-    const targetStock = targetVariant
-      ? Math.max(0, targetVariant.stock)
-      : Math.max(0, Number(form.stock || 0));
-    const targetVariantId = targetVariant?.id || null;
-    const targetBarcode = targetVariant?.barcode || form.barcode || "";
-
-    const alreadyAssigned = designUnits.filter(
-      (unit) =>
-        (targetVariantId
-          ? unit.parentVariantId === targetVariantId
-          : unit.parentVariantId === null) &&
-        unit.status !== "hidden"
-    ).length;
-
-    const remainingSlots = Math.max(0, targetStock - alreadyAssigned);
-
-    if (remainingSlots <= 0) {
-      alert(
-        "All available stock pieces already have individual design photos. Remove an old design photo first if you want to replace it."
-      );
-      event.target.value = "";
-      return;
-    }
-
-    if (files.length > remainingSlots) {
-      alert(
-        `You can upload only ${remainingSlots} more design photo${remainingSlots === 1 ? "" : "s"} for this barcode because its available stock is ${targetStock}.`
-      );
-      event.target.value = "";
-      return;
-    }
+    const selectedVariants = variantBarcodes.filter((variant) => selectedDesignVariantIds.includes(variant.id));
+    if (!selectedVariants.length) { alert("Select at least one size for these design photos first."); event.target.value = ""; return; }
 
     const validFiles = files.filter(validateImage);
-    if (!validFiles.length) {
-      event.target.value = "";
-      return;
+    if (!validFiles.length) { event.target.value = ""; return; }
+
+    for (const variant of selectedVariants) {
+      const alreadyAssigned = designVariantLinks.filter((link) => link.variantId === variant.id && link.status === "available").length;
+      const remainingSlots = Math.max(0, Math.max(0, variant.stock) - alreadyAssigned);
+      if (validFiles.length > remainingSlots) {
+        alert(`${variant.size || "Selected size"} can accept only ${remainingSlots} more design photo${remainingSlots === 1 ? "" : "s"}. Physical stock is ${variant.stock}.`);
+        event.target.value = ""; return;
+      }
     }
 
     setUploadingDesignUnits(true);
-    setDesignUnitStatus({
-      type: "idle",
-      message: `Uploading ${validFiles.length} individual design photo${validFiles.length === 1 ? "" : "s"}...`,
-    });
-
     try {
-      const urls = await Promise.all(
-        validFiles.map((file, index) =>
-          uploadFile(
-            file,
-            `design-units/${targetVariantId || "product"}/${Date.now()}-${index + 1}`
-          )
-        )
-      );
-
-      const nextSortBase =
-        designUnits.reduce((max, unit) => Math.max(max, unit.sortOrder), 0) + 1;
-
+      const urls = await Promise.all(validFiles.map((file, index) => uploadFile(file, `design-units/multi-size/${Date.now()}-${index + 1}`)));
+      const nextSortBase = designUnits.reduce((max, unit) => Math.max(max, unit.sortOrder), 0) + 1;
+      const primaryVariant = selectedVariants[0];
       const rows = urls.map((url, index) => ({
-        product_id: Number(productId),
-        parent_variant_id: targetVariantId,
-        parent_barcode: targetBarcode || null,
-        design_name: `Design ${alreadyAssigned + index + 1}`,
-        image_url: url,
-        unit_quantity: 1,
-        status: "available",
-        sort_order: nextSortBase + index,
-        updated_at: new Date().toISOString(),
+        product_id: Number(productId), parent_variant_id: primaryVariant.id, parent_barcode: primaryVariant.barcode || null,
+        design_name: `Design ${designUnits.length + index + 1}`, image_url: url, unit_quantity: 1, status: "available",
+        sort_order: nextSortBase + index, updated_at: new Date().toISOString(),
       }));
-
-      const { error } = await supabase
-        .from("product_design_units")
-        .insert(rows);
-
+      const { data: insertedDesigns, error } = await supabase.from("product_design_units").insert(rows).select("id");
       if (error) throw error;
-
+      const insertedIds = ((insertedDesigns || []) as Record<string, unknown>[]).map((row) => asNumber(row.id)).filter((id) => id > 0);
+      if (insertedIds.length !== rows.length) throw new Error("Uploaded design IDs could not be confirmed.");
+      const mappingRows = insertedIds.flatMap((designUnitId) => selectedVariants.map((variant) => ({
+        product_id: Number(productId), design_unit_id: designUnitId, variant_id: variant.id, status: "available", updated_at: new Date().toISOString(),
+      })));
+      const { error: mappingError } = await supabase.from("product_design_unit_variants").insert(mappingRows);
+      if (mappingError) throw mappingError;
       await loadDesignUnits(Number(productId));
-
-      setDesignUnitStatus({
-        type: "success",
-        message:
-          `${validFiles.length} design photo${validFiles.length === 1 ? "" : "s"} linked successfully to barcode ${targetBarcode || "stock item"}. ` +
-          "Physical stock and the existing barcode were not changed.",
-      });
+      setDesignUnitStatus({ type: "success", message: `${validFiles.length} unique design photo${validFiles.length === 1 ? "" : "s"} uploaded once and linked to ${selectedVariants.map((v) => v.size || "Standard").join(", ")}. Barcodes and physical stock were not changed.` });
     } catch (error) {
-      console.error(error);
-      setDesignUnitStatus({
-        type: "error",
-        message:
-          error instanceof Error
-            ? `Design photo upload failed: ${error.message}`
-            : "Design photo upload failed.",
-      });
-    } finally {
-      setUploadingDesignUnits(false);
-      event.target.value = "";
-    }
+      setDesignUnitStatus({ type: "error", message: error instanceof Error ? `Design photo upload failed: ${error.message}` : "Design photo upload failed." });
+    } finally { setUploadingDesignUnits(false); event.target.value = ""; }
   }
 
   function updateDesignUnitNameLocal(id: number, value: string) {
@@ -982,110 +930,64 @@ export default function EditProductPage() {
     });
   }
 
-  async function relinkAllDesignUnitsToSelectedVariant() {
-    const targetVariant = getSameBarcodeDesignTarget();
-
-    if (!targetVariant) {
-      alert("Please select the correct size / barcode first.");
-      return;
-    }
-
-    if (!designUnits.length) {
-      alert("There are no uploaded design photos to relink.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Move all ${designUnits.length} uploaded design photo${designUnits.length === 1 ? "" : "s"} to:\n\n` +
-      `${targetVariant.size || "Standard"}${targetVariant.color ? ` • ${targetVariant.color}` : ""}\n` +
-      `Barcode: ${targetVariant.barcode || "No barcode"}\n\n` +
-      "The photos, AI names and physical stock will NOT be deleted or changed."
-    );
-
-    if (!confirmed) return;
-
-    setUploadingDesignUnits(true);
-
-    try {
-      const { error } = await supabase
-        .from("product_design_units")
-        .update({
-          parent_variant_id: targetVariant.id,
-          parent_barcode: targetVariant.barcode || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("product_id", Number(productId));
-
-      if (error) throw error;
-
-      await loadDesignUnits(Number(productId));
-
-      setDesignUnitStatus({
-        type: "success",
-        message:
-          `All uploaded design photos are now linked to ${targetVariant.size || "selected variant"} • ` +
-          `${targetVariant.barcode || "No barcode"}. Physical stock was not changed.`,
-      });
-    } catch (error) {
-      console.error(error);
-      setDesignUnitStatus({
-        type: "error",
-        message:
-          error instanceof Error
-            ? `Unable to relink design photos: ${error.message}`
-            : "Unable to relink design photos.",
-      });
-    } finally {
-      setUploadingDesignUnits(false);
-    }
+  function getDesignLinks(designUnitId: number) {
+    return designVariantLinks.filter((link) => link.designUnitId === designUnitId && link.status !== "hidden");
   }
 
-  async function changeDesignUnitVariant(
-    unit: DesignUnit,
-    variantIdValue: string
-  ) {
-    const variantId = Number(variantIdValue);
-    const targetVariant = variantBarcodes.find(
-      (variant) => variant.id === variantId
-    );
+  function getAvailableDesignLinks(designUnitId: number) {
+    return designVariantLinks.filter((link) => link.designUnitId === designUnitId && link.status === "available");
+  }
 
-    if (!targetVariant) return;
+  function toggleUploadVariant(variantId: number) {
+    setSelectedDesignVariantIds((current) => current.includes(variantId) ? current.filter((id) => id !== variantId) : [...current, variantId]);
+  }
 
-    const { error } = await supabase
-      .from("product_design_units")
-      .update({
-        parent_variant_id: targetVariant.id,
-        parent_barcode: targetVariant.barcode || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", unit.id);
+  async function setDesignVariantLink(unit: DesignUnit, variantId: number, enabled: boolean) {
+    const variant = variantBarcodes.find((item) => item.id === variantId); if (!variant) return;
+    const existing = designVariantLinks.find((link) => link.designUnitId === unit.id && link.variantId === variantId && link.status !== "hidden");
+    if (enabled) {
+      if (existing?.status === "available") return;
+      const used = designVariantLinks.filter((link) => link.variantId === variantId && link.status === "available" && link.designUnitId !== unit.id).length;
+      if (used >= Math.max(0, variant.stock)) { alert(`${variant.size || "This size"} already has ${used} linked designs, equal to physical stock ${variant.stock}.`); return; }
+      const response = existing
+        ? await supabase.from("product_design_unit_variants").update({ status: "available", updated_at: new Date().toISOString() }).eq("id", existing.id)
+        : await supabase.from("product_design_unit_variants").insert({ product_id: Number(productId), design_unit_id: unit.id, variant_id: variantId, status: "available", updated_at: new Date().toISOString() });
+      if (response.error) { alert(response.error.message); return; }
+    } else {
+      if (!existing) return;
+      const { error } = await supabase.from("product_design_unit_variants").delete().eq("id", existing.id);
+      if (error) { alert(error.message); return; }
+    }
+    await loadDesignUnits(Number(productId));
+  }
 
-    if (error) {
-      setDesignUnitStatus({
-        type: "error",
-        message: `Unable to change barcode for ${unit.designName || "design"}: ${error.message}`,
-      });
-      return;
+  async function linkSelectedSizesToAllDesigns() {
+    if (!designUnits.length) { alert("Upload at least one design photo first."); return; }
+    const selectedVariants = variantBarcodes.filter((variant) => selectedDesignVariantIds.includes(variant.id));
+    if (!selectedVariants.length) { alert("Select one or more sizes first."); return; }
+
+    for (const variant of selectedVariants) {
+      const alreadyLinkedIds = new Set(designVariantLinks.filter((link) => link.variantId === variant.id && link.status === "available").map((link) => link.designUnitId));
+      const needCount = designUnits.filter((unit) => unit.status !== "hidden" && !alreadyLinkedIds.has(unit.id)).length;
+      const remaining = Math.max(0, Math.max(0, variant.stock) - alreadyLinkedIds.size);
+      if (needCount > remaining) { alert(`${variant.size || "Selected size"}: need ${needCount} more design slots, but only ${remaining} physical pieces are free.`); return; }
     }
 
-    setDesignUnits((current) =>
-      current.map((item) =>
-        item.id === unit.id
-          ? {
-              ...item,
-              parentVariantId: targetVariant.id,
-              parentBarcode: targetVariant.barcode,
-            }
-          : item
-      )
-    );
-
-    setDesignUnitStatus({
-      type: "success",
-      message:
-        `${unit.designName || "Design"} moved to ${targetVariant.size || "selected variant"} • ` +
-        `${targetVariant.barcode || "No barcode"}.`,
-    });
+    setUploadingDesignUnits(true);
+    try {
+      const rows: Array<{product_id:number;design_unit_id:number;variant_id:number;status:string;updated_at:string}> = [];
+      for (const unit of designUnits) {
+        if (unit.status === "hidden") continue;
+        for (const variant of selectedVariants) {
+          const exists = designVariantLinks.some((link) => link.designUnitId === unit.id && link.variantId === variant.id && link.status !== "hidden");
+          if (!exists) rows.push({ product_id: Number(productId), design_unit_id: unit.id, variant_id: variant.id, status: "available", updated_at: new Date().toISOString() });
+        }
+      }
+      if (rows.length) { const { error } = await supabase.from("product_design_unit_variants").insert(rows); if (error) throw error; }
+      await loadDesignUnits(Number(productId));
+      setDesignUnitStatus({ type: "success", message: `Existing photos linked to ${selectedVariants.map((v) => v.size || "Standard").join(", ")} without duplicate uploads.` });
+    } catch (error) { setDesignUnitStatus({ type: "error", message: error instanceof Error ? error.message : "Unable to link sizes." }); }
+    finally { setUploadingDesignUnits(false); }
   }
 
   function isDefaultDesignName(value: string) {
@@ -1948,16 +1850,13 @@ export default function EditProductPage() {
       )
     : Math.max(0, Number(form.stock || 0));
 
-  const availableDesignUnits = designUnits.filter(
-    (unit) => unit.status === "available"
-  );
-
-  const designModeOnlineQuantity = availableDesignUnits.length;
+  const availableDesignUnits = designUnits.filter((unit) => unit.status === "available");
+  const availableDesignVariantLinks = designVariantLinks.filter((link) => link.status === "available");
+  const designModeOnlineQuantity = designVariantLinks.length > 0 ? availableDesignVariantLinks.length : availableDesignUnits.length;
 
   function getAvailableDesignCountForVariant(variantId: number) {
-    return availableDesignUnits.filter(
-      (unit) => unit.parentVariantId === variantId
-    ).length;
+    if (designVariantLinks.length > 0) return availableDesignVariantLinks.filter((link) => link.variantId === variantId).length;
+    return availableDesignUnits.filter((unit) => unit.parentVariantId === variantId).length;
   }
 
   function validateForm() {
@@ -2868,7 +2767,7 @@ export default function EditProductPage() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                     <div>
                       <strong style={{ display: "block", color: "#0A2E73", fontSize: 16 }}>
-                        Same Barcode — Individual Design Photos
+                        One Design Photo — Multiple Sizes
                       </strong>
                       <p style={{ margin: "6px 0 0", color: "#667085", fontSize: 12, lineHeight: 1.6, maxWidth: 720 }}>
                         Use this when one existing barcode has multiple physical pieces but every piece has a different design.
@@ -2887,81 +2786,30 @@ export default function EditProductPage() {
                     </div>
                   </div>
 
-                  {variantBarcodes.length > 1 && (
-                    <div
-                      style={{
-                        marginTop: 14,
-                        padding: 12,
-                        border: "1px solid #d0d5dd",
-                        borderRadius: 12,
-                        background: "#fff",
-                      }}
-                    >
-                      <strong
-                        style={{
-                          display: "block",
-                          color: "#0A2E73",
-                          fontSize: 13,
-                          marginBottom: 7,
-                        }}
-                      >
-                        1. Choose the correct Size / Barcode for these photos
+                  {variantBarcodes.length > 0 && (
+                    <div style={{ marginTop: 14, padding: 12, border: "1px solid #d0d5dd", borderRadius: 12, background: "#fff" }}>
+                      <strong style={{ display: "block", color: "#0A2E73", fontSize: 13, marginBottom: 8 }}>
+                        1. Choose every size that has this same shirt design
                       </strong>
-
-                      <select
-                        value={editingVariantId || ""}
-                        onChange={(event) =>
-                          setEditingVariantId(
-                            event.target.value
-                              ? Number(event.target.value)
-                              : null
-                          )
-                        }
-                        style={{
-                          ...inputStyle,
-                          width: "100%",
-                          maxWidth: 620,
-                          background: "#fff",
-                        }}
-                      >
-                        {variantBarcodes.map((variant) => (
-                          <option key={variant.id} value={variant.id}>
-                            {variant.size || "Standard"}
-                            {variant.color ? ` • ${variant.color}` : ""}
-                            {` • ${variant.barcode || "No barcode"} • Stock ${variant.stock}`}
-                          </option>
-                        ))}
-                      </select>
-
-                      <small
-                        style={{
-                          display: "block",
-                          marginTop: 7,
-                          color: "#667085",
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        Select L before uploading L-size designs, XL before uploading XL-size designs, and so on.
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {variantBarcodes.map((variant) => {
+                          const selected = selectedDesignVariantIds.includes(variant.id);
+                          const linkedCount = designVariantLinks.filter((link) => link.variantId === variant.id && link.status === "available").length;
+                          return (
+                            <label key={variant.id} style={{ display: "inline-flex", alignItems: "center", gap: 7, minHeight: 38, padding: "7px 10px", borderRadius: 9, border: selected ? "2px solid #0A2E73" : "1px solid #d0d5dd", background: selected ? "#eef4ff" : "#fff", color: "#101828", fontWeight: 800, cursor: "pointer" }}>
+                              <input type="checkbox" checked={selected} onChange={() => toggleUploadVariant(variant.id)} />
+                              <span>{variant.size || "Standard"}{variant.color ? ` • ${variant.color}` : ""}{` • Stock ${variant.stock} • Linked ${linkedCount}`}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <small style={{ display: "block", marginTop: 8, color: "#667085", lineHeight: 1.55 }}>
+                        Same shirt in L, XL and XXL? Select all three and upload the photo only once. New design only in XL + XXL? Select only XL and XXL.
                       </small>
-
                       {designUnits.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={relinkAllDesignUnitsToSelectedVariant}
-                          disabled={uploadingDesignUnits}
-                          style={{
-                            marginTop: 10,
-                            minHeight: 38,
-                            padding: "0 13px",
-                            borderRadius: 9,
-                            border: "1px solid #f79009",
-                            background: "#fffaeb",
-                            color: "#b54708",
-                            fontWeight: 850,
-                            cursor: uploadingDesignUnits ? "not-allowed" : "pointer",
-                          }}
-                        >
-                          🔁 Relink ALL Uploaded Photos to Selected Barcode
+                        <button type="button" onClick={linkSelectedSizesToAllDesigns} disabled={uploadingDesignUnits || selectedDesignVariantIds.length === 0}
+                          style={{ marginTop: 10, minHeight: 38, padding: "0 13px", borderRadius: 9, border: "1px solid #0A2E73", background: "#eef4ff", color: "#0A2E73", fontWeight: 850, cursor: uploadingDesignUnits || selectedDesignVariantIds.length === 0 ? "not-allowed" : "pointer", opacity: uploadingDesignUnits || selectedDesignVariantIds.length === 0 ? 0.55 : 1 }}>
+                          🔗 Link Selected Sizes to ALL Existing Photos
                         </button>
                       )}
                     </div>
@@ -3152,35 +3000,21 @@ export default function EditProductPage() {
                               }}
                             />
 
-                            {variantBarcodes.length > 1 && (
-                              <select
-                                value={unit.parentVariantId || ""}
-                                onChange={(event) =>
-                                  changeDesignUnitVariant(
-                                    unit,
-                                    event.target.value
-                                  )
-                                }
-                                style={{
-                                  ...inputStyle,
-                                  minHeight: 36,
-                                  padding: "7px 8px",
-                                  fontSize: 11,
-                                  background: "#fff",
-                                }}
-                              >
-                                {variantBarcodes.map((variant) => (
-                                  <option key={variant.id} value={variant.id}>
-                                    {variant.size || "Standard"}
-                                    {variant.color ? ` • ${variant.color}` : ""}
-                                    {` • ${variant.barcode || "No barcode"}`}
-                                  </option>
-                                ))}
-                              </select>
-                            )}
-
-                            <div style={{ fontSize: 11, color: "#475467" }}>
-                              Barcode: {unit.parentBarcode || form.barcode || "—"}
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                              {variantBarcodes.map((variant) => {
+                                const link = getDesignLinks(unit.id).find((item) => item.variantId === variant.id);
+                                const checked = Boolean(link);
+                                const soldOut = link?.status === "sold_out";
+                                return (
+                                  <label key={`${unit.id}-${variant.id}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 7px", borderRadius: 7, border: checked ? "1px solid #0A2E73" : "1px solid #d0d5dd", background: soldOut ? "#fff1f0" : checked ? "#eef4ff" : "#fff", color: soldOut ? "#b42318" : "#344054", fontSize: 10, fontWeight: 800, cursor: soldOut ? "default" : "pointer" }}>
+                                    <input type="checkbox" checked={checked} disabled={soldOut} onChange={(event) => setDesignVariantLink(unit, variant.id, event.target.checked)} />
+                                    {variant.size || "Standard"}{soldOut ? " • SOLD" : ""}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            <div style={{ fontSize: 11, color: "#475467", lineHeight: 1.5 }}>
+                              Sizes: {getDesignLinks(unit.id).length ? getDesignLinks(unit.id).map((link) => { const variant = variantBarcodes.find((item) => item.id === link.variantId); return `${variant?.size || "Standard"} (${variant?.barcode || "No barcode"})`; }).join(" • ") : "No size linked"}
                             </div>
 
                             <div
@@ -3195,11 +3029,7 @@ export default function EditProductPage() {
                                       : "#067647",
                               }}
                             >
-                              {unit.status === "sold_out"
-                                ? "SOLD OUT"
-                                : unit.status === "hidden"
-                                  ? "HIDDEN"
-                                  : "AVAILABLE"}
+                              {unit.status === "hidden" ? "HIDDEN" : getAvailableDesignLinks(unit.id).length > 0 ? "AVAILABLE" : "NO AVAILABLE SIZE"}
                             </div>
 
                             <button

@@ -71,6 +71,13 @@ type ProductVariantRef = {
   barcode: string;
 };
 
+type ProductDesignVariantLink = {
+  id: number;
+  designUnitId: number;
+  variantId: number;
+  status: "available" | "sold_out" | "hidden";
+};
+
 function getProductName(product: Product) {
   return (
     product.name ||
@@ -375,6 +382,7 @@ export default function ProductPage() {
 
   const [designUnits, setDesignUnits] = useState<ProductDesignUnit[]>([]);
   const [variantRefs, setVariantRefs] = useState<ProductVariantRef[]>([]);
+  const [designVariantLinks, setDesignVariantLinks] = useState<ProductDesignVariantLink[]>([]);
   const [selectedDesignId, setSelectedDesignId] = useState<number | null>(null);
 
   const [zoomVisible, setZoomVisible] = useState(false);
@@ -416,21 +424,15 @@ export default function ProductPage() {
       const loadedProduct = data as Product;
       const parentImages = parseImages(loadedProduct);
 
-      const [{ data: variantData, error: variantError }, { data: designData, error: designError }] =
-        await Promise.all([
-          supabase
-            .from("product_variants")
-            .select("id,size,barcode")
-            .eq("product_id", params.id)
-            .order("id", { ascending: true }),
-          supabase
-            .from("product_design_units")
-            .select("id,product_id,parent_variant_id,parent_barcode,design_name,image_url,status,sort_order")
-            .eq("product_id", params.id)
-            .neq("status", "hidden")
-            .order("sort_order", { ascending: true })
-            .order("id", { ascending: true }),
-        ]);
+      const [
+        { data: variantData, error: variantError },
+        { data: designData, error: designError },
+        { data: designLinkData, error: designLinkError },
+      ] = await Promise.all([
+        supabase.from("product_variants").select("id,size,barcode").eq("product_id", params.id).order("id", { ascending: true }),
+        supabase.from("product_design_units").select("id,product_id,parent_variant_id,parent_barcode,design_name,image_url,status,sort_order").eq("product_id", params.id).neq("status", "hidden").order("sort_order", { ascending: true }).order("id", { ascending: true }),
+        supabase.from("product_design_unit_variants").select("id,design_unit_id,variant_id,status").eq("product_id", params.id).neq("status", "hidden").order("id", { ascending: true }),
+      ]);
 
       if (variantError) {
         console.info("Unable to load product variant references:", variantError.message);
@@ -438,6 +440,10 @@ export default function ProductPage() {
 
       if (designError) {
         console.info("Unable to load individual design photos:", designError.message);
+      }
+
+      if (designLinkError) {
+        console.info("Unable to load design/size links:", designLinkError.message);
       }
 
       const cleanVariantRefs = ((variantData || []) as Record<string, unknown>[]).map(
@@ -484,20 +490,22 @@ export default function ProductPage() {
         })
         .filter((unit) => unit.id > 0 && unit.imageUrl);
 
-      const availableDesignUnits = cleanDesignUnits.filter(
-        (unit) => unit.status === "available"
-      );
+      const cleanDesignVariantLinks: ProductDesignVariantLink[] = designLinkError
+        ? cleanDesignUnits.filter((unit) => unit.parentVariantId).map((unit, index) => ({ id: -(index + 1), designUnitId: unit.id, variantId: Number(unit.parentVariantId), status: unit.status === "sold_out" ? "sold_out" : "available" }))
+        : ((designLinkData || []) as Record<string, unknown>[]).map((row): ProductDesignVariantLink => ({ id: Number(row.id || 0), designUnitId: Number(row.design_unit_id || 0), variantId: Number(row.variant_id || 0), status: row.status === "sold_out" ? "sold_out" : row.status === "hidden" ? "hidden" : "available" }));
+
+      const designIdsWithAvailableSize = new Set(cleanDesignVariantLinks.filter((link) => link.status === "available").map((link) => link.designUnitId));
+      const availableDesignUnits = cleanDesignUnits.filter((unit) => unit.status !== "hidden" && designIdsWithAvailableSize.has(unit.id));
 
       setProduct(loadedProduct);
       setVariantRefs(cleanVariantRefs);
       setDesignUnits(cleanDesignUnits);
+      setDesignVariantLinks(cleanDesignVariantLinks);
 
       if (availableDesignUnits.length > 0) {
         const firstDesign = availableDesignUnits[0];
-        const firstVariant = cleanVariantRefs.find(
-          (variant) => variant.id === firstDesign.parentVariantId
-        );
-
+        const firstAvailableLink = cleanDesignVariantLinks.find((link) => link.designUnitId === firstDesign.id && link.status === "available");
+        const firstVariant = cleanVariantRefs.find((variant) => variant.id === firstAvailableLink?.variantId);
         setSelectedImage(firstDesign.imageUrl);
         setSelectedDesignId(firstDesign.id);
         setSelectedSize(firstVariant?.size || "");
@@ -513,6 +521,7 @@ export default function ProductPage() {
       setProduct(null);
       setVariantRefs([]);
       setDesignUnits([]);
+      setDesignVariantLinks([]);
       setSelectedDesignId(null);
     } finally {
       setLoading(false);
@@ -525,121 +534,40 @@ export default function ProductPage() {
   );
 
   const designMode = designUnits.length > 0;
+  const availableDesignVariantLinks = useMemo(() => designVariantLinks.filter((link) => link.status === "available"), [designVariantLinks]);
+  const designIdsWithAvailableSize = useMemo(() => new Set(availableDesignVariantLinks.map((link) => link.designUnitId)), [availableDesignVariantLinks]);
+  const availableDesignUnits = useMemo(() => designUnits.filter((unit) => unit.status !== "hidden" && designIdsWithAvailableSize.has(unit.id)), [designUnits, designIdsWithAvailableSize]);
 
-  const availableDesignUnits = useMemo(
-    () => designUnits.filter((unit) => unit.status === "available"),
-    [designUnits]
-  );
-
-  const designUnitWithSize = useMemo(
-    () =>
-      designUnits.map((unit) => {
-        const variant = variantRefs.find(
-          (item) => item.id === unit.parentVariantId
-        );
-
-        return {
-          ...unit,
-          size: variant?.size || "",
-          barcode: variant?.barcode || unit.parentBarcode,
-        };
-      }),
-    [designUnits, variantRefs]
-  );
-
-  const availableDesignUnitWithSize = useMemo(
-    () =>
-      designUnitWithSize.filter(
-        (unit) => unit.status === "available"
-      ),
-    [designUnitWithSize]
-  );
-
-  const images = useMemo(() => {
-    if (designMode) {
-      return designUnitWithSize
-        .filter((unit) => unit.status !== "hidden")
-        .map((unit) => unit.imageUrl);
-    }
-
-    return parentImages;
-  }, [designMode, designUnitWithSize, parentImages]);
-
-  const legacySizes = useMemo(() => {
-    if (!product) return [];
-
-    const directSizes = parseListField(product.sizes);
-
-    return directSizes.length > 0
-      ? directSizes
-      : parseVariationValues(product, "Size", []);
-  }, [product]);
-
+  const images = useMemo(() => designMode ? designUnits.filter((unit) => unit.status !== "hidden").map((unit) => unit.imageUrl) : parentImages, [designMode, designUnits, parentImages]);
+  const legacySizes = useMemo(() => { if (!product) return []; const directSizes = parseListField(product.sizes); return directSizes.length > 0 ? directSizes : parseVariationValues(product, "Size", []); }, [product]);
+  const selectedDesign = useMemo(() => designUnits.find((unit) => unit.id === selectedDesignId) || null, [designUnits, selectedDesignId]);
+  const selectedDesignLinks = useMemo(() => selectedDesignId ? designVariantLinks.filter((link) => link.designUnitId === selectedDesignId && link.status !== "hidden") : [], [designVariantLinks, selectedDesignId]);
+  const selectedDesignAvailableLinks = useMemo(() => selectedDesignLinks.filter((link) => link.status === "available"), [selectedDesignLinks]);
   const sizes = useMemo(() => {
     if (!designMode) return legacySizes;
-
-    return Array.from(
-      new Set(
-        availableDesignUnitWithSize
-          .map((unit) => unit.size)
-          .filter(Boolean)
-      )
-    );
-  }, [designMode, legacySizes, availableDesignUnitWithSize]);
-
-  const tags = useMemo(
-    () => (product ? parseListField(product.tags) : []),
-    [product]
-  );
+    return Array.from(new Set(selectedDesignAvailableLinks.map((link) => variantRefs.find((variant) => variant.id === link.variantId)?.size || "").filter(Boolean)));
+  }, [designMode, legacySizes, selectedDesignAvailableLinks, variantRefs]);
+  const tags = useMemo(() => (product ? parseListField(product.tags) : []), [product]);
 
   useEffect(() => {
-    if (selectedSize && !sizes.includes(selectedSize)) {
-      setSelectedSize("");
+    if (designMode) {
+      if (!sizes.length) { setSelectedSize(""); return; }
+      if (!selectedSize || !sizes.includes(selectedSize)) setSelectedSize(sizes[0]);
+      return;
     }
-  }, [sizes, selectedSize]);
+    if (selectedSize && !sizes.includes(selectedSize)) setSelectedSize("");
+  }, [designMode, sizes, selectedSize]);
 
-  const selectedDesign = useMemo(
-    () =>
-      designUnitWithSize.find(
-        (unit) => unit.id === selectedDesignId
-      ) || null,
-    [designUnitWithSize, selectedDesignId]
-  );
+  const visibleDesignUnits = useMemo(() => designMode ? designUnits.filter((unit) => unit.status !== "hidden") : [], [designMode, designUnits]);
+  const availableStock = useMemo(() => !designMode ? Number(product?.stock ?? 0) : availableDesignUnits.length, [designMode, product?.stock, availableDesignUnits]);
 
-  const visibleDesignUnits = useMemo(() => {
-    if (!designMode) return [];
-
-    if (!selectedSize) {
-      return designUnitWithSize.filter(
-        (unit) => unit.status !== "hidden"
-      );
-    }
-
-    return designUnitWithSize.filter(
-      (unit) =>
-        unit.status !== "hidden" &&
-        unit.size === selectedSize
-    );
-  }, [designMode, designUnitWithSize, selectedSize]);
-
-  const availableStock = useMemo(() => {
-    if (!designMode) {
-      return Number(product?.stock ?? 0);
-    }
-
-    if (!selectedSize) {
-      return availableDesignUnitWithSize.length;
-    }
-
-    return availableDesignUnitWithSize.filter(
-      (unit) => unit.size === selectedSize
-    ).length;
-  }, [
-    designMode,
-    product?.stock,
-    selectedSize,
-    availableDesignUnitWithSize,
-  ]);
+  function designHasAvailableSize(designUnitId: number) { return availableDesignVariantLinks.some((link) => link.designUnitId === designUnitId); }
+  function isSelectedDesignSizeAvailable() {
+    if (!designMode || !selectedDesignId || !selectedSize) return !designMode;
+    const variant = variantRefs.find((item) => item.size === selectedSize);
+    if (!variant) return false;
+    return availableDesignVariantLinks.some((link) => link.designUnitId === selectedDesignId && link.variantId === variant.id);
+  }
 
   const price = Number(product?.price ?? 0);
   const mrp = Number(product?.mrp ?? price + 200);
@@ -656,34 +584,20 @@ export default function ProductPage() {
   const isOnSale = isEnabled(product?.is_on_sale) || discount > 0;
 
   function selectDesign(unitId: number) {
-    const unit = designUnitWithSize.find(
-      (item) => item.id === unitId
-    );
-
-    if (!unit || unit.status !== "available") return;
-
-    setSelectedDesignId(unit.id);
-    setSelectedImage(unit.imageUrl);
-    if (unit.size) setSelectedSize(unit.size);
-    setQuantity(1);
+    const unit = designUnits.find((item) => item.id === unitId);
+    if (!unit || !designHasAvailableSize(unit.id)) return;
+    const firstAvailableLink = availableDesignVariantLinks.find((link) => link.designUnitId === unit.id);
+    const firstVariant = variantRefs.find((variant) => variant.id === firstAvailableLink?.variantId);
+    setSelectedDesignId(unit.id); setSelectedImage(unit.imageUrl); setSelectedSize(firstVariant?.size || ""); setQuantity(1);
   }
 
   function selectSize(size: string) {
-    setSelectedSize(size);
-    setQuantity(1);
-
-    if (!designMode) return;
-
-    const firstAvailable = availableDesignUnitWithSize.find(
-      (unit) => unit.size === size
-    );
-
-    if (firstAvailable) {
-      setSelectedDesignId(firstAvailable.id);
-      setSelectedImage(firstAvailable.imageUrl);
-    } else {
-      setSelectedDesignId(null);
+    if (designMode) {
+      const variant = variantRefs.find((item) => item.size === size);
+      const allowed = variant && selectedDesignId && availableDesignVariantLinks.some((link) => link.designUnitId === selectedDesignId && link.variantId === variant.id);
+      if (!allowed) return;
     }
+    setSelectedSize(size); setQuantity(1);
   }
 
   async function addToCart(goToCart = true): Promise<boolean> {
@@ -694,14 +608,23 @@ export default function ProductPage() {
       return false;
     }
 
-    if (designMode && !selectedDesign) {
-      alert("Please select the design you want.");
-      return false;
-    }
+    if (designMode) {
+      const selectedDesignForCart = selectedDesign;
 
-    if (designMode && selectedDesign?.status !== "available") {
-      alert("This design is sold out. Please choose another design.");
-      return false;
+      if (!selectedDesignForCart) {
+        alert("Please select the design you want.");
+        return false;
+      }
+
+      if (!designHasAvailableSize(selectedDesignForCart.id)) {
+        alert("This design is sold out. Please choose another design.");
+        return false;
+      }
+
+      if (!isSelectedDesignSizeAvailable()) {
+        alert("This size is not available for the selected design.");
+        return false;
+      }
     }
 
     setAddingToCart(true);
@@ -1142,7 +1065,7 @@ export default function ProductPage() {
                   <div>
                     <h3>Select Design</h3>
                     <p className="designHelp">
-                      {availableDesignUnits.length} design{availableDesignUnits.length === 1 ? "" : "s"} available
+                      {availableDesignUnits.length} unique design{availableDesignUnits.length === 1 ? "" : "s"} available
                     </p>
                   </div>
                   {selectedDesign?.designName && (
@@ -1159,13 +1082,13 @@ export default function ProductPage() {
                       key={`design-card-${unit.id}`}
                       className={`designChoice ${
                         selectedDesignId === unit.id ? "designChoiceActive" : ""
-                      } ${unit.status === "sold_out" ? "designChoiceSoldOut" : ""}`}
+                      } ${!designHasAvailableSize(unit.id) ? "designChoiceSoldOut" : ""}`}
                       onClick={() => selectDesign(unit.id)}
-                      disabled={unit.status !== "available"}
+                      disabled={!designHasAvailableSize(unit.id)}
                     >
                       <img src={unit.imageUrl} alt={unit.designName} />
                       <span>{unit.designName}</span>
-                      {unit.status === "sold_out" && <b>Sold Out</b>}
+                      {!designHasAvailableSize(unit.id) && <b>Sold Out</b>}
                     </button>
                   ))}
                 </div>
@@ -1242,7 +1165,7 @@ export default function ProductPage() {
             <div className="stockCard">
               <div>
                 <span>
-                  {designMode ? "Designs Available" : "Stock Available"}
+                  {designMode ? "Unique Designs Available" : "Stock Available"}
                 </span>
                 <strong>{stock}</strong>
               </div>
