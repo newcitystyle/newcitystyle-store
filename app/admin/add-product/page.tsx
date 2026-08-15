@@ -66,10 +66,32 @@ type ExistingStockProduct = {
   sellOnline: boolean;
   image: string;
   variantId: number | null;
+  variantName: string;
   variantBarcode: string;
   variantSku: string;
+  variantMrp: number;
+  variantOnlinePrice: number;
+  variantMainImage: string;
+  variantGalleryImages: string[];
   size: string;
   color: string;
+};
+
+type BulkDesignItem = {
+  productId: number;
+  variantId: number;
+  productName: string;
+  barcode: string;
+  sku: string;
+  size: string;
+  color: string;
+  stock: number;
+  existingVariantName: string;
+  designName: string;
+  image: string;
+  sellOnline: boolean;
+  onlineStockLimit: number;
+  aiStatus: "idle" | "loading" | "success" | "error";
 };
 
 type PhotoStudioPreset = {
@@ -1011,6 +1033,13 @@ export default function AddProductPage() {
   const [linkedStockProduct, setLinkedStockProduct] =
     useState<ExistingStockProduct | null>(null);
 
+  const [bulkSelectedStock, setBulkSelectedStock] = useState<
+    ExistingStockProduct[]
+  >([]);
+  const [bulkDesignItems, setBulkDesignItems] = useState<BulkDesignItem[]>([]);
+  const [uploadingBulkDesigns, setUploadingBulkDesigns] = useState(false);
+  const [generatingBulkAi, setGeneratingBulkAi] = useState(false);
+
   const [photoStudioOriginalImages, setPhotoStudioOriginalImages] =
     useState<string[]>([]);
   const [selectedStudioSourceIndex, setSelectedStudioSourceIndex] =
@@ -1197,23 +1226,24 @@ export default function AddProductPage() {
       const safeQuery = query.replace(/[,%()]/g, " ").trim();
       const pattern = `%${safeQuery}%`;
 
+      const variantSelect =
+        "id,product_id,variant_name,barcode,sku,size,color,stock,reserved_stock,online_stock_limit,sell_online,mrp,online_price,main_image,gallery_images";
+      const productSelect =
+        "id,name,barcode,sku,stock,online_stock_limit,sell_online,image,mrp,price,gallery_images";
+
       const [productsResponse, variantsResponse] = await Promise.all([
         supabase
           .from("products")
-          .select(
-            "id,name,barcode,sku,stock,online_stock_limit,sell_online,image"
-          )
+          .select(productSelect)
           .or(
             `name.ilike.${pattern},barcode.ilike.${pattern},sku.ilike.${pattern}`
           )
           .limit(12),
         supabase
           .from("product_variants")
-          .select(
-            "id,product_id,barcode,sku,size,color,stock,reserved_stock,online_stock_limit,sell_online"
-          )
+          .select(variantSelect)
           .or(`barcode.ilike.${pattern},sku.ilike.${pattern}`)
-          .limit(12),
+          .limit(24),
       ]);
 
       if (productsResponse.error) throw productsResponse.error;
@@ -1221,8 +1251,35 @@ export default function AddProductPage() {
 
       const productRows =
         (productsResponse.data || []) as Record<string, unknown>[];
-      const variantRows =
+      const matchedVariantRows =
         (variantsResponse.data || []) as Record<string, unknown>[];
+
+      // When the owner searches by product name (for example SAREE), also load
+      // every child variant of those matched products. This makes each physical
+      // design/barcode selectable even when several variants share one name/rate.
+      const directProductIds = productRows
+        .map((row) => asNumber(row.id))
+        .filter((id) => id > 0);
+
+      let childVariantRows: Record<string, unknown>[] = [];
+
+      if (directProductIds.length) {
+        const { data, error } = await supabase
+          .from("product_variants")
+          .select(variantSelect)
+          .in("product_id", directProductIds)
+          .order("id", { ascending: true });
+
+        if (error) throw error;
+        childVariantRows = (data || []) as Record<string, unknown>[];
+      }
+
+      const variantRowMap = new Map<number, Record<string, unknown>>();
+      [...matchedVariantRows, ...childVariantRows].forEach((row) => {
+        const id = asNumber(row.id);
+        if (id > 0) variantRowMap.set(id, row);
+      });
+      const variantRows = Array.from(variantRowMap.values());
 
       const variantProductIds = Array.from(
         new Set(
@@ -1235,16 +1292,19 @@ export default function AddProductPage() {
       let variantParents: Record<string, unknown>[] = [];
 
       if (variantProductIds.length) {
-        const { data, error } = await supabase
-          .from("products")
-          .select(
-            "id,name,barcode,sku,stock,online_stock_limit,sell_online,image"
-          )
-          .in("id", variantProductIds);
+        const missingParentIds = variantProductIds.filter(
+          (id) => !productRows.some((row) => asNumber(row.id) === id)
+        );
 
-        if (error) throw error;
-        variantParents =
-          (data || []) as Record<string, unknown>[];
+        if (missingParentIds.length) {
+          const { data, error } = await supabase
+            .from("products")
+            .select(productSelect)
+            .in("id", missingParentIds);
+
+          if (error) throw error;
+          variantParents = (data || []) as Record<string, unknown>[];
+        }
       }
 
       const parentMap = new Map(
@@ -1265,8 +1325,13 @@ export default function AddProductPage() {
           sellOnline: row.sell_online === true,
           image: asString(row.image),
           variantId: null,
+          variantName: "",
           variantBarcode: "",
           variantSku: "",
+          variantMrp: 0,
+          variantOnlinePrice: 0,
+          variantMainImage: "",
+          variantGalleryImages: [],
           size: "",
           color: "",
         })
@@ -1277,11 +1342,9 @@ export default function AddProductPage() {
           const productId = asNumber(row.product_id);
           const parent = parentMap.get(productId);
 
-          if (!parent) {
-            return null;
-          }
+          if (!parent) return null;
 
-          const variant: ExistingStockProduct = {
+          return {
             id: productId,
             name: asString(parent.name) || "Unnamed Product",
             barcode: asString(parent.barcode),
@@ -1294,13 +1357,16 @@ export default function AddProductPage() {
             sellOnline: row.sell_online === true,
             image: asString(parent.image),
             variantId: asNumber(row.id),
+            variantName: asString(row.variant_name),
             variantBarcode: asString(row.barcode),
             variantSku: asString(row.sku),
+            variantMrp: asNumber(row.mrp),
+            variantOnlinePrice: asNumber(row.online_price),
+            variantMainImage: asString(row.main_image),
+            variantGalleryImages: asStringArray(row.gallery_images),
             size: asString(row.size),
             color: asString(row.color),
           };
-
-          return variant;
         })
         .filter(
           (item): item is ExistingStockProduct => item !== null
@@ -1349,6 +1415,24 @@ export default function AddProductPage() {
       );
       const existingFaqs = asFaqs(row.faqs);
 
+      // Variant-specific online media/pricing wins when present.
+      // Otherwise old shirt/jeans size variants continue using the shared
+      // parent photo and price exactly as before.
+      const effectiveMrp =
+        selected.variantMrp > 0
+          ? selected.variantMrp
+          : asNumber(row.mrp);
+      const effectivePrice =
+        selected.variantOnlinePrice > 0
+          ? selected.variantOnlinePrice
+          : asNumber(row.price);
+      const effectiveMainImage =
+        selected.variantMainImage || asString(row.image);
+      const effectiveGalleryImages =
+        selected.variantGalleryImages.length > 0
+          ? selected.variantGalleryImages
+          : asStringArray(row.gallery_images);
+
       setLinkedStockProduct(selected);
       setStockSearchResults([]);
       setStockSearch(
@@ -1370,8 +1454,8 @@ export default function AddProductPage() {
         ageGroup: asString(row.age_group),
         shortDescription: asString(row.short_description),
         description: asString(row.description),
-        mrp: String(asNumber(row.mrp) || ""),
-        price: String(asNumber(row.price) || ""),
+        mrp: String(effectiveMrp || ""),
+        price: String(effectivePrice || ""),
         discountPercent: String(asNumber(row.discount_percent)),
         taxPercent: String(asNumber(row.tax_percent) || ""),
         sku: selected.variantSku || selected.sku,
@@ -1380,8 +1464,8 @@ export default function AddProductPage() {
         lowStockLimit: String(asNumber(row.low_stock_limit) || 5),
         sellOnline: selected.sellOnline,
         onlineStockLimit: String(selected.onlineStockLimit),
-        mainImage: asString(row.image),
-        galleryImages: asStringArray(row.gallery_images),
+        mainImage: effectiveMainImage,
+        galleryImages: effectiveGalleryImages,
         lifestyleImages: asStringArray(row.lifestyle_images),
         tags: asStringArray(row.tags),
         sizes: asStringArray(row.sizes),
@@ -1424,9 +1508,7 @@ export default function AddProductPage() {
       }));
 
       setPhotoStudioOriginalImages(
-        asString(row.image)
-          ? [asString(row.image)]
-          : []
+        effectiveMainImage ? [effectiveMainImage] : []
       );
       setSelectedStudioSourceIndex(0);
       setPhotoStudioEnhancedImage("");
@@ -1453,10 +1535,261 @@ export default function AddProductPage() {
     }
   }
 
+  function getStockSelectionKey(product: ExistingStockProduct) {
+    return `${product.id}-${product.variantId || 0}`;
+  }
+
+  function toggleBulkStockSelection(product: ExistingStockProduct) {
+    if (!product.variantId) {
+      alert("Bulk Design mode is available for barcode variants only. Use Link for a direct/legacy product.");
+      return;
+    }
+
+    const key = getStockSelectionKey(product);
+
+    setBulkSelectedStock((current) => {
+      const exists = current.some(
+        (item) => getStockSelectionKey(item) === key
+      );
+
+      if (exists) {
+        return current.filter(
+          (item) => getStockSelectionKey(item) !== key
+        );
+      }
+
+      if (current.length && current[0].id !== product.id) {
+        alert("For one bulk upload, select designs belonging to the same parent product only.");
+        return current;
+      }
+
+      return [...current, product];
+    });
+  }
+
+  async function startBulkDesignSetup() {
+    if (!bulkSelectedStock.length) {
+      alert("Select at least one barcode variant first.");
+      return;
+    }
+
+    if (bulkSelectedStock.some((item) => !item.variantId)) {
+      alert("Bulk Design mode requires barcode variants. Please select variant rows only.");
+      return;
+    }
+
+    const parentId = bulkSelectedStock[0].id;
+    if (bulkSelectedStock.some((item) => item.id !== parentId)) {
+      alert("Please select variants from the same product only.");
+      return;
+    }
+
+    const first = bulkSelectedStock[0];
+    await linkExistingStockProduct(first);
+
+    setBulkDesignItems(
+      bulkSelectedStock.map((item, index) => ({
+        productId: item.id,
+        variantId: item.variantId as number,
+        productName: item.name,
+        barcode: item.variantBarcode || item.barcode,
+        sku: item.variantSku || item.sku,
+        size: item.size,
+        color: item.color,
+        stock: item.stock,
+        existingVariantName: item.variantName,
+        designName:
+          item.variantName ||
+          [item.color, item.size, `Design ${index + 1}`]
+            .filter(Boolean)
+            .join(" • "),
+        image: item.variantMainImage || "",
+        sellOnline: true,
+        onlineStockLimit: Math.max(0, item.stock),
+        aiStatus: "idle" as const,
+      }))
+    );
+    setBulkSelectedStock([]);
+
+    setAiStatus({
+      type: "success",
+      message:
+        "Bulk Design mode ready. Upload the photos in the same order as the barcode cards below, then generate AI names and save once.",
+    });
+  }
+
+  function updateBulkDesignItem(
+    index: number,
+    patch: Partial<BulkDesignItem>
+  ) {
+    setBulkDesignItems((current) =>
+      current.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, ...patch } : item
+      )
+    );
+  }
+
+  async function uploadBulkDesignImages(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const files = Array.from(event.target.files || []);
+
+    if (!files.length) return;
+
+    if (!bulkDesignItems.length) {
+      alert("Select barcode variants and start Bulk Design mode first.");
+      event.target.value = "";
+      return;
+    }
+
+    if (files.length !== bulkDesignItems.length) {
+      alert(
+        `Please select exactly ${bulkDesignItems.length} photos — one photo for each selected barcode, in the same order shown.`
+      );
+      event.target.value = "";
+      return;
+    }
+
+    const validFiles = files.filter((file) => validateImage(file));
+    if (validFiles.length !== files.length) {
+      event.target.value = "";
+      return;
+    }
+
+    setUploadingBulkDesigns(true);
+
+    try {
+      const urls = await Promise.all(
+        validFiles.map((file) => uploadFile(file, "bulk-designs"))
+      );
+
+      setBulkDesignItems((current) =>
+        current.map((item, index) => ({
+          ...item,
+          image: urls[index] || item.image,
+          aiStatus: "idle" as const,
+        }))
+      );
+
+      if (urls[0]) {
+        setForm((current) => ({
+          ...current,
+          mainImage: urls[0],
+          socialPreviewUrl: current.socialPreviewUrl || urls[0],
+        }));
+        setPhotoStudioOriginalImages(urls);
+        setSelectedStudioSourceIndex(0);
+      }
+
+      alert(
+        `${urls.length} design photos uploaded and matched to the selected barcodes in order.`
+      );
+    } catch (error) {
+      console.error(error);
+      alert(
+        error instanceof Error
+          ? `Bulk photo upload failed: ${error.message}`
+          : "Bulk photo upload failed."
+      );
+    } finally {
+      setUploadingBulkDesigns(false);
+      event.target.value = "";
+    }
+  }
+
+  async function generateBulkDesignNamesWithAi() {
+    if (!bulkDesignItems.length) {
+      alert("Start Bulk Design mode first.");
+      return;
+    }
+
+    if (bulkDesignItems.some((item) => !item.image)) {
+      alert("Upload one photo for every selected barcode before generating AI design names.");
+      return;
+    }
+
+    setGeneratingBulkAi(true);
+
+    try {
+      for (let index = 0; index < bulkDesignItems.length; index += 1) {
+        const item = bulkDesignItems[index];
+
+        updateBulkDesignItem(index, { aiStatus: "loading" });
+        setAiStatus({
+          type: "idle",
+          message: `AI is naming design ${index + 1} of ${bulkDesignItems.length}...`,
+        });
+
+        try {
+          const response = await fetch("/api/generate-product-details", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              imageUrl: item.image,
+              productContext: {
+                name: item.productName || form.name.trim(),
+                brand: form.brand.trim(),
+                category: form.category.trim(),
+                subcategory: form.subcategory.trim(),
+                gender: form.gender.trim(),
+                size: item.size || form.sizes.join(", "),
+                colour: item.color || "",
+                material: form.material.trim(),
+                fabric: form.fabric.trim(),
+                pattern: "",
+                sleeveType: form.sleeveType.trim(),
+                fit: form.fitType.trim(),
+                occasion: form.occasion.trim(),
+              },
+            }),
+          });
+
+          const result = (await response.json()) as {
+            details?: AiProductDetails;
+            error?: string;
+          };
+
+          if (!response.ok || !result.details) {
+            throw new Error(
+              result.error || "AI could not name this design."
+            );
+          }
+
+          updateBulkDesignItem(index, {
+            designName:
+              result.details.productName.trim() || item.designName,
+            aiStatus: "success",
+          });
+        } catch (error) {
+          console.error(error);
+          updateBulkDesignItem(index, { aiStatus: "error" });
+        }
+      }
+
+      setAiStatus({
+        type: "success",
+        message:
+          "AI design naming finished. Review or edit each name, then press Save once.",
+      });
+    } finally {
+      setGeneratingBulkAi(false);
+    }
+  }
+
+  function cancelBulkDesignSetup() {
+    setBulkDesignItems([]);
+    setBulkSelectedStock([]);
+    setAiStatus({ type: "idle", message: "" });
+  }
+
   function unlinkExistingStockProduct() {
     setLinkedStockProduct(null);
     setStockSearch("");
     setStockSearchResults([]);
+    setBulkSelectedStock([]);
+    setBulkDesignItems([]);
     setForm(initialForm);
     setAiStatus({ type: "idle", message: "" });
     setPhotoStudioOriginalImages([]);
@@ -3168,25 +3501,189 @@ export default function AddProductPage() {
       updated_at: new Date().toISOString(),
     };
 
-    if (linkedStockProduct) {
+    if (bulkDesignItems.length > 0) {
+      const missingImage = bulkDesignItems.find((item) => !item.image);
+      if (missingImage) {
+        alert(
+          `Photo missing for barcode ${missingImage.barcode || missingImage.variantId}. Upload all design photos before saving.`
+        );
+        setSaving(false);
+        return;
+      }
+
+      const parentId = bulkDesignItems[0].productId;
       const {
         sku: _sku,
         barcode: _barcode,
         stock: _stock,
         online_stock_limit: _onlineStockLimit,
-        ...detailsOnly
+        mrp: _parentMrp,
+        price: _parentPrice,
+        discount_percent: _parentDiscount,
+        image: _parentImage,
+        gallery_images: _parentGallery,
+        sell_online: _parentSellOnline,
+        social_preview_url: _parentSocialPreview,
+        ...sharedDetails
       } = productData;
 
-      const { error } = await supabase
+      const { error: parentError } = await supabase
         .from("products")
-        .update(detailsOnly)
-        .eq("id", linkedStockProduct.id);
+        .update(sharedDetails)
+        .eq("id", parentId);
 
-      if (error) {
-        console.error(error);
-        alert(`Unable to update product: ${error.message}`);
+      if (parentError) {
+        console.error(parentError);
+        alert(`Unable to update common product details: ${parentError.message}`);
         setSaving(false);
         return;
+      }
+
+      for (let index = 0; index < bulkDesignItems.length; index += 1) {
+        const design = bulkDesignItems[index];
+        const finalDesignName =
+          design.designName.trim() ||
+          design.existingVariantName ||
+          `Design ${index + 1}`;
+
+        const { error: variantError } = await supabase
+          .from("product_variants")
+          .update({
+            variant_name: finalDesignName,
+            main_image: design.image,
+            sell_online: design.sellOnline,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", design.variantId)
+          .eq("product_id", design.productId);
+
+        if (variantError) {
+          console.error(variantError);
+          alert(
+            `Barcode ${design.barcode || design.variantId} photo/name failed: ${variantError.message}`
+          );
+          setSaving(false);
+          return;
+        }
+
+        const { error: onlineStockError } = await supabase.rpc(
+          "set_product_online_stock",
+          {
+            p_product_id: design.productId,
+            p_variant_id: design.variantId,
+            p_online_quantity: design.sellOnline
+              ? Math.min(
+                  Math.max(0, design.onlineStockLimit),
+                  Math.max(0, design.stock)
+                )
+              : 0,
+            p_sell_online: design.sellOnline,
+          }
+        );
+
+        if (onlineStockError) {
+          console.error(onlineStockError);
+          alert(
+            `Barcode ${design.barcode || design.variantId} online quantity failed: ${onlineStockError.message}`
+          );
+          setSaving(false);
+          return;
+        }
+      }
+
+      alert(
+        `${bulkDesignItems.length} designs saved successfully. Existing barcodes and physical stock were preserved.`
+      );
+
+      setForm(initialForm);
+      setLinkedStockProduct(null);
+      setBulkDesignItems([]);
+      setBulkSelectedStock([]);
+      setPhotoStudioOriginalImages([]);
+      setSelectedStudioSourceIndex(0);
+      setPhotoStudioEnhancedImage("");
+      setPhotoStudioStatus({ type: "idle", message: "" });
+      setSaving(false);
+
+      router.push(`/admin/products`);
+      router.refresh();
+      return;
+    }
+
+    if (linkedStockProduct) {
+      if (linkedStockProduct.variantId) {
+        // Variant-linked save: keep physical stock/barcode/SKU untouched.
+        // Save only this variant's online price/photo while common catalogue
+        // details remain on the parent product. Parent price/photo are kept as
+        // backward-compatible fallbacks for old size-only products.
+        const {
+          sku: _sku,
+          barcode: _barcode,
+          stock: _stock,
+          online_stock_limit: _onlineStockLimit,
+          mrp: _parentMrp,
+          price: _parentPrice,
+          discount_percent: _parentDiscount,
+          image: _parentImage,
+          gallery_images: _parentGallery,
+          sell_online: _parentSellOnline,
+          social_preview_url: _parentSocialPreview,
+          ...sharedDetails
+        } = productData;
+
+        const { error: parentError } = await supabase
+          .from("products")
+          .update(sharedDetails)
+          .eq("id", linkedStockProduct.id);
+
+        if (parentError) {
+          console.error(parentError);
+          alert(`Unable to update product: ${parentError.message}`);
+          setSaving(false);
+          return;
+        }
+
+        const { error: variantDetailsError } = await supabase
+          .from("product_variants")
+          .update({
+            mrp: Number(form.mrp || form.price),
+            online_price: Number(form.price),
+            main_image: form.mainImage || null,
+            gallery_images: form.galleryImages,
+            sell_online: form.sellOnline,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", linkedStockProduct.variantId);
+
+        if (variantDetailsError) {
+          console.error(variantDetailsError);
+          alert(
+            `Product details were updated, but variant price/photo failed: ${variantDetailsError.message}`
+          );
+          setSaving(false);
+          return;
+        }
+      } else {
+        // Legacy/direct product link keeps the old behaviour unchanged.
+        const {
+          sku: _sku,
+          barcode: _barcode,
+          stock: _stock,
+          online_stock_limit: _onlineStockLimit,
+          ...detailsOnly
+        } = productData;
+
+        const { error } = await supabase
+          .from("products")
+          .update(detailsOnly)
+          .eq("id", linkedStockProduct.id);
+
+        if (error) {
+          console.error(error);
+          alert(`Unable to update product: ${error.message}`);
+          setSaving(false);
+          return;
+        }
       }
 
       const { error: onlineStockError } = await supabase.rpc(
@@ -3214,7 +3711,9 @@ export default function AddProductPage() {
       }
 
       alert(
-        "Existing stock product updated successfully. Barcode and physical stock were preserved."
+        linkedStockProduct.variantId
+          ? "Variant updated successfully. Its own online price and photo were saved; barcode and physical stock were preserved."
+          : "Existing stock product updated successfully. Barcode and physical stock were preserved."
       );
     } else {
       const { error } = await supabase
@@ -3254,6 +3753,7 @@ export default function AddProductPage() {
     uploadingMain ||
     uploadingGallery ||
     uploadingLifestyle ||
+    uploadingBulkDesigns ||
     uploadingStudioSource ||
     uploadingStudioEnhanced ||
     generatingPremiumPhoto;
@@ -3342,6 +3842,9 @@ export default function AddProductPage() {
                         {linkedStockProduct.variantId
                           ? ` • Variant ID: ${linkedStockProduct.variantId}`
                           : ""}
+                        {linkedStockProduct.variantName
+                          ? ` • ${linkedStockProduct.variantName}`
+                          : ""}
                       </p>
                       <p>
                         Barcode: {linkedStockProduct.variantBarcode || linkedStockProduct.barcode || "Auto barcode"}
@@ -3367,50 +3870,260 @@ export default function AddProductPage() {
                 )}
 
                 {!linkedStockProduct && stockSearchResults.length > 0 && (
-                  <div className="existing-stock-results">
-                    {stockSearchResults.map((product) => (
-                      <button
-                        type="button"
-                        key={`${product.id}-${product.variantId || 0}`}
-                        onClick={() =>
-                          linkExistingStockProduct(product)
-                        }
-                      >
-                        <div className="existing-stock-result-image">
-                          {product.image ? (
-                            <img
-                              src={product.image}
-                              alt={product.name}
-                            />
-                          ) : (
-                            <span>📦</span>
-                          )}
-                        </div>
+                  <>
+                    <div className="existing-stock-results">
+                      {stockSearchResults.map((product) => {
+                        const bulkSelected = bulkSelectedStock.some(
+                          (item) =>
+                            getStockSelectionKey(item) ===
+                            getStockSelectionKey(product)
+                        );
 
+                        return (
+                          <div
+                            key={`${product.id}-${product.variantId || 0}`}
+                            style={bulkStockResultRowStyle}
+                          >
+                            <button
+                              type="button"
+                              onClick={() =>
+                                linkExistingStockProduct(product)
+                              }
+                              style={bulkStockResultLinkStyle}
+                            >
+                              <div className="existing-stock-result-image">
+                                {product.variantMainImage || product.image ? (
+                                  <img
+                                    src={product.variantMainImage || product.image}
+                                    alt={product.name}
+                                  />
+                                ) : (
+                                  <span>📦</span>
+                                )}
+                              </div>
+
+                              <div>
+                                <strong>
+                                  {product.name}
+                                  {product.variantName
+                                    ? ` • ${product.variantName}`
+                                    : ""}
+                                </strong>
+                                <span>
+                                  {product.variantBarcode ||
+                                    product.barcode ||
+                                    "No barcode"}
+                                </span>
+                                <small>
+                                  Stock {product.stock}
+                                  {product.size ? ` • ${product.size}` : ""}
+                                  {product.color
+                                    ? ` • ${product.color}`
+                                    : ""}
+                                </small>
+                              </div>
+
+                              <b>Link One</b>
+                            </button>
+
+                            {product.variantId && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  toggleBulkStockSelection(product)
+                                }
+                                style={{
+                                  ...bulkSelectButtonStyle,
+                                  ...(bulkSelected
+                                    ? bulkSelectButtonActiveStyle
+                                    : {}),
+                                }}
+                              >
+                                {bulkSelected ? "✓ Selected" : "+ Bulk"}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {bulkSelectedStock.length > 0 && (
+                      <div style={bulkStartBarStyle}>
                         <div>
-                          <strong>{product.name}</strong>
+                          <strong>
+                            {bulkSelectedStock.length} barcode design
+                            {bulkSelectedStock.length === 1 ? "" : "s"} selected
+                          </strong>
                           <span>
-                            {product.variantBarcode || product.barcode || "No barcode"}
+                            Select all required variants, then start one-time bulk photo setup.
                           </span>
-                          <small>
-                            Stock {product.stock}
-                            {product.size ? ` • ${product.size}` : ""}
-                            {product.color ? ` • ${product.color}` : ""}
-                          </small>
                         </div>
-
-                        <b>Link</b>
-                      </button>
-                    ))}
-                  </div>
+                        <button
+                          type="button"
+                          onClick={startBulkDesignSetup}
+                          style={bulkStartButtonStyle}
+                        >
+                          Start Bulk Design Setup ({bulkSelectedStock.length})
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 <div className="existing-stock-note">
                   {linkedStockProduct
-                    ? "Now upload the shirt photo and use AI. Saving updates this same product; it does not create a duplicate."
+                    ? linkedStockProduct.variantId
+                      ? "This exact variant is linked. Price and photos save to this variant only; barcode and physical stock stay locked and continue syncing from Purchase Stock / POS."
+                      : "This product is linked. Saving updates the same product and preserves barcode and physical stock."
                     : "Leave this empty only when you want to create a completely new product."}
                 </div>
               </Panel>
+
+              {bulkDesignItems.length > 0 && (
+                <Panel
+                  title="Bulk Design Photos — Existing Barcodes"
+                  subtitle="Easy mode: every card is already tied to its existing barcode and stock. Upload the same number of photos in the same order, optionally let AI name each design, then Save once."
+                >
+                  <div style={bulkInstructionStyle}>
+                    <strong>1. Check the barcode order below</strong>
+                    <span>2. Select exactly {bulkDesignItems.length} photos in that same order</span>
+                    <span>3. Generate AI names (optional)</span>
+                    <span>4. Press Save once — barcodes and physical stock never change</span>
+                  </div>
+
+                  <UploadBox
+                    uploading={uploadingBulkDesigns}
+                    label={`Upload ${bulkDesignItems.length} Design Photos Together`}
+                    description="Select one photo per barcode. File order = barcode card order below."
+                    multiple
+                    onChange={uploadBulkDesignImages}
+                  />
+
+                  <div style={bulkToolbarStyle}>
+                    <button
+                      type="button"
+                      onClick={generateBulkDesignNamesWithAi}
+                      disabled={generatingBulkAi || uploadingBulkDesigns}
+                      style={bulkAiButtonStyle}
+                    >
+                      {generatingBulkAi
+                        ? "✨ AI Naming Designs..."
+                        : "✨ Generate Different AI Name for Every Design"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelBulkDesignSetup}
+                      disabled={generatingBulkAi || uploadingBulkDesigns}
+                      style={bulkCancelButtonStyle}
+                    >
+                      Cancel Bulk Mode
+                    </button>
+                  </div>
+
+                  <div style={bulkDesignGridStyle}>
+                    {bulkDesignItems.map((item, index) => (
+                      <div
+                        key={`${item.productId}-${item.variantId}`}
+                        style={bulkDesignCardStyle}
+                      >
+                        <div style={bulkDesignOrderStyle}>
+                          DESIGN {index + 1}
+                        </div>
+
+                        <div style={bulkDesignImageBoxStyle}>
+                          {item.image ? (
+                            <img
+                              src={item.image}
+                              alt={item.designName || `Design ${index + 1}`}
+                              style={bulkDesignImageStyle}
+                            />
+                          ) : (
+                            <div style={bulkDesignEmptyStyle}>
+                              <span>📷</span>
+                              <small>Photo {index + 1}</small>
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={bulkBarcodeBadgeStyle}>
+                          BARCODE: {item.barcode || "No barcode"}
+                        </div>
+
+                        <div style={bulkMetaStyle}>
+                          <span>Size: <strong>{item.size || "—"}</strong></span>
+                          <span>Colour: <strong>{item.color || "—"}</strong></span>
+                          <span>Physical Stock: <strong>{item.stock}</strong></span>
+                        </div>
+
+                        <Field label="Design Name">
+                          <input
+                            value={item.designName}
+                            onChange={(event) =>
+                              updateBulkDesignItem(index, {
+                                designName: event.target.value,
+                              })
+                            }
+                            placeholder={`Design ${index + 1} name`}
+                            style={inputStyle}
+                          />
+                        </Field>
+
+                        <div style={bulkAiStateStyle}>
+                          {item.aiStatus === "loading"
+                            ? "✨ AI analysing this photo..."
+                            : item.aiStatus === "success"
+                              ? "✅ AI name ready — editable"
+                              : item.aiStatus === "error"
+                                ? "⚠️ AI name failed — type/edit manually"
+                                : "AI name optional"}
+                        </div>
+
+                        <div style={bulkOnlineRowStyle}>
+                          <label style={bulkCheckboxLabelStyle}>
+                            <input
+                              type="checkbox"
+                              checked={item.sellOnline}
+                              onChange={(event) =>
+                                updateBulkDesignItem(index, {
+                                  sellOnline: event.target.checked,
+                                  onlineStockLimit: event.target.checked
+                                    ? Math.min(item.stock, Math.max(1, item.onlineStockLimit || item.stock))
+                                    : 0,
+                                })
+                              }
+                            />
+                            Sell Online
+                          </label>
+
+                          <label style={bulkQtyLabelStyle}>
+                            Online Qty
+                            <input
+                              type="number"
+                              min="0"
+                              max={item.stock}
+                              value={item.sellOnline ? item.onlineStockLimit : 0}
+                              disabled={!item.sellOnline}
+                              onChange={(event) =>
+                                updateBulkDesignItem(index, {
+                                  onlineStockLimit: Math.min(
+                                    item.stock,
+                                    Math.max(0, Number(event.target.value || 0))
+                                  ),
+                                })
+                              }
+                              style={bulkQtyInputStyle}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={bulkSafetyNoteStyle}>
+                    🔒 Safe mode: this bulk save updates only each variant's design name, online photo and online visibility/quantity. Existing barcode, SKU and physical stock are not rewritten.
+                  </div>
+                </Panel>
+              )}
 
               <Panel
                 title="Basic Information"
@@ -3789,7 +4502,11 @@ export default function AddProductPage() {
 
               <Panel
                 title="Main Product Image"
-                subtitle="Upload the primary image shown on product cards."
+                subtitle={
+                  bulkDesignItems.length > 0
+                    ? "Bulk Design mode automatically uses Design 1 as the parent fallback image. You can leave this section as-is."
+                    : "Upload the primary image shown on product cards."
+                }
               >
                 <UploadBox
                   uploading={uploadingMain}
@@ -6448,6 +7165,235 @@ const photoStudioMiniDangerButtonStyle: CSSProperties = {
   fontWeight: 800,
   cursor: "pointer",
   fontSize: "11px",
+};
+
+const bulkStockResultRowStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) auto",
+  gap: "10px",
+  alignItems: "stretch",
+};
+
+const bulkStockResultLinkStyle: CSSProperties = {
+  width: "100%",
+  minWidth: 0,
+  border: "none",
+  background: "transparent",
+  color: "inherit",
+  padding: 0,
+  textAlign: "left",
+  cursor: "pointer",
+  display: "grid",
+  gridTemplateColumns: "56px minmax(0, 1fr) auto",
+  gap: "12px",
+  alignItems: "center",
+};
+
+const bulkSelectButtonStyle: CSSProperties = {
+  minWidth: "92px",
+  border: "1px solid #D6B75B",
+  borderRadius: "12px",
+  background: "#FFFDF5",
+  color: "#0A2E73",
+  fontWeight: 800,
+  padding: "10px 12px",
+  cursor: "pointer",
+};
+
+const bulkSelectButtonActiveStyle: CSSProperties = {
+  background: "#0A2E73",
+  color: "#FFFFFF",
+  borderColor: "#0A2E73",
+};
+
+const bulkStartBarStyle: CSSProperties = {
+  marginTop: "14px",
+  padding: "14px",
+  borderRadius: "14px",
+  border: "1px solid rgba(212,175,55,0.70)",
+  background: "linear-gradient(135deg, #FFFDF7, #F7F0DB)",
+  display: "flex",
+  gap: "14px",
+  justifyContent: "space-between",
+  alignItems: "center",
+  flexWrap: "wrap",
+};
+
+const bulkStartButtonStyle: CSSProperties = {
+  border: "none",
+  borderRadius: "12px",
+  background: "#0A2E73",
+  color: "#FFFFFF",
+  fontWeight: 900,
+  padding: "12px 16px",
+  cursor: "pointer",
+};
+
+const bulkInstructionStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "8px 16px",
+  marginBottom: "14px",
+  padding: "12px 14px",
+  borderRadius: "12px",
+  background: "#F7F9FD",
+  color: "#17345E",
+  fontSize: "13px",
+};
+
+const bulkToolbarStyle: CSSProperties = {
+  display: "flex",
+  gap: "10px",
+  flexWrap: "wrap",
+  margin: "14px 0",
+};
+
+const bulkAiButtonStyle: CSSProperties = {
+  border: "none",
+  borderRadius: "12px",
+  background: "linear-gradient(135deg, #0A2E73, #174FA7)",
+  color: "#FFFFFF",
+  fontWeight: 900,
+  padding: "12px 16px",
+  cursor: "pointer",
+};
+
+const bulkCancelButtonStyle: CSSProperties = {
+  border: "1px solid #D1D5DB",
+  borderRadius: "12px",
+  background: "#FFFFFF",
+  color: "#6B7280",
+  fontWeight: 800,
+  padding: "12px 16px",
+  cursor: "pointer",
+};
+
+const bulkDesignGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(245px, 1fr))",
+  gap: "14px",
+};
+
+const bulkDesignCardStyle: CSSProperties = {
+  border: "1px solid #E4D39A",
+  borderRadius: "16px",
+  background: "#FFFFFF",
+  padding: "12px",
+  boxShadow: "0 10px 28px rgba(10,46,115,0.06)",
+};
+
+const bulkDesignOrderStyle: CSSProperties = {
+  color: "#B28716",
+  fontSize: "11px",
+  fontWeight: 900,
+  letterSpacing: "0.08em",
+  marginBottom: "8px",
+};
+
+const bulkDesignImageBoxStyle: CSSProperties = {
+  width: "100%",
+  aspectRatio: "4 / 5",
+  borderRadius: "12px",
+  overflow: "hidden",
+  background: "#F5F7FA",
+  border: "1px solid #E5E7EB",
+};
+
+const bulkDesignImageStyle: CSSProperties = {
+  width: "100%",
+  height: "100%",
+  objectFit: "contain",
+  display: "block",
+};
+
+const bulkDesignEmptyStyle: CSSProperties = {
+  width: "100%",
+  height: "100%",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "8px",
+  color: "#6B7280",
+  fontSize: "30px",
+};
+
+const bulkBarcodeBadgeStyle: CSSProperties = {
+  marginTop: "10px",
+  borderRadius: "10px",
+  background: "#0A2E73",
+  color: "#FFFFFF",
+  padding: "8px 10px",
+  fontSize: "12px",
+  fontWeight: 900,
+  letterSpacing: "0.03em",
+  wordBreak: "break-all",
+};
+
+const bulkMetaStyle: CSSProperties = {
+  display: "grid",
+  gap: "5px",
+  margin: "10px 0",
+  color: "#4B5563",
+  fontSize: "12px",
+};
+
+const bulkAiStateStyle: CSSProperties = {
+  minHeight: "18px",
+  marginTop: "6px",
+  color: "#6B7280",
+  fontSize: "11px",
+  fontWeight: 700,
+};
+
+const bulkOnlineRowStyle: CSSProperties = {
+  marginTop: "12px",
+  paddingTop: "10px",
+  borderTop: "1px solid #EEF0F4",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "10px",
+  flexWrap: "wrap",
+};
+
+const bulkCheckboxLabelStyle: CSSProperties = {
+  display: "flex",
+  gap: "7px",
+  alignItems: "center",
+  color: "#0A2E73",
+  fontSize: "12px",
+  fontWeight: 800,
+};
+
+const bulkQtyLabelStyle: CSSProperties = {
+  display: "flex",
+  gap: "7px",
+  alignItems: "center",
+  color: "#4B5563",
+  fontSize: "12px",
+  fontWeight: 700,
+};
+
+const bulkQtyInputStyle: CSSProperties = {
+  width: "72px",
+  border: "1px solid #D1D5DB",
+  borderRadius: "8px",
+  padding: "7px 8px",
+  color: "#111827",
+  background: "#FFFFFF",
+  fontWeight: 800,
+};
+
+const bulkSafetyNoteStyle: CSSProperties = {
+  marginTop: "14px",
+  padding: "12px 14px",
+  borderRadius: "12px",
+  border: "1px solid #A7D7B5",
+  background: "#F0FFF4",
+  color: "#116530",
+  fontSize: "12px",
+  fontWeight: 800,
 };
 
 const saveProductButtonStyle: CSSProperties = {

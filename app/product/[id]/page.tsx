@@ -54,6 +54,23 @@ type Product = {
   [key: string]: unknown;
 };
 
+type ProductDesignUnit = {
+  id: number;
+  productId: number;
+  parentVariantId: number | null;
+  parentBarcode: string;
+  designName: string;
+  imageUrl: string;
+  status: "available" | "sold_out" | "hidden";
+  sortOrder: number;
+};
+
+type ProductVariantRef = {
+  id: number;
+  size: string;
+  barcode: string;
+};
+
 function getProductName(product: Product) {
   return (
     product.name ||
@@ -356,6 +373,10 @@ export default function ProductPage() {
   const [selectedSize, setSelectedSize] = useState("");
   const [quantity, setQuantity] = useState(1);
 
+  const [designUnits, setDesignUnits] = useState<ProductDesignUnit[]>([]);
+  const [variantRefs, setVariantRefs] = useState<ProductVariantRef[]>([]);
+  const [selectedDesignId, setSelectedDesignId] = useState<number | null>(null);
+
   const [zoomVisible, setZoomVisible] = useState(false);
   const [zoomPosition, setZoomPosition] = useState({ x: 50, y: 50 });
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
@@ -393,26 +414,158 @@ export default function ProductPage() {
       if (error) throw error;
 
       const loadedProduct = data as Product;
-      const images = parseImages(loadedProduct);
+      const parentImages = parseImages(loadedProduct);
+
+      const [{ data: variantData, error: variantError }, { data: designData, error: designError }] =
+        await Promise.all([
+          supabase
+            .from("product_variants")
+            .select("id,size,barcode")
+            .eq("product_id", params.id)
+            .order("id", { ascending: true }),
+          supabase
+            .from("product_design_units")
+            .select("id,product_id,parent_variant_id,parent_barcode,design_name,image_url,status,sort_order")
+            .eq("product_id", params.id)
+            .neq("status", "hidden")
+            .order("sort_order", { ascending: true })
+            .order("id", { ascending: true }),
+        ]);
+
+      if (variantError) {
+        console.info("Unable to load product variant references:", variantError.message);
+      }
+
+      if (designError) {
+        console.info("Unable to load individual design photos:", designError.message);
+      }
+
+      const cleanVariantRefs = ((variantData || []) as Record<string, unknown>[]).map(
+        (row) => ({
+          id: Number(row.id || 0),
+          size: typeof row.size === "string" ? row.size.trim() : "",
+          barcode: typeof row.barcode === "string" ? row.barcode.trim() : "",
+        })
+      );
+
+      const cleanDesignUnits: ProductDesignUnit[] = (
+        (designData || []) as Record<string, unknown>[]
+      )
+        .map((row): ProductDesignUnit => {
+          const status: ProductDesignUnit["status"] =
+            row.status === "sold_out"
+              ? "sold_out"
+              : row.status === "hidden"
+                ? "hidden"
+                : "available";
+
+          return {
+            id: Number(row.id || 0),
+            productId: Number(row.product_id || 0),
+            parentVariantId:
+              Number(row.parent_variant_id || 0) > 0
+                ? Number(row.parent_variant_id)
+                : null,
+            parentBarcode:
+              typeof row.parent_barcode === "string"
+                ? row.parent_barcode.trim()
+                : "",
+            designName:
+              typeof row.design_name === "string" && row.design_name.trim()
+                ? row.design_name.trim()
+                : "Design",
+            imageUrl:
+              typeof row.image_url === "string"
+                ? row.image_url.trim()
+                : "",
+            status,
+            sortOrder: Math.max(0, Number(row.sort_order || 0)),
+          };
+        })
+        .filter((unit) => unit.id > 0 && unit.imageUrl);
+
+      const availableDesignUnits = cleanDesignUnits.filter(
+        (unit) => unit.status === "available"
+      );
 
       setProduct(loadedProduct);
-      setSelectedImage(images[0] || "");
-      setSelectedSize("");
+      setVariantRefs(cleanVariantRefs);
+      setDesignUnits(cleanDesignUnits);
+
+      if (availableDesignUnits.length > 0) {
+        const firstDesign = availableDesignUnits[0];
+        const firstVariant = cleanVariantRefs.find(
+          (variant) => variant.id === firstDesign.parentVariantId
+        );
+
+        setSelectedImage(firstDesign.imageUrl);
+        setSelectedDesignId(firstDesign.id);
+        setSelectedSize(firstVariant?.size || "");
+      } else {
+        setSelectedImage(parentImages[0] || "");
+        setSelectedDesignId(null);
+        setSelectedSize("");
+      }
+
       setQuantity(1);
     } catch (error) {
       console.error("Load product error:", error);
       setProduct(null);
+      setVariantRefs([]);
+      setDesignUnits([]);
+      setSelectedDesignId(null);
     } finally {
       setLoading(false);
     }
   }
 
-  const images = useMemo(
+  const parentImages = useMemo(
     () => (product ? parseImages(product) : []),
     [product]
   );
 
-  const sizes = useMemo(() => {
+  const designMode = designUnits.length > 0;
+
+  const availableDesignUnits = useMemo(
+    () => designUnits.filter((unit) => unit.status === "available"),
+    [designUnits]
+  );
+
+  const designUnitWithSize = useMemo(
+    () =>
+      designUnits.map((unit) => {
+        const variant = variantRefs.find(
+          (item) => item.id === unit.parentVariantId
+        );
+
+        return {
+          ...unit,
+          size: variant?.size || "",
+          barcode: variant?.barcode || unit.parentBarcode,
+        };
+      }),
+    [designUnits, variantRefs]
+  );
+
+  const availableDesignUnitWithSize = useMemo(
+    () =>
+      designUnitWithSize.filter(
+        (unit) => unit.status === "available"
+      ),
+    [designUnitWithSize]
+  );
+
+  const images = useMemo(() => {
+    if (designMode) {
+      return designUnitWithSize
+        .filter((unit) => unit.status !== "hidden")
+        .map((unit) => unit.imageUrl);
+    }
+
+    return parentImages;
+  }, [designMode, designUnitWithSize, parentImages]);
+
+  const legacySizes = useMemo(() => {
     if (!product) return [];
 
     const directSizes = parseListField(product.sizes);
@@ -421,6 +574,18 @@ export default function ProductPage() {
       ? directSizes
       : parseVariationValues(product, "Size", []);
   }, [product]);
+
+  const sizes = useMemo(() => {
+    if (!designMode) return legacySizes;
+
+    return Array.from(
+      new Set(
+        availableDesignUnitWithSize
+          .map((unit) => unit.size)
+          .filter(Boolean)
+      )
+    );
+  }, [designMode, legacySizes, availableDesignUnitWithSize]);
 
   const tags = useMemo(
     () => (product ? parseListField(product.tags) : []),
@@ -433,6 +598,49 @@ export default function ProductPage() {
     }
   }, [sizes, selectedSize]);
 
+  const selectedDesign = useMemo(
+    () =>
+      designUnitWithSize.find(
+        (unit) => unit.id === selectedDesignId
+      ) || null,
+    [designUnitWithSize, selectedDesignId]
+  );
+
+  const visibleDesignUnits = useMemo(() => {
+    if (!designMode) return [];
+
+    if (!selectedSize) {
+      return designUnitWithSize.filter(
+        (unit) => unit.status !== "hidden"
+      );
+    }
+
+    return designUnitWithSize.filter(
+      (unit) =>
+        unit.status !== "hidden" &&
+        unit.size === selectedSize
+    );
+  }, [designMode, designUnitWithSize, selectedSize]);
+
+  const availableStock = useMemo(() => {
+    if (!designMode) {
+      return Number(product?.stock ?? 0);
+    }
+
+    if (!selectedSize) {
+      return availableDesignUnitWithSize.length;
+    }
+
+    return availableDesignUnitWithSize.filter(
+      (unit) => unit.size === selectedSize
+    ).length;
+  }, [
+    designMode,
+    product?.stock,
+    selectedSize,
+    availableDesignUnitWithSize,
+  ]);
+
   const price = Number(product?.price ?? 0);
   const mrp = Number(product?.mrp ?? price + 200);
   const savings = Math.max(mrp - price, 0);
@@ -442,16 +650,57 @@ export default function ProductPage() {
       : 0;
   const savedDiscount = Math.max(0, Number(product?.discount_percent ?? 0));
   const discount = savedDiscount > 0 ? savedDiscount : calculatedDiscount;
-  const stock = Number(product?.stock ?? 0);
+  const stock = availableStock;
   const isNewArrival = isEnabled(product?.is_new_arrival);
   const isFeatured = isEnabled(product?.is_featured);
   const isOnSale = isEnabled(product?.is_on_sale) || discount > 0;
+
+  function selectDesign(unitId: number) {
+    const unit = designUnitWithSize.find(
+      (item) => item.id === unitId
+    );
+
+    if (!unit || unit.status !== "available") return;
+
+    setSelectedDesignId(unit.id);
+    setSelectedImage(unit.imageUrl);
+    if (unit.size) setSelectedSize(unit.size);
+    setQuantity(1);
+  }
+
+  function selectSize(size: string) {
+    setSelectedSize(size);
+    setQuantity(1);
+
+    if (!designMode) return;
+
+    const firstAvailable = availableDesignUnitWithSize.find(
+      (unit) => unit.size === size
+    );
+
+    if (firstAvailable) {
+      setSelectedDesignId(firstAvailable.id);
+      setSelectedImage(firstAvailable.imageUrl);
+    } else {
+      setSelectedDesignId(null);
+    }
+  }
 
   async function addToCart(goToCart = true): Promise<boolean> {
     if (!product || addingToCart) return false;
 
     if (sizes.length > 0 && !selectedSize) {
       alert("Please select a size");
+      return false;
+    }
+
+    if (designMode && !selectedDesign) {
+      alert("Please select the design you want.");
+      return false;
+    }
+
+    if (designMode && selectedDesign?.status !== "available") {
+      alert("This design is sold out. Please choose another design.");
       return false;
     }
 
@@ -472,6 +721,7 @@ export default function ProductPage() {
         .eq("user_id", user.id)
         .eq("product_id", product.id)
         .eq("size", selectedSize)
+        .eq("image", selectedImage || images[0] || "")
         .limit(1)
         .maybeSingle();
 
@@ -479,7 +729,9 @@ export default function ProductPage() {
         const { error } = await supabase
           .from("cart")
           .update({
-            quantity: Number(existingItem.quantity || 0) + quantity,
+            quantity: designMode
+              ? 1
+              : Number(existingItem.quantity || 0) + quantity,
           })
           .eq("id", existingItem.id);
 
@@ -488,7 +740,10 @@ export default function ProductPage() {
         const { error } = await supabase.from("cart").insert({
           user_id: user.id,
           product_id: product.id,
-          name: getProductName(product),
+          name:
+            designMode && selectedDesign?.designName
+              ? `${getProductName(product)} — ${selectedDesign.designName}`
+              : getProductName(product),
           image: selectedImage || images[0] || "",
           price,
           quantity,
@@ -722,7 +977,36 @@ export default function ProductPage() {
           <div className="galleryColumn">
             <div className="galleryLayout">
               <div className="thumbnailRail">
-                {images.length > 0 ? (
+                {designMode ? (
+                  visibleDesignUnits.length > 0 ? (
+                    visibleDesignUnits.map((unit, index) => (
+                      <button
+                        type="button"
+                        key={`design-${unit.id}`}
+                        className={`thumbnailButton designThumb ${
+                          selectedDesignId === unit.id ? "thumbnailActive" : ""
+                        } ${unit.status === "sold_out" ? "thumbnailSoldOut" : ""}`}
+                        onClick={() => selectDesign(unit.id)}
+                        disabled={unit.status !== "available"}
+                        title={
+                          unit.status === "sold_out"
+                            ? `${unit.designName} — Sold Out`
+                            : unit.designName
+                        }
+                      >
+                        <img
+                          src={unit.imageUrl}
+                          alt={unit.designName || `${productName} design ${index + 1}`}
+                        />
+                        {unit.status === "sold_out" && (
+                          <span className="soldOutThumbLabel">Sold Out</span>
+                        )}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="thumbnailFallback">NCS</div>
+                  )
+                ) : images.length > 0 ? (
                   images.map((image, index) => (
                     <button
                       type="button"
@@ -852,6 +1136,42 @@ export default function ProductPage() {
               </div>
             )}
 
+            {designMode && (
+              <div className="designSection">
+                <div className="choiceHeader">
+                  <div>
+                    <h3>Select Design</h3>
+                    <p className="designHelp">
+                      {availableDesignUnits.length} design{availableDesignUnits.length === 1 ? "" : "s"} available
+                    </p>
+                  </div>
+                  {selectedDesign?.designName && (
+                    <span className="selectedDesignName">
+                      {selectedDesign.designName}
+                    </span>
+                  )}
+                </div>
+
+                <div className="designGrid">
+                  {visibleDesignUnits.map((unit) => (
+                    <button
+                      type="button"
+                      key={`design-card-${unit.id}`}
+                      className={`designChoice ${
+                        selectedDesignId === unit.id ? "designChoiceActive" : ""
+                      } ${unit.status === "sold_out" ? "designChoiceSoldOut" : ""}`}
+                      onClick={() => selectDesign(unit.id)}
+                      disabled={unit.status !== "available"}
+                    >
+                      <img src={unit.imageUrl} alt={unit.designName} />
+                      <span>{unit.designName}</span>
+                      {unit.status === "sold_out" && <b>Sold Out</b>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {sizes.length > 0 && (
               <div className="choiceSection">
                 <div className="choiceHeader">
@@ -865,7 +1185,7 @@ export default function ProductPage() {
                       type="button"
                       key={size}
                       className={selectedSize === size ? "choiceActive" : ""}
-                      onClick={() => setSelectedSize(size)}
+                      onClick={() => selectSize(size)}
                       aria-pressed={selectedSize === size}
                     >
                       {size}
@@ -902,7 +1222,9 @@ export default function ProductPage() {
                   aria-label="Increase quantity"
                   onClick={() =>
                     setQuantity((current) =>
-                      Math.min(Math.max(stock, 1), current + 1)
+                      designMode
+                        ? 1
+                        : Math.min(Math.max(stock, 1), current + 1)
                     )
                   }
                 >
@@ -919,7 +1241,9 @@ export default function ProductPage() {
 
             <div className="stockCard">
               <div>
-                <span>Stock Available</span>
+                <span>
+                  {designMode ? "Designs Available" : "Stock Available"}
+                </span>
                 <strong>{stock}</strong>
               </div>
 
@@ -940,7 +1264,7 @@ export default function ProductPage() {
                 type="button"
                 className="cartButton"
                 onClick={() => addToCart(true)}
-                disabled={addingToCart || stock <= 0}
+                disabled={addingToCart || stock <= 0 || (designMode && !selectedDesign)}
               >
                 {addingToCart ? "Adding..." : "🛒 Add to Cart"}
               </button>
@@ -949,7 +1273,7 @@ export default function ProductPage() {
                 type="button"
                 className="buyButton"
                 onClick={buyNow}
-                disabled={addingToCart || stock <= 0}
+                disabled={addingToCart || stock <= 0 || (designMode && !selectedDesign)}
               >
                 ⚡ Buy Now
               </button>
@@ -1644,6 +1968,94 @@ export default function ProductPage() {
           background: #0a2e73;
           color: white;
           box-shadow: 0 8px 18px rgba(10, 46, 115, 0.2);
+        }
+
+        .designSection {
+          margin-top: 27px;
+        }
+
+        .designHelp {
+          margin: 4px 0 0;
+          color: #667085;
+          font-size: 12px;
+        }
+
+        .selectedDesignName {
+          max-width: 55%;
+          padding: 7px 10px;
+          border-radius: 999px;
+          background: #eef4ff;
+          color: #0a2e73;
+          font-size: 11px;
+          font-weight: 800;
+          text-align: right;
+        }
+
+        .designGrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+          gap: 10px;
+          margin-top: 12px;
+        }
+
+        .designChoice {
+          position: relative;
+          overflow: hidden;
+          padding: 6px;
+          border: 2px solid transparent;
+          border-radius: 13px;
+          background: #ffffff;
+          color: #344054;
+          cursor: pointer;
+          text-align: left;
+          box-shadow: 0 6px 18px rgba(16, 24, 40, 0.06);
+        }
+
+        .designChoice img {
+          width: 100%;
+          aspect-ratio: 1 / 1.12;
+          object-fit: cover;
+          display: block;
+          border-radius: 9px;
+        }
+
+        .designChoice span {
+          display: block;
+          margin-top: 7px;
+          font-size: 11px;
+          font-weight: 800;
+          line-height: 1.35;
+        }
+
+        .designChoiceActive {
+          border-color: #d4af37;
+          box-shadow: 0 9px 24px rgba(212, 175, 55, 0.24);
+        }
+
+        .designChoiceSoldOut,
+        .thumbnailSoldOut {
+          opacity: 0.48;
+          cursor: not-allowed;
+          filter: grayscale(0.35);
+        }
+
+        .designChoice b,
+        .soldOutThumbLabel {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          padding: 5px 7px;
+          border-radius: 999px;
+          background: rgba(180, 35, 24, 0.92);
+          color: #fff;
+          font-size: 9px;
+          font-weight: 900;
+          white-space: nowrap;
+        }
+
+        .designThumb {
+          position: relative;
         }
 
         .quantityControl {

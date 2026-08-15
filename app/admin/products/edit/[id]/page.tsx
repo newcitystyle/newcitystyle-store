@@ -56,6 +56,17 @@ type AiStatus = {
   message: string;
 };
 
+type DesignUnit = {
+  id: number;
+  productId: number;
+  parentVariantId: number | null;
+  parentBarcode: string;
+  designName: string;
+  imageUrl: string;
+  unitQuantity: number;
+  status: "available" | "sold_out" | "hidden";
+  sortOrder: number;
+};
 
 type ProductForm = {
   name: string;
@@ -259,6 +270,15 @@ export default function EditProductPage() {
   const [uploadingVariantId, setUploadingVariantId] = useState<number | null>(null);
   const [splittingSareeVariants, setSplittingSareeVariants] = useState(false);
 
+  const [designUnits, setDesignUnits] = useState<DesignUnit[]>([]);
+  const [loadingDesignUnits, setLoadingDesignUnits] = useState(false);
+  const [uploadingDesignUnits, setUploadingDesignUnits] = useState(false);
+  const [generatingDesignNames, setGeneratingDesignNames] = useState(false);
+  const [designUnitStatus, setDesignUnitStatus] = useState<AiStatus>({
+    type: "idle",
+    message: "",
+  });
+
   const [form, setForm] = useState<ProductForm>(initialForm);
   const [originalBrand, setOriginalBrand] = useState("");
   const [collections, setCollections] = useState<CollectionOption[]>([]);
@@ -414,6 +434,7 @@ export default function EditProductPage() {
       }));
 
       setVariantBarcodes(cleanVariants);
+      await loadDesignUnits(Number(productId));
 
       const primaryVariant = cleanVariants[0] || null;
       setEditingVariantId(primaryVariant?.id || null);
@@ -744,6 +765,462 @@ export default function EditProductPage() {
     }
   }
 
+  async function loadDesignUnits(targetProductId: number) {
+    if (!targetProductId) return;
+
+    setLoadingDesignUnits(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("product_design_units")
+        .select("id,product_id,parent_variant_id,parent_barcode,design_name,image_url,unit_quantity,status,sort_order")
+        .eq("product_id", targetProductId)
+        .order("sort_order", { ascending: true })
+        .order("id", { ascending: true });
+
+      if (error) {
+        console.info("Design units are not available yet:", error.message);
+        setDesignUnits([]);
+        setDesignUnitStatus({
+          type: "error",
+          message:
+            "Same-barcode design storage is not ready yet. Run the supplied SQL once in Supabase, then refresh this page.",
+        });
+        return;
+      }
+
+      const rows = ((data || []) as Record<string, unknown>[]).map((row) => ({
+        id: asNumber(row.id),
+        productId: asNumber(row.product_id),
+        parentVariantId: asNumber(row.parent_variant_id) || null,
+        parentBarcode: asString(row.parent_barcode),
+        designName: asString(row.design_name),
+        imageUrl: asString(row.image_url),
+        unitQuantity: Math.max(1, asNumber(row.unit_quantity) || 1),
+        status:
+          row.status === "sold_out" || row.status === "hidden"
+            ? row.status
+            : "available",
+        sortOrder: Math.max(0, asNumber(row.sort_order)),
+      })) as DesignUnit[];
+
+      setDesignUnits(rows);
+      setDesignUnitStatus({
+        type: rows.length ? "success" : "idle",
+        message: rows.length
+          ? `${rows.length} individual design photo${rows.length === 1 ? "" : "s"} linked to this existing barcode stock.`
+          : "",
+      });
+    } finally {
+      setLoadingDesignUnits(false);
+    }
+  }
+
+  function getSameBarcodeDesignTarget() {
+    if (variantBarcodes.length === 1) {
+      return variantBarcodes[0];
+    }
+
+    if (editingVariantId) {
+      return variantBarcodes.find((variant) => variant.id === editingVariantId) || null;
+    }
+
+    return variantBarcodes[0] || null;
+  }
+
+  async function uploadSameBarcodeDesignPhotos(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length || !productId) return;
+
+    const targetVariant = getSameBarcodeDesignTarget();
+    const targetStock = targetVariant
+      ? Math.max(0, targetVariant.stock)
+      : Math.max(0, Number(form.stock || 0));
+    const targetVariantId = targetVariant?.id || null;
+    const targetBarcode = targetVariant?.barcode || form.barcode || "";
+
+    const alreadyAssigned = designUnits.filter(
+      (unit) =>
+        (targetVariantId
+          ? unit.parentVariantId === targetVariantId
+          : unit.parentVariantId === null) &&
+        unit.status !== "hidden"
+    ).length;
+
+    const remainingSlots = Math.max(0, targetStock - alreadyAssigned);
+
+    if (remainingSlots <= 0) {
+      alert(
+        "All available stock pieces already have individual design photos. Remove an old design photo first if you want to replace it."
+      );
+      event.target.value = "";
+      return;
+    }
+
+    if (files.length > remainingSlots) {
+      alert(
+        `You can upload only ${remainingSlots} more design photo${remainingSlots === 1 ? "" : "s"} for this barcode because its available stock is ${targetStock}.`
+      );
+      event.target.value = "";
+      return;
+    }
+
+    const validFiles = files.filter(validateImage);
+    if (!validFiles.length) {
+      event.target.value = "";
+      return;
+    }
+
+    setUploadingDesignUnits(true);
+    setDesignUnitStatus({
+      type: "idle",
+      message: `Uploading ${validFiles.length} individual design photo${validFiles.length === 1 ? "" : "s"}...`,
+    });
+
+    try {
+      const urls = await Promise.all(
+        validFiles.map((file, index) =>
+          uploadFile(
+            file,
+            `design-units/${targetVariantId || "product"}/${Date.now()}-${index + 1}`
+          )
+        )
+      );
+
+      const nextSortBase =
+        designUnits.reduce((max, unit) => Math.max(max, unit.sortOrder), 0) + 1;
+
+      const rows = urls.map((url, index) => ({
+        product_id: Number(productId),
+        parent_variant_id: targetVariantId,
+        parent_barcode: targetBarcode || null,
+        design_name: `Design ${alreadyAssigned + index + 1}`,
+        image_url: url,
+        unit_quantity: 1,
+        status: "available",
+        sort_order: nextSortBase + index,
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { error } = await supabase
+        .from("product_design_units")
+        .insert(rows);
+
+      if (error) throw error;
+
+      await loadDesignUnits(Number(productId));
+
+      setDesignUnitStatus({
+        type: "success",
+        message:
+          `${validFiles.length} design photo${validFiles.length === 1 ? "" : "s"} linked successfully to barcode ${targetBarcode || "stock item"}. ` +
+          "Physical stock and the existing barcode were not changed.",
+      });
+    } catch (error) {
+      console.error(error);
+      setDesignUnitStatus({
+        type: "error",
+        message:
+          error instanceof Error
+            ? `Design photo upload failed: ${error.message}`
+            : "Design photo upload failed.",
+      });
+    } finally {
+      setUploadingDesignUnits(false);
+      event.target.value = "";
+    }
+  }
+
+  function updateDesignUnitNameLocal(id: number, value: string) {
+    setDesignUnits((current) =>
+      current.map((unit) =>
+        unit.id === id ? { ...unit, designName: value } : unit
+      )
+    );
+  }
+
+  async function saveDesignUnitName(unit: DesignUnit) {
+    const { error } = await supabase
+      .from("product_design_units")
+      .update({
+        design_name: unit.designName.trim() || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", unit.id);
+
+    if (error) {
+      console.error(error);
+      setDesignUnitStatus({
+        type: "error",
+        message: `Unable to save ${unit.designName || "design"} name: ${error.message}`,
+      });
+    }
+  }
+
+  async function removeDesignUnit(unit: DesignUnit) {
+    const confirmed = window.confirm(
+      `Remove only this design photo${unit.designName ? ` (${unit.designName})` : ""}?\n\nThe original product, barcode and physical stock will NOT be deleted or reduced.`
+    );
+    if (!confirmed) return;
+
+    const { error } = await supabase
+      .from("product_design_units")
+      .delete()
+      .eq("id", unit.id);
+
+    if (error) {
+      alert(`Unable to remove design photo: ${error.message}`);
+      return;
+    }
+
+    setDesignUnits((current) => current.filter((item) => item.id !== unit.id));
+    setDesignUnitStatus({
+      type: "success",
+      message: "Design photo removed. Existing barcode and physical stock are unchanged.",
+    });
+  }
+
+  async function relinkAllDesignUnitsToSelectedVariant() {
+    const targetVariant = getSameBarcodeDesignTarget();
+
+    if (!targetVariant) {
+      alert("Please select the correct size / barcode first.");
+      return;
+    }
+
+    if (!designUnits.length) {
+      alert("There are no uploaded design photos to relink.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Move all ${designUnits.length} uploaded design photo${designUnits.length === 1 ? "" : "s"} to:\n\n` +
+      `${targetVariant.size || "Standard"}${targetVariant.color ? ` • ${targetVariant.color}` : ""}\n` +
+      `Barcode: ${targetVariant.barcode || "No barcode"}\n\n` +
+      "The photos, AI names and physical stock will NOT be deleted or changed."
+    );
+
+    if (!confirmed) return;
+
+    setUploadingDesignUnits(true);
+
+    try {
+      const { error } = await supabase
+        .from("product_design_units")
+        .update({
+          parent_variant_id: targetVariant.id,
+          parent_barcode: targetVariant.barcode || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("product_id", Number(productId));
+
+      if (error) throw error;
+
+      await loadDesignUnits(Number(productId));
+
+      setDesignUnitStatus({
+        type: "success",
+        message:
+          `All uploaded design photos are now linked to ${targetVariant.size || "selected variant"} • ` +
+          `${targetVariant.barcode || "No barcode"}. Physical stock was not changed.`,
+      });
+    } catch (error) {
+      console.error(error);
+      setDesignUnitStatus({
+        type: "error",
+        message:
+          error instanceof Error
+            ? `Unable to relink design photos: ${error.message}`
+            : "Unable to relink design photos.",
+      });
+    } finally {
+      setUploadingDesignUnits(false);
+    }
+  }
+
+  async function changeDesignUnitVariant(
+    unit: DesignUnit,
+    variantIdValue: string
+  ) {
+    const variantId = Number(variantIdValue);
+    const targetVariant = variantBarcodes.find(
+      (variant) => variant.id === variantId
+    );
+
+    if (!targetVariant) return;
+
+    const { error } = await supabase
+      .from("product_design_units")
+      .update({
+        parent_variant_id: targetVariant.id,
+        parent_barcode: targetVariant.barcode || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", unit.id);
+
+    if (error) {
+      setDesignUnitStatus({
+        type: "error",
+        message: `Unable to change barcode for ${unit.designName || "design"}: ${error.message}`,
+      });
+      return;
+    }
+
+    setDesignUnits((current) =>
+      current.map((item) =>
+        item.id === unit.id
+          ? {
+              ...item,
+              parentVariantId: targetVariant.id,
+              parentBarcode: targetVariant.barcode,
+            }
+          : item
+      )
+    );
+
+    setDesignUnitStatus({
+      type: "success",
+      message:
+        `${unit.designName || "Design"} moved to ${targetVariant.size || "selected variant"} • ` +
+        `${targetVariant.barcode || "No barcode"}.`,
+    });
+  }
+
+  function isDefaultDesignName(value: string) {
+    return /^design\s+\d+$/i.test(value.trim()) || !value.trim();
+  }
+
+  function waitForDesignAi(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function generateAllDesignNamesWithAi() {
+    const availableUnits = designUnits.filter(
+      (unit) =>
+        unit.imageUrl &&
+        unit.status !== "hidden" &&
+        isDefaultDesignName(unit.designName)
+    );
+
+    if (!availableUnits.length) {
+      setDesignUnitStatus({
+        type: "success",
+        message:
+          "Every uploaded design already has a name. Existing AI/manual names were kept and no extra AI requests were sent.",
+      });
+      return;
+    }
+
+    setGeneratingDesignNames(true);
+    setDesignUnitStatus({
+      type: "idle",
+      message:
+        `AI is naming ${availableUnits.length} unnamed design photo${availableUnits.length === 1 ? "" : "s"} one by one. ` +
+        "Already named designs will be skipped.",
+    });
+
+    let successCount = 0;
+    let failedCount = 0;
+    const updatedUnits = [...designUnits];
+
+    try {
+      for (let position = 0; position < availableUnits.length; position += 1) {
+        const unit = availableUnits[position];
+
+        try {
+          const response = await fetch("/api/generate-product-details", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              imageUrl: unit.imageUrl,
+              mode: "design-name",
+            }),
+          });
+
+          const result = (await response.json()) as {
+            productName?: string;
+            error?: string;
+          };
+
+          if (!response.ok || !result.productName?.trim()) {
+            failedCount += 1;
+          } else {
+            const generatedName = result.productName.trim();
+
+            const { error } = await supabase
+              .from("product_design_units")
+              .update({
+                design_name: generatedName,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", unit.id);
+
+            if (error) {
+              failedCount += 1;
+            } else {
+              const index = updatedUnits.findIndex(
+                (item) => item.id === unit.id
+              );
+
+              if (index >= 0) {
+                updatedUnits[index] = {
+                  ...updatedUnits[index],
+                  designName: generatedName,
+                };
+                setDesignUnits([...updatedUnits]);
+              }
+
+              successCount += 1;
+            }
+          }
+        } catch {
+          failedCount += 1;
+        }
+
+        setDesignUnitStatus({
+          type: successCount > 0 ? "success" : "idle",
+          message:
+            `AI progress: ${position + 1}/${availableUnits.length} checked • ` +
+            `${successCount} named • ${failedCount} waiting for retry.`,
+        });
+
+        // Pace requests so 5/10/12 photos do not hit Gemini in a burst.
+        if (position < availableUnits.length - 1) {
+          await waitForDesignAi(2200);
+        }
+      }
+
+      if (successCount > 0 && failedCount === 0) {
+        setDesignUnitStatus({
+          type: "success",
+          message:
+            `AI named all ${successCount} remaining design photo${successCount === 1 ? "" : "s"} successfully. ` +
+            "Existing names, barcodes and physical stock were not changed.",
+        });
+      } else if (successCount > 0) {
+        setDesignUnitStatus({
+          type: "success",
+          message:
+            `${successCount} design${successCount === 1 ? "" : "s"} named successfully. ` +
+            `${failedCount} still need a retry. Click the AI button later; already named designs will be skipped automatically.`,
+        });
+      } else {
+        setDesignUnitStatus({
+          type: "error",
+          message:
+            "Gemini is still rate-limited right now. Your photos and barcodes are safe. " +
+            "Wait a little and click again; only the still-unnamed designs will be retried.",
+        });
+      }
+    } finally {
+      setGeneratingDesignNames(false);
+    }
+  }
+
   async function uploadMainImage(
     event: ChangeEvent<HTMLInputElement>
   ) {
@@ -878,6 +1355,258 @@ export default function EditProductPage() {
     } finally {
       setUploadingLifestyle(false);
       event.target.value = "";
+    }
+  }
+
+  async function generateCommonProductDetailsFromDesignPhotos() {
+    const sourceDesign =
+      designUnits.find(
+        (unit) => unit.imageUrl && unit.status !== "hidden"
+      ) || null;
+
+    if (!sourceDesign) {
+      setAiStatus({
+        type: "error",
+        message:
+          "Upload at least one individual design photo first.",
+      });
+      return;
+    }
+
+    setGeneratingAi(true);
+    setAiStatus({
+      type: "idle",
+      message:
+        "AI is creating the common parent product details from your design photos. Barcode, SKU, physical stock, MRP, online price and online quantity will not be changed.",
+    });
+
+    try {
+      const selectedVariant = sourceDesign.parentVariantId
+        ? variantBarcodes.find(
+            (variant) => variant.id === sourceDesign.parentVariantId
+          ) || null
+        : null;
+
+      const response = await fetch("/api/generate-product-details", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          imageUrl: sourceDesign.imageUrl,
+          mode: "common-details-lite",
+          productContext: {
+            productId: productId ? Number(productId) : null,
+            variantId: selectedVariant?.id || null,
+            name: form.name.trim(),
+            brand: form.brand.trim(),
+            category: form.category.trim(),
+            subcategory: form.subcategory.trim(),
+            gender: form.gender.trim(),
+            ageGroup: form.ageGroup.trim(),
+            size: selectedVariant?.size || form.sizes.join(", "),
+            colour: selectedVariant?.color || "",
+            material: form.material.trim(),
+            fabric: form.fabric.trim(),
+            pattern: form.pattern.trim(),
+            sleeveType: form.sleeveType.trim(),
+            fitType: form.fitType.trim(),
+            occasion: form.occasion.trim(),
+            sku: selectedVariant?.sku || form.sku,
+            barcode: selectedVariant?.barcode || form.barcode,
+          },
+        }),
+      });
+
+      const result = (await response.json()) as {
+        details?: AiProductDetails;
+        error?: string;
+      };
+
+      if (!response.ok || !result.details) {
+        throw new Error(
+          result.error ||
+            "AI could not generate the common product details."
+        );
+      }
+
+      const details = result.details;
+
+      const cleanFeatures = details.keyFeatures
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 4);
+
+      const cleanSpecifications =
+        details.technicalSpecifications
+          .map((item) => ({
+            label: item.label.trim(),
+            value: item.value.trim(),
+          }))
+          .filter((item) => item.label && item.value)
+          .slice(0, 3);
+
+      const cleanFaqs = details.faqs
+        .map((item) => ({
+          question: item.question.trim(),
+          answer: item.answer.trim(),
+        }))
+        .filter((item) => item.question && item.answer)
+        .slice(0, 2);
+
+      const cleanBoxItems = details.whatsInTheBox
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      const generatedTags = [
+        ...details.productTags,
+        details.occasion,
+      ]
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      setForm((current) => ({
+        ...current,
+
+        // Common online catalogue details only.
+        // Existing stock / barcode / SKU / MRP / online price / online quantity
+        // are intentionally preserved below.
+        name:
+          details.productName.trim() || current.name,
+        slug:
+          createSlug(
+            details.slug || details.productName
+          ) || current.slug,
+        tagline:
+          details.tagline.trim() || current.tagline,
+        category:
+          details.category.trim() || current.category,
+        subcategory:
+          details.subcategory.trim() ||
+          current.subcategory,
+        shortDescription:
+          details.metaDescription.trim() ||
+          current.shortDescription,
+        description:
+          details.description.trim() ||
+          current.description,
+        gender:
+          details.gender.trim() || current.gender,
+        pattern:
+          details.pattern.trim() || current.pattern,
+        sleeveType:
+          details.sleeveType.trim() ||
+          current.sleeveType,
+        fitType:
+          details.fit.trim() || current.fitType,
+        occasion:
+          details.occasion.trim() ||
+          current.occasion,
+        lifestyleTitle:
+          details.lifestyleTitle.trim() ||
+          current.lifestyleTitle,
+        lifestyleSubtitle:
+          details.lifestyleSubtitle.trim() ||
+          current.lifestyleSubtitle,
+        keyFeatures: cleanFeatures.length
+          ? [
+              ...cleanFeatures,
+              ...Array(
+                Math.max(
+                  4 - cleanFeatures.length,
+                  0
+                )
+              ).fill(""),
+            ]
+          : current.keyFeatures,
+        specifications: cleanSpecifications.length
+          ? [
+              ...cleanSpecifications,
+              ...Array(
+                Math.max(
+                  3 - cleanSpecifications.length,
+                  0
+                )
+              )
+                .fill(null)
+                .map(() => ({
+                  label: "",
+                  value: "",
+                })),
+            ]
+          : current.specifications,
+        whatsInBox: cleanBoxItems.length
+          ? cleanBoxItems
+          : current.whatsInBox,
+        faqs: cleanFaqs.length
+          ? [
+              ...cleanFaqs,
+              ...Array(
+                Math.max(2 - cleanFaqs.length, 0)
+              )
+                .fill(null)
+                .map(() => ({
+                  question: "",
+                  answer: "",
+                })),
+            ]
+          : current.faqs,
+        seoTitle:
+          details.seoTitle.trim() ||
+          current.seoTitle,
+        metaDescription:
+          details.metaDescription.trim() ||
+          current.metaDescription,
+        seoKeywords: details.seoKeywords.length
+          ? details.seoKeywords.join(", ")
+          : current.seoKeywords,
+        tags: Array.from(
+          new Set([
+            ...current.tags,
+            ...generatedTags,
+          ])
+        ),
+
+        // Use the first design photo as the parent/catalog main image only
+        // when no main image has been chosen yet.
+        mainImage:
+          current.mainImage ||
+          sourceDesign.imageUrl,
+        socialPreviewUrl:
+          current.socialPreviewUrl ||
+          sourceDesign.imageUrl,
+
+        // Locked/commercial fields are explicitly preserved.
+        mrp: current.mrp,
+        price: current.price,
+        discountPercent:
+          current.discountPercent,
+        taxPercent: current.taxPercent,
+        sku: current.sku,
+        barcode: current.barcode,
+        stock: current.stock,
+        lowStockLimit:
+          current.lowStockLimit,
+        sellOnline: current.sellOnline,
+        onlineStockLimit:
+          current.onlineStockLimit,
+      }));
+
+      setAiStatus({
+        type: "success",
+        message:
+          "Common product details generated successfully from the design photos. Review the text, then set/verify online price and quantity. Existing barcode, SKU, physical stock, MRP and online pricing were not changed.",
+      });
+    } catch (error) {
+      setAiStatus({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "AI common product-detail generation failed. Your photos, barcodes and stock are safe.",
+      });
+    } finally {
+      setGeneratingAi(false);
     }
   }
 
@@ -1219,6 +1948,18 @@ export default function EditProductPage() {
       )
     : Math.max(0, Number(form.stock || 0));
 
+  const availableDesignUnits = designUnits.filter(
+    (unit) => unit.status === "available"
+  );
+
+  const designModeOnlineQuantity = availableDesignUnits.length;
+
+  function getAvailableDesignCountForVariant(variantId: number) {
+    return availableDesignUnits.filter(
+      (unit) => unit.parentVariantId === variantId
+    ).length;
+  }
+
   function validateForm() {
     if (!form.name.trim()) {
       alert("Please enter the product name.");
@@ -1303,10 +2044,12 @@ export default function EditProductPage() {
       sell_online: form.sellOnline,
       available_in_pos: true,
       online_stock_limit: form.sellOnline
-        ? Math.min(
-            Number(form.onlineStockLimit || 0),
-            totalVariantStock
-          )
+        ? designUnits.length > 0
+          ? Math.min(designModeOnlineQuantity, totalVariantStock)
+          : Math.min(
+              Number(form.onlineStockLimit || 0),
+              totalVariantStock
+            )
         : 0,
       image: form.mainImage || null,
       image_url: form.mainImage || null,
@@ -1381,23 +2124,53 @@ export default function EditProductPage() {
 
       if (variantBarcodes.length > 0) {
         for (const variant of variantBarcodes) {
-          const effectiveVariantSellOnline = form.sellOnline && variant.sellOnline;
-          const variantMrp = getOptionalNumber(variant.mrp, getOptionalNumber(form.mrp, 0));
-          const variantOnlinePrice = getOptionalNumber(variant.onlinePrice, 0);
+          const linkedDesignCount = getAvailableDesignCountForVariant(variant.id);
+
+          const effectiveVariantSellOnline =
+            form.sellOnline &&
+            (linkedDesignCount > 0 || variant.sellOnline);
+
+          const variantMrp = getOptionalNumber(
+            variant.mrp,
+            getOptionalNumber(form.mrp, 0)
+          );
+
+          const variantOnlinePrice = getOptionalNumber(
+            variant.onlinePrice,
+            Number(form.price || 0)
+          );
+
           const safeOnlineQuantity = effectiveVariantSellOnline
-            ? Math.min(Math.max(0, Number(variant.onlineStockLimit || 0)), Math.max(0, variant.stock))
+            ? linkedDesignCount > 0
+              ? Math.min(linkedDesignCount, Math.max(0, variant.stock))
+              : Math.min(
+                  Math.max(0, Number(variant.onlineStockLimit || 0)),
+                  Math.max(0, variant.stock)
+                )
             : 0;
 
-          if (variantOnlinePrice > 0 && variantMrp > 0 && variantOnlinePrice > variantMrp) {
-            throw new Error(`${variant.variantName || variant.size || "Variant"}: online price cannot be greater than MRP.`);
+          if (
+            effectiveVariantSellOnline &&
+            variantOnlinePrice > 0 &&
+            variantMrp > 0 &&
+            variantOnlinePrice > variantMrp
+          ) {
+            throw new Error(
+              `${variant.variantName || variant.size || "Variant"}: online price cannot be greater than MRP.`
+            );
           }
+
+          const safeVariantOnlinePrice =
+            effectiveVariantSellOnline && variantOnlinePrice > 0
+              ? variantOnlinePrice
+              : null;
 
           const { error: variantUpdateError } = await supabase
             .from("product_variants")
             .update({
               variant_name: variant.variantName.trim() || null,
               mrp: variantMrp,
-              online_price: variantOnlinePrice > 0 ? variantOnlinePrice : null,
+              online_price: safeVariantOnlinePrice,
               main_image: variant.mainImage || null,
               gallery_images: variant.galleryImages,
               low_stock_limit: getOptionalNumber(form.lowStockLimit, 5),
@@ -1434,6 +2207,26 @@ export default function EditProductPage() {
         }
       }
 
+      if (form.sellOnline && designUnits.length > 0) {
+        const { error: designStockSyncError } = await supabase
+          .from("products")
+          .update({
+            online_stock_limit: Math.min(
+              designModeOnlineQuantity,
+              totalVariantStock
+            ),
+            sell_online: designModeOnlineQuantity > 0,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", productId);
+
+        if (designStockSyncError) {
+          throw new Error(
+            `Design stock sync failed: ${designStockSyncError.message}`
+          );
+        }
+      }
+
       setOriginalBrand(
         normalizeBrandName(form.brand),
       );
@@ -1464,7 +2257,8 @@ export default function EditProductPage() {
   const uploading =
     uploadingMain ||
     uploadingGallery ||
-    uploadingLifestyle;
+    uploadingLifestyle ||
+    uploadingDesignUnits;
 
   if (loading) {
     return (
@@ -1880,8 +2674,27 @@ export default function EditProductPage() {
                         )
                       }
                       placeholder="Quantity for website/app"
-                      style={inputStyle}
+                      style={{
+                        ...inputStyle,
+                        background:
+                          designUnits.length > 0 ? "#F3F4F6" : inputStyle.background,
+                      }}
                     />
+                    {designUnits.length > 0 && (
+                      <small
+                        style={{
+                          display: "block",
+                          marginTop: "7px",
+                          color: "#067647",
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Auto stock: {designModeOnlineQuantity} available uploaded design
+                        {designModeOnlineQuantity === 1 ? "" : "s"}. This number is controlled by the design photos, not by total physical stock.
+                      </small>
+                    )}
                   </Field>
 
                   <Field label="Online Visibility">
@@ -2050,6 +2863,366 @@ export default function EditProductPage() {
                     </div>
                   </div>
                 )}
+
+                <div style={{ marginTop: 18, padding: 16, border: "1px solid #d4af37", borderRadius: 16, background: "#fffdf7" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                    <div>
+                      <strong style={{ display: "block", color: "#0A2E73", fontSize: 16 }}>
+                        Same Barcode — Individual Design Photos
+                      </strong>
+                      <p style={{ margin: "6px 0 0", color: "#667085", fontSize: 12, lineHeight: 1.6, maxWidth: 720 }}>
+                        Use this when one existing barcode has multiple physical pieces but every piece has a different design.
+                        Example: one L-size T-shirt barcode with stock 5 and five different T-shirt photos.
+                        Each uploaded photo becomes one selectable design unit without changing the barcode or total physical stock.
+                      </p>
+                    </div>
+
+                    <div style={{ padding: "8px 10px", borderRadius: 10, background: "#eef4ff", color: "#0A2E73", fontSize: 12, fontWeight: 800 }}>
+                      {(() => {
+                        const target = getSameBarcodeDesignTarget();
+                        const stock = target ? target.stock : Number(form.stock || 0);
+                        const barcode = target?.barcode || form.barcode || "No barcode";
+                        return `${barcode} • Stock ${stock}`;
+                      })()}
+                    </div>
+                  </div>
+
+                  {variantBarcodes.length > 1 && (
+                    <div
+                      style={{
+                        marginTop: 14,
+                        padding: 12,
+                        border: "1px solid #d0d5dd",
+                        borderRadius: 12,
+                        background: "#fff",
+                      }}
+                    >
+                      <strong
+                        style={{
+                          display: "block",
+                          color: "#0A2E73",
+                          fontSize: 13,
+                          marginBottom: 7,
+                        }}
+                      >
+                        1. Choose the correct Size / Barcode for these photos
+                      </strong>
+
+                      <select
+                        value={editingVariantId || ""}
+                        onChange={(event) =>
+                          setEditingVariantId(
+                            event.target.value
+                              ? Number(event.target.value)
+                              : null
+                          )
+                        }
+                        style={{
+                          ...inputStyle,
+                          width: "100%",
+                          maxWidth: 620,
+                          background: "#fff",
+                        }}
+                      >
+                        {variantBarcodes.map((variant) => (
+                          <option key={variant.id} value={variant.id}>
+                            {variant.size || "Standard"}
+                            {variant.color ? ` • ${variant.color}` : ""}
+                            {` • ${variant.barcode || "No barcode"} • Stock ${variant.stock}`}
+                          </option>
+                        ))}
+                      </select>
+
+                      <small
+                        style={{
+                          display: "block",
+                          marginTop: 7,
+                          color: "#667085",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Select L before uploading L-size designs, XL before uploading XL-size designs, and so on.
+                      </small>
+
+                      {designUnits.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={relinkAllDesignUnitsToSelectedVariant}
+                          disabled={uploadingDesignUnits}
+                          style={{
+                            marginTop: 10,
+                            minHeight: 38,
+                            padding: "0 13px",
+                            borderRadius: 9,
+                            border: "1px solid #f79009",
+                            background: "#fffaeb",
+                            color: "#b54708",
+                            fontWeight: 850,
+                            cursor: uploadingDesignUnits ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          🔁 Relink ALL Uploaded Photos to Selected Barcode
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+                    <label
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        minHeight: 42,
+                        padding: "0 16px",
+                        borderRadius: 10,
+                        border: "1px solid #d4af37",
+                        background: "#0A2E73",
+                        color: "#fff",
+                        fontWeight: 850,
+                        cursor: uploadingDesignUnits ? "not-allowed" : "pointer",
+                        opacity: uploadingDesignUnits ? 0.6 : 1,
+                      }}
+                    >
+                      {uploadingDesignUnits
+                        ? "Uploading Design Photos..."
+                        : "📸 Upload All Design Photos at Once"}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        multiple
+                        hidden
+                        disabled={uploadingDesignUnits}
+                        onChange={uploadSameBarcodeDesignPhotos}
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={generateAllDesignNamesWithAi}
+                      disabled={
+                        generatingDesignNames ||
+                        uploadingDesignUnits ||
+                        designUnits.length === 0
+                      }
+                      style={{
+                        minHeight: 42,
+                        padding: "0 16px",
+                        borderRadius: 10,
+                        border: "1px solid #d4af37",
+                        background: "#fff",
+                        color: "#0A2E73",
+                        fontWeight: 850,
+                        cursor:
+                          generatingDesignNames ||
+                          uploadingDesignUnits ||
+                          designUnits.length === 0
+                            ? "not-allowed"
+                            : "pointer",
+                        opacity:
+                          generatingDesignNames ||
+                          uploadingDesignUnits ||
+                          designUnits.length === 0
+                            ? 0.55
+                            : 1,
+                      }}
+                    >
+                      {generatingDesignNames
+                        ? "AI Naming Designs..."
+                        : "✨ Generate Different AI Name for Every Photo"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={generateCommonProductDetailsFromDesignPhotos}
+                      disabled={
+                        generatingAi ||
+                        uploadingDesignUnits ||
+                        designUnits.length === 0
+                      }
+                      style={{
+                        minHeight: 42,
+                        padding: "0 16px",
+                        borderRadius: 10,
+                        border: "1px solid #0A2E73",
+                        background: "#eef4ff",
+                        color: "#0A2E73",
+                        fontWeight: 850,
+                        cursor:
+                          generatingAi ||
+                          uploadingDesignUnits ||
+                          designUnits.length === 0
+                            ? "not-allowed"
+                            : "pointer",
+                        opacity:
+                          generatingAi ||
+                          uploadingDesignUnits ||
+                          designUnits.length === 0
+                            ? 0.55
+                            : 1,
+                      }}
+                    >
+                      {generatingAi
+                        ? "Generating Common Details..."
+                        : "✨ Generate Common Product Details"}
+                    </button>
+                  </div>
+
+                  {loadingDesignUnits && (
+                    <div style={{ marginTop: 12, color: "#667085", fontSize: 12 }}>
+                      Loading individual design photos...
+                    </div>
+                  )}
+
+                  {designUnitStatus.message && (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        border:
+                          designUnitStatus.type === "error"
+                            ? "1px solid #fda29b"
+                            : "1px solid #abefc6",
+                        background:
+                          designUnitStatus.type === "error"
+                            ? "#fff1f0"
+                            : "#ecfdf3",
+                        color:
+                          designUnitStatus.type === "error"
+                            ? "#b42318"
+                            : "#067647",
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {designUnitStatus.message}
+                    </div>
+                  )}
+
+                  {designUnits.length > 0 && (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: 12,
+                        marginTop: 14,
+                      }}
+                    >
+                      {designUnits.map((unit, index) => (
+                        <div
+                          key={unit.id}
+                          style={{
+                            border: "1px solid #e4e7ec",
+                            borderRadius: 14,
+                            background: "#fff",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div style={{ aspectRatio: "1 / 1", background: "#f8fafc" }}>
+                            <img
+                              src={unit.imageUrl}
+                              alt={unit.designName || `Design ${index + 1}`}
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                objectFit: "cover",
+                                display: "block",
+                              }}
+                            />
+                          </div>
+
+                          <div style={{ padding: 10, display: "grid", gap: 8 }}>
+                            <div style={{ fontSize: 11, color: "#667085", fontWeight: 700 }}>
+                              Design {index + 1} • Qty 1
+                            </div>
+
+                            <input
+                              value={unit.designName}
+                              onChange={(event) =>
+                                updateDesignUnitNameLocal(unit.id, event.target.value)
+                              }
+                              onBlur={() => saveDesignUnitName(unit)}
+                              placeholder={`Design ${index + 1}`}
+                              style={{
+                                ...inputStyle,
+                                minHeight: 38,
+                                padding: "8px 10px",
+                                fontSize: 13,
+                              }}
+                            />
+
+                            {variantBarcodes.length > 1 && (
+                              <select
+                                value={unit.parentVariantId || ""}
+                                onChange={(event) =>
+                                  changeDesignUnitVariant(
+                                    unit,
+                                    event.target.value
+                                  )
+                                }
+                                style={{
+                                  ...inputStyle,
+                                  minHeight: 36,
+                                  padding: "7px 8px",
+                                  fontSize: 11,
+                                  background: "#fff",
+                                }}
+                              >
+                                {variantBarcodes.map((variant) => (
+                                  <option key={variant.id} value={variant.id}>
+                                    {variant.size || "Standard"}
+                                    {variant.color ? ` • ${variant.color}` : ""}
+                                    {` • ${variant.barcode || "No barcode"}`}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+
+                            <div style={{ fontSize: 11, color: "#475467" }}>
+                              Barcode: {unit.parentBarcode || form.barcode || "—"}
+                            </div>
+
+                            <div
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 800,
+                                color:
+                                  unit.status === "sold_out"
+                                    ? "#b42318"
+                                    : unit.status === "hidden"
+                                      ? "#667085"
+                                      : "#067647",
+                              }}
+                            >
+                              {unit.status === "sold_out"
+                                ? "SOLD OUT"
+                                : unit.status === "hidden"
+                                  ? "HIDDEN"
+                                  : "AVAILABLE"}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => removeDesignUnit(unit)}
+                              style={{
+                                minHeight: 34,
+                                border: 0,
+                                borderRadius: 8,
+                                background: "#fff1f0",
+                                color: "#b42318",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                              }}
+                            >
+                              Remove Photo Only
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </Panel>
 
               <Panel

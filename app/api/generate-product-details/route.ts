@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const GEMINI_MODEL = "gemini-3.6-flash";
+const GEMINI_DESIGN_NAME_MODEL = "gemini-3.5-flash-lite";
 const OPENROUTER_MODEL = "openrouter/free";
 const CLOUDFLARE_MODEL =
   "@cf/meta/llama-3.2-11b-vision-instruct";
@@ -50,6 +51,28 @@ type AiProductDetails = {
   metaDescription: string;
   seoKeywords: string[];
   productTags: string[];
+};
+
+
+type ProductContext = {
+  productId?: number | null;
+  variantId?: number | null;
+  name?: string;
+  brand?: string;
+  category?: string;
+  subcategory?: string;
+  gender?: string;
+  ageGroup?: string;
+  size?: string;
+  colour?: string;
+  material?: string;
+  fabric?: string;
+  pattern?: string;
+  sleeveType?: string;
+  fitType?: string;
+  occasion?: string;
+  sku?: string;
+  barcode?: string;
 };
 
 type GeminiResponse = {
@@ -231,7 +254,30 @@ const geminiResponseSchema = {
   ],
 };
 
-const productPrompt = `
+const geminiDesignNameSchema = {
+  type: "OBJECT",
+  properties: {
+    productName: { type: "STRING" },
+  },
+  required: ["productName"],
+};
+
+const DESIGN_NAME_PROMPT = `
+You are the product naming assistant for NEW CITY STYLE, an Indian family fashion e-commerce store.
+
+Look only at the supplied garment/product image and return one short, useful English design name.
+
+Rules:
+- Keep the name under 70 characters.
+- Mention the most useful visible differentiators such as primary colour, pattern/graphic/check/stripe style and garment type.
+- Do not mention price, MRP, stock, SKU, barcode, tax, size quantity or unverified fabric composition.
+- Do not invent brand names, certifications or logos.
+- Do not use markdown or explanations.
+- Return JSON only in exactly this shape:
+{"productName":"string"}
+`;
+
+const BASE_PRODUCT_PROMPT = `
 You are the product-content assistant for NEW CITY STYLE,
 an Indian family fashion e-commerce store.
 
@@ -369,6 +415,79 @@ Return only a valid JSON object using exactly this structure:
   ]
 }
 `;
+
+function cleanProductContext(value: unknown): ProductContext {
+  const source =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+
+  const cleanId = (candidate: unknown) => {
+    const parsed = Number(candidate);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  };
+
+  return {
+    productId: cleanId(source.productId),
+    variantId: cleanId(source.variantId),
+    name: cleanText(source.name, 140),
+    brand: cleanText(source.brand, 100),
+    category: cleanText(source.category, 80),
+    subcategory: cleanText(source.subcategory, 100),
+    gender: cleanText(source.gender, 40),
+    ageGroup: cleanText(source.ageGroup, 60),
+    size: cleanText(source.size, 60),
+    colour: cleanText(source.colour ?? source.color, 80),
+    material: cleanText(source.material, 120),
+    fabric: cleanText(source.fabric, 160),
+    pattern: cleanText(source.pattern, 80),
+    sleeveType: cleanText(source.sleeveType, 80),
+    fitType: cleanText(source.fitType, 80),
+    occasion: cleanText(source.occasion, 120),
+    sku: cleanText(source.sku, 120),
+    barcode: cleanText(source.barcode, 120),
+  };
+}
+
+function buildProductPrompt(context: ProductContext) {
+  const trustedEntries = Object.entries({
+    "Product name": context.name,
+    Brand: context.brand,
+    Category: context.category,
+    Subcategory: context.subcategory,
+    Gender: context.gender,
+    "Age group": context.ageGroup,
+    Size: context.size,
+    Colour: context.colour,
+    Material: context.material,
+    Fabric: context.fabric,
+    Pattern: context.pattern,
+    "Sleeve type": context.sleeveType,
+    "Fit type": context.fitType,
+    Occasion: context.occasion,
+  }).filter(([, value]) => Boolean(value));
+
+  if (trustedEntries.length === 0) {
+    return BASE_PRODUCT_PROMPT;
+  }
+
+  const trustedRecord = trustedEntries
+    .map(([label, value]) => `- ${label}: ${value}`)
+    .join("\n");
+
+  return `${BASE_PRODUCT_PROMPT}
+
+TRUSTED EXISTING PRODUCT RECORD:
+${trustedRecord}
+
+ADDITIONAL RECORD RULES:
+- Treat the trusted existing product record above as the source of truth for identity fields.
+- Use the image to enrich presentation details, not to overwrite a trusted brand, category, size or colour.
+- If the image appears to conflict with a trusted field, keep the trusted field and avoid inventing a replacement.
+- Never expose SKU or barcode in generated customer-facing text.
+- Do not generate or infer price, MRP, stock, tax, low-stock limits or online quantity.
+- Preserve the exact product identity; do not invent logos, certifications, fabric composition or model numbers.`;
+}
 
 function cleanText(
   value: unknown,
@@ -716,7 +835,8 @@ function shouldFallbackFromGemini(
 
 async function generateWithGemini(
   imageBuffer: Buffer,
-  mimeType: string
+  mimeType: string,
+  prompt: string
 ): Promise<AiProductDetails> {
   const apiKey =
     process.env.GEMINI_API_KEY?.trim();
@@ -748,7 +868,7 @@ async function generateWithGemini(
               role: "user",
               parts: [
                 {
-                  text: productPrompt,
+                  text: prompt,
                 },
                 {
                   inlineData: {
@@ -771,7 +891,7 @@ async function generateWithGemini(
         }),
         cache: "no-store",
         signal:
-          AbortSignal.timeout(18_000),
+          AbortSignal.timeout(28_000),
       }
     );
   } catch (error) {
@@ -882,9 +1002,429 @@ async function generateWithGemini(
   return details;
 }
 
-async function generateWithOpenRouter(
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getRetryDelayMs(attempt: number) {
+  const base = Math.min(8_000, 1_000 * 2 ** Math.max(0, attempt - 1));
+  const jitter = Math.floor(Math.random() * 450);
+  return base + jitter;
+}
+
+async function generateDesignNameWithGemini(
   imageBuffer: Buffer,
   mimeType: string
+): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+
+  if (!apiKey) {
+    throw new AiProviderError(
+      "GEMINI_API_KEY is not configured.",
+      500,
+      "gemini",
+      false
+    );
+  }
+
+  const requestBody = {
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: DESIGN_NAME_PROMPT },
+          {
+            inlineData: {
+              mimeType,
+              data: imageBuffer.toString("base64"),
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      maxOutputTokens: 120,
+      responseMimeType: "application/json",
+      responseSchema: geminiDesignNameSchema,
+    },
+  };
+
+  let lastMessage = "Gemini design-name generation failed.";
+
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_DESIGN_NAME_MODEL}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          body: JSON.stringify(requestBody),
+          cache: "no-store",
+          signal: AbortSignal.timeout(20_000),
+        }
+      );
+
+      let data: GeminiResponse;
+      try {
+        data = (await response.json()) as GeminiResponse;
+      } catch {
+        lastMessage = "Gemini returned an unreadable design-name response.";
+
+        if (attempt < 4 && response.status >= 500) {
+          await sleep(getRetryDelayMs(attempt));
+          continue;
+        }
+
+        throw new AiProviderError(
+          lastMessage,
+          response.status || 502,
+          "gemini",
+          false
+        );
+      }
+
+      if (!response.ok) {
+        const message =
+          cleanText(data.error?.message, 1000) ||
+          "Gemini could not generate a design name.";
+
+        lastMessage = message;
+
+        const retryable =
+          response.status === 408 ||
+          response.status === 409 ||
+          response.status === 429 ||
+          response.status >= 500;
+
+        if (retryable && attempt < 4) {
+          await sleep(getRetryDelayMs(attempt));
+          continue;
+        }
+
+        throw new AiProviderError(
+          message,
+          response.status || 502,
+          "gemini",
+          false
+        );
+      }
+
+      if (data.promptFeedback?.blockReason) {
+        throw new AiProviderError(
+          `Gemini blocked this image: ${data.promptFeedback.blockReason}.`,
+          422,
+          "gemini",
+          false
+        );
+      }
+
+      const generatedText =
+        data.candidates?.[0]?.content?.parts
+          ?.map((part) => part.text || "")
+          .join("")
+          .trim() || "";
+
+      if (!generatedText) {
+        lastMessage = "Gemini returned no design name.";
+
+        if (attempt < 4) {
+          await sleep(getRetryDelayMs(attempt));
+          continue;
+        }
+
+        throw new AiProviderError(
+          lastMessage,
+          502,
+          "gemini",
+          false
+        );
+      }
+
+      let parsed: unknown;
+
+      try {
+        parsed = extractJsonObject(generatedText);
+      } catch {
+        lastMessage = "Gemini returned invalid design-name data.";
+
+        if (attempt < 4) {
+          await sleep(getRetryDelayMs(attempt));
+          continue;
+        }
+
+        throw new AiProviderError(
+          lastMessage,
+          502,
+          "gemini",
+          false
+        );
+      }
+
+      const source =
+        parsed && typeof parsed === "object"
+          ? (parsed as Record<string, unknown>)
+          : {};
+
+      const productName = cleanText(source.productName, 70);
+
+      if (!productName) {
+        lastMessage = "Gemini could not identify this design.";
+
+        if (attempt < 4) {
+          await sleep(getRetryDelayMs(attempt));
+          continue;
+        }
+
+        throw new AiProviderError(
+          lastMessage,
+          422,
+          "gemini",
+          false
+        );
+      }
+
+      return productName;
+    } catch (error) {
+      if (error instanceof AiProviderError) {
+        throw error;
+      }
+
+      const message =
+        error instanceof Error ? error.message.toLowerCase() : "";
+
+      const transient =
+        message.includes("timeout") ||
+        message.includes("timed out") ||
+        message.includes("fetch failed") ||
+        message.includes("network") ||
+        message.includes("abort");
+
+      lastMessage = transient
+        ? "Gemini design-name request timed out."
+        : "Gemini design-name service is temporarily unavailable.";
+
+      if (transient && attempt < 4) {
+        await sleep(getRetryDelayMs(attempt));
+        continue;
+      }
+
+      throw new AiProviderError(
+        lastMessage,
+        504,
+        "gemini",
+        false
+      );
+    }
+  }
+
+  throw new AiProviderError(
+    lastMessage,
+    503,
+    "gemini",
+    false
+  );
+}
+
+
+async function generateCommonDetailsWithGeminiLite(
+  imageBuffer: Buffer,
+  mimeType: string,
+  prompt: string
+): Promise<AiProductDetails> {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+
+  if (!apiKey) {
+    throw new AiProviderError(
+      "GEMINI_API_KEY is not configured.",
+      500,
+      "gemini",
+      false
+    );
+  }
+
+  const requestBody = {
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType,
+              data: imageBuffer.toString("base64"),
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      maxOutputTokens: 2200,
+      responseMimeType: "application/json",
+      responseSchema: geminiResponseSchema,
+    },
+  };
+
+  let lastMessage = "Gemini Flash-Lite common-details generation failed.";
+
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_DESIGN_NAME_MODEL}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          body: JSON.stringify(requestBody),
+          cache: "no-store",
+          signal: AbortSignal.timeout(24_000),
+        }
+      );
+
+      let data: GeminiResponse;
+      try {
+        data = (await response.json()) as GeminiResponse;
+      } catch {
+        lastMessage = "Gemini Flash-Lite returned an unreadable response.";
+        if (attempt < 4 && response.status >= 500) {
+          await sleep(getRetryDelayMs(attempt));
+          continue;
+        }
+        throw new AiProviderError(
+          lastMessage,
+          response.status || 502,
+          "gemini",
+          false
+        );
+      }
+
+      if (!response.ok) {
+        const message =
+          cleanText(data.error?.message, 1000) ||
+          "Gemini Flash-Lite could not generate common product details.";
+
+        lastMessage = message;
+
+        const retryable =
+          response.status === 408 ||
+          response.status === 409 ||
+          response.status === 429 ||
+          response.status >= 500;
+
+        if (retryable && attempt < 4) {
+          await sleep(getRetryDelayMs(attempt));
+          continue;
+        }
+
+        throw new AiProviderError(
+          message,
+          response.status || 502,
+          "gemini",
+          false
+        );
+      }
+
+      if (data.promptFeedback?.blockReason) {
+        throw new AiProviderError(
+          `Gemini blocked this image: ${data.promptFeedback.blockReason}.`,
+          422,
+          "gemini",
+          false
+        );
+      }
+
+      const generatedText =
+        data.candidates?.[0]?.content?.parts
+          ?.map((part) => part.text || "")
+          .join("")
+          .trim() || "";
+
+      if (!generatedText) {
+        lastMessage = "Gemini Flash-Lite returned no product details.";
+        if (attempt < 4) {
+          await sleep(getRetryDelayMs(attempt));
+          continue;
+        }
+        throw new AiProviderError(lastMessage, 502, "gemini", false);
+      }
+
+      let parsed: unknown;
+
+      try {
+        parsed = extractJsonObject(generatedText);
+      } catch {
+        lastMessage = "Gemini Flash-Lite returned invalid product data.";
+        if (attempt < 4) {
+          await sleep(getRetryDelayMs(attempt));
+          continue;
+        }
+        throw new AiProviderError(lastMessage, 502, "gemini", false);
+      }
+
+      const details = normalizeDetails(parsed);
+
+      if (!validateGeneratedDetails(details)) {
+        lastMessage =
+          "Gemini Flash-Lite could not identify enough product information.";
+
+        if (attempt < 4) {
+          await sleep(getRetryDelayMs(attempt));
+          continue;
+        }
+
+        throw new AiProviderError(lastMessage, 422, "gemini", false);
+      }
+
+      return details;
+    } catch (error) {
+      if (error instanceof AiProviderError) {
+        throw error;
+      }
+
+      const message =
+        error instanceof Error ? error.message.toLowerCase() : "";
+
+      const transient =
+        message.includes("timeout") ||
+        message.includes("timed out") ||
+        message.includes("fetch failed") ||
+        message.includes("network") ||
+        message.includes("abort");
+
+      lastMessage = transient
+        ? "Gemini Flash-Lite common-details request timed out."
+        : "Gemini Flash-Lite common-details service is temporarily unavailable.";
+
+      if (transient && attempt < 4) {
+        await sleep(getRetryDelayMs(attempt));
+        continue;
+      }
+
+      throw new AiProviderError(
+        lastMessage,
+        504,
+        "gemini",
+        false
+      );
+    }
+  }
+
+  throw new AiProviderError(
+    lastMessage,
+    503,
+    "gemini",
+    false
+  );
+}
+
+async function generateWithOpenRouter(
+  imageBuffer: Buffer,
+  mimeType: string,
+  prompt: string
 ): Promise<{
   details: AiProductDetails;
   model: string;
@@ -934,7 +1474,7 @@ async function generateWithOpenRouter(
               content: [
                 {
                   type: "text",
-                  text: productPrompt,
+                  text: prompt,
                 },
                 {
                   type: "image_url",
@@ -1129,7 +1669,8 @@ function isCloudflareLicenseError(
 
 async function generateWithCloudflare(
   imageBuffer: Buffer,
-  mimeType: string
+  mimeType: string,
+  prompt: string
 ): Promise<{
   details: AiProductDetails;
   model: string;
@@ -1167,7 +1708,7 @@ async function generateWithCloudflare(
     messages: [
       {
         role: "user",
-        content: productPrompt,
+        content: prompt,
       },
     ],
     image: imageDataUrl,
@@ -1340,11 +1881,22 @@ export async function POST(
     const body =
       (await request.json()) as {
         imageUrl?: unknown;
+        productContext?: unknown;
+        mode?: unknown;
       };
 
     const imageUrl = cleanText(
       body.imageUrl,
       2000
+    );
+
+    const mode = cleanText(body.mode, 40).toLowerCase();
+
+    const productContext = cleanProductContext(
+      body.productContext
+    );
+    const productPrompt = buildProductPrompt(
+      productContext
     );
 
     if (
@@ -1460,6 +2012,84 @@ export async function POST(
       );
     }
 
+    if (mode === "design-name") {
+      try {
+        const productName = await generateDesignNameWithGemini(
+          imageBuffer,
+          mimeType
+        );
+
+        return NextResponse.json({
+          productName,
+          provider: "gemini",
+          model: GEMINI_DESIGN_NAME_MODEL,
+          usedFallback: false,
+          mode: "design-name",
+          message: "Design name generated successfully.",
+        });
+      } catch (error) {
+        const message =
+          error instanceof AiProviderError
+            ? error.message
+            : "AI could not generate a design name.";
+
+        return NextResponse.json(
+          {
+            error: message,
+            provider: "gemini",
+            usedFallback: false,
+            mode: "design-name",
+          },
+          {
+            status:
+              error instanceof AiProviderError
+                ? error.status
+                : 503,
+          }
+        );
+      }
+    }
+
+    if (mode === "common-details-lite") {
+      try {
+        const details = await generateCommonDetailsWithGeminiLite(
+          imageBuffer,
+          mimeType,
+          productPrompt
+        );
+
+        return NextResponse.json({
+          details,
+          provider: "gemini",
+          model: GEMINI_DESIGN_NAME_MODEL,
+          usedFallback: false,
+          mode: "common-details-lite",
+          message:
+            "Common product details generated successfully with Gemini Flash-Lite.",
+        });
+      } catch (error) {
+        const message =
+          error instanceof AiProviderError
+            ? error.message
+            : "AI could not generate the common product details.";
+
+        return NextResponse.json(
+          {
+            error: message,
+            provider: "gemini",
+            usedFallback: false,
+            mode: "common-details-lite",
+          },
+          {
+            status:
+              error instanceof AiProviderError
+                ? error.status
+                : 503,
+          }
+        );
+      }
+    }
+
     let geminiErrorMessage = "";
     let openRouterErrorMessage = "";
 
@@ -1467,7 +2097,8 @@ export async function POST(
       const details =
         await generateWithGemini(
           imageBuffer,
-          mimeType
+          mimeType,
+          productPrompt
         );
 
       return NextResponse.json({
@@ -1476,6 +2107,13 @@ export async function POST(
         model: GEMINI_MODEL,
         usedFallback: false,
         fallbackLevel: 0,
+        contextUsed: Boolean(
+          productContext.name ||
+          productContext.brand ||
+          productContext.category ||
+          productContext.size ||
+          productContext.colour
+        ),
         message:
           "Product details generated successfully with Gemini.",
       });
@@ -1521,7 +2159,8 @@ export async function POST(
       const backupResult =
         await generateWithOpenRouter(
           imageBuffer,
-          mimeType
+          mimeType,
+          productPrompt
         );
 
       return NextResponse.json({
@@ -1531,6 +2170,13 @@ export async function POST(
         model: backupResult.model,
         usedFallback: true,
         fallbackLevel: 1,
+        contextUsed: Boolean(
+          productContext.name ||
+          productContext.brand ||
+          productContext.category ||
+          productContext.size ||
+          productContext.colour
+        ),
         message:
           "Gemini was unavailable, so product details were generated with OpenRouter Backup AI.",
       });
@@ -1561,7 +2207,8 @@ export async function POST(
       const cloudflareResult =
         await generateWithCloudflare(
           imageBuffer,
-          mimeType
+          mimeType,
+          productPrompt
         );
 
       return NextResponse.json({
@@ -1571,6 +2218,13 @@ export async function POST(
         model: cloudflareResult.model,
         usedFallback: true,
         fallbackLevel: 2,
+        contextUsed: Boolean(
+          productContext.name ||
+          productContext.brand ||
+          productContext.category ||
+          productContext.size ||
+          productContext.colour
+        ),
         message:
           "Gemini and OpenRouter were unavailable, so product details were generated with Cloudflare Workers AI.",
       });
