@@ -5,7 +5,9 @@ export const dynamic = "force-dynamic";
 
 type CustomerWhatsAppType =
   | "DUE_REMINDER"
-  | "PAYMENT_RECEIVED";
+  | "PAYMENT_RECEIVED"
+  | "RETURN_COMPLETED"
+  | "EXCHANGE_COMPLETED";
 
 type CustomerWhatsAppRequest = {
   type?: CustomerWhatsAppType;
@@ -15,6 +17,14 @@ type CustomerWhatsAppRequest = {
   amount?: number | string;
   remainingDue?: number | string;
   paymentMethod?: string;
+
+  billNumber?: string;
+  returnNumber?: string;
+  returnedAmount?: number | string;
+  exchangeValue?: number | string;
+  differenceAmount?: number | string;
+  settlementDirection?: string;
+  settlementMethod?: string;
 };
 
 type MetaSuccessResponse = {
@@ -201,14 +211,15 @@ export async function POST(
 
     if (
       messageType !== "DUE_REMINDER" &&
-      messageType !==
-        "PAYMENT_RECEIVED"
+      messageType !== "PAYMENT_RECEIVED" &&
+      messageType !== "RETURN_COMPLETED" &&
+      messageType !== "EXCHANGE_COMPLETED"
     ) {
       return NextResponse.json(
         {
           success: false,
           error:
-            "type must be DUE_REMINDER or PAYMENT_RECEIVED.",
+            "type must be DUE_REMINDER, PAYMENT_RECEIVED, RETURN_COMPLETED, or EXCHANGE_COMPLETED.",
         },
         { status: 400 },
       );
@@ -240,23 +251,35 @@ export async function POST(
       );
 
     const templateName =
-      messageType ===
-      "DUE_REMINDER"
+      messageType === "DUE_REMINDER"
         ? process.env
             .WHATSAPP_CUSTOMER_DUE_TEMPLATE_NAME
             ?.trim()
-        : process.env
-            .WHATSAPP_PAYMENT_RECEIVED_TEMPLATE_NAME
-            ?.trim();
+        : messageType === "PAYMENT_RECEIVED"
+          ? process.env
+              .WHATSAPP_PAYMENT_RECEIVED_TEMPLATE_NAME
+              ?.trim()
+          : messageType === "RETURN_COMPLETED"
+            ? process.env
+                .WHATSAPP_RETURN_COMPLETED_TEMPLATE_NAME
+                ?.trim()
+            : process.env
+                .WHATSAPP_EXCHANGE_COMPLETED_TEMPLATE_NAME
+                ?.trim();
 
     const templateLanguage =
       (
-        messageType ===
-        "DUE_REMINDER"
+        messageType === "DUE_REMINDER"
           ? process.env
               .WHATSAPP_CUSTOMER_DUE_TEMPLATE_LANGUAGE
-          : process.env
-              .WHATSAPP_PAYMENT_RECEIVED_TEMPLATE_LANGUAGE
+          : messageType === "PAYMENT_RECEIVED"
+            ? process.env
+                .WHATSAPP_PAYMENT_RECEIVED_TEMPLATE_LANGUAGE
+            : messageType === "RETURN_COMPLETED"
+              ? process.env
+                  .WHATSAPP_RETURN_COMPLETED_TEMPLATE_LANGUAGE
+              : process.env
+                  .WHATSAPP_EXCHANGE_COMPLETED_TEMPLATE_LANGUAGE
       )?.trim() || "en";
 
     /*
@@ -273,18 +296,20 @@ export async function POST(
           fallbackRecommended: true,
           type: messageType,
           error:
-            messageType ===
-            "DUE_REMINDER"
+            messageType === "DUE_REMINDER"
               ? "WHATSAPP_CUSTOMER_DUE_TEMPLATE_NAME is not configured."
-              : "WHATSAPP_PAYMENT_RECEIVED_TEMPLATE_NAME is not configured.",
+              : messageType === "PAYMENT_RECEIVED"
+                ? "WHATSAPP_PAYMENT_RECEIVED_TEMPLATE_NAME is not configured."
+                : messageType === "RETURN_COMPLETED"
+                  ? "WHATSAPP_RETURN_COMPLETED_TEMPLATE_NAME is not configured."
+                  : "WHATSAPP_EXCHANGE_COMPLETED_TEMPLATE_NAME is not configured.",
         },
         { status: 503 },
       );
     }
 
     const parameters =
-      messageType ===
-      "DUE_REMINDER"
+      messageType === "DUE_REMINDER"
         ? [
             {
               type: "text",
@@ -297,31 +322,118 @@ export async function POST(
               ),
             },
           ]
-        : [
-            {
-              type: "text",
-              text: customerName,
-            },
-            {
-              type: "text",
-              text: normalizeAmount(
-                body.amount,
-              ),
-            },
-            {
-              type: "text",
-              text: normalizeText(
-                body.paymentMethod,
-                "Payment",
-              ),
-            },
-            {
-              type: "text",
-              text: normalizeAmount(
-                body.remainingDue,
-              ),
-            },
-          ];
+        : messageType === "PAYMENT_RECEIVED"
+          ? [
+              {
+                type: "text",
+                text: customerName,
+              },
+              {
+                type: "text",
+                text: normalizeAmount(
+                  body.amount,
+                ),
+              },
+              {
+                type: "text",
+                text: normalizeText(
+                  body.paymentMethod,
+                  "Payment",
+                ),
+              },
+              {
+                type: "text",
+                text: normalizeAmount(
+                  body.remainingDue,
+                ),
+              },
+            ]
+          : messageType === "RETURN_COMPLETED"
+            ? [
+                {
+                  type: "text",
+                  text: customerName,
+                },
+                {
+                  type: "text",
+                  text: normalizeText(
+                    body.billNumber,
+                    "Bill",
+                  ),
+                },
+                {
+                  type: "text",
+                  text: normalizeText(
+                    body.returnNumber,
+                    "Return",
+                  ),
+                },
+                {
+                  type: "text",
+                  text: normalizeAmount(
+                    body.returnedAmount,
+                  ),
+                },
+                {
+                  type: "text",
+                  text: normalizeText(
+                    body.paymentMethod,
+                    "Refund",
+                  ),
+                },
+              ]
+            : [
+                {
+                  type: "text",
+                  text: customerName,
+                },
+                {
+                  type: "text",
+                  text: normalizeText(
+                    body.billNumber,
+                    "Bill",
+                  ),
+                },
+                {
+                  type: "text",
+                  text: normalizeText(
+                    body.returnNumber,
+                    "Exchange",
+                  ),
+                },
+                {
+                  type: "text",
+                  text: normalizeAmount(
+                    body.returnedAmount,
+                  ),
+                },
+                {
+                  type: "text",
+                  text: normalizeAmount(
+                    body.exchangeValue,
+                  ),
+                },
+                {
+                  type: "text",
+                  text: normalizeText(
+                    body.settlementDirection,
+                    "even",
+                  ),
+                },
+                {
+                  type: "text",
+                  text: normalizeAmount(
+                    body.differenceAmount,
+                  ),
+                },
+                {
+                  type: "text",
+                  text: normalizeText(
+                    body.settlementMethod,
+                    "none",
+                  ),
+                },
+              ];
 
     const messagePayload = {
       messaging_product:
@@ -435,10 +547,13 @@ export async function POST(
         directWhatsAppSent: true,
         type: messageType,
         message:
-          messageType ===
-          "DUE_REMINDER"
+          messageType === "DUE_REMINDER"
             ? "Customer due reminder accepted by WhatsApp."
-            : "Payment received message accepted by WhatsApp.",
+            : messageType === "PAYMENT_RECEIVED"
+              ? "Payment received message accepted by WhatsApp."
+              : messageType === "RETURN_COMPLETED"
+                ? "Return completed message accepted by WhatsApp."
+                : "Exchange completed message accepted by WhatsApp.",
         recipientPhone:
           maskPhone(
             recipientPhone,
@@ -496,6 +611,16 @@ export async function GET() {
       Boolean(
         process.env
           .WHATSAPP_PAYMENT_RECEIVED_TEMPLATE_NAME,
+      ),
+    returnCompletedTemplateConfigured:
+      Boolean(
+        process.env
+          .WHATSAPP_RETURN_COMPLETED_TEMPLATE_NAME,
+      ),
+    exchangeCompletedTemplateConfigured:
+      Boolean(
+        process.env
+          .WHATSAPP_EXCHANGE_COMPLETED_TEMPLATE_NAME,
       ),
     message:
       "NEW CITY STYLE customer WhatsApp direct-send route is ready.",
