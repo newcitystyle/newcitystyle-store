@@ -22,6 +22,7 @@ type Sale = {
   is_deleted?: boolean | null;
   deleted_at?: string | null;
   deleted_by?: string | null;
+  refunded_amount?: number | string | null;
 };
 
 type SaleItem = {
@@ -303,7 +304,7 @@ export default function SalesHistoryPage() {
     setLoading(true);
     setErrorText("");
 
-    const [salesResult, exchangeResult] = await Promise.all([
+    const [salesResult, exchangeResult, refundsResult] = await Promise.all([
       supabase
         .from("pos_sales")
         .select("*")
@@ -315,6 +316,10 @@ export default function SalesHistoryPage() {
           "id,difference_amount,settlement_direction,settlement_method,settlement_status,created_at"
         )
         .order("created_at", { ascending: false }),
+      supabase
+        .from("pos_refunds")
+        .select("sale_id,amount,refund_status")
+        .eq("refund_status", "completed"),
     ]);
 
     if (salesResult.error) {
@@ -324,8 +329,37 @@ export default function SalesHistoryPage() {
       );
       setSales([]);
     } else {
+      const refundBySale = new Map<string, number>();
+
+      if (!refundsResult.error) {
+        (
+          (refundsResult.data || []) as Array<{
+            sale_id?: string | null;
+            amount?: number | string | null;
+            refund_status?: string | null;
+          }>
+        ).forEach((refund) => {
+          const saleId = String(refund.sale_id || "").trim();
+          if (!saleId) return;
+
+          refundBySale.set(
+            saleId,
+            (refundBySale.get(saleId) || 0) +
+              Math.max(0, num(refund.amount)),
+          );
+        });
+      } else {
+        console.info(
+          "Unable to load completed refunds:",
+          refundsResult.error.message
+        );
+      }
+
       setSales(
-        (salesResult.data || []) as unknown as Sale[]
+        ((salesResult.data || []) as unknown as Sale[]).map((sale) => ({
+          ...sale,
+          refunded_amount: refundBySale.get(sale.id) || 0,
+        }))
       );
     }
 
@@ -425,8 +459,9 @@ export default function SalesHistoryPage() {
     const base = filtered.reduce(
       (a, sale) => {
         if (norm(sale.sale_status) !== "cancelled") {
-          a.value += num(sale.total_amount);
-          a.paid += num(sale.paid_amount);
+          const refunded = Math.max(0, num(sale.refunded_amount));
+          a.value += Math.max(0, num(sale.total_amount) - refunded);
+          a.paid += Math.max(0, num(sale.paid_amount) - refunded);
           a.due += num(sale.due_amount);
         }
 
@@ -1875,7 +1910,18 @@ export default function SalesHistoryPage() {
           <div class="line"><span>Discount</span><b>-${money(sale.bill_discount)}</b></div>
           <div class="line"><span>Tax</span><b>${money(sale.tax_amount)}</b></div>
           <div class="line"><span>Round Off</span><b>-${money(sale.round_off)}</b></div>
-          <div class="line grand"><span>Total</span><b>${money(sale.total_amount)}</b></div>
+          <div class="line grand"><span>Original Total</span><b>${money(sale.total_amount)}</b></div>
+          ${
+            num(sale.refunded_amount) > 0
+              ? `<div class="line"><span>Refunded</span><b>-${money(sale.refunded_amount)}</b></div>
+                 <div class="line grand"><span>Net Sale</span><b>${money(
+                   Math.max(
+                     0,
+                     num(sale.total_amount) - num(sale.refunded_amount)
+                   )
+                 )}</b></div>`
+              : ""
+          }
           <div class="line"><span>Paid</span><b>${money(sale.paid_amount)}</b></div>
           <div class="line"><span>Due</span><b>${money(sale.due_amount)}</b></div>
         </div>
@@ -1968,6 +2014,11 @@ export default function SalesHistoryPage() {
           {pagedSales.map((sale) => {
             const due = num(sale.due_amount);
             const cancelled = norm(sale.sale_status) === "cancelled";
+            const refunded = Math.max(0, num(sale.refunded_amount));
+            const netSale = Math.max(
+              0,
+              num(sale.total_amount) - refunded
+            );
 
             return (
               <article className="saleCard" key={sale.id}>
@@ -1991,7 +2042,17 @@ export default function SalesHistoryPage() {
                 <div className="amounts">
                   <div><span>Subtotal</span><strong>{money(sale.subtotal)}</strong></div>
                   <div><span>Discount</span><strong>{money(sale.bill_discount)}</strong></div>
-                  <div><span>Total</span><strong>{money(sale.total_amount)}</strong></div>
+                  <div><span>Original Total</span><strong>{money(sale.total_amount)}</strong></div>
+                  {refunded > 0 && (
+                    <div className="refundAmount">
+                      <span>Refunded</span>
+                      <strong>- {money(refunded)}</strong>
+                    </div>
+                  )}
+                  <div className={refunded > 0 ? "netSale" : ""}>
+                    <span>Net Sale</span>
+                    <strong>{money(netSale)}</strong>
+                  </div>
                   <div><span>Paid</span><strong>{money(sale.paid_amount)}</strong></div>
                   <div className={due > 0 ? "due" : ""}><span>Due</span><strong>{money(due)}</strong></div>
                 </div>
@@ -2142,7 +2203,27 @@ export default function SalesHistoryPage() {
               <p><span>Discount</span><strong>- {money(selected.bill_discount)}</strong></p>
               <p><span>Tax</span><strong>{money(selected.tax_amount)}</strong></p>
               <p><span>Round Off</span><strong>- {money(selected.round_off)}</strong></p>
-              <p className="grand"><span>Total</span><strong>{money(selected.total_amount)}</strong></p>
+              <p className="grand"><span>Original Total</span><strong>{money(selected.total_amount)}</strong></p>
+              {num(selected.refunded_amount) > 0 && (
+                <>
+                  <p className="refundLine">
+                    <span>Refunded</span>
+                    <strong>- {money(selected.refunded_amount)}</strong>
+                  </p>
+                  <p className="netLine">
+                    <span>Net Sale</span>
+                    <strong>
+                      {money(
+                        Math.max(
+                          0,
+                          num(selected.total_amount) -
+                            num(selected.refunded_amount)
+                        )
+                      )}
+                    </strong>
+                  </p>
+                </>
+              )}
               <p><span>Paid</span><strong>{money(selected.paid_amount)}</strong></p>
               <p className={num(selected.due_amount) > 0 ? "due" : ""}>
                 <span>Due</span><strong>{money(selected.due_amount)}</strong>
