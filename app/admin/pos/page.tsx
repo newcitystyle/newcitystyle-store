@@ -260,6 +260,13 @@ type PosExchangeSettlementOverview = {
   created_at?: string | null;
 };
 
+type PosRefundOverview = {
+  amount?: number | string | null;
+  refund_method?: string | null;
+  refund_status?: string | null;
+  created_at?: string | null;
+};
+
 type CompletedSale = {
   saleId: string;
   invoiceNumber: string;
@@ -1785,6 +1792,7 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
           salesResponse,
           creditResponse,
           exchangeResponse,
+          refundResponse,
         ] = await Promise.all([
           supabase
             .from("pos_sales")
@@ -1807,6 +1815,13 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
             )
             .gte("created_at", startOfDay.toISOString())
             .lt("created_at", endOfDay.toISOString()),
+
+          supabase
+            .from("pos_refunds")
+            .select(
+              "amount,refund_method,refund_status,created_at",
+            )
+            .eq("refund_status", "completed"),
         ]);
 
         if (!salesResponse.error) {
@@ -1946,6 +1961,74 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
             console.info(
               "Exchange overview unavailable:",
               exchangeResponse.error.message,
+            );
+          }
+
+          if (!refundResponse.error) {
+            const refundRows =
+              (refundResponse.data || []) as PosRefundOverview[];
+
+            refundRows.forEach((refund) => {
+              const status = normalizeText(
+                refund.refund_status || "completed",
+              );
+
+              if (
+                ["cancelled", "void", "failed", "deleted"].includes(
+                  status,
+                )
+              ) {
+                return;
+              }
+
+              const refundCreatedAt = refund.created_at
+                ? new Date(refund.created_at)
+                : null;
+
+              if (
+                !refundCreatedAt ||
+                Number.isNaN(refundCreatedAt.getTime()) ||
+                refundCreatedAt < startOfDay ||
+                refundCreatedAt >= endOfDay
+              ) {
+                return;
+              }
+
+              const amount = Math.max(
+                0,
+                toNumber(refund.amount),
+              );
+
+              const method = normalizeText(
+                refund.refund_method,
+              );
+
+              todaySales = Math.max(
+                0,
+                todaySales - amount,
+              );
+
+              if (method === "cash") {
+                todayCash = Math.max(
+                  0,
+                  todayCash - amount,
+                );
+              } else if (
+                method === "upi" ||
+                method === "card" ||
+                method === "bank" ||
+                method === "bank_transfer"
+              ) {
+                todayDigital = Math.max(
+                  0,
+                  todayDigital - amount,
+                );
+              }
+            });
+          } else {
+            console.info(
+              "Refund overview unavailable:",
+              refundResponse.error.message,
             );
           }
 
