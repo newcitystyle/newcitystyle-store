@@ -130,6 +130,16 @@ type ExchangeSettlement = {
   created_at?: string | null;
 };
 
+type PosRefund = {
+  id: number | string;
+  sale_id?: string | null;
+  refund_method?: string | null;
+  amount?: number | string | null;
+  refund_status?: string | null;
+  refunded_at?: string | null;
+  created_at?: string | null;
+};
+
 type DashboardStats = {
   totalProducts: number;
   totalOrders: number;
@@ -352,6 +362,7 @@ export default function AdminDashboardPage() {
     useState<CashBankTransaction[]>([]);
   const [exchangeSettlements, setExchangeSettlements] =
     useState<ExchangeSettlement[]>([]);
+  const [posRefunds, setPosRefunds] = useState<PosRefund[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -542,6 +553,7 @@ export default function AdminDashboardPage() {
           purchasesResult,
           cashTransactionsResult,
           exchangeSettlementsResult,
+          posRefundsResult,
         ] = await Promise.all([
           supabase
             .from("products")
@@ -625,6 +637,14 @@ export default function AdminDashboardPage() {
             )
             .order("created_at", { ascending: false })
             .limit(5000),
+
+          supabase
+            .from("pos_refunds")
+            .select(
+              "id,sale_id,refund_method,amount,refund_status,refunded_at,created_at",
+            )
+            .order("created_at", { ascending: false })
+            .limit(5000),
         ]);
 
         if (productsResult.error) throw productsResult.error;
@@ -644,6 +664,12 @@ export default function AdminDashboardPage() {
           console.info(
             "Exchange settlements are unavailable:",
             exchangeSettlementsResult.error.message,
+          );
+        }
+        if (posRefundsResult.error) {
+          console.info(
+            "POS refunds are unavailable:",
+            posRefundsResult.error.message,
           );
         }
 
@@ -672,6 +698,11 @@ export default function AdminDashboardPage() {
             ? []
             : ((exchangeSettlementsResult.data ||
                 []) as ExchangeSettlement[]),
+        );
+        setPosRefunds(
+          posRefundsResult.error
+            ? []
+            : ((posRefundsResult.data || []) as PosRefund[]),
         );
 
         if (visitsResult.error) {
@@ -739,6 +770,43 @@ export default function AdminDashboardPage() {
       const date = new Date(sale.created_at);
       return !Number.isNaN(date.getTime()) && date >= monthStart;
     });
+
+    const activeRefunds = posRefunds.filter(
+      (row) =>
+        (row.refund_status || "completed").trim().toLowerCase() ===
+        "completed",
+    );
+
+    const todayRefundRows = activeRefunds.filter((row) => {
+      const sourceDate = row.refunded_at || row.created_at;
+      if (!sourceDate) return false;
+      const date = new Date(sourceDate);
+      return (
+        !Number.isNaN(date.getTime()) &&
+        dateKey(date) === dateKey(todayStart)
+      );
+    });
+
+    const monthRefundRows = activeRefunds.filter((row) => {
+      const sourceDate = row.refunded_at || row.created_at;
+      if (!sourceDate) return false;
+      const date = new Date(sourceDate);
+      return !Number.isNaN(date.getTime()) && date >= monthStart;
+    });
+
+    const refundTotal = (rows: PosRefund[]) =>
+      rows.reduce(
+        (sum, row) => sum + Math.max(0, toNumber(row.amount)),
+        0,
+      );
+
+    const refundByMethod = (rows: PosRefund[], methods: string[]) =>
+      rows.reduce((sum, row) => {
+        const method = (row.refund_method || "").trim().toLowerCase();
+        return methods.includes(method)
+          ? sum + Math.max(0, toNumber(row.amount))
+          : sum;
+      }, 0);
 
     const activeExchangeSettlements = exchangeSettlements.filter(
       (row) =>
@@ -852,8 +920,18 @@ export default function AdminDashboardPage() {
       ["upi", "card", "bank", "bank_transfer"],
     );
 
-    const cashSales = baseCashSales + cashExchangeMovement;
-    const digitalSales = baseDigitalSales + digitalExchangeMovement;
+    const monthCashRefunds = refundByMethod(monthRefundRows, ["cash"]);
+    const monthDigitalRefunds = refundByMethod(monthRefundRows, [
+      "upi",
+      "card",
+      "bank",
+      "bank_transfer",
+    ]);
+
+    const cashSales =
+      baseCashSales - monthCashRefunds + cashExchangeMovement;
+    const digitalSales =
+      baseDigitalSales - monthDigitalRefunds + digitalExchangeMovement;
 
     const cashExpenses = monthExpenseRows
       .filter(
@@ -926,8 +1004,11 @@ export default function AdminDashboardPage() {
 
     const monthExchangeNet = exchangeNet(monthExchangeRows);
     const todayExchangeNet = exchangeNet(todayExchangeRows);
+    const monthRefundTotal = refundTotal(monthRefundRows);
+    const todayRefundTotal = refundTotal(todayRefundRows);
 
-    const monthSales = normalMonthSales + monthExchangeNet;
+    const monthSales =
+      normalMonthSales - monthRefundTotal + monthExchangeNet;
 
     const monthExpenses = monthExpenseRows.reduce(
       (sum, expense) => sum + toNumber(expense.amount),
@@ -945,7 +1026,9 @@ export default function AdminDashboardPage() {
         todaySalesRows.reduce(
           (sum, sale) => sum + toNumber(sale.total_amount),
           0,
-        ) + todayExchangeNet,
+        ) -
+        todayRefundTotal +
+        todayExchangeNet,
       todayBills:
         todaySalesRows.length + todayExchangeRows.length,
       todayExchangeCount: todayExchangeRows.length,
@@ -977,6 +1060,7 @@ export default function AdminDashboardPage() {
     expenses,
     monthStart,
     purchases,
+    posRefunds,
     successfulPosSales,
     suppliers,
     todayStart,
@@ -1098,6 +1182,26 @@ export default function AdminDashboardPage() {
           0,
         );
 
+      const refundAmount = posRefunds
+        .filter(
+          (row) =>
+            (row.refund_status || "completed").trim().toLowerCase() ===
+            "completed",
+        )
+        .filter((row) => {
+          const sourceDate = row.refunded_at || row.created_at;
+          if (!sourceDate) return false;
+          const date = new Date(sourceDate);
+          return (
+            !Number.isNaN(date.getTime()) &&
+            dateKey(date) === key
+          );
+        })
+        .reduce(
+          (sum, row) => sum + Math.max(0, toNumber(row.amount)),
+          0,
+        );
+
       const exchangeAmount = activeExchangeSettlements
         .filter((row) => {
           if (!row.created_at) return false;
@@ -1129,13 +1233,14 @@ export default function AdminDashboardPage() {
           day: "2-digit",
           month: "short",
         }),
-        amount: normalAmount + exchangeAmount,
+        amount: normalAmount - refundAmount + exchangeAmount,
       });
     }
 
     return points;
   }, [
     exchangeSettlements,
+    posRefunds,
     salesRange,
     successfulPosSales,
     todayStart,
