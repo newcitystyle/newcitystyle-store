@@ -5489,6 +5489,7 @@ if (!variantsError) {
       customerName:
         sale.customerName.trim() || "Customer",
       customerPhone: sale.customerPhone,
+      saleId: sale.saleId,
       billNumber: sale.invoiceNumber,
       billDate: sale.completedAt,
       paymentMethod:
@@ -5501,6 +5502,10 @@ if (!variantsError) {
       billAmount: sale.totalAmount,
       paidAmount: sale.paidAmount,
       dueAmount: sale.dueAmount,
+      rewardPointsUsed: sale.rewardPointsUsed,
+      rewardDiscount: sale.rewardDiscount,
+      rewardPointsEarned: sale.rewardPointsEarned,
+      rewardClosingBalance: sale.rewardClosingBalance,
       whatsappLanguage: "telugu",
       items: sale.items.map((item) => ({
         name: item.name,
@@ -5510,6 +5515,7 @@ if (!variantsError) {
         total: item.price * item.quantity,
         size: item.size || "",
         color: item.color || "",
+        barcode: item.barcode || "",
       })),
       invoiceStudio: freshInvoiceStudioSettings,
     };

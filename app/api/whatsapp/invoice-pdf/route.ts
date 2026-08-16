@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, PDFPage, PDFString, StandardFonts, rgb } from "pdf-lib";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +12,7 @@ type InvoiceItem = {
   total?: number | string;
   size?: string;
   color?: string;
+  barcode?: string;
 };
 
 type InvoiceRequest = {
@@ -19,6 +20,7 @@ type InvoiceRequest = {
   sendWhatsApp?: boolean;
   customerName?: string;
   customerPhone?: string;
+  saleId?: string;
   billNumber?: string;
   billDate?: string;
   paymentMethod?: string;
@@ -29,6 +31,10 @@ type InvoiceRequest = {
   billAmount?: number | string;
   paidAmount?: number | string;
   dueAmount?: number | string;
+  rewardPointsUsed?: number | string;
+  rewardDiscount?: number | string;
+  rewardPointsEarned?: number | string;
+  rewardClosingBalance?: number | string;
   whatsappLanguage?: "en" | "te" | "english" | "telugu" | string;
   items?: InvoiceItem[];
   invoiceStudio?: Record<string, unknown> | null;
@@ -177,6 +183,67 @@ function studioBool(
   return typeof value === "boolean" ? value : fallback;
 }
 
+const GOOGLE_REVIEW_URL = "https://g.page/r/CZveSWbz9DT2EBM/review";
+
+function addPdfLink(
+  pdf: PDFDocument,
+  page: PDFPage,
+  url: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  if (!url || width <= 0 || height <= 0) return;
+
+  const annotation = pdf.context.obj({
+    Type: "Annot",
+    Subtype: "Link",
+    Rect: [x, y, x + width, y + height],
+    Border: [0, 0, 0],
+    A: {
+      Type: "Action",
+      S: "URI",
+      URI: PDFString.of(url),
+    },
+  });
+
+  const annotationRef = pdf.context.register(annotation);
+  page.node.addAnnot(annotationRef);
+}
+
+function getPublicSiteBaseUrl(): string {
+  const configured =
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_APP_URL?.trim();
+
+  if (configured) return configured.replace(/\/$/, "");
+
+  const vercelHost = process.env.VERCEL_URL?.trim();
+  if (vercelHost) return `https://${vercelHost.replace(/\/$/, "")}`;
+
+  return "https://newcitystyle.store";
+}
+
+async function loadQrPng(value: string): Promise<Uint8Array | null> {
+  const cleanValue = value.trim();
+  if (!cleanValue) return null;
+
+  try {
+    const qrUrl =
+      `https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=12&data=${encodeURIComponent(
+        cleanValue,
+      )}`;
+
+    const response = await fetch(qrUrl, { cache: "no-store" });
+    if (!response.ok) return null;
+
+    return new Uint8Array(await response.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
 async function loadUpiQrPng(
   upiId: string,
   payeeName: string,
@@ -184,27 +251,76 @@ async function loadUpiQrPng(
   const cleanUpi = upiId.trim();
   if (!cleanUpi) return null;
 
-  try {
-    const params = new URLSearchParams({
-      pa: cleanUpi,
-      pn: payeeName || "NEW CITY STYLE",
-      cu: "INR",
+  const params = new URLSearchParams({
+    pa: cleanUpi,
+    pn: payeeName || "NEW CITY STYLE",
+    cu: "INR",
+  });
+
+  return loadQrPng(`upi://pay?${params.toString()}`);
+}
+
+const CODE39_PATTERNS: Record<string, string> = {
+  "0": "nnnwwnwnn", "1": "wnnwnnnnw", "2": "nnwwnnnnw",
+  "3": "wnwwnnnnn", "4": "nnnwwnnnw", "5": "wnnwwnnnn",
+  "6": "nnwwwnnnn", "7": "nnnwnnwnw", "8": "wnnwnnwnn",
+  "9": "nnwwnnwnn", A: "wnnnnwnnw", B: "nnwnnwnnw",
+  C: "wnwnnwnnn", D: "nnnnwwnnw", E: "wnnnwwnnn",
+  F: "nnwnwwnnn", G: "nnnnnwwnw", H: "wnnnnwwnn",
+  I: "nnwnnwwnn", J: "nnnnwwwnn", K: "wnnnnnnww",
+  L: "nnwnnnnww", M: "wnwnnnnwn", N: "nnnnwnnww",
+  O: "wnnnwnnwn", P: "nnwnwnnwn", Q: "nnnnnnwww",
+  R: "wnnnnnwwn", S: "nnwnnnwwn", T: "nnnnwnwwn",
+  U: "wwnnnnnnw", V: "nwwnnnnnw", W: "wwwnnnnnn",
+  X: "nwnnwnnnw", Y: "wwnnwnnnn", Z: "nwwnwnnnn",
+  "-": "nwnnnnwnw", ".": "wwnnnnwnn", " ": "nwwnnnwnn",
+  "$": "nwnwnwnnn", "/": "nwnwnnnwn", "+": "nwnnnwnwn",
+  "%": "nnnwnwnwn", "*": "nwnnwnwnn",
+};
+
+function drawCode39Barcode(
+  page: PDFPage,
+  rawValue: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  height: number,
+) {
+  const normalized = rawValue
+    .toUpperCase()
+    .split("")
+    .map((char) => (CODE39_PATTERNS[char] ? char : "-"))
+    .join("");
+  const encoded = `*${normalized}*`;
+
+  let totalUnits = 0;
+  for (const char of encoded) {
+    const pattern = CODE39_PATTERNS[char];
+    totalUnits += pattern
+      .split("")
+      .reduce((sum, width) => sum + (width === "w" ? 3 : 1), 0);
+    totalUnits += 1;
+  }
+
+  const unit = Math.max(0.35, maxWidth / totalUnits);
+  let cursorX = x;
+
+  for (const char of encoded) {
+    const pattern = CODE39_PATTERNS[char];
+    pattern.split("").forEach((width, index) => {
+      const barWidth = unit * (width === "w" ? 3 : 1);
+      if (index % 2 === 0) {
+        page.drawRectangle({
+          x: cursorX,
+          y,
+          width: barWidth,
+          height,
+          color: rgb(0.05, 0.05, 0.05),
+        });
+      }
+      cursorX += barWidth;
     });
-    const upiUrl = `upi://pay?${params.toString()}`;
-    const qrUrl =
-      `https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=12&data=${encodeURIComponent(
-        upiUrl,
-      )}`;
-
-    const response = await fetch(qrUrl, {
-      cache: "no-store",
-    });
-
-    if (!response.ok) return null;
-
-    return new Uint8Array(await response.arrayBuffer());
-  } catch {
-    return null;
+    cursorX += unit;
   }
 }
 
@@ -233,6 +349,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
   const customerName = text(body.customerName, "Customer");
   const customerPhone = text(body.customerPhone, "-");
   const billNumber = text(body.billNumber, "NCS-INVOICE");
+  const saleId = text(body.saleId, "");
   const billDate = text(
     body.billDate,
     new Date().toLocaleString("en-IN"),
@@ -250,6 +367,10 @@ async function createInvoicePdf(body: InvoiceRequest) {
   const discountAmount = amount(body.discountAmount);
   const taxAmount = amount(body.taxAmount);
   const roundOff = amount(body.roundOff);
+  const rewardPointsUsed = Math.max(0, amount(body.rewardPointsUsed));
+  const rewardDiscount = Math.max(0, amount(body.rewardDiscount));
+  const rewardPointsEarned = Math.max(0, amount(body.rewardPointsEarned));
+  const rewardClosingBalance = Math.max(0, amount(body.rewardClosingBalance));
 
   const items =
     Array.isArray(body.items) && body.items.length > 0
@@ -293,16 +414,29 @@ async function createInvoicePdf(body: InvoiceRequest) {
     "Please retain this invoice for return or exchange reference.";
 
   const pdf = await PDFDocument.create();
-  const upiQrBytes =
+  const publicSiteBaseUrl = getPublicSiteBaseUrl();
+  const digitalInvoiceUrl = saleId
+    ? `${publicSiteBaseUrl}/invoice/${encodeURIComponent(saleId)}`
+    : "";
+
+  const [upiQrBytes, reviewQrBytes, invoiceQrBytes] = await Promise.all([
     showUpiQr && upiId
-      ? await loadUpiQrPng(upiId, "NEW CITY STYLE")
-      : null;
-  const upiQrImage = upiQrBytes
-    ? await pdf.embedPng(upiQrBytes)
-    : null;
+      ? loadUpiQrPng(upiId, "NEW CITY STYLE")
+      : Promise.resolve(null),
+    loadQrPng(GOOGLE_REVIEW_URL),
+    digitalInvoiceUrl
+      ? loadQrPng(digitalInvoiceUrl)
+      : Promise.resolve(null),
+  ]);
+
+  const upiQrImage = upiQrBytes ? await pdf.embedPng(upiQrBytes) : null;
+  const reviewQrImage = reviewQrBytes ? await pdf.embedPng(reviewQrBytes) : null;
+  const invoiceQrImage = invoiceQrBytes ? await pdf.embedPng(invoiceQrBytes) : null;
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(
-    StandardFonts.HelveticaBold,
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const totalQuantity = items.reduce(
+    (sum, item) => sum + Math.max(1, amount(item.quantity, 1)),
+    0,
   );
 
   // True thermal mode: use real 58/80mm paper width and dynamic receipt height.
@@ -329,17 +463,23 @@ async function createInvoicePdf(body: InvoiceRequest) {
     const showEmail = studioBool(studio, "show_email", true);
     const boldText = studioBool(studio, "bold_text", true);
 
-    const itemRowHeight = thermalMm === 58 ? 24 : 26;
+    const itemRowHeight = thermalMm === 58 ? 30 : 32;
     const identityHeight =
       74 +
       (showAddress ? 22 : 0) +
       (showPhone ? 12 : 0) +
       (showEmail ? 12 : 0);
     const metaHeight = 78;
-    const totalsHeight = 104;
+    const totalsHeight = 132;
+    const rewardsHeight =
+      rewardPointsUsed > 0 || rewardPointsEarned > 0 || rewardClosingBalance > 0
+        ? 34
+        : 0;
+    const digitalQrHeight = reviewQrImage || invoiceQrImage ? 92 : 0;
+    const barcodeHeight = 48;
     const payHeight = showUpiQr || showBank ? 100 : 0;
     const termsHeight = showTerms && termsText ? 34 : 0;
-    const footerBlockHeight = 46;
+    const footerBlockHeight = 64;
 
     const pageHeight = Math.max(
       thermalMm === 58 ? 340 : 390,
@@ -347,6 +487,9 @@ async function createInvoicePdf(body: InvoiceRequest) {
         metaHeight +
         items.length * itemRowHeight +
         totalsHeight +
+        rewardsHeight +
+        digitalQrHeight +
+        barcodeHeight +
         payHeight +
         termsHeight +
         footerBlockHeight +
@@ -498,7 +641,14 @@ async function createInvoicePdf(body: InvoiceRequest) {
       y -= 12;
     };
 
-    drawMetaRow("Invoice", billNumber);
+    centerText(
+      `BILL NO: ${billNumber}`,
+      thermalMm === 58 ? 7.5 : 8.8,
+      bold,
+      thermalInk,
+    );
+    y -= 15;
+
     drawMetaRow("Customer", customerName);
     if (customerPhone && customerPhone !== "-") {
       drawMetaRow("Mobile", customerPhone);
@@ -520,8 +670,8 @@ async function createInvoicePdf(body: InvoiceRequest) {
     });
     y -= 12;
 
-    const itemFont = thermalMm === 58 ? 6.6 : 7.6;
-    const smallFont = thermalMm === 58 ? 5.7 : 6.5;
+    const itemFont = thermalMm === 58 ? 6.2 : 7.0;
+    const smallFont = thermalMm === 58 ? 5.2 : 5.9;
 
     page.drawRectangle({
       x: margin + thermalShiftX,
@@ -532,39 +682,38 @@ async function createInvoicePdf(body: InvoiceRequest) {
     });
 
     page.drawText("ITEM", {
-      x: margin + thermalShiftX + 4,
-      y,
-      size: smallFont,
-      font: bold,
-      color: thermalInk,
+      x: margin + thermalShiftX + 3, y, size: smallFont, font: bold, color: thermalInk,
     });
     page.drawText("QTY", {
-      x: pageWidth - margin + thermalShiftX - (thermalMm === 58 ? 52 : 72),
-      y,
-      size: smallFont,
-      font: bold,
-      color: thermalInk,
+      x: pageWidth - margin + thermalShiftX - (thermalMm === 58 ? 65 : 94),
+      y, size: smallFont, font: bold, color: thermalInk,
     });
-    page.drawText("AMOUNT", {
-      x: pageWidth - margin + thermalShiftX - (thermalMm === 58 ? 40 : 50),
-      y,
-      size: smallFont,
-      font: bold,
-      color: thermalInk,
+    if (thermalMm === 80) {
+      page.drawText("RATE", {
+        x: pageWidth - margin + thermalShiftX - 68,
+        y, size: smallFont, font: bold, color: thermalInk,
+      });
+    }
+    page.drawText("AMT", {
+      x: pageWidth - margin + thermalShiftX - (thermalMm === 58 ? 28 : 27),
+      y, size: smallFont, font: bold, color: thermalInk,
     });
     y -= 14;
 
     for (const item of items) {
       const qty = Math.max(1, amount(item.quantity, 1));
       const price = amount(item.price);
+      const mrp = amount(item.mrp, price);
       const total = amount(item.total, qty * price);
+      const unitDiscount = Math.max(0, mrp - price);
+      const discountPercent = mrp > 0
+        ? Math.max(0, Math.round((unitDiscount / mrp) * 100))
+        : 0;
       const variant = [item.size, item.color]
         .map((v) => text(v, ""))
         .filter(Boolean)
         .join(" / ");
-      const itemName = `${text(item.name, "Product")}${
-        variant ? ` (${variant})` : ""
-      }`;
+      const itemName = `${text(item.name, "Product")}${variant ? ` (${variant})` : ""}`;
 
       page.drawText(itemName, {
         x: margin + thermalShiftX,
@@ -572,34 +721,46 @@ async function createInvoicePdf(body: InvoiceRequest) {
         size: itemFont,
         font: bold,
         color: thermalInk,
-        maxWidth:
-          contentWidth - (thermalMm === 58 ? 72 : 96),
+        maxWidth: contentWidth - (thermalMm === 58 ? 75 : 110),
       });
 
       const qtyText = qty.toFixed(qty % 1 === 0 ? 0 : 2);
       page.drawText(qtyText, {
-        x: pageWidth - margin + thermalShiftX - (thermalMm === 58 ? 52 : 72),
-        y,
-        size: itemFont,
-        font: bold,
-        color: thermalInk,
+        x: pageWidth - margin + thermalShiftX - (thermalMm === 58 ? 65 : 94),
+        y, size: itemFont, font: bold, color: thermalInk,
       });
 
-      const totalText = money(total);
+      if (thermalMm === 80) {
+        const rateText = Math.round(price).toString();
+        page.drawText(rateText, {
+          x: pageWidth - margin + thermalShiftX - 68,
+          y, size: itemFont, font: bold, color: thermalInk,
+        });
+      }
+
+      const totalText = Math.round(total).toString();
       page.drawText(totalText, {
-        x:
-          pageWidth -
-          margin +
-          thermalShiftX -
-          bold.widthOfTextAtSize(totalText, itemFont),
-        y,
-        size: itemFont,
-        font: bold,
-        color: thermalInk,
+        x: pageWidth - margin + thermalShiftX - bold.widthOfTextAtSize(totalText, itemFont),
+        y, size: itemFont, font: bold, color: thermalInk,
       });
 
-      y -= itemRowHeight;
+      y -= 11;
+      const detailParts = [
+        `MRP ${money(mrp)}`,
+        `Rate ${money(price)}`,
+        discountPercent > 0 ? `Disc ${discountPercent}%` : "",
+        item.barcode ? `Code ${text(item.barcode, "")}` : "",
+      ].filter(Boolean);
+      page.drawText(detailParts.join("  "), {
+        x: margin + thermalShiftX,
+        y,
+        size: smallFont,
+        font: regular,
+        color: rgb(0.34, 0.34, 0.34),
+        maxWidth: contentWidth,
+      });
 
+      y -= itemRowHeight - 11;
       page.drawLine({
         start: { x: margin + thermalShiftX, y: y + 8 },
         end: { x: pageWidth - margin + thermalShiftX, y: y + 8 },
@@ -651,6 +812,16 @@ async function createInvoicePdf(body: InvoiceRequest) {
       y -= emphasize ? 18 : 13;
     };
 
+    page.drawText("Total Qty", {
+      x: margin + thermalShiftX, y, size: thermalMm === 58 ? 6.2 : 7, font: bold, color: thermalInk,
+    });
+    const totalQtyText = totalQuantity.toFixed(totalQuantity % 1 === 0 ? 0 : 2);
+    page.drawText(totalQtyText, {
+      x: pageWidth - margin + thermalShiftX - bold.widthOfTextAtSize(totalQtyText, thermalMm === 58 ? 6.2 : 7),
+      y, size: thermalMm === 58 ? 6.2 : 7, font: bold, color: thermalInk,
+    });
+    y -= 13;
+
     drawMoneyRow("Subtotal", subtotal);
     if (discountAmount > 0) {
       drawMoneyRow("Discount", -discountAmount);
@@ -670,7 +841,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
       color: BLUE,
     });
 
-    page.drawText("TOTAL", {
+    page.drawText("NET AMOUNT", {
       x: margin + thermalShiftX + 7,
       y: y + (thermalMm === 58 ? 3 : 5),
       size: thermalMm === 58 ? 7.7 : 8.8,
@@ -716,6 +887,116 @@ async function createInvoicePdf(body: InvoiceRequest) {
       });
       y -= 12;
     }
+
+    if (
+      rewardPointsUsed > 0 ||
+      rewardPointsEarned > 0 ||
+      rewardClosingBalance > 0
+    ) {
+      y -= 2;
+      page.drawLine({
+        start: { x: margin + thermalShiftX, y },
+        end: { x: pageWidth - margin + thermalShiftX, y },
+        thickness: 0.45,
+        color: rgb(0.82, 0.83, 0.86),
+        dashArray: [2, 2],
+      });
+      y -= 11;
+      centerText(
+        `REWARDS  Earned ${rewardPointsEarned.toFixed(0)}  |  Balance ${rewardClosingBalance.toFixed(0)}`,
+        thermalMm === 58 ? 5.3 : 6.1,
+        bold,
+        thermalInk,
+      );
+      y -= 10;
+      if (rewardPointsUsed > 0 || rewardDiscount > 0) {
+        centerText(
+          `Used ${rewardPointsUsed.toFixed(0)} pts  |  Saved ${money(rewardDiscount)}`,
+          thermalMm === 58 ? 4.9 : 5.6,
+          regular,
+          thermalInk,
+        );
+        y -= 10;
+      }
+    }
+
+    if (reviewQrImage || invoiceQrImage) {
+      y -= 4;
+      page.drawLine({
+        start: { x: margin + thermalShiftX, y },
+        end: { x: pageWidth - margin + thermalShiftX, y },
+        thickness: 0.5,
+        color: rgb(0.82, 0.83, 0.86),
+      });
+      y -= 12;
+
+      const qrSize = thermalMm === 58 ? 50 : 60;
+      const hasBoth = Boolean(reviewQrImage && invoiceQrImage);
+      const leftCenter = hasBoth
+        ? pageWidth * 0.30 + thermalShiftX
+        : pageWidth / 2 + thermalShiftX;
+      const rightCenter = pageWidth * 0.70 + thermalShiftX;
+
+      if (invoiceQrImage) {
+        page.drawImage(invoiceQrImage, {
+          x: leftCenter - qrSize / 2,
+          y: y - qrSize,
+          width: qrSize,
+          height: qrSize,
+        });
+        page.drawText("VIEW INVOICE", {
+          x: leftCenter - bold.widthOfTextAtSize("VIEW INVOICE", smallFont) / 2,
+          y: y - qrSize - 9,
+          size: smallFont,
+          font: bold,
+          color: thermalInk,
+        });
+      }
+
+      if (reviewQrImage) {
+        const reviewCenter = hasBoth ? rightCenter : leftCenter;
+        page.drawImage(reviewQrImage, {
+          x: reviewCenter - qrSize / 2,
+          y: y - qrSize,
+          width: qrSize,
+          height: qrSize,
+        });
+        page.drawText("REVIEW US", {
+          x: reviewCenter - bold.widthOfTextAtSize("REVIEW US", smallFont) / 2,
+          y: y - qrSize - 9,
+          size: smallFont,
+          font: bold,
+          color: thermalInk,
+        });
+      }
+
+      y -= qrSize + 18;
+      centerText(
+        "Scan your bill or rate NEW CITY STYLE on Google",
+        thermalMm === 58 ? 4.7 : 5.3,
+        regular,
+        thermalInk,
+      );
+      y -= 12;
+    }
+
+    y -= 3;
+    drawCode39Barcode(
+      page,
+      billNumber,
+      margin + thermalShiftX + 6,
+      y - 26,
+      contentWidth - 12,
+      25,
+    );
+    y -= 35;
+    centerText(
+      billNumber,
+      thermalMm === 58 ? 5.0 : 5.8,
+      bold,
+      thermalInk,
+    );
+    y -= 12;
 
     if (showUpiQr || showBank) {
       y -= 4;
@@ -804,7 +1085,42 @@ async function createInvoicePdf(body: InvoiceRequest) {
       bold,
       thermalInk,
     );
-    y -= 11;
+    y -= 12;
+
+    const reviewLinkLabel = "Tap to review us on Google";
+    const reviewLinkSize = thermalMm === 58 ? 5.2 : 6.0;
+    const reviewLinkWidth = bold.widthOfTextAtSize(
+      reviewLinkLabel,
+      reviewLinkSize,
+    );
+    const reviewLinkX = Math.max(
+      margin + thermalShiftX,
+      pageWidth / 2 + thermalShiftX - reviewLinkWidth / 2,
+    );
+
+    page.drawText(reviewLinkLabel, {
+      x: reviewLinkX,
+      y,
+      size: reviewLinkSize,
+      font: bold,
+      color: thermalInk,
+    });
+    page.drawLine({
+      start: { x: reviewLinkX, y: y - 1.5 },
+      end: { x: reviewLinkX + reviewLinkWidth, y: y - 1.5 },
+      thickness: 0.35,
+      color: thermalInk,
+    });
+    addPdfLink(
+      pdf,
+      page,
+      GOOGLE_REVIEW_URL,
+      reviewLinkX - 2,
+      y - 3,
+      reviewLinkWidth + 4,
+      reviewLinkSize + 6,
+    );
+    y -= 12;
 
     centerText(
       "Powered by NCS Billing",
@@ -1029,16 +1345,47 @@ async function createInvoicePdf(body: InvoiceRequest) {
       maxWidth: pageWidth - margin * 2,
     });
 
+    const reviewLinkLabel = "Tap to review NEW CITY STYLE on Google";
+    const reviewLinkSize = 6.2;
+    const reviewLinkWidth = bold.widthOfTextAtSize(
+      reviewLinkLabel,
+      reviewLinkSize,
+    );
+    const reviewLinkX = pageWidth / 2 - reviewLinkWidth / 2;
+
+    page.drawText(reviewLinkLabel, {
+      x: reviewLinkX,
+      y: 13,
+      size: reviewLinkSize,
+      font: bold,
+      color: BLUE,
+    });
+    page.drawLine({
+      start: { x: reviewLinkX, y: 11.7 },
+      end: { x: reviewLinkX + reviewLinkWidth, y: 11.7 },
+      thickness: 0.4,
+      color: BLUE,
+    });
+    addPdfLink(
+      pdf,
+      page,
+      GOOGLE_REVIEW_URL,
+      reviewLinkX - 3,
+      9,
+      reviewLinkWidth + 6,
+      11,
+    );
+
     page.drawText("Powered by NCS Billing", {
       x:
         pageWidth / 2 -
         regular.widthOfTextAtSize(
           "Powered by NCS Billing",
-          6.5,
+          5.2,
         ) /
           2,
-      y: 13,
-      size: 6.5,
+      y: 4,
+      size: 5.2,
       font: regular,
       color: GOLD,
     });
@@ -1447,6 +1794,38 @@ async function createInvoicePdf(body: InvoiceRequest) {
     }
   }
 
+  // Digital invoice / Google review / bill barcode verification strip.
+  const verifyY = 56;
+  drawCode39Barcode(page, billNumber, margin, verifyY + 5, 220, 22);
+  page.drawText(billNumber, {
+    x: margin, y: verifyY - 4, size: 5.8, font: bold, color: CHARCOAL,
+  });
+
+  const a4QrSize = 42;
+  let qrX = pageWidth - margin - a4QrSize;
+  if (reviewQrImage) {
+    page.drawImage(reviewQrImage, { x: qrX, y: verifyY, width: a4QrSize, height: a4QrSize });
+    page.drawText("GOOGLE REVIEW", {
+      x: qrX - 1, y: verifyY - 8, size: 4.8, font: bold, color: BLUE,
+    });
+    qrX -= a4QrSize + 12;
+  }
+  if (invoiceQrImage) {
+    page.drawImage(invoiceQrImage, { x: qrX, y: verifyY, width: a4QrSize, height: a4QrSize });
+    page.drawText("VIEW INVOICE", {
+      x: qrX + 1, y: verifyY - 8, size: 4.8, font: bold, color: BLUE,
+    });
+  }
+
+  if (rewardPointsUsed > 0 || rewardPointsEarned > 0 || rewardClosingBalance > 0) {
+    page.drawText(
+      `Rewards: Earned ${rewardPointsEarned.toFixed(0)} | Balance ${rewardClosingBalance.toFixed(0)}${
+        rewardPointsUsed > 0 ? ` | Used ${rewardPointsUsed.toFixed(0)}` : ""
+      }`,
+      { x: margin, y: 92, size: 6.3, font: bold, color: BLUE, maxWidth: 260 },
+    );
+  }
+
   drawFooter();
 
   const pdfBytes = await pdf.save();
@@ -1681,6 +2060,7 @@ export async function POST(request: NextRequest) {
               formData.get("to") ||
               "",
           ),
+          saleId: String(formData.get("saleId") || ""),
           billNumber: String(
             formData.get("billNumber") || "",
           ),
@@ -1713,6 +2093,10 @@ export async function POST(request: NextRequest) {
           dueAmount: String(
             formData.get("dueAmount") || "0",
           ),
+          rewardPointsUsed: String(formData.get("rewardPointsUsed") || "0"),
+          rewardDiscount: String(formData.get("rewardDiscount") || "0"),
+          rewardPointsEarned: String(formData.get("rewardPointsEarned") || "0"),
+          rewardClosingBalance: String(formData.get("rewardClosingBalance") || "0"),
           whatsappLanguage: String(
             formData.get("whatsappLanguage") ||
               formData.get("language") ||
