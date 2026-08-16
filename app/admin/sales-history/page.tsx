@@ -683,22 +683,22 @@ export default function SalesHistoryPage() {
       (item) => item.stock > 0
     );
 
-    if (!query) return availableItems.slice(0, 20);
+    // Exchange must be able to reach every available product/variant.
+    // Do not silently limit the grid to the first 20 items.
+    if (!query) return availableItems;
 
-    return availableItems
-      .filter((item) =>
-        [
-          item.name,
-          item.barcode,
-          item.sku,
-          item.size,
-          item.color,
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(query)
-      )
-      .slice(0, 20);
+    return availableItems.filter((item) =>
+      [
+        item.name,
+        item.barcode,
+        item.sku,
+        item.size,
+        item.color,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query)
+    );
   }, [exchangeInventory, exchangeSearch]);
 
   const exchangeTotal = useMemo(
@@ -744,6 +744,38 @@ export default function SalesHistoryPage() {
       ];
     });
     setExchangeSearch("");
+  }
+
+  function handleExchangeSearchEnter() {
+    const query = norm(exchangeSearch);
+    if (!query) return;
+
+    // Barcode scanners normally finish with Enter. Prefer an exact
+    // barcode/SKU match so a scan adds the correct size/colour instantly.
+    const exactItem = exchangeInventory.find((item) => {
+      if (item.stock <= 0) return false;
+      return (
+        norm(item.barcode) === query ||
+        norm(item.sku) === query
+      );
+    });
+
+    if (exactItem) {
+      addExchangeItem(exactItem);
+      return;
+    }
+
+    // If text search leaves exactly one result, Enter adds it too.
+    if (filteredExchangeInventory.length === 1) {
+      addExchangeItem(filteredExchangeInventory[0]);
+      return;
+    }
+
+    setNotice(
+      filteredExchangeInventory.length > 1
+        ? `Found ${filteredExchangeInventory.length} matching products. Select the correct size / colour.`
+        : "No in-stock replacement product matched this barcode or search."
+    );
   }
 
   function updateExchangeItem(
@@ -2656,7 +2688,15 @@ export default function SalesHistoryPage() {
                     onChange={(event) =>
                       setExchangeSearch(event.target.value)
                     }
-                    placeholder="Search barcode, product, SKU, size or colour..."
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        handleExchangeSearchEnter();
+                      }
+                    }}
+                    autoComplete="off"
+                    inputMode="search"
+                    placeholder="Scan barcode or search any product, SKU, size or colour..."
                   />
                   <button
                     type="button"
@@ -2665,6 +2705,13 @@ export default function SalesHistoryPage() {
                   >
                     {exchangeInventoryLoading ? "…" : "↻"}
                   </button>
+                </div>
+
+                <div className="exchangeSearchMeta">
+                  <strong>{filteredExchangeInventory.length}</strong> in-stock replacement
+                  {filteredExchangeInventory.length === 1 ? " product" : " products"}
+                  {exchangeSearch.trim() ? " matched" : " available"}.
+                  <span> Scan barcode + Enter for instant add.</span>
                 </div>
 
                 <div className="exchangeProductGrid">
@@ -2689,6 +2736,13 @@ export default function SalesHistoryPage() {
                     </button>
                   ))}
                 </div>
+
+                {!exchangeInventoryLoading &&
+                  filteredExchangeInventory.length === 0 && (
+                    <div className="exchangeEmpty">
+                      No in-stock product matched. Try barcode, SKU, product name, size or colour.
+                    </div>
+                  )}
 
                 {exchangeItems.length === 0 ? (
                   <div className="exchangeEmpty">
@@ -3017,6 +3071,7 @@ export default function SalesHistoryPage() {
         .exchangeMrpField{min-width:110px}.exchangeMrpField>strong{min-height:42px;display:flex;align-items:center;padding:0 12px;border:1px solid rgba(10,46,115,.12);border-radius:10px;background:#f8fafc;color:${BLUE};font-size:13px;font-weight:900}.exchangeLineValue{min-width:120px;display:flex;flex-direction:column;gap:5px}.exchangeLineValue>span{color:#6b7280;font-size:8px;font-weight:850;text-transform:uppercase}.exchangeLineValue>strong{color:${BLUE};font-size:14px;font-weight:950}.exchangeDifference small{display:block;margin-top:3px;font-size:8px;font-weight:750;opacity:.8}
         .exchangeDesk{margin:0 20px 18px;padding:16px;border:1px solid rgba(212,175,55,.26);border-radius:18px;background:linear-gradient(180deg,#fbfcff,#f5f8fd)}
         .exchangeSearchBox{display:flex;align-items:center;gap:9px;padding:0 11px;border:1px solid #dfe4ed;border-radius:12px;background:#fff}.exchangeSearchBox>span{color:${BLUE};font-size:21px}.exchangeSearchBox input{width:100%;height:44px;border:0;outline:0;font:inherit;font-size:11px}.exchangeSearchBox button{width:34px;height:34px;border:1px solid rgba(212,175,55,.5);border-radius:9px;background:${GOLD};color:${DEEP};font-weight:950;cursor:pointer}
+        .exchangeSearchMeta{margin-top:8px;font-size:10px;color:#596579;display:flex;gap:4px;align-items:center;flex-wrap:wrap}.exchangeSearchMeta strong{color:${DEEP};font-size:11px}.exchangeSearchMeta span{color:#758197}
         .exchangeProductGrid{max-height:235px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px;overflow:auto}.exchangeProductCard{display:flex;flex-direction:column;align-items:flex-start;min-width:0;padding:12px;border:1px solid #e3e8f0;border-radius:13px;background:#fff;text-align:left;cursor:pointer;transition:.18s ease}.exchangeProductCard:hover{transform:translateY(-2px);border-color:${GOLD};box-shadow:0 10px 22px rgba(3,21,63,.09)}.exchangeProductCard>span{padding:4px 7px;border-radius:20px;background:#eaf7ef;color:#167842;font-size:7px;font-weight:900}.exchangeProductCard strong{max-width:100%;margin-top:7px;overflow:hidden;color:${DEEP};font-size:11px;text-overflow:ellipsis;white-space:nowrap}.exchangeProductCard small{max-width:100%;margin-top:3px;overflow:hidden;color:#858d9b;font-size:8px;text-overflow:ellipsis;white-space:nowrap}.exchangeProductCard b{margin-top:7px;color:${BLUE};font-size:12px}.exchangeProductCard em{margin-top:5px;color:${GOLD};font-size:8px;font-style:normal;font-weight:900}
         .exchangeEmpty{margin-top:10px;padding:20px;border:1px dashed #cfd6e2;border-radius:13px;color:#7f8795;font-size:10px;text-align:center}.exchangeSelectedList{display:grid;gap:8px;margin-top:11px}.exchangeSelectedList article{display:grid;grid-template-columns:minmax(0,1fr) 78px 130px auto 34px;gap:9px;align-items:end;padding:11px;border:1px solid #e3e8f0;border-radius:13px;background:#fff}.exchangeSelectedInfo{min-width:0}.exchangeSelectedInfo strong,.exchangeSelectedInfo small,.exchangeSelectedInfo span{display:block}.exchangeSelectedInfo strong{overflow:hidden;color:${DEEP};font-size:11px;text-overflow:ellipsis;white-space:nowrap}.exchangeSelectedInfo small{margin-top:3px;color:#818997;font-size:8px}.exchangeSelectedInfo span{margin-top:4px;color:#167842;font-size:7px;font-weight:850}.exchangeSelectedList label>span{display:block;margin-bottom:4px;color:#7c8492;font-size:7px;font-weight:850;text-transform:uppercase}.exchangeSelectedList input{width:100%;height:36px;border:1px solid #dfe4ed;border-radius:9px;padding:0 8px;font:inherit;font-size:10px}.exchangeLineTotal{align-self:center;color:${BLUE};font-size:11px;white-space:nowrap}.exchangeRemove{width:32px;height:32px;border:0;border-radius:9px;background:#ffe9e9;color:#b43232;font-size:18px;font-weight:900;cursor:pointer}
         .exchangeSettlement{display:grid;grid-template-columns:1fr 1fr 1.25fr;gap:8px;margin-top:12px}.exchangeSettlement>div{padding:11px;border-radius:12px;background:#fff}.exchangeSettlement span{display:block;color:#8a91a0;font-size:7px;font-weight:850;text-transform:uppercase}.exchangeSettlement strong{display:block;margin-top:4px;color:${DEEP};font-size:12px}.exchangeDifference{background:linear-gradient(135deg,${DEEP},${BLUE})!important}.exchangeDifference span{color:rgba(255,255,255,.65)}.exchangeDifference strong{color:${GOLD};font-size:17px}.exchangeDifference.refund strong{color:#8ff0b4}.exchangeSettlementMethod{display:block;margin-top:11px}.exchangeSettlementMethod>span{display:block;margin-bottom:5px;color:#707887;font-size:8px;font-weight:850;text-transform:uppercase}.exchangeSettlementMethod select{width:100%;height:42px;border:1px solid #dfe4ed;border-radius:11px;background:#fff;padding:0 11px;font:inherit;font-size:10px}
