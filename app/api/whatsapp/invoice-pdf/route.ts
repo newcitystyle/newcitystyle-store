@@ -111,6 +111,27 @@ function templateAmount(value: unknown): string {
   return amount(value).toFixed(2);
 }
 
+
+function formatIndiaDateTime(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  const date = raw ? new Date(raw) : new Date();
+
+  if (Number.isNaN(date.getTime())) {
+    return raw || "-";
+  }
+
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).format(date);
+}
+
 function safeFileName(value: string): string {
   return (
     value
@@ -352,7 +373,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
   const saleId = text(body.saleId, "");
   const billDate = text(
     body.billDate,
-    new Date().toLocaleString("en-IN"),
+    formatIndiaDateTime(new Date()),
   );
   const paymentMethod = text(body.paymentMethod, "Cash");
   const duplicateCopy = body.duplicateCopy === true;
@@ -656,9 +677,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
     drawMetaRow("Payment", paymentMethod);
     drawMetaRow(
       "Date",
-      new Date(billDate).toString() === "Invalid Date"
-        ? billDate
-        : new Date(billDate).toLocaleString("en-IN"),
+      formatIndiaDateTime(billDate),
     );
 
     y -= 4;
@@ -1449,9 +1468,7 @@ async function createInvoicePdf(body: InvoiceRequest) {
     });
 
     const formattedDate =
-      new Date(billDate).toString() === "Invalid Date"
-        ? billDate
-        : new Date(billDate).toLocaleString("en-IN");
+      formatIndiaDateTime(billDate);
 
     const metaRows = [
       ["INVOICE", billNumber],

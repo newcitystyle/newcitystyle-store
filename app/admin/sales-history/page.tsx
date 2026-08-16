@@ -1420,7 +1420,10 @@ export default function SalesHistoryPage() {
         .maybeSingle();
 
       if (data) {
-        invoiceStudio = data as Record<string, unknown>;
+        invoiceStudio = {
+          ...(data as Record<string, unknown>),
+          active_tab: "a4",
+        };
       }
     } catch (error) {
       console.info(
@@ -1460,7 +1463,10 @@ export default function SalesHistoryPage() {
         color: item.color || "",
         barcode: item.barcode || "",
       })),
-      invoiceStudio,
+      invoiceStudio: {
+        ...(invoiceStudio || {}),
+        active_tab: "a4",
+      },
     };
   }
 
