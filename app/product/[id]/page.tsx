@@ -799,23 +799,96 @@ export default function ProductPage() {
   }
 
   async function shareProduct() {
-    const shareData = {
-      title: getProductName(product || ({} as Product)),
-      text: `Check out ${getProductName(
-        product || ({} as Product)
-      )} on NEW CITY STYLE`,
-      url: window.location.href,
-    };
+    const productTitle = getProductName(product || ({} as Product));
+    const productUrl = window.location.href;
+    const imageUrl = selectedImage || images[0] || "";
+
+    const shareText =
+      `Check out ${productTitle} on NEW CITY STYLE\n${productUrl}`;
 
     try {
-      if (navigator.share) {
-        await navigator.share(shareData);
-      } else {
-        await navigator.clipboard.writeText(window.location.href);
-        alert("Product link copied.");
+      // On supported mobile browsers, share the actual product image file
+      // together with the product text/link so WhatsApp, Instagram, Facebook,
+      // etc. can receive the image instead of only a plain URL.
+      if (navigator.share && imageUrl) {
+        try {
+          const imageResponse = await fetch(imageUrl, {
+            cache: "no-store",
+          });
+
+          if (imageResponse.ok) {
+            const imageBlob = await imageResponse.blob();
+
+            const mimeType = imageBlob.type || "image/jpeg";
+            const extension =
+              mimeType.includes("png")
+                ? "png"
+                : mimeType.includes("webp")
+                  ? "webp"
+                  : "jpg";
+
+            const safeProductName =
+              productTitle
+                .replace(/[^a-z0-9]+/gi, "-")
+                .replace(/^-+|-+$/g, "")
+                .toLowerCase() || "new-city-style-product";
+
+            const imageFile = new File(
+              [imageBlob],
+              `${safeProductName}.${extension}`,
+              { type: mimeType }
+            );
+
+            const fileShareData = {
+              title: productTitle,
+              text: shareText,
+              files: [imageFile],
+            };
+
+            if (
+              typeof navigator.canShare === "function" &&
+              navigator.canShare({ files: [imageFile] })
+            ) {
+              await navigator.share(fileShareData);
+              return;
+            }
+          }
+        } catch (imageShareError) {
+          console.info(
+            "Image share unavailable; falling back to link share.",
+            imageShareError
+          );
+        }
       }
-    } catch {
-      // User cancelled share.
+
+      // Safe fallback for browsers/apps that do not support file sharing.
+      if (navigator.share) {
+        await navigator.share({
+          title: productTitle,
+          text: `Check out ${productTitle} on NEW CITY STYLE`,
+          url: productUrl,
+        });
+        return;
+      }
+
+      await navigator.clipboard.writeText(productUrl);
+      alert("Product link copied.");
+    } catch (error) {
+      if (
+        error instanceof DOMException &&
+        error.name === "AbortError"
+      ) {
+        return;
+      }
+
+      console.error("Share product error:", error);
+
+      try {
+        await navigator.clipboard.writeText(productUrl);
+        alert("Unable to open share menu. Product link copied.");
+      } catch {
+        alert("Unable to share this product right now.");
+      }
     }
   }
 

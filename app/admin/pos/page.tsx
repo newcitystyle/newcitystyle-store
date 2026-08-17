@@ -13624,16 +13624,15 @@ if (!variantsError) {
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 20px;
+          padding: 18px 24px;
           background: rgba(3, 21, 63, 0.74);
           backdrop-filter: blur(9px);
         }
 
         .ncsPosSuccessModal {
-          width: min(470px, 100%);
-          max-height: calc(100vh - 24px);
-          padding: 27px;
-          padding-bottom: 92px;
+          width: min(760px, calc(100vw - 48px));
+          max-height: calc(100vh - 36px);
+          padding: 20px 24px 22px;
           overflow-y: auto;
           overscroll-behavior: contain;
           scrollbar-width: thin;
@@ -13662,16 +13661,16 @@ if (!variantsError) {
         }
 
         .ncsPosSuccessIcon {
-          width: 68px;
-          height: 68px;
+          width: 52px;
+          height: 52px;
           display: flex;
           align-items: center;
           justify-content: center;
-          margin: 0 auto 13px;
+          margin: 0 auto 7px;
           border-radius: 50%;
           background: linear-gradient(135deg, #16894b, #27b56a);
           color: #ffffff;
-          font-size: 34px;
+          font-size: 26px;
           font-weight: 950;
           box-shadow: 0 14px 30px rgba(31, 157, 85, 0.25);
         }
@@ -13684,9 +13683,9 @@ if (!variantsError) {
         }
 
         .ncsPosSuccessModal h2 {
-          margin: 6px 0 5px;
+          margin: 4px 0 3px;
           color: ${DEEP_BLUE};
-          font-size: 26px;
+          font-size: 23px;
           font-weight: 950;
         }
 
@@ -13698,8 +13697,8 @@ if (!variantsError) {
         }
 
         .ncsPosSuccessAmount {
-          margin: 18px 0 13px;
-          padding: 18px;
+          margin: 11px 0 9px;
+          padding: 13px 16px;
           border-radius: 17px;
           background: linear-gradient(135deg, ${DEEP_BLUE}, ${ROYAL_BLUE});
           color: #ffffff;
@@ -13734,14 +13733,14 @@ if (!variantsError) {
 
         .ncsPosSuccessSummary {
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 8px;
-          margin-bottom: 15px;
+          margin-bottom: 10px;
         }
 
         .ncsPosSuccessSummary p {
           margin: 0;
-          padding: 11px;
+          padding: 9px 10px;
           border-radius: 12px;
           background: #f5f7fb;
           text-align: left;
@@ -13768,12 +13767,12 @@ if (!variantsError) {
 
         .ncsPosSuccessActions {
           display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 9px;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
         }
 
         .ncsPosSuccessActions button {
-          min-height: 46px;
+          min-height: 42px;
           border: 0;
           border-radius: 12px;
           font-family: inherit;
@@ -13901,13 +13900,14 @@ if (!variantsError) {
 
         @media (max-height: 820px) {
           .ncsPosSuccessOverlay {
-            align-items: flex-start;
+            align-items: center;
             padding: 8px 14px;
           }
 
           .ncsPosSuccessModal {
+            width: min(720px, calc(100vw - 28px));
             max-height: calc(100vh - 16px);
-            padding: 18px 20px 82px;
+            padding: 14px 18px 18px;
             border-radius: 20px;
           }
 
@@ -13950,6 +13950,44 @@ if (!variantsError) {
 
           .ncsPosSuccessHint {
             margin-top: 8px;
+          }
+        }
+
+        @media (max-width: 900px) {
+          .ncsPosSuccessModal {
+            width: min(680px, calc(100vw - 28px));
+          }
+
+          .ncsPosSuccessSummary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .ncsPosSuccessActions {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+
+        @media (max-width: 560px) {
+          .ncsPosSuccessOverlay {
+            padding: 8px;
+          }
+
+          .ncsPosSuccessModal {
+            width: 100%;
+            max-height: calc(100vh - 16px);
+            padding: 16px 14px 18px;
+          }
+
+          .ncsPosSuccessSummary {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .ncsPosSuccessActions {
+            grid-template-columns: 1fr;
+          }
+
+          .ncsPosSuccessWhatsApp {
+            grid-column: 1;
           }
         }
 
