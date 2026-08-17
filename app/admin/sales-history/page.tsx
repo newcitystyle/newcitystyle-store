@@ -3176,6 +3176,1111 @@ export default function SalesHistoryPage() {
         .duplicateActions button{border:1px solid rgba(10,46,115,.16);border-radius:10px;padding:10px 12px;background:#fff;color:${BLUE};font-size:11px;font-weight:900;cursor:pointer}
         .duplicateActions button:disabled{opacity:.55;cursor:not-allowed}
         .duplicateActions .duplicateWhatsApp{background:#159447;color:#fff;border-color:#159447}
+
+        /* ============================================================
+           NCS SALES HISTORY — MOBILE COMMAND DECK PREMIUM FINAL
+           Visual-only layer. Existing billing / refund / exchange /
+           WhatsApp / correction / delete logic is untouched.
+           ============================================================ */
+
+        .salesPage {
+          min-height:100vh !important;
+          padding:18px !important;
+          background:
+            radial-gradient(circle at 0% 0%,rgba(91,72,145,.045),transparent 23%),
+            radial-gradient(circle at 100% 6%,rgba(65,115,132,.045),transparent 23%),
+            linear-gradient(180deg,#f7f7f8 0%,#f3f4f6 52%,#f7f4ee 100%) !important;
+          color:#20283a !important;
+        }
+
+        /* HERO */
+        .salesPage .hero {
+          position:relative !important;
+          overflow:hidden !important;
+          border:1px solid rgba(255,255,255,.14) !important;
+          border-radius:26px !important;
+          padding:22px 24px !important;
+          background:
+            radial-gradient(circle at 88% -10%,rgba(241,211,109,.11),transparent 28%),
+            radial-gradient(circle at 10% 112%,rgba(171,88,141,.12),transparent 32%),
+            linear-gradient(120deg,#2b1b49 0%,#493578 40%,#31516f 72%,#245d60 100%) !important;
+          box-shadow:0 16px 38px rgba(28,25,46,.15) !important;
+        }
+
+        .salesPage .hero::after {
+          content:"NCS";
+          position:absolute;
+          right:26px;
+          top:-22px;
+          color:rgba(255,255,255,.025);
+          font-size:118px;
+          line-height:1;
+          font-weight:1000;
+          letter-spacing:-8px;
+          pointer-events:none;
+        }
+
+        .salesPage .hero > div,
+        .salesPage .hero > button {
+          position:relative;
+          z-index:2;
+        }
+
+        .salesPage .hero > div > span {
+          color:#d8d1ea !important;
+          font-size:9px !important;
+          font-weight:900 !important;
+          letter-spacing:1.1px !important;
+        }
+
+        .salesPage .hero h1 {
+          margin:5px 0 5px !important;
+          color:#fff !important;
+          font-size:34px !important;
+          letter-spacing:-1px !important;
+        }
+
+        .salesPage .hero p {
+          margin:0 !important;
+          color:rgba(255,255,255,.70) !important;
+          font-size:11px !important;
+        }
+
+        .salesPage .hero > button {
+          min-height:44px !important;
+          border:1px solid rgba(255,255,255,.16) !important;
+          border-radius:13px !important;
+          padding:0 16px !important;
+          background:rgba(255,255,255,.08) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+          backdrop-filter:blur(8px);
+        }
+
+        /* STATS — command deck tiles */
+        .salesPage .stats {
+          gap:10px !important;
+          margin-top:14px !important;
+        }
+
+        .salesPage .stats article {
+          position:relative !important;
+          overflow:hidden !important;
+          min-height:104px !important;
+          border:1px solid #e5e7ec !important;
+          border-radius:18px !important;
+          padding:15px !important;
+          background:#fff !important;
+          box-shadow:0 7px 18px rgba(32,39,55,.045) !important;
+        }
+
+        .salesPage .stats article::after {
+          content:"";
+          position:absolute;
+          right:-22px;
+          bottom:-28px;
+          width:82px;
+          height:82px;
+          border-radius:50%;
+          background:currentColor;
+          opacity:.055;
+          pointer-events:none;
+        }
+
+        .salesPage .stats article:nth-child(1) {
+          color:#665492 !important;
+          background:#f6f4fa !important;
+          border-color:#e3dff0 !important;
+        }
+        .salesPage .stats article:nth-child(2) {
+          color:#4f806f !important;
+          background:#f2f7f4 !important;
+          border-color:#dfece5 !important;
+        }
+        .salesPage .stats article:nth-child(3) {
+          color:#4d7d89 !important;
+          background:#f1f6f7 !important;
+          border-color:#dce9ec !important;
+        }
+        .salesPage .stats article:nth-child(4) {
+          color:#94617e !important;
+          background:#faf2f5 !important;
+          border-color:#efdee6 !important;
+        }
+        .salesPage .stats article:nth-child(5) {
+          color:#9a774a !important;
+          background:#faf6ed !important;
+          border-color:#eee5d4 !important;
+        }
+
+        .salesPage .stats article span {
+          color:currentColor !important;
+          font-size:8px !important;
+          font-weight:900 !important;
+          letter-spacing:.65px !important;
+          text-transform:uppercase !important;
+        }
+
+        .salesPage .stats article strong {
+          margin-top:8px !important;
+          color:#273042 !important;
+          font-size:22px !important;
+          font-weight:950 !important;
+        }
+
+        /* FILTER BAR */
+        .salesPage .filters {
+          gap:9px !important;
+          margin-top:14px !important;
+          padding:11px !important;
+          border:1px solid #e5e8ed !important;
+          border-radius:18px !important;
+          background:#fff !important;
+          box-shadow:0 7px 18px rgba(32,39,55,.04) !important;
+        }
+
+        .salesPage .searchBox {
+          border:1px solid #e0e4ea !important;
+          border-radius:13px !important;
+          background:#f9fafb !important;
+        }
+
+        .salesPage .searchBox > span {
+          color:#665492 !important;
+        }
+
+        .salesPage .searchBox input,
+        .salesPage .filters select {
+          color:#273042 !important;
+          background:#f9fafb !important;
+          font-weight:700 !important;
+        }
+
+        .salesPage .filters select {
+          border:1px solid #e0e4ea !important;
+          border-radius:13px !important;
+          box-shadow:none !important;
+        }
+
+        .salesPage .searchBox:focus-within,
+        .salesPage .filters select:focus {
+          border-color:#8a7aae !important;
+          box-shadow:0 0 0 3px rgba(101,84,146,.08) !important;
+        }
+
+        /* SALE LIST */
+        .salesPage .saleList {
+          gap:10px !important;
+          margin-top:14px !important;
+        }
+
+        .salesPage .saleCard {
+          position:relative !important;
+          overflow:hidden !important;
+          border:1px solid #e5e8ed !important;
+          border-radius:20px !important;
+          background:#fff !important;
+          box-shadow:0 8px 22px rgba(32,39,55,.05) !important;
+        }
+
+        .salesPage .saleCard::before {
+          content:"";
+          position:absolute;
+          inset:0 auto 0 0;
+          width:4px;
+          background:#655492;
+        }
+
+        .salesPage .saleCard:nth-child(5n+2)::before { background:#4f806f; }
+        .salesPage .saleCard:nth-child(5n+3)::before { background:#4d7d89; }
+        .salesPage .saleCard:nth-child(5n+4)::before { background:#94617e; }
+        .salesPage .saleCard:nth-child(5n+5)::before { background:#9a774a; }
+
+        .salesPage .saleTop {
+          padding:17px 18px 11px 21px !important;
+        }
+
+        .salesPage .invoice {
+          display:inline-flex !important;
+          width:max-content !important;
+          padding:4px 8px !important;
+          border-radius:999px !important;
+          background:#f3f1f8 !important;
+          color:#655492 !important;
+          font-size:8px !important;
+          font-weight:950 !important;
+          letter-spacing:.45px !important;
+        }
+
+        .salesPage .saleTop h2 {
+          margin:7px 0 3px !important;
+          color:#273042 !important;
+          font-size:16px !important;
+          font-weight:950 !important;
+        }
+
+        .salesPage .saleTop p {
+          color:#7a8190 !important;
+          font-size:9px !important;
+        }
+
+        .salesPage .badge {
+          border:1px solid transparent !important;
+          border-radius:999px !important;
+          padding:5px 9px !important;
+          font-size:8px !important;
+          font-weight:900 !important;
+          box-shadow:none !important;
+        }
+
+        .salesPage .badge.cash {
+          background:#eef7f3 !important;
+          color:#4f806f !important;
+          border-color:#d9e9e1 !important;
+        }
+
+        .salesPage .badge.upi {
+          background:#f3f1f8 !important;
+          color:#655492 !important;
+          border-color:#e0dced !important;
+        }
+
+        .salesPage .badge.card,
+        .salesPage .badge.bank_transfer {
+          background:#edf5f7 !important;
+          color:#4d7d89 !important;
+          border-color:#d8e8eb !important;
+        }
+
+        .salesPage .badge.credit {
+          background:#faf5ec !important;
+          color:#9a774a !important;
+          border-color:#eee2ce !important;
+        }
+
+        .salesPage .badge.completed {
+          background:#eef7f3 !important;
+          color:#4f806f !important;
+          border-color:#d9e9e1 !important;
+        }
+
+        .salesPage .badge.cancelled {
+          background:#faf0f0 !important;
+          color:#956262 !important;
+          border-color:#eedada !important;
+        }
+
+        .salesPage .amounts {
+          margin:0 18px 0 21px !important;
+          gap:7px !important;
+          padding:12px !important;
+          border:1px solid #eceef2 !important;
+          border-radius:15px !important;
+          background:#fafbfc !important;
+        }
+
+        .salesPage .amounts > div {
+          padding:8px 10px !important;
+          border-radius:11px !important;
+          background:#fff !important;
+        }
+
+        .salesPage .amounts span {
+          color:#7b8190 !important;
+          font-size:7px !important;
+          font-weight:850 !important;
+        }
+
+        .salesPage .amounts strong {
+          margin-top:4px !important;
+          color:#273042 !important;
+          font-size:13px !important;
+        }
+
+        .salesPage .amounts .refundAmount {
+          background:#faf0f0 !important;
+        }
+
+        .salesPage .amounts .refundAmount strong,
+        .salesPage .amounts .due strong {
+          color:#956262 !important;
+        }
+
+        .salesPage .amounts .netSale {
+          background:#eef7f3 !important;
+        }
+
+        .salesPage .amounts .netSale strong {
+          color:#4f806f !important;
+        }
+
+        .salesPage .saleCard footer {
+          padding:0 18px 15px !important;
+        }
+
+        .salesPage .saleCard footer button {
+          min-height:39px !important;
+          border:0 !important;
+          border-radius:12px !important;
+          padding:0 14px !important;
+          background:linear-gradient(135deg,#4e426d,#476f7a) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        /* PAGINATION */
+        .salesPage .salesPagination {
+          margin-top:14px !important;
+          border:1px solid #e5e8ed !important;
+          border-radius:17px !important;
+          background:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .salesPage .pageSummary {
+          color:#747c8b !important;
+        }
+
+        .salesPage .pageButtons button {
+          border-color:#e0e4ea !important;
+          background:#f8f9fb !important;
+          color:#4d5668 !important;
+          box-shadow:none !important;
+        }
+
+        .salesPage .pageButtons button.active {
+          border-color:#655492 !important;
+          background:#655492 !important;
+          color:#fff !important;
+        }
+
+        /* EMPTY / ERROR / TOAST */
+        .salesPage .message {
+          border:1px solid #e5e8ed !important;
+          border-radius:20px !important;
+          background:#fff !important;
+          color:#6f7787 !important;
+          box-shadow:none !important;
+        }
+
+        .salesPage .message h2 {
+          color:#293247 !important;
+        }
+
+        .salesPage .toast {
+          border:1px solid rgba(255,255,255,.12) !important;
+          border-radius:14px !important;
+          background:#453453 !important;
+          box-shadow:0 14px 34px rgba(19,17,31,.20) !important;
+        }
+
+        /* ============================================================
+           SALE DETAILS MODAL
+           ============================================================ */
+        .salesPage .overlay {
+          background:rgba(18,15,31,.72) !important;
+          backdrop-filter:blur(9px) !important;
+        }
+
+        .salesPage .modal {
+          border:1px solid rgba(255,255,255,.14) !important;
+          border-radius:24px !important;
+          background:#fff !important;
+          box-shadow:0 28px 80px rgba(12,11,21,.30) !important;
+        }
+
+        .salesPage .modal > header {
+          background:
+            linear-gradient(120deg,#2b1b49 0%,#493578 48%,#31516f 100%) !important;
+          color:#fff !important;
+        }
+
+        .salesPage .modal > header span {
+          color:#d8d1ea !important;
+        }
+
+        .salesPage .customerGrid > div {
+          border:1px solid #e7e9ee !important;
+          border-radius:14px !important;
+          background:#f8f9fb !important;
+        }
+
+        .salesPage .customerGrid strong {
+          color:#273042 !important;
+        }
+
+        .salesPage .items article {
+          border-bottom-color:#eceef2 !important;
+        }
+
+        .salesPage .items b {
+          color:#4f806f !important;
+        }
+
+        .salesPage .totals {
+          border:1px solid #e7e9ee !important;
+          border-radius:15px !important;
+          background:#fafbfc !important;
+        }
+
+        .salesPage .totals .grand {
+          border-top-color:#655492 !important;
+          color:#655492 !important;
+        }
+
+        .salesPage .totals .refundLine {
+          color:#956262 !important;
+        }
+
+        .salesPage .totals .netLine {
+          color:#4f806f !important;
+        }
+
+        .salesPage .modalActions button {
+          box-shadow:none !important;
+        }
+
+        .salesPage .modalActions .close {
+          background:#eef0f3 !important;
+          color:#4a5261 !important;
+        }
+
+        .salesPage .modalActions .editPaymentAction {
+          background:#4f806f !important;
+        }
+
+        .salesPage .modalActions .returnAction {
+          background:#8f7648 !important;
+          color:#fff !important;
+        }
+
+        .salesPage .modalActions .printAction {
+          background:#4e426d !important;
+        }
+
+        .salesPage .modalActions .whatsAppAction {
+          background:#3f7b62 !important;
+        }
+
+        .salesPage .modalActions .deleteAction {
+          background:#8b5555 !important;
+        }
+
+        /* PAYMENT CORRECTION */
+        .salesPage .paymentEditOverlay,
+        .salesPage .returnOverlay {
+          background:rgba(18,15,31,.76) !important;
+          backdrop-filter:blur(10px) !important;
+        }
+
+        .salesPage .paymentEditModal,
+        .salesPage .returnModal {
+          border:1px solid rgba(255,255,255,.13) !important;
+          background:#fff !important;
+          box-shadow:0 30px 90px rgba(12,11,21,.32) !important;
+        }
+
+        .salesPage .paymentEditModal > header,
+        .salesPage .returnHeader {
+          background:
+            linear-gradient(120deg,#2b1b49 0%,#493578 48%,#31516f 100%) !important;
+          color:#fff !important;
+        }
+
+        .salesPage .paymentEditModal > header span,
+        .salesPage .returnHeader span {
+          color:#d8d1ea !important;
+        }
+
+        .salesPage .paymentCompare > div,
+        .salesPage .paymentCorrectionSummary {
+          border:1px solid #e7e9ee !important;
+          background:#f8f9fb !important;
+        }
+
+        .salesPage .paymentCompare strong,
+        .salesPage .paymentCorrectionSummary strong {
+          color:#273042 !important;
+        }
+
+        .salesPage .paymentEditBody select,
+        .salesPage .paymentEditBody input,
+        .salesPage .returnFormGrid input,
+        .salesPage .returnFormGrid select,
+        .salesPage .returnFormGrid textarea,
+        .salesPage .exchangeSettlementMethod select {
+          border-color:#dfe3e9 !important;
+          color:#273042 !important;
+          background:#fff !important;
+        }
+
+        .salesPage .paymentEditBody select:focus,
+        .salesPage .paymentEditBody input:focus,
+        .salesPage .returnFormGrid input:focus,
+        .salesPage .returnFormGrid select:focus,
+        .salesPage .returnFormGrid textarea:focus {
+          border-color:#77679c !important;
+          box-shadow:0 0 0 3px rgba(101,84,146,.08) !important;
+        }
+
+        .salesPage .balanceTreatmentGrid button {
+          border-color:#e2e5ea !important;
+          background:#fff !important;
+          color:#273042 !important;
+        }
+
+        .salesPage .balanceTreatmentGrid button.active {
+          border-color:#8f7648 !important;
+          background:#faf6ed !important;
+          box-shadow:0 0 0 3px rgba(143,118,72,.08) !important;
+        }
+
+        .salesPage .paymentSafetyNote {
+          border-color:#eadfca !important;
+          background:#faf7f0 !important;
+          color:#6e614c !important;
+        }
+
+        .salesPage .paymentSave {
+          background:linear-gradient(135deg,#4e426d,#476f7a) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        /* RETURNS / EXCHANGE */
+        .salesPage .returnTypeCard {
+          border-color:#e4e7ec !important;
+          border-radius:15px !important;
+          background:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .salesPage .returnTypeCard:hover {
+          transform:translateY(-1px) !important;
+          border-color:#8a7aae !important;
+          box-shadow:0 8px 18px rgba(32,39,55,.05) !important;
+        }
+
+        .salesPage .returnTypeCard.active {
+          border-color:#77679c !important;
+          background:#f5f3f9 !important;
+          box-shadow:none !important;
+        }
+
+        .salesPage .returnTypeCard > span {
+          background:#f0eef6 !important;
+          color:#655492 !important;
+        }
+
+        .salesPage .returnTypeCard.active > span {
+          background:#655492 !important;
+          color:#fff !important;
+          animation:none !important;
+        }
+
+        .salesPage .returnTypeCard strong,
+        .salesPage .returnSectionTitle h3,
+        .salesPage .returnItemInfo h4,
+        .salesPage .returnQtyControl span {
+          color:#273042 !important;
+        }
+
+        .salesPage .returnSectionTitle span {
+          color:#655492 !important;
+        }
+
+        .salesPage .returnSectionTitle > strong {
+          color:#4f806f !important;
+        }
+
+        .salesPage .returnItem {
+          border-color:#e5e8ed !important;
+          background:#fff !important;
+        }
+
+        .salesPage .returnItem.selected {
+          border-color:#b4a9cb !important;
+          background:#f8f7fa !important;
+          box-shadow:none !important;
+        }
+
+        .salesPage .returnItemInfo > strong,
+        .salesPage .exchangeLineValue > strong,
+        .salesPage .exchangeLineTotal {
+          color:#4f806f !important;
+        }
+
+        .salesPage .returnQtyControl button {
+          background:#f0eef6 !important;
+          color:#655492 !important;
+        }
+
+        .salesPage .returnQtyControl button:hover:not(:disabled) {
+          background:#655492 !important;
+          color:#fff !important;
+        }
+
+        .salesPage .exchangeDesk {
+          border-color:#e3dfeb !important;
+          background:#f8f9fb !important;
+        }
+
+        .salesPage .exchangeSearchBox {
+          border-color:#dfe3e9 !important;
+          background:#fff !important;
+        }
+
+        .salesPage .exchangeSearchBox > span {
+          color:#655492 !important;
+        }
+
+        .salesPage .exchangeSearchBox button {
+          border:0 !important;
+          background:#655492 !important;
+          color:#fff !important;
+        }
+
+        .salesPage .exchangeProductCard,
+        .salesPage .exchangeSelectedList article {
+          border-color:#e4e7ec !important;
+          background:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .salesPage .exchangeProductCard:hover {
+          transform:translateY(-1px) !important;
+          border-color:#8a7aae !important;
+          box-shadow:0 7px 16px rgba(32,39,55,.05) !important;
+        }
+
+        .salesPage .exchangeProductCard b {
+          color:#4f806f !important;
+        }
+
+        .salesPage .exchangeProductCard em {
+          color:#8f7648 !important;
+        }
+
+        .salesPage .exchangeDifference,
+        .salesPage .returnSummary .returnTotal {
+          background:
+            linear-gradient(135deg,#3b2e52,#4a4567 58%,#3e646c) !important;
+        }
+
+        .salesPage .exchangeDifference strong,
+        .salesPage .returnSummary .returnTotal strong {
+          color:#fff !important;
+        }
+
+        .salesPage .returnSummary {
+          background:#f7f8fa !important;
+        }
+
+        .salesPage .returnSummary > div {
+          border:1px solid #e5e8ed !important;
+          background:#fff !important;
+        }
+
+        .salesPage .returnSummary strong {
+          color:#273042 !important;
+        }
+
+        .salesPage .returnConfirm {
+          background:linear-gradient(135deg,#4e426d,#476f7a) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .salesPage .returnCancel {
+          background:#eef0f3 !important;
+          color:#4a5261 !important;
+        }
+
+        @media(max-width:700px){
+          .salesPage {
+            padding:10px !important;
+          }
+
+          .salesPage .hero {
+            border-radius:21px !important;
+            padding:18px 16px !important;
+          }
+
+          .salesPage .hero h1 {
+            font-size:28px !important;
+          }
+
+          .salesPage .hero::after {
+            font-size:72px;
+            top:-6px;
+            right:8px;
+          }
+
+          .salesPage .stats article {
+            min-height:92px !important;
+            border-radius:16px !important;
+          }
+
+          .salesPage .saleCard {
+            border-radius:17px !important;
+          }
+
+          .salesPage .amounts {
+            margin-left:16px !important;
+            margin-right:16px !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS SALES HISTORY — INTERNATIONAL COLORFUL PREMIUM V2
+           Match Products V2 visual language:
+           richer hero, clearer KPI colors, entrance motion, stronger cards.
+           ============================================================ */
+
+        .salesPage {
+          background:
+            radial-gradient(circle at 4% 0%,rgba(111,78,190,.10),transparent 24%),
+            radial-gradient(circle at 96% 5%,rgba(25,155,164,.10),transparent 24%),
+            radial-gradient(circle at 55% 100%,rgba(231,166,83,.08),transparent 26%),
+            linear-gradient(180deg,#f7f7fb 0%,#f1f4f8 50%,#f8f4ed 100%) !important;
+        }
+
+        /* HERO */
+        .salesPage .hero {
+          min-height:150px !important;
+          padding:22px 24px !important;
+          background:
+            radial-gradient(circle at 82% -15%,rgba(255,215,115,.30),transparent 31%),
+            radial-gradient(circle at 12% 115%,rgba(230,86,170,.28),transparent 34%),
+            linear-gradient(118deg,#31184f 0%,#5c32a8 35%,#3c6f93 68%,#1f8a7e 100%) !important;
+          box-shadow:0 22px 55px rgba(40,31,72,.20) !important;
+          animation:ncs-sales-enter .55s cubic-bezier(.2,.8,.2,1) both !important;
+        }
+
+        .salesPage .hero::after {
+          content:"HISTORY" !important;
+          right:20px !important;
+          top:50% !important;
+          transform:translateY(-50%) !important;
+          color:rgba(255,255,255,.05) !important;
+          font-size:clamp(62px,7vw,116px) !important;
+          letter-spacing:1px !important;
+        }
+
+        .salesPage .hero > div > span {
+          color:#f4d979 !important;
+        }
+
+        .salesPage .hero h1 {
+          font-size:38px !important;
+          text-shadow:0 2px 12px rgba(0,0,0,.12) !important;
+        }
+
+        .salesPage .hero > button {
+          border-color:rgba(255,255,255,.28) !important;
+          background:rgba(255,255,255,.12) !important;
+          box-shadow:0 8px 20px rgba(21,18,42,.12) !important;
+        }
+
+        /* KPI CARDS — stronger visible colors */
+        .salesPage .stats {
+          gap:12px !important;
+          animation:ncs-sales-enter .65s .06s cubic-bezier(.2,.8,.2,1) both !important;
+        }
+
+        .salesPage .stats article {
+          min-height:116px !important;
+          border-radius:21px !important;
+          border-width:1.5px !important;
+          box-shadow:0 12px 28px rgba(39,44,61,.07) !important;
+          transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease !important;
+        }
+
+        .salesPage .stats article:hover {
+          transform:translateY(-4px) scale(1.012) !important;
+          box-shadow:0 18px 34px rgba(39,44,61,.12) !important;
+        }
+
+        .salesPage .stats article:nth-child(1) {
+          background:linear-gradient(135deg,#ede7ff 0%,#f9f7ff 65%,#e8f4ff 100%) !important;
+          border-color:#c8baf4 !important;
+          color:#6549ba !important;
+        }
+
+        .salesPage .stats article:nth-child(2) {
+          background:linear-gradient(135deg,#dcf6ec 0%,#f7fffb 64%,#def8f2 100%) !important;
+          border-color:#a6dec9 !important;
+          color:#27866c !important;
+        }
+
+        .salesPage .stats article:nth-child(3) {
+          background:linear-gradient(135deg,#dff4f8 0%,#f8fdff 64%,#e7efff 100%) !important;
+          border-color:#acd9e1 !important;
+          color:#3e7d89 !important;
+        }
+
+        .salesPage .stats article:nth-child(4) {
+          background:linear-gradient(135deg,#ffe1e8 0%,#fff5f7 65%,#ffe4d8 100%) !important;
+          border-color:#efacb9 !important;
+          color:#b05269 !important;
+        }
+
+        .salesPage .stats article:nth-child(5) {
+          background:linear-gradient(135deg,#fff0cd 0%,#fffaf1 65%,#ffe5d4 100%) !important;
+          border-color:#efc880 !important;
+          color:#b0762b !important;
+        }
+
+        .salesPage .stats article strong {
+          font-size:27px !important;
+          color:#20283a !important;
+        }
+
+        .salesPage .stats article span {
+          font-size:8.5px !important;
+        }
+
+        /* FILTER BAR */
+        .salesPage .filters {
+          padding:12px !important;
+          border-radius:20px !important;
+          background:
+            linear-gradient(135deg,#fbfbff 0%,#ffffff 48%,#f3fbfb 100%) !important;
+          border-color:#dde2ea !important;
+          box-shadow:0 10px 24px rgba(39,44,61,.055) !important;
+          animation:ncs-sales-enter .72s .10s cubic-bezier(.2,.8,.2,1) both !important;
+        }
+
+        .salesPage .searchBox,
+        .salesPage .filters select {
+          background:#fff !important;
+          box-shadow:0 4px 11px rgba(39,44,61,.025) !important;
+        }
+
+        .salesPage .searchBox:focus-within,
+        .salesPage .filters select:focus {
+          border-color:#755fc0 !important;
+          box-shadow:0 0 0 4px rgba(117,95,192,.10),0 8px 20px rgba(39,44,61,.05) !important;
+        }
+
+        /* SALE CARDS */
+        .salesPage .saleList {
+          gap:12px !important;
+        }
+
+        .salesPage .saleCard {
+          border-radius:22px !important;
+          border-color:#dde2ea !important;
+          box-shadow:0 10px 26px rgba(39,44,61,.06) !important;
+          transition:transform .20s ease,box-shadow .20s ease,border-color .20s ease !important;
+          animation:ncs-sales-enter .72s .12s cubic-bezier(.2,.8,.2,1) both !important;
+        }
+
+        .salesPage .saleCard:hover {
+          transform:translateY(-2px) !important;
+          box-shadow:0 16px 32px rgba(39,44,61,.095) !important;
+          border-color:#cbcfe0 !important;
+        }
+
+        .salesPage .saleCard::before {
+          width:5px !important;
+          background:linear-gradient(180deg,#6748c8,#8a65e5) !important;
+        }
+
+        .salesPage .saleCard:nth-child(5n+2)::before {
+          background:linear-gradient(180deg,#23876d,#43b691) !important;
+        }
+        .salesPage .saleCard:nth-child(5n+3)::before {
+          background:linear-gradient(180deg,#3f7f8b,#60a5b0) !important;
+        }
+        .salesPage .saleCard:nth-child(5n+4)::before {
+          background:linear-gradient(180deg,#a65984,#d17aa6) !important;
+        }
+        .salesPage .saleCard:nth-child(5n+5)::before {
+          background:linear-gradient(180deg,#b0762b,#dcaa5a) !important;
+        }
+
+        .salesPage .invoice {
+          background:linear-gradient(135deg,#eee9fb,#f6f3ff) !important;
+          border:1px solid #d4c8ef !important;
+          color:#6650ad !important;
+          box-shadow:0 4px 10px rgba(92,69,160,.06) !important;
+        }
+
+        .salesPage .saleTop h2 {
+          font-size:17px !important;
+        }
+
+        .salesPage .badge {
+          border-width:1.5px !important;
+        }
+
+        .salesPage .badge.cash,
+        .salesPage .badge.completed {
+          background:#e8f7f0 !important;
+          border-color:#bfe4d4 !important;
+          color:#2c8067 !important;
+        }
+
+        .salesPage .badge.upi {
+          background:#eee9fb !important;
+          border-color:#d4c8ef !important;
+          color:#6650ad !important;
+        }
+
+        .salesPage .badge.card,
+        .salesPage .badge.bank_transfer {
+          background:#e9f6f8 !important;
+          border-color:#c6e4e9 !important;
+          color:#3f7f8b !important;
+        }
+
+        .salesPage .badge.credit {
+          background:#fff4dc !important;
+          border-color:#efd49e !important;
+          color:#a97429 !important;
+        }
+
+        .salesPage .badge.cancelled {
+          background:#fff0f2 !important;
+          border-color:#edc2c9 !important;
+          color:#a74f60 !important;
+        }
+
+        /* Amount boxes stronger hierarchy */
+        .salesPage .amounts {
+          background:linear-gradient(180deg,#fbfcfe,#f7f9fb) !important;
+          border-color:#e1e5eb !important;
+        }
+
+        .salesPage .amounts > div {
+          box-shadow:0 4px 11px rgba(39,44,61,.025) !important;
+        }
+
+        .salesPage .amounts .netSale {
+          background:#eaf7f1 !important;
+          border:1px solid #cae7da !important;
+        }
+
+        .salesPage .amounts .refundAmount,
+        .salesPage .amounts .due {
+          background:#fff1f3 !important;
+          border:1px solid #efccd2 !important;
+        }
+
+        .salesPage .saleCard footer button {
+          background:linear-gradient(135deg,#5c4497,#427887) !important;
+          box-shadow:0 7px 16px rgba(52,55,84,.11) !important;
+          transition:transform .18s ease,box-shadow .18s ease !important;
+        }
+
+        .salesPage .saleCard footer button:hover {
+          transform:translateY(-2px) !important;
+          box-shadow:0 10px 20px rgba(52,55,84,.15) !important;
+        }
+
+        /* MODAL */
+        .salesPage .modal,
+        .salesPage .paymentEditModal,
+        .salesPage .returnModal {
+          border-radius:26px !important;
+          box-shadow:0 34px 90px rgba(12,11,21,.34) !important;
+        }
+
+        .salesPage .modal > header,
+        .salesPage .paymentEditModal > header,
+        .salesPage .returnHeader {
+          background:
+            radial-gradient(circle at 90% -10%,rgba(255,215,115,.18),transparent 29%),
+            linear-gradient(118deg,#31184f 0%,#5c32a8 45%,#3c6f93 100%) !important;
+        }
+
+        .salesPage .modalActions .editPaymentAction {
+          background:linear-gradient(135deg,#23876d,#43b691) !important;
+        }
+
+        .salesPage .modalActions .returnAction {
+          background:linear-gradient(135deg,#b0762b,#dcaa5a) !important;
+        }
+
+        .salesPage .modalActions .printAction {
+          background:linear-gradient(135deg,#5c4497,#715ab0) !important;
+        }
+
+        .salesPage .modalActions .whatsAppAction {
+          background:linear-gradient(135deg,#23876d,#3c9b7e) !important;
+        }
+
+        .salesPage .modalActions .deleteAction {
+          background:linear-gradient(135deg,#a74f60,#cb6677) !important;
+        }
+
+        .salesPage .paymentSave,
+        .salesPage .returnConfirm {
+          background:linear-gradient(135deg,#5c4497,#427887) !important;
+          box-shadow:0 8px 18px rgba(52,55,84,.12) !important;
+        }
+
+        /* Return / Exchange cards */
+        .salesPage .returnTypeCard {
+          transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease !important;
+        }
+
+        .salesPage .returnTypeCard:hover {
+          transform:translateY(-3px) !important;
+          box-shadow:0 10px 22px rgba(39,44,61,.07) !important;
+        }
+
+        .salesPage .returnTypeCard.active {
+          background:linear-gradient(135deg,#eee9fb,#f6f3ff) !important;
+          border-color:#c9baf0 !important;
+        }
+
+        .salesPage .returnTypeCard.active > span {
+          background:linear-gradient(135deg,#6748c8,#8a65e5) !important;
+        }
+
+        .salesPage .exchangeSearchBox button {
+          background:linear-gradient(135deg,#6748c8,#3f7f8b) !important;
+        }
+
+        .salesPage .exchangeDifference,
+        .salesPage .returnSummary .returnTotal {
+          background:
+            radial-gradient(circle at 88% 0%,rgba(255,215,115,.11),transparent 28%),
+            linear-gradient(118deg,#31184f,#5c32a8 50%,#3c6f93) !important;
+        }
+
+        /* Entrance motion */
+        @keyframes ncs-sales-enter {
+          from { opacity:0; transform:translateY(14px); }
+          to { opacity:1; transform:translateY(0); }
+        }
+
+        @media(prefers-reduced-motion:reduce){
+          .salesPage .hero,
+          .salesPage .stats,
+          .salesPage .filters,
+          .salesPage .saleCard {
+            animation:none !important;
+          }
+        }
+
+        @media(max-width:700px){
+          .salesPage .hero {
+            min-height:auto !important;
+          }
+
+          .salesPage .hero h1 {
+            font-size:30px !important;
+          }
+
+          .salesPage .stats article {
+            min-height:100px !important;
+          }
+        }
+
       `}</style>
     </main>
   );

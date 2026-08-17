@@ -4120,6 +4120,753 @@ window.setTimeout(() => setNotice(""), 4500);
             grid-template-columns: 1fr;
           }
         }
+
+        /* ============================================================
+           NCS PURCHASE HISTORY — INTERNATIONAL COLORFUL PREMIUM V2
+           Same design family as Products V2 / Sales History V2.
+           Visual-only layer: purchase, supplier due, edit, item edit,
+           add missed items, print and safe-delete logic remain untouched.
+           ============================================================ */
+
+        .purchaseHistoryPage {
+          min-height:100vh !important;
+          padding:18px !important;
+          background:
+            radial-gradient(circle at 4% 0%,rgba(111,78,190,.10),transparent 24%),
+            radial-gradient(circle at 96% 5%,rgba(25,155,164,.10),transparent 24%),
+            radial-gradient(circle at 55% 100%,rgba(231,166,83,.08),transparent 26%),
+            linear-gradient(180deg,#f7f7fb 0%,#f1f4f8 50%,#f8f4ed 100%) !important;
+          color:#20283a !important;
+        }
+
+        /* HERO */
+        .pageHeader {
+          position:relative !important;
+          overflow:hidden !important;
+          min-height:150px !important;
+          padding:22px 24px !important;
+          border:1px solid rgba(255,255,255,.18) !important;
+          border-radius:26px !important;
+          background:
+            radial-gradient(circle at 82% -15%,rgba(255,215,115,.30),transparent 31%),
+            radial-gradient(circle at 12% 115%,rgba(230,86,170,.28),transparent 34%),
+            linear-gradient(118deg,#31184f 0%,#5c32a8 35%,#3c6f93 68%,#1f8a7e 100%) !important;
+          color:#fff !important;
+          box-shadow:0 22px 55px rgba(40,31,72,.20) !important;
+          animation:ncs-purchase-enter .55s cubic-bezier(.2,.8,.2,1) both !important;
+        }
+
+        .pageHeader::after {
+          content:"PURCHASES";
+          position:absolute;
+          right:20px;
+          top:50%;
+          transform:translateY(-50%);
+          color:rgba(255,255,255,.05);
+          font-size:clamp(58px,7vw,112px);
+          font-weight:1000;
+          letter-spacing:1px;
+          pointer-events:none;
+        }
+
+        .pageHeader > div,
+        .pageHeader > button {
+          position:relative;
+          z-index:2;
+        }
+
+        .pageHeader > div > span {
+          color:#f4d979 !important;
+          font-size:9px !important;
+          font-weight:900 !important;
+          letter-spacing:1.1px !important;
+        }
+
+        .pageHeader h1 {
+          margin:5px 0 5px !important;
+          color:#fff !important;
+          font-size:38px !important;
+          letter-spacing:-1px !important;
+          text-shadow:0 2px 12px rgba(0,0,0,.12) !important;
+        }
+
+        .pageHeader p {
+          margin:0 !important;
+          color:rgba(255,255,255,.72) !important;
+          font-size:11px !important;
+        }
+
+        .pageHeader > button {
+          min-height:44px !important;
+          border:1px solid rgba(255,255,255,.28) !important;
+          border-radius:13px !important;
+          padding:0 16px !important;
+          background:rgba(255,255,255,.12) !important;
+          color:#fff !important;
+          box-shadow:0 8px 20px rgba(21,18,42,.12) !important;
+          backdrop-filter:blur(10px);
+        }
+
+        /* NOTICES */
+        .notice,
+        .error {
+          margin-top:12px !important;
+          border-radius:14px !important;
+          box-shadow:none !important;
+        }
+
+        .notice {
+          border:1px solid #bfe4d4 !important;
+          background:#e8f7f0 !important;
+          color:#2c8067 !important;
+        }
+
+        .error {
+          border:1px solid #edc2c9 !important;
+          background:#fff0f2 !important;
+          color:#a74f60 !important;
+        }
+
+        /* KPI STATS */
+        .statsGrid {
+          gap:12px !important;
+          margin-top:14px !important;
+          animation:ncs-purchase-enter .65s .06s cubic-bezier(.2,.8,.2,1) both !important;
+        }
+
+        .statsGrid article {
+          position:relative !important;
+          overflow:hidden !important;
+          min-height:116px !important;
+          padding:15px !important;
+          border:1.5px solid #e4e7ec !important;
+          border-radius:21px !important;
+          background:#fff !important;
+          box-shadow:0 12px 28px rgba(39,44,61,.07) !important;
+          transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease !important;
+        }
+
+        .statsGrid article::after {
+          content:"";
+          position:absolute;
+          right:-24px;
+          bottom:-30px;
+          width:88px;
+          height:88px;
+          border-radius:50%;
+          background:currentColor;
+          opacity:.055;
+          pointer-events:none;
+        }
+
+        .statsGrid article:hover {
+          transform:translateY(-4px) scale(1.012) !important;
+          box-shadow:0 18px 34px rgba(39,44,61,.12) !important;
+        }
+
+        .statsGrid article:nth-child(1) {
+          background:linear-gradient(135deg,#ede7ff 0%,#f9f7ff 65%,#e8f4ff 100%) !important;
+          border-color:#c8baf4 !important;
+          color:#6549ba !important;
+        }
+
+        .statsGrid article:nth-child(2) {
+          background:linear-gradient(135deg,#fff0cd 0%,#fffaf1 65%,#ffe5d4 100%) !important;
+          border-color:#efc880 !important;
+          color:#b0762b !important;
+        }
+
+        .statsGrid article:nth-child(3) {
+          background:linear-gradient(135deg,#dcf6ec 0%,#f7fffb 64%,#def8f2 100%) !important;
+          border-color:#a6dec9 !important;
+          color:#27866c !important;
+        }
+
+        .statsGrid article:nth-child(4) {
+          background:linear-gradient(135deg,#ffe1e8 0%,#fff5f7 65%,#ffe4d8 100%) !important;
+          border-color:#efacb9 !important;
+          color:#b05269 !important;
+        }
+
+        .statsGrid article:nth-child(5) {
+          background:linear-gradient(135deg,#dff4f8 0%,#f8fdff 64%,#e7efff 100%) !important;
+          border-color:#acd9e1 !important;
+          color:#3e7d89 !important;
+        }
+
+        .statsGrid article span {
+          color:currentColor !important;
+          font-size:8.5px !important;
+          font-weight:900 !important;
+          letter-spacing:.62px !important;
+          text-transform:uppercase !important;
+        }
+
+        .statsGrid article strong {
+          display:block !important;
+          margin-top:8px !important;
+          color:#20283a !important;
+          font-size:27px !important;
+          font-weight:950 !important;
+        }
+
+        /* MAIN PANEL / FILTERS */
+        .panel {
+          margin-top:14px !important;
+          border:1px solid #dde2ea !important;
+          border-radius:24px !important;
+          background:#fff !important;
+          box-shadow:0 14px 36px rgba(39,44,61,.075) !important;
+          overflow:hidden !important;
+          animation:ncs-purchase-enter .72s .10s cubic-bezier(.2,.8,.2,1) both !important;
+        }
+
+        .toolbar {
+          gap:10px !important;
+          padding:14px !important;
+          border-bottom:1px solid #e5e8ed !important;
+          background:
+            linear-gradient(135deg,#fbfbff 0%,#ffffff 48%,#f3fbfb 100%) !important;
+        }
+
+        .searchBox {
+          border:1px solid #d9dee8 !important;
+          border-radius:13px !important;
+          background:#fff !important;
+          box-shadow:0 5px 14px rgba(39,44,61,.035) !important;
+        }
+
+        .searchBox > span {
+          color:#6c53b4 !important;
+        }
+
+        .searchBox input,
+        .toolbar select {
+          color:#273042 !important;
+          background:#fff !important;
+          font-weight:700 !important;
+        }
+
+        .toolbar select {
+          height:44px !important;
+          border:1px solid #dde2ea !important;
+          border-radius:12px !important;
+          box-shadow:0 4px 11px rgba(39,44,61,.025) !important;
+        }
+
+        .searchBox:focus-within,
+        .toolbar select:focus {
+          border-color:#755fc0 !important;
+          box-shadow:0 0 0 4px rgba(117,95,192,.10),0 8px 20px rgba(39,44,61,.05) !important;
+        }
+
+        /* PURCHASE CARDS */
+        .purchaseList {
+          gap:12px !important;
+          padding:14px !important;
+        }
+
+        .purchaseCard {
+          position:relative !important;
+          overflow:hidden !important;
+          border:1px solid #dde2ea !important;
+          border-radius:22px !important;
+          background:#fff !important;
+          box-shadow:0 10px 26px rgba(39,44,61,.06) !important;
+          transition:transform .20s ease,box-shadow .20s ease,border-color .20s ease !important;
+        }
+
+        .purchaseCard::before {
+          content:"";
+          position:absolute;
+          inset:0 auto 0 0;
+          width:5px;
+          background:linear-gradient(180deg,#6748c8,#8a65e5);
+        }
+
+        .purchaseCard:nth-child(5n+2)::before {
+          background:linear-gradient(180deg,#23876d,#43b691);
+        }
+
+        .purchaseCard:nth-child(5n+3)::before {
+          background:linear-gradient(180deg,#3f7f8b,#60a5b0);
+        }
+
+        .purchaseCard:nth-child(5n+4)::before {
+          background:linear-gradient(180deg,#a65984,#d17aa6);
+        }
+
+        .purchaseCard:nth-child(5n+5)::before {
+          background:linear-gradient(180deg,#b0762b,#dcaa5a);
+        }
+
+        .purchaseCard:hover {
+          transform:translateY(-2px) !important;
+          border-color:#c9cedb !important;
+          box-shadow:0 16px 32px rgba(39,44,61,.095) !important;
+        }
+
+        .purchaseCard > header {
+          padding:17px 18px 11px 21px !important;
+        }
+
+        .purchaseCard > header > div > span {
+          display:inline-flex !important;
+          width:max-content !important;
+          padding:4px 8px !important;
+          border:1px solid #d4c8ef !important;
+          border-radius:999px !important;
+          background:linear-gradient(135deg,#eee9fb,#f6f3ff) !important;
+          color:#6650ad !important;
+          font-size:8px !important;
+          font-weight:950 !important;
+          letter-spacing:.45px !important;
+        }
+
+        .purchaseCard h2 {
+          margin:7px 0 3px !important;
+          color:#273042 !important;
+          font-size:17px !important;
+          font-weight:950 !important;
+        }
+
+        .purchaseCard header p {
+          color:#7a8190 !important;
+          font-size:9px !important;
+        }
+
+        .statusBadge {
+          border:1.5px solid transparent !important;
+          border-radius:999px !important;
+          padding:5px 9px !important;
+          font-size:8px !important;
+          font-weight:900 !important;
+          box-shadow:none !important;
+        }
+
+        .status-paid {
+          border-color:#bfe4d4 !important;
+          background:#e8f7f0 !important;
+          color:#2c8067 !important;
+        }
+
+        .status-partial {
+          border-color:#efd49e !important;
+          background:#fff4dc !important;
+          color:#a97429 !important;
+        }
+
+        .status-unpaid,
+        .status-due {
+          border-color:#edc2c9 !important;
+          background:#fff0f2 !important;
+          color:#a74f60 !important;
+        }
+
+        /* META GRID */
+        .purchaseMeta {
+          margin:0 18px 0 21px !important;
+          gap:7px !important;
+          padding:12px !important;
+          border:1px solid #e1e5eb !important;
+          border-radius:15px !important;
+          background:linear-gradient(180deg,#fbfcfe,#f7f9fb) !important;
+        }
+
+        .purchaseMeta > div {
+          padding:9px 10px !important;
+          border-radius:11px !important;
+          background:#fff !important;
+          box-shadow:0 4px 11px rgba(39,44,61,.025) !important;
+        }
+
+        .purchaseMeta span {
+          color:#7b8190 !important;
+          font-size:7px !important;
+          font-weight:850 !important;
+        }
+
+        .purchaseMeta strong {
+          margin-top:4px !important;
+          color:#273042 !important;
+          font-size:13px !important;
+        }
+
+        .dueText {
+          color:#a74f60 !important;
+        }
+
+        /* ITEM PREVIEW */
+        .itemPreview {
+          gap:8px !important;
+          padding:12px 18px 12px 21px !important;
+        }
+
+        .itemPreview > div {
+          border:1px solid #e5e8ed !important;
+          border-radius:13px !important;
+          background:#fafbfc !important;
+          box-shadow:none !important;
+        }
+
+        .itemPreview > div:nth-child(4n+1) {
+          background:#f7f5fb !important;
+          border-color:#e3dff0 !important;
+        }
+
+        .itemPreview > div:nth-child(4n+2) {
+          background:#f2f8f5 !important;
+          border-color:#dfece5 !important;
+        }
+
+        .itemPreview > div:nth-child(4n+3) {
+          background:#f2f7f8 !important;
+          border-color:#dce9ec !important;
+        }
+
+        .itemPreview > div:nth-child(4n+4) {
+          background:#faf7f0 !important;
+          border-color:#eee5d4 !important;
+        }
+
+        .itemPreview strong {
+          color:#273042 !important;
+        }
+
+        .itemPreview span,
+        .itemBrand {
+          color:#7a8190 !important;
+        }
+
+        /* FOOTER ACTIONS */
+        .purchaseCard footer {
+          gap:7px !important;
+          padding:0 18px 16px 21px !important;
+        }
+
+        .purchaseCard footer button {
+          min-height:39px !important;
+          border-radius:11px !important;
+          border:1px solid transparent !important;
+          box-shadow:none !important;
+          transition:transform .18s ease,box-shadow .18s ease !important;
+        }
+
+        .purchaseCard footer button:hover {
+          transform:translateY(-2px) !important;
+          box-shadow:0 7px 14px rgba(39,44,61,.08) !important;
+        }
+
+        .editButton {
+          border-color:#c6e4e9 !important;
+          background:#e9f6f8 !important;
+          color:#3f7f8b !important;
+        }
+
+        .addMissedItemButton {
+          border-color:#d4c8ef !important;
+          background:#eee9fb !important;
+          color:#6650ad !important;
+        }
+
+        .purchaseCard footer button:not(.editButton):not(.addMissedItemButton):not(.payButton) {
+          border-color:#ded9e9 !important;
+          background:#f5f3f9 !important;
+          color:#655492 !important;
+        }
+
+        .payButton {
+          border-color:#bfe4d4 !important;
+          background:linear-gradient(135deg,#23876d,#43b691) !important;
+          color:#fff !important;
+        }
+
+        /* LOADING / EMPTY */
+        .loadingState,
+        .emptyState {
+          min-height:330px !important;
+          color:#737b8a !important;
+          background:#fff !important;
+        }
+
+        .loadingState h2,
+        .emptyState h2 {
+          color:#293247 !important;
+        }
+
+        .spinner {
+          border-color:#e5e7eb !important;
+          border-top-color:#655492 !important;
+        }
+
+        /* ============================================================
+           MODALS — PURCHASE DETAILS / PAYMENT / EDIT / ITEM EDIT
+           ============================================================ */
+        .modalOverlay {
+          background:rgba(18,15,31,.74) !important;
+          backdrop-filter:blur(10px) !important;
+        }
+
+        .detailsModal,
+        .paymentModal,
+        .editPurchaseModal,
+        .itemEditModal,
+        .deletePurchaseModal {
+          border:1px solid rgba(255,255,255,.15) !important;
+          border-radius:26px !important;
+          background:#fff !important;
+          box-shadow:0 34px 90px rgba(12,11,21,.34) !important;
+        }
+
+        .detailsQuickToolbar {
+          border-bottom:1px solid #e8eaee !important;
+          background:#f8f9fb !important;
+        }
+
+        .detailsQuickSearch {
+          border:1px solid #d9dee8 !important;
+          border-radius:12px !important;
+          background:#fff !important;
+        }
+
+        .detailsQuickSearch > span {
+          color:#655492 !important;
+        }
+
+        .detailsQuickSearch input {
+          color:#273042 !important;
+        }
+
+        .detailsClearSearch {
+          color:#655492 !important;
+          background:#f3f1f8 !important;
+        }
+
+        .detailsCloseSticky {
+          border:1px solid #edc2c9 !important;
+          background:#fff0f2 !important;
+          color:#a74f60 !important;
+        }
+
+        .detailsModal > span,
+        .paymentModal > span,
+        .editPurchaseModal > span,
+        .itemEditModal > span {
+          color:#655492 !important;
+        }
+
+        .detailsModal > h2,
+        .paymentModal > h2,
+        .editPurchaseModal > h2,
+        .itemEditModal > h2 {
+          color:#293247 !important;
+        }
+
+        .modalSubtitle {
+          color:#7a8190 !important;
+        }
+
+        .detailsGrid > p {
+          border:1px solid #e5e8ed !important;
+          border-radius:13px !important;
+          background:#fafbfc !important;
+        }
+
+        .detailsGrid span {
+          color:#7a8190 !important;
+        }
+
+        .detailsGrid strong {
+          color:#273042 !important;
+        }
+
+        .detailsItemFull {
+          border:1px solid #e4e7ec !important;
+          border-radius:15px !important;
+          background:#fff !important;
+          box-shadow:0 5px 14px rgba(39,44,61,.035) !important;
+        }
+
+        .detailsItemFull:nth-child(4n+1) {
+          box-shadow:inset 4px 0 #6748c8 !important;
+        }
+
+        .detailsItemFull:nth-child(4n+2) {
+          box-shadow:inset 4px 0 #23876d !important;
+        }
+
+        .detailsItemFull:nth-child(4n+3) {
+          box-shadow:inset 4px 0 #3f7f8b !important;
+        }
+
+        .detailsItemFull:nth-child(4n+4) {
+          box-shadow:inset 4px 0 #b0762b !important;
+        }
+
+        .detailsItemName strong,
+        .detailsItemNumbers strong {
+          color:#273042 !important;
+        }
+
+        .detailsItemName span,
+        .detailsItemNumbers span {
+          color:#7a8190 !important;
+        }
+
+        .editItemButton {
+          border:1px solid #c6e4e9 !important;
+          border-radius:10px !important;
+          background:#e9f6f8 !important;
+          color:#3f7f8b !important;
+        }
+
+        .purchaseTotalsDetailed,
+        .addItemPurchaseSummary,
+        .addItemCostPreview {
+          border:1px solid #e4e7ec !important;
+          border-radius:15px !important;
+          background:#fafbfc !important;
+        }
+
+        .detailGrand,
+        .landedCostHighlight {
+          background:
+            radial-gradient(circle at 88% 0%,rgba(255,215,115,.11),transparent 28%),
+            linear-gradient(118deg,#31184f,#5c32a8 50%,#3c6f93) !important;
+          color:#fff !important;
+        }
+
+        .detailOutstanding {
+          background:#fff0f2 !important;
+          border-color:#edc2c9 !important;
+          color:#a74f60 !important;
+        }
+
+        /* FORM FIELDS */
+        .paymentFormGrid input,
+        .paymentFormGrid select,
+        .paymentFormGrid textarea,
+        .editPurchaseGrid input,
+        .editPurchaseGrid select,
+        .editPurchaseGrid textarea,
+        .deleteField input,
+        .deleteField textarea,
+        .itemEditModal input,
+        .itemEditModal select,
+        .itemEditModal textarea {
+          border-color:#dfe3e9 !important;
+          border-radius:11px !important;
+          background:#fff !important;
+          color:#273042 !important;
+          box-shadow:none !important;
+        }
+
+        .paymentFormGrid input:focus,
+        .paymentFormGrid select:focus,
+        .paymentFormGrid textarea:focus,
+        .editPurchaseGrid input:focus,
+        .editPurchaseGrid select:focus,
+        .editPurchaseGrid textarea:focus,
+        .deleteField input:focus,
+        .deleteField textarea:focus,
+        .itemEditModal input:focus,
+        .itemEditModal select:focus,
+        .itemEditModal textarea:focus {
+          border-color:#755fc0 !important;
+          box-shadow:0 0 0 3px rgba(117,95,192,.09) !important;
+        }
+
+        .editSafetyNote,
+        .addMissedItemNote {
+          border-color:#efd49e !important;
+          background:#fff7e8 !important;
+          color:#7d6338 !important;
+        }
+
+        .itemEditInlineError,
+        .deleteWarningBox {
+          border-color:#edc2c9 !important;
+          background:#fff0f2 !important;
+          color:#a74f60 !important;
+        }
+
+        /* MODAL ACTIONS */
+        .modalActions button,
+        .editModalActions button {
+          border-radius:11px !important;
+          box-shadow:none !important;
+        }
+
+        .saveEditButton {
+          background:linear-gradient(135deg,#5c4497,#427887) !important;
+          color:#fff !important;
+        }
+
+        .closeButton,
+        .closeTextButton {
+          background:#eef0f3 !important;
+          color:#4a5261 !important;
+        }
+
+        .deletePurchaseButton,
+        .confirmDeleteButton {
+          background:linear-gradient(135deg,#a74f60,#cb6677) !important;
+          color:#fff !important;
+        }
+
+        /* PRINT remains isolated in printPurchase() */
+        @keyframes ncs-purchase-enter {
+          from { opacity:0; transform:translateY(14px); }
+          to { opacity:1; transform:translateY(0); }
+        }
+
+        @media(prefers-reduced-motion:reduce){
+          .pageHeader,
+          .statsGrid,
+          .panel {
+            animation:none !important;
+          }
+        }
+
+        @media(max-width:760px){
+          .purchaseHistoryPage {
+            padding:10px !important;
+          }
+
+          .pageHeader {
+            min-height:auto !important;
+            border-radius:21px !important;
+            padding:18px 16px !important;
+          }
+
+          .pageHeader h1 {
+            font-size:30px !important;
+          }
+
+          .pageHeader::after {
+            font-size:68px !important;
+            right:7px !important;
+          }
+
+          .statsGrid article {
+            min-height:100px !important;
+            border-radius:17px !important;
+          }
+
+          .panel {
+            border-radius:18px !important;
+          }
+
+          .purchaseCard {
+            border-radius:18px !important;
+          }
+
+          .purchaseMeta {
+            margin-left:16px !important;
+            margin-right:16px !important;
+          }
+        }
+
       `}</style>
     </main>
   );

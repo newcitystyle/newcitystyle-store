@@ -17572,6 +17572,265 @@ if (!variantsError) {
         .ncsPosDesignChoice>strong{display:block;margin:8px 2px 2px;color:#03153f;font-size:11px;font-weight:1000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ncsPosDesignChoice>small{display:block;margin:0 2px 2px;color:#64748b;font-size:8px;font-weight:750;line-height:1.35}.ncsPosDesignPicker>footer{padding:10px 16px 12px;border-top:1px solid #edf1f5;color:#0a2e73;font-size:9px;font-weight:850;text-align:center}
         .ncsPosCartDesignName{display:inline-flex;align-items:center;width:max-content;max-width:100%;margin-top:3px;padding:2px 7px;border:1px solid rgba(212,175,55,.55);border-radius:999px;background:#fff8df;color:#7a5a00;font-size:8px;font-weight:950;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         @media(max-width:760px){.ncsPosDesignPickerBackdrop{padding:8px}.ncsPosDesignPicker{width:calc(100vw - 16px);border-radius:18px}.ncsPosDesignPicker>header{padding:14px}.ncsPosDesignPicker>header h2{font-size:18px}.ncsPosDesignPickerGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;padding:10px;max-height:64vh}}
+
+
+        /* NCS POS INTERNATIONAL COLORFUL FINAL — VISUAL ONLY */
+        :root{--p:#6d4dff;--pk:#e950a5;--c:#16b8d4;--g:#00a67a;--o:#f29b30;--co:#ff6b6b;--i:#5c6bc0;--ink:#172033;--muted:#6f788a}
+        .ncsPosPage{background:radial-gradient(circle at 5% 0%,rgba(109,77,255,.12),transparent 24%),radial-gradient(circle at 96% 9%,rgba(22,184,212,.12),transparent 26%),radial-gradient(circle at 50% 100%,rgba(242,155,48,.10),transparent 28%),linear-gradient(180deg,#f8f9fd,#f2f5fa 48%,#eef2f7);color:var(--ink)}
+        .ncsPosHeader{border:1px solid rgba(255,255,255,.22);background:radial-gradient(circle at 80% 0%,rgba(255,255,255,.16),transparent 30%),radial-gradient(circle at 15% 110%,rgba(233,80,165,.28),transparent 32%),linear-gradient(125deg,#24114a 0%,#5a39d6 37%,#0a75ad 70%,#00a67a 100%);box-shadow:0 22px 52px rgba(40,31,93,.24)}
+        .ncsPosHeader::after{content:"NCS";position:absolute;right:24px;top:-18px;z-index:0;color:rgba(255,255,255,.055);font-size:112px;font-weight:1000;letter-spacing:-8px;pointer-events:none}.ncsPosEyebrow{color:#ffe58c}.ncsPosHeaderActions .ncsPosSecondaryButton{border-color:rgba(255,255,255,.30);background:rgba(255,255,255,.11);backdrop-filter:blur(8px)}.ncsPosHeaderActions .ncsPosSecondaryButton:nth-child(1) b{background:var(--pk);color:#fff}.ncsPosHeaderActions .ncsPosSecondaryButton:nth-child(2) b{background:var(--c);color:#fff}.ncsPosHeaderActions .ncsPosSecondaryButton:nth-child(3) b{background:var(--g);color:#fff}.ncsPosRefreshButton{border:0;background:linear-gradient(135deg,#ffe58c,var(--o));color:#24114a;box-shadow:0 8px 20px rgba(242,155,48,.25)}
+        .ncsOfflineStatusBar{border-color:rgba(92,107,192,.16);border-radius:18px;background:rgba(255,255,255,.9);box-shadow:0 10px 28px rgba(23,32,51,.07);backdrop-filter:blur(10px)}.ncsOfflineStatusBar button{border-radius:12px;background:linear-gradient(135deg,var(--i),var(--p));box-shadow:0 7px 18px rgba(109,77,255,.20)}
+        .ncsPosQuickCard{border:1px solid rgba(255,255,255,.35);border-radius:22px;box-shadow:0 16px 38px rgba(23,32,51,.14)}.ncsPosSalesCard{background:radial-gradient(circle at 92% 5%,rgba(255,229,140,.28),transparent 34%),linear-gradient(135deg,#5a39d6 0%,#6d4dff 48%,#16b8d4 100%)}.ncsPosCreditCard{background:radial-gradient(circle at 92% 5%,rgba(255,255,255,.20),transparent 33%),linear-gradient(135deg,#e950a5 0%,#b948b8 48%,#f29b30 100%)}.ncsPosQuickIcon{border-color:rgba(255,255,255,.42);background:rgba(255,255,255,.15);color:#fff7cf}.ncsPosQuickContent>span{color:#fff2ad}.ncsPosQuickCreditBadge{border-color:rgba(255,255,255,.38);background:rgba(255,255,255,.12)}.ncsPosQuickCreditBadge b{color:#fff}
+        .ncsPosSearchPanel{border:1px solid rgba(109,77,255,.15);border-radius:20px;background:rgba(255,255,255,.96);box-shadow:0 13px 32px rgba(54,45,108,.08)}.ncsPosSearchIcon{color:var(--p)}.ncsPosSearchButton{background:linear-gradient(135deg,var(--p),var(--c));box-shadow:0 8px 20px rgba(109,77,255,.20)}.ncsPosClearSearch{background:#f0edff;color:var(--p)}.ncsPosSearchQuickItemButton{border-color:rgba(242,155,48,.30)!important;background:#fff8ea!important;color:#b36b0b!important}
+        .ncsPosAiPanel{border:1px solid rgba(109,77,255,.16)!important;background:radial-gradient(circle at 98% 0%,rgba(22,184,212,.13),transparent 28%),linear-gradient(135deg,#fff,#f7f4ff 55%,#effaff)!important;box-shadow:0 14px 32px rgba(54,45,108,.08)!important}.ncsPosAiPanel::before{background:linear-gradient(180deg,var(--p),var(--c),var(--g))!important}.ncsPosAiBadge,.ncsPosAiAddButton{background:linear-gradient(135deg,var(--p),var(--c))!important;color:#fff!important}.ncsPosAiLivePill{background:#eafaf5!important;color:#08795b!important;border-color:rgba(0,166,122,.22)!important}.ncsPosAiResultCard{border-color:rgba(22,184,212,.16)!important;background:linear-gradient(135deg,#fff,#f4fbfd)!important}
+        .ncsPosCategoryButton{border-color:rgba(92,107,192,.14)!important;background:#fff!important;color:#596276!important;box-shadow:0 6px 14px rgba(23,32,51,.035)}.ncsPosCategoryButton:nth-child(6n+1){--cat:#6d4dff}.ncsPosCategoryButton:nth-child(6n+2){--cat:#00a67a}.ncsPosCategoryButton:nth-child(6n+3){--cat:#e950a5}.ncsPosCategoryButton:nth-child(6n+4){--cat:#f29b30}.ncsPosCategoryButton:nth-child(6n+5){--cat:#16b8d4}.ncsPosCategoryButton:nth-child(6n+6){--cat:#5c6bc0}.ncsPosCategoryButton:hover,.ncsPosCategoryButton.ncsPosCategoryActive{border-color:var(--cat)!important;background:color-mix(in srgb,var(--cat) 11%,white)!important;color:var(--cat)!important;transform:translateY(-1px)}
+        .ncsPosGroupedCard,.ncsPosProductCard,.ncsPosCompactProduct,.ncsPosPopularProduct{border-color:rgba(23,32,51,.08)!important;background:#fff!important;border-radius:20px!important;box-shadow:0 10px 26px rgba(23,32,51,.065)!important}.ncsPosGroupedCard:nth-child(6n+1),.ncsPosProductCard:nth-child(6n+1){border-top:3px solid var(--p)!important}.ncsPosGroupedCard:nth-child(6n+2),.ncsPosProductCard:nth-child(6n+2){border-top:3px solid var(--g)!important}.ncsPosGroupedCard:nth-child(6n+3),.ncsPosProductCard:nth-child(6n+3){border-top:3px solid var(--pk)!important}.ncsPosGroupedCard:nth-child(6n+4),.ncsPosProductCard:nth-child(6n+4){border-top:3px solid var(--o)!important}.ncsPosGroupedCard:nth-child(6n+5),.ncsPosProductCard:nth-child(6n+5){border-top:3px solid var(--c)!important}.ncsPosGroupedCard:nth-child(6n+6),.ncsPosProductCard:nth-child(6n+6){border-top:3px solid var(--i)!important}.ncsPosGroupedToggle,.ncsPosProductBottom button{background:linear-gradient(135deg,var(--p),var(--c))!important;color:#fff!important;border-color:transparent!important}.ncsPosVariantPanel{background:linear-gradient(180deg,#fbfcff,#f4f8fc)!important}.ncsPosVariantPanel header{background:linear-gradient(135deg,#f2efff,#eefcff)!important}.ncsPosVariantList button{border-color:rgba(22,184,212,.16)!important;border-radius:14px!important}.ncsPosVariantList button:hover{border-color:var(--c)!important;background:#effbfe!important}
+        .ncsPosBillPanel{border:1px solid rgba(109,77,255,.13)!important;border-radius:24px!important;background:rgba(255,255,255,.97)!important;box-shadow:0 18px 45px rgba(35,43,73,.11)!important}.ncsPosBillHeader{border-radius:22px 22px 0 0!important;background:radial-gradient(circle at 92% 0%,rgba(255,255,255,.15),transparent 30%),linear-gradient(125deg,#24114a,#5a39d6 52%,#0a75ad)!important;color:#fff!important}.ncsPosBillHeader span,.ncsPosBillHeader small{color:rgba(255,255,255,.72)!important}.ncsPosBillHeader strong,.ncsPosBillHeader h2{color:#fff!important}.ncsPosBillHeaderActions button,.ncsPosBillQueueButton,.ncsPosBillQuickItem,.ncsPosBillAddNextItem{border-color:rgba(255,255,255,.22)!important;background:rgba(255,255,255,.11)!important;color:#fff!important}
+        .ncsPosCartTableHeader{background:linear-gradient(90deg,#f2efff,#eefbff)!important;color:#4e5770!important}.ncsPosCartItemTableRow,.ncsPosCartItem{border-color:rgba(23,32,51,.075)!important;background:#fff!important}.ncsPosCartItemTableRow:nth-child(6n+1),.ncsPosCartItem:nth-child(6n+1){box-shadow:inset 4px 0 var(--p)}.ncsPosCartItemTableRow:nth-child(6n+2),.ncsPosCartItem:nth-child(6n+2){box-shadow:inset 4px 0 var(--g)}.ncsPosCartItemTableRow:nth-child(6n+3),.ncsPosCartItem:nth-child(6n+3){box-shadow:inset 4px 0 var(--pk)}.ncsPosCartItemTableRow:nth-child(6n+4),.ncsPosCartItem:nth-child(6n+4){box-shadow:inset 4px 0 var(--o)}.ncsPosCartItemTableRow:nth-child(6n+5),.ncsPosCartItem:nth-child(6n+5){box-shadow:inset 4px 0 var(--c)}.ncsPosCartItemTableRow:nth-child(6n+6),.ncsPosCartItem:nth-child(6n+6){box-shadow:inset 4px 0 var(--i)}.ncsPosCartBrandName{color:var(--p)!important}.ncsPosItemDiscountField input,.ncsPosDiscountField input{border-color:rgba(233,80,165,.18)!important;background:#fff7fb!important}.ncsPosItemLineTotal{color:var(--g)!important}
+        .ncsPosCustomerCard,.ncsPosCustomerCardCompact,.ncsPosCustomerSection{border-color:rgba(233,80,165,.16)!important;background:linear-gradient(135deg,#fff,#fff5fa)!important;border-radius:20px!important}.ncsPosCustomerTitle,.ncsPosCustomerMiniLabel{color:var(--pk)!important}.ncsPosPaymentSection{border-color:rgba(22,184,212,.16)!important;background:linear-gradient(135deg,#fff,#f2fbfd)!important;border-radius:20px!important}.ncsPosPaymentLabel{color:var(--c)!important}.ncsPosPaymentButton{border:1px solid rgba(23,32,51,.09)!important;background:#fff!important;color:#596276!important;border-radius:14px!important}.ncsPosPaymentButton:nth-child(1){--pay:#00a67a}.ncsPosPaymentButton:nth-child(2){--pay:#6d4dff}.ncsPosPaymentButton:nth-child(3){--pay:#16b8d4}.ncsPosPaymentButton:nth-child(4){--pay:#f29b30}.ncsPosPaymentButton:hover,.ncsPosPaymentButton.ncsPosPaymentActive{border-color:var(--pay)!important;background:color-mix(in srgb,var(--pay) 12%,white)!important;color:var(--pay)!important;box-shadow:0 7px 17px color-mix(in srgb,var(--pay) 18%,transparent)!important}.ncsPosCreditPanel,.ncsPosCreditSummary{border-color:rgba(242,155,48,.18)!important;background:#fff9ee!important}
+        .ncsPosSummary{border-radius:20px!important;border-color:rgba(109,77,255,.14)!important;background:linear-gradient(145deg,#fbfaff,#f2fbfd)!important}.ncsPosDiscountLine strong{color:var(--pk)!important}.ncsPosTotalLine{margin-top:8px!important;padding:13px 12px!important;border:0!important;border-radius:16px!important;background:linear-gradient(135deg,#5a39d6,#6d4dff 48%,#16b8d4)!important;color:#fff!important}.ncsPosTotalLine span,.ncsPosTotalLine strong{color:#fff!important}.ncsPosCompleteButton,.ncsPosCompleteButtonInline{border:0!important;border-radius:17px!important;background:linear-gradient(135deg,#00a67a,#16b8d4)!important;color:#fff!important;box-shadow:0 12px 26px rgba(0,166,122,.22)!important}.ncsPosCompleteButton:hover,.ncsPosCompleteButtonInline:hover{transform:translateY(-2px);filter:brightness(1.04)}
+        .ncsPosNotice{border-radius:16px!important;box-shadow:0 14px 32px rgba(23,32,51,.13)!important}.ncsPosNotice-success{background:linear-gradient(135deg,#eafaf5,#f3fffa)!important;border-color:rgba(0,166,122,.22)!important;color:#08795b!important}.ncsPosNotice-info{background:linear-gradient(135deg,#f1efff,#effbff)!important;border-color:rgba(109,77,255,.20)!important;color:#5037bd!important}.ncsPosNotice-error{background:linear-gradient(135deg,#fff1f1,#fff8f8)!important;border-color:rgba(255,107,107,.25)!important;color:#b63c3c!important}
+        .ncsPosModalOverlay,.ncsPosSuccessOverlay,.ncsPosDesignPickerBackdrop{backdrop-filter:blur(10px) saturate(1.08)}.ncsPosHeldModal,.ncsOwnerCostModal,.ncsPosQuickItemModal,.ncsPosDesignPicker{border-color:rgba(109,77,255,.22)!important;border-radius:26px!important;box-shadow:0 30px 90px rgba(35,43,73,.25)!important}.ncsPosHeldModal>header,.ncsOwnerCostModal>header,.ncsPosQuickItemModal>header,.ncsPosDesignPicker>header{background:linear-gradient(125deg,#24114a,#5a39d6 52%,#0a75ad)!important;color:#fff!important}.ncsPosHeldCard{border-color:rgba(109,77,255,.13)!important;border-radius:18px!important;box-shadow:0 9px 22px rgba(35,43,73,.06)!important}.ncsPosHeldCardTop b{color:var(--g)!important}.ncsPosHeldActions button:last-child{background:linear-gradient(135deg,var(--p),var(--c))!important;color:#fff!important}
+        .ncsPosSuccessOverlay{background:rgba(14,20,44,.55)!important}.ncsPosSuccessModal{border:1px solid rgba(109,77,255,.20)!important;border-radius:28px!important;background:radial-gradient(circle at 50% 0%,rgba(109,77,255,.11),transparent 30%),#fff!important;box-shadow:0 34px 100px rgba(23,32,51,.30)!important}.ncsPosSuccessIcon{background:linear-gradient(135deg,var(--g),var(--c))!important;color:#fff!important;box-shadow:0 10px 24px rgba(0,166,122,.22)!important}.ncsPosSuccessEyebrow{color:var(--p)!important}.ncsPosSuccessAmount{border:0!important;background:linear-gradient(135deg,#5a39d6,#6d4dff 46%,#16b8d4)!important;color:#fff!important}.ncsPosSuccessAmount small,.ncsPosSuccessAmount strong,.ncsPosSuccessAmount span{color:#fff!important}.ncsPosSuccessSummary p:nth-child(7n+1){background:#f4f1ff!important;border-color:rgba(109,77,255,.15)!important}.ncsPosSuccessSummary p:nth-child(7n+2){background:#eefaf6!important;border-color:rgba(0,166,122,.15)!important}.ncsPosSuccessSummary p:nth-child(7n+3){background:#fff2f8!important;border-color:rgba(233,80,165,.15)!important}.ncsPosSuccessSummary p:nth-child(7n+4){background:#fff8eb!important;border-color:rgba(242,155,48,.15)!important}.ncsPosSuccessSummary p:nth-child(7n+5){background:#effbfe!important;border-color:rgba(22,184,212,.15)!important}.ncsPosSuccessSummary p:nth-child(7n+6){background:#f2f3ff!important;border-color:rgba(92,107,192,.15)!important}.ncsPosSuccessSummary p:nth-child(7n+7){background:#f1fbf7!important;border-color:rgba(0,166,122,.15)!important}.ncsPosSuccessActions button{border:0!important;border-radius:14px!important;color:#fff!important;box-shadow:0 7px 18px rgba(23,32,51,.10)!important}.ncsPosSuccessWhatsApp{background:linear-gradient(135deg,#00a67a,#22c55e)!important}.ncsPosSuccessPdf{background:linear-gradient(135deg,#6d4dff,#8b5cf6)!important}.ncsPosSuccessTextWhatsApp{background:linear-gradient(135deg,#16b8d4,#00a67a)!important}.ncsPosSuccessPrint{background:linear-gradient(135deg,#f29b30,#d97706)!important}.ncsPosSuccessPrintA4{background:linear-gradient(135deg,#5c6bc0,#6d4dff)!important}.ncsPosSuccessStudio{background:linear-gradient(135deg,#e950a5,#8b5cf6)!important}.ncsPosSuccessNewBill{background:linear-gradient(135deg,#03153f,#0a2e73)!important}
+        .ncsPosDesignPickerGrid{background:linear-gradient(180deg,#fbfcff,#f4f8fc)!important}.ncsPosDesignChoice:nth-child(6n+1){border-top:3px solid var(--p)!important}.ncsPosDesignChoice:nth-child(6n+2){border-top:3px solid var(--g)!important}.ncsPosDesignChoice:nth-child(6n+3){border-top:3px solid var(--pk)!important}.ncsPosDesignChoice:nth-child(6n+4){border-top:3px solid var(--o)!important}.ncsPosDesignChoice:nth-child(6n+5){border-top:3px solid var(--c)!important}.ncsPosDesignChoice:nth-child(6n+6){border-top:3px solid var(--i)!important}
+        @media(max-width:760px){.ncsPosPage{padding:10px 9px 100px}.ncsPosHeader{padding:16px 14px;border-radius:20px;background:linear-gradient(145deg,#24114a,#5a39d6 52%,#0a75ad 82%,#00a67a)!important}.ncsPosHeader::after{font-size:68px;top:-8px}.ncsPosQuickStats{grid-template-columns:1fr;gap:9px}.ncsPosQuickCard{min-height:96px;border-radius:18px;padding:13px}.ncsPosSearchPanel,.ncsPosAiPanel,.ncsPosBillPanel{border-radius:18px!important}.ncsPosPaymentGrid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.ncsPosSuccessModal{border-radius:22px!important}}
+
+
+        /* ============================================================
+           NCS POS FINAL V2 — STRONGER COLOR + FLOATING AI BOX FIX
+           ============================================================ */
+
+        /* FIX: when AI is collapsed, remove the empty translucent panel. */
+        .ncsPosAiPanel.collapsed {
+          width: 210px !important;
+          min-height: 0 !important;
+          max-height: none !important;
+          padding: 0 !important;
+          border: 0 !important;
+          border-radius: 0 !important;
+          background: transparent !important;
+          box-shadow: none !important;
+          backdrop-filter: none !important;
+          overflow: visible !important;
+        }
+
+        .ncsPosAiPanel.collapsed::before,
+        .ncsPosAiPanel.collapsed::after {
+          display: none !important;
+        }
+
+        .ncsPosAiPanel.collapsed .ncsPosAiMascotRunner {
+          background: transparent !important;
+          border: 0 !important;
+          box-shadow: none !important;
+        }
+
+        .ncsPosPremiumAiButton {
+          border: 1px solid rgba(255, 213, 74, 0.85) !important;
+          background:
+            radial-gradient(circle at 10% 0%, rgba(255,255,255,.17), transparent 35%),
+            linear-gradient(135deg, #0b245f, #5a39d6 58%, #0a75ad) !important;
+          box-shadow: 0 13px 30px rgba(35,43,73,.25) !important;
+        }
+
+        /* Stronger POS canvas */
+        .ncsPosWorkspace {
+          gap: 16px !important;
+        }
+
+        .ncsPosCatalogue {
+          padding: 0 2px 16px !important;
+          border-radius: 24px !important;
+          background:
+            radial-gradient(circle at 5% 0%, rgba(109,77,255,.09), transparent 22%),
+            radial-gradient(circle at 98% 16%, rgba(22,184,212,.08), transparent 25%),
+            linear-gradient(180deg, rgba(255,255,255,.80), rgba(247,249,255,.96)) !important;
+        }
+
+        .ncsPosCatalogueTop h2 {
+          color: #24114a !important;
+          font-size: 23px !important;
+          letter-spacing: -.45px !important;
+        }
+
+        .ncsPosStatusBadge {
+          border-color: rgba(0,166,122,.26) !important;
+          background: linear-gradient(135deg,#eafaf5,#effff9) !important;
+          color: #08795b !important;
+          box-shadow: 0 6px 15px rgba(0,166,122,.09) !important;
+        }
+
+        .ncsPosFinderToolbar {
+          border: 1px solid rgba(109,77,255,.15) !important;
+          border-radius: 20px !important;
+          background:
+            linear-gradient(135deg,#f6f2ff 0%,#fff 48%,#effbff 100%) !important;
+          box-shadow: 0 10px 24px rgba(54,45,108,.07) !important;
+        }
+
+        .ncsPosFinderToolbar button {
+          border-radius: 14px !important;
+          border-color: rgba(109,77,255,.14) !important;
+          background: #fff !important;
+          color: #556075 !important;
+        }
+
+        .ncsPosFinderToolbar button:nth-child(1) { --finder:#e950a5; }
+        .ncsPosFinderToolbar button:nth-child(2) { --finder:#6d4dff; }
+        .ncsPosFinderToolbar button:nth-child(3) { --finder:#16b8d4; }
+
+        .ncsPosFinderToolbar button:hover,
+        .ncsPosFinderToolbar button.active {
+          border-color: var(--finder) !important;
+          background: var(--finder) !important;
+          color: #fff !important;
+          box-shadow: 0 8px 18px color-mix(in srgb,var(--finder) 22%,transparent) !important;
+        }
+
+        /* Brand cards — visible international colorful treatment */
+        .ncsPosBrandCompactGrid,
+        .ncsPosBrandGrid {
+          gap: 11px !important;
+        }
+
+        .ncsPosBrandCompactCard,
+        .ncsPosBrandSummary {
+          border-radius: 18px !important;
+          border: 1px solid rgba(23,32,51,.08) !important;
+          background: #fff !important;
+          box-shadow: 0 9px 22px rgba(23,32,51,.06) !important;
+          overflow: hidden !important;
+        }
+
+        .ncsPosBrandCompactCard:nth-child(6n+1),
+        .ncsPosBrandSummary:nth-child(6n+1) {
+          background: linear-gradient(135deg,#f3efff,#fff) !important;
+          border-color: rgba(109,77,255,.24) !important;
+        }
+        .ncsPosBrandCompactCard:nth-child(6n+2),
+        .ncsPosBrandSummary:nth-child(6n+2) {
+          background: linear-gradient(135deg,#ebfaf5,#fff) !important;
+          border-color: rgba(0,166,122,.22) !important;
+        }
+        .ncsPosBrandCompactCard:nth-child(6n+3),
+        .ncsPosBrandSummary:nth-child(6n+3) {
+          background: linear-gradient(135deg,#fff0f7,#fff) !important;
+          border-color: rgba(233,80,165,.22) !important;
+        }
+        .ncsPosBrandCompactCard:nth-child(6n+4),
+        .ncsPosBrandSummary:nth-child(6n+4) {
+          background: linear-gradient(135deg,#fff6e8,#fff) !important;
+          border-color: rgba(242,155,48,.24) !important;
+        }
+        .ncsPosBrandCompactCard:nth-child(6n+5),
+        .ncsPosBrandSummary:nth-child(6n+5) {
+          background: linear-gradient(135deg,#eafaff,#fff) !important;
+          border-color: rgba(22,184,212,.23) !important;
+        }
+        .ncsPosBrandCompactCard:nth-child(6n+6),
+        .ncsPosBrandSummary:nth-child(6n+6) {
+          background: linear-gradient(135deg,#f0f2ff,#fff) !important;
+          border-color: rgba(92,107,192,.23) !important;
+        }
+
+        .ncsPosBrandCompactMark,
+        .ncsPosBrandMark {
+          color: #fff !important;
+          border: 0 !important;
+          box-shadow: 0 7px 15px rgba(23,32,51,.12) !important;
+        }
+
+        .ncsPosBrandCompactCard:nth-child(6n+1) .ncsPosBrandCompactMark,
+        .ncsPosBrandSummary:nth-child(6n+1) .ncsPosBrandMark { background:linear-gradient(135deg,#6d4dff,#8b5cf6)!important; }
+        .ncsPosBrandCompactCard:nth-child(6n+2) .ncsPosBrandCompactMark,
+        .ncsPosBrandSummary:nth-child(6n+2) .ncsPosBrandMark { background:linear-gradient(135deg,#00a67a,#25bf91)!important; }
+        .ncsPosBrandCompactCard:nth-child(6n+3) .ncsPosBrandCompactMark,
+        .ncsPosBrandSummary:nth-child(6n+3) .ncsPosBrandMark { background:linear-gradient(135deg,#e950a5,#f47fc2)!important; }
+        .ncsPosBrandCompactCard:nth-child(6n+4) .ncsPosBrandCompactMark,
+        .ncsPosBrandSummary:nth-child(6n+4) .ncsPosBrandMark { background:linear-gradient(135deg,#f29b30,#f6b85d)!important; }
+        .ncsPosBrandCompactCard:nth-child(6n+5) .ncsPosBrandCompactMark,
+        .ncsPosBrandSummary:nth-child(6n+5) .ncsPosBrandMark { background:linear-gradient(135deg,#16b8d4,#36c7df)!important; }
+        .ncsPosBrandCompactCard:nth-child(6n+6) .ncsPosBrandCompactMark,
+        .ncsPosBrandSummary:nth-child(6n+6) .ncsPosBrandMark { background:linear-gradient(135deg,#5c6bc0,#7987dc)!important; }
+
+        /* Category pills become clearly colorful */
+        .ncsPosCategoryButton {
+          font-weight: 900 !important;
+          border-width: 1.5px !important;
+        }
+
+        .ncsPosCategoryButton.ncsPosCategoryActive {
+          background: var(--cat) !important;
+          border-color: var(--cat) !important;
+          color: #fff !important;
+          box-shadow: 0 8px 18px color-mix(in srgb,var(--cat) 24%,transparent) !important;
+        }
+
+        /* Current bill side – clearer hierarchy */
+        .ncsPosBillPanel {
+          background:
+            radial-gradient(circle at 95% 0%, rgba(22,184,212,.08), transparent 26%),
+            #fff !important;
+        }
+
+        .ncsPosCustomerCard,
+        .ncsPosCustomerCardCompact,
+        .ncsPosCustomerSection {
+          background:
+            radial-gradient(circle at 0% 0%,rgba(233,80,165,.11),transparent 30%),
+            linear-gradient(135deg,#fff,#fff6fa) !important;
+        }
+
+        .ncsPosCartTableHeader {
+          border-top: 1px solid rgba(109,77,255,.08) !important;
+          border-bottom: 1px solid rgba(22,184,212,.10) !important;
+          background:
+            linear-gradient(90deg,#eeeaff 0%,#f8f7ff 35%,#eafaff 100%) !important;
+        }
+
+        .ncsPosEmptyCart {
+          border: 1px dashed rgba(109,77,255,.18) !important;
+          border-radius: 20px !important;
+          background:
+            radial-gradient(circle at 50% 10%,rgba(109,77,255,.08),transparent 30%),
+            linear-gradient(180deg,#fff,#f6f9ff) !important;
+        }
+
+        .ncsPosEmptyCart > div,
+        .ncsPosEmptyCart span {
+          background: linear-gradient(135deg,#f0edff,#eafaff) !important;
+          color: #6d4dff !important;
+        }
+
+        /* Totals footer more colorful even before bill items exist */
+        .ncsPosSummaryLine:nth-child(7n+1) strong { color:#6d4dff !important; }
+        .ncsPosSummaryLine:nth-child(7n+2) strong { color:#e950a5 !important; }
+        .ncsPosSummaryLine:nth-child(7n+3) strong { color:#00a67a !important; }
+        .ncsPosSummaryLine:nth-child(7n+4) strong { color:#f29b30 !important; }
+        .ncsPosSummaryLine:nth-child(7n+5) strong { color:#16b8d4 !important; }
+        .ncsPosSummaryLine:nth-child(7n+6) strong { color:#5c6bc0 !important; }
+
+        /* Make payment section obvious once scrolled into view */
+        .ncsPosPaymentSection {
+          box-shadow: inset 4px 0 #16b8d4, 0 8px 20px rgba(22,184,212,.06) !important;
+        }
+
+        /* Keep festival cards truly colorful. */
+        .ncsPosFestivalOffer {
+          background-color: #6d4dff !important;
+          color: #fff !important;
+          opacity: 1 !important;
+        }
+        .ncsPosFestivalOffer * {
+          color: inherit;
+        }
+
+        @media(max-width:760px){
+          .ncsPosBrandCompactGrid,
+          .ncsPosBrandGrid { gap:8px !important; }
+          .ncsPosCatalogue { border-radius:18px !important; }
+        }
+
       `}</style>
     </main>
   );

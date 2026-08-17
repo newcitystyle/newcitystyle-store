@@ -213,8 +213,8 @@ type SalesPoint = {
   amount: number;
 };
 
-const ROYAL_BLUE = "#0A2E73";
-const DEEP_BLUE = "#03153F";
+const ROYAL_BLUE = "#6D4DFF";
+const DEEP_BLUE = "#24114A";
 const GOLD = "#D4AF37";
 const IVORY = "#F8F4EC";
 
@@ -2779,13 +2779,13 @@ export default function AdminDashboardPage() {
         }
 
         .heroCustomerBag.bagBlue {
-          background: linear-gradient(145deg, #174f9e, #0a2e73, #061d4a);
+          background: linear-gradient(145deg, #7c4dff, #5a39d6, #38206f);
           color: #f3d66f;
         }
 
         .heroCustomerBag.bagGold {
           background: linear-gradient(145deg, #f6df86, #d4af37, #b8890b);
-          color: #061d4a;
+          color: #38206f;
         }
 
         .hero span,
@@ -3032,7 +3032,7 @@ export default function AdminDashboardPage() {
         }
 
         .todayProfitMetric.heroMetric {
-          background: linear-gradient(135deg, #03153f, #0a2e73);
+          background: linear-gradient(135deg, #24114a, #5a39d6);
           border-color: rgba(212, 175, 55, 0.48);
         }
 
@@ -3100,7 +3100,7 @@ export default function AdminDashboardPage() {
           border-radius: 22px;
           background:
             radial-gradient(circle at 92% 0%, rgba(212, 175, 55, 0.22), transparent 28%),
-            linear-gradient(135deg, #03153f, #0a2e73 68%, #174da4);
+            linear-gradient(135deg, #24114a, #5a39d6 68%, #174da4);
           box-shadow: 0 18px 42px rgba(3, 21, 63, 0.18);
           color: #fff;
         }
@@ -3290,15 +3290,15 @@ export default function AdminDashboardPage() {
         }
 
         .googleConnectButton {
-          border: 1px solid #0a2e73;
-          background: #0a2e73;
+          border: 1px solid #5a39d6;
+          background: #5a39d6;
           color: #ffffff !important;
         }
 
         .googleRefreshButton {
           border: 1px solid #d4af37;
           background: #fffdf5;
-          color: #0a2e73;
+          color: #5a39d6;
         }
 
         .googleRefreshButton:disabled {
@@ -4128,8 +4128,8 @@ export default function AdminDashboardPage() {
             ),
             linear-gradient(
               135deg,
-              #03153f,
-              #0a2e73
+              #24114a,
+              #5a39d6
             );
           color: #ffffff;
         }
@@ -4209,7 +4209,7 @@ export default function AdminDashboardPage() {
           z-index: 2;
           margin-top: 7px;
           overflow: hidden;
-          color: #0a2e73;
+          color: #5a39d6;
           font-size: 18px;
           font-weight: 950;
           text-overflow: ellipsis;
@@ -4307,8 +4307,8 @@ export default function AdminDashboardPage() {
             ),
             linear-gradient(
               135deg,
-              #03153f,
-              #0a2e73
+              #24114a,
+              #5a39d6
             );
           box-shadow: 0 18px 38px rgba(3, 21, 63, 0.20);
         }
@@ -4361,8 +4361,8 @@ export default function AdminDashboardPage() {
             ),
             linear-gradient(
               135deg,
-              #03153f,
-              #0a2e73 68%,
+              #24114a,
+              #5a39d6 68%,
               #174da4
             );
           box-shadow:
@@ -4408,7 +4408,7 @@ export default function AdminDashboardPage() {
         }
 
         .googleBusinessPanel {
-          color: #0a2e73;
+          color: #5a39d6;
           background:
             radial-gradient(
               circle at 100% 0%,
@@ -4423,7 +4423,7 @@ export default function AdminDashboardPage() {
         }
 
         .googleBusinessPanel .sectionHeader h2 {
-          color: #0a2e73 !important;
+          color: #5a39d6 !important;
         }
 
         .googleBusinessPanel .googleBusinessSubtitle {
@@ -4441,7 +4441,7 @@ export default function AdminDashboardPage() {
 
         .sectionHeader h2 {
           margin-top: 4px;
-          color: #0a2e73;
+          color: #5a39d6;
           font-size: 20px;
           letter-spacing: -0.35px;
         }
@@ -4557,7 +4557,7 @@ export default function AdminDashboardPage() {
         }
 
         .trendColumn:hover .trendValue {
-          color: #0a2e73;
+          color: #5a39d6;
           transform: scale(1.04);
         }
 
@@ -4579,7 +4579,7 @@ export default function AdminDashboardPage() {
               180deg,
               #f5dc82 0%,
               #d4af37 36%,
-              #0a2e73 100%
+              #5a39d6 100%
             );
           box-shadow:
             0 8px 18px rgba(10, 46, 115, 0.16),
@@ -4747,7 +4747,7 @@ export default function AdminDashboardPage() {
 
         .executiveSectionLabel h2 {
           margin: 3px 0 0;
-          color: #0a2e73;
+          color: #5a39d6;
           font-size: 18px;
           letter-spacing: -0.35px;
         }
@@ -4952,7 +4952,7 @@ function GoogleBusinessMetric({
     neutral: {
       background: "#F8FAFC",
       border: "#E5E7EB",
-      color: "#0A2E73",
+      color: "#5A39D6",
     },
   } as const;
 
@@ -5040,19 +5040,27 @@ function BusinessKpi({
         }
 
         .businessKpi.blue {
-          background: linear-gradient(135deg, #03153f, #0a2e73);
+          background:
+            radial-gradient(circle at 88% 5%, rgba(255,255,255,.22), transparent 28%),
+            linear-gradient(135deg, #6D4DFF 0%, #8B5CF6 52%, #16B8D4 100%);
         }
 
         .businessKpi.gold {
-          background: linear-gradient(135deg, #0a2e73, #765b12);
+          background:
+            radial-gradient(circle at 88% 5%, rgba(255,255,255,.22), transparent 28%),
+            linear-gradient(135deg, #F29B30 0%, #F6B85D 48%, #E950A5 100%);
         }
 
         .businessKpi.green {
-          background: linear-gradient(135deg, #063f42, #0a2e73);
+          background:
+            radial-gradient(circle at 88% 5%, rgba(255,255,255,.22), transparent 28%),
+            linear-gradient(135deg, #00A67A 0%, #24BE91 52%, #16B8D4 100%);
         }
 
         .businessKpi.red {
-          background: linear-gradient(135deg, #4c2131, #0a2e73);
+          background:
+            radial-gradient(circle at 88% 5%, rgba(255,255,255,.22), transparent 28%),
+            linear-gradient(135deg, #E950A5 0%, #FF6B6B 52%, #F29B30 100%);
         }
 
         .businessKpiMotion {
@@ -5136,11 +5144,17 @@ function BusinessKpi({
         }
 
         span {
-          color: ${GOLD};
-          font-size: 8px;
+          width: fit-content;
+          padding: 4px 8px;
+          border: 1px solid rgba(255,255,255,.35);
+          border-radius: 999px;
+          background: rgba(255,255,255,.16);
+          color: #ffffff;
+          font-size: 9px;
           font-weight: 950;
-          letter-spacing: 0.7px;
+          letter-spacing: 0.8px;
           text-transform: uppercase;
+          text-shadow: 0 1px 4px rgba(0,0,0,.14);
         }
 
         strong {
@@ -5222,8 +5236,8 @@ function MiniKpi({
           border-radius: 14px;
           background: linear-gradient(
             135deg,
-            ${ROYAL_BLUE},
-            ${DEEP_BLUE}
+            #FFFFFF,
+            #F6F3FF
           );
           color: #ffffff;
         }
@@ -5301,7 +5315,7 @@ function MiniKpi({
           z-index: 1;
           right: 12px;
           top: 12px;
-          color: rgba(212, 175, 55, 0.18);
+          color: rgba(101, 84, 146, 0.16);
           font-size: 28px;
           font-weight: 950;
           animation: miniSymbolFloat 3.6s ease-in-out infinite;
@@ -5314,15 +5328,17 @@ function MiniKpi({
         }
 
         span {
-          color: ${GOLD};
+          color: #665A89;
           font-size: 7px;
           font-weight: 950;
           text-transform: uppercase;
+          letter-spacing: 0.35px;
         }
 
         strong {
           margin-top: 6px;
           overflow: hidden;
+          color: #273042;
           font-size: 15px;
           font-weight: 950;
           text-overflow: ellipsis;
@@ -5331,7 +5347,7 @@ function MiniKpi({
 
         small {
           margin-top: 5px;
-          color: rgba(255, 255, 255, 0.62);
+          color: #7A8190;
           font-size: 6.5px;
         }
       `}</style>
@@ -5706,6 +5722,1618 @@ function EmptyState({
           color: #667085;
           font-size: 9px;
         }
+
+        /* ============================================================
+           NCS ADMIN DASHBOARD — INTERNATIONAL COLORFUL FINAL PASS
+           VISUAL-ONLY OVERRIDES. DATA / ROUTES / LOGIC UNCHANGED.
+           ============================================================ */
+        .dashboardPage{background:radial-gradient(circle at 0% 0%,rgba(109,77,255,.12),transparent 25%),radial-gradient(circle at 100% 12%,rgba(22,184,212,.11),transparent 25%),radial-gradient(circle at 50% 100%,rgba(242,155,48,.09),transparent 28%),linear-gradient(180deg,#f8f9fd 0%,#f2f5fa 46%,#eef2f7 100%)!important;color:#172033!important}
+        .hero{border:1px solid rgba(255,255,255,.20)!important;border-radius:28px!important;background:radial-gradient(circle at 90% -10%,rgba(255,255,255,.18),transparent 32%),radial-gradient(circle at 15% 120%,rgba(233,80,165,.26),transparent 33%),linear-gradient(125deg,#24114a 0%,#5a39d6 36%,#0a75ad 70%,#00a67a 100%)!important;box-shadow:0 26px 62px rgba(40,31,93,.24)!important}
+        .hero::after{content:"NCS";position:absolute;right:28px;top:-25px;z-index:0;color:rgba(255,255,255,.055);font-size:130px;line-height:1;font-weight:1000;letter-spacing:-9px;pointer-events:none}.hero>div:not(.heroMotion){position:relative;z-index:2}.hero>div>span{color:#ffe58c!important}.hero h1{font-size:34px!important;letter-spacing:-1.3px!important}.hero p{color:rgba(255,255,255,.76)!important;max-width:720px}.hero small{color:rgba(255,255,255,.58)!important}
+        .refreshButton{border:1px solid rgba(255,255,255,.26)!important;background:rgba(255,255,255,.12)!important;color:#fff!important;backdrop-filter:blur(10px)}:global(.newBillButton){border:0!important;background:linear-gradient(135deg,#ffe58c,#f29b30)!important;color:#24114a!important;box-shadow:0 10px 22px rgba(242,155,48,.28)!important}.heroActions>button:last-child{border-color:rgba(255,107,107,.42)!important;background:rgba(255,107,107,.14)!important;color:#fff!important}
+        .executivePulseStrip{border:1px solid rgba(109,77,255,.13)!important;border-radius:24px!important;background:rgba(255,255,255,.94)!important;box-shadow:0 20px 48px rgba(35,43,73,.12)!important}.executivePulseLead,.executivePulseMetric{border-radius:18px!important;border:1px solid rgba(23,32,51,.07)!important;box-shadow:0 8px 18px rgba(23,32,51,.05)}.executivePulseLead{background:radial-gradient(circle at 90% 0%,rgba(255,255,255,.16),transparent 30%),linear-gradient(135deg,#5a39d6,#6d4dff 52%,#8b5cf6)!important;color:#fff!important}.executivePulseLead span,.executivePulseLead strong,.executivePulseLead small{color:#fff!important}.executivePulseMetric{background:#fff!important}
+        .executivePulseMetric:nth-child(2){background:linear-gradient(135deg,#f1efff,#fff)!important;border-color:rgba(109,77,255,.18)!important}.executivePulseMetric.profit{background:linear-gradient(135deg,#eafaf5,#fff)!important;border-color:rgba(0,166,122,.18)!important}.executivePulseMetric.money{background:linear-gradient(135deg,#eafaff,#fff)!important;border-color:rgba(22,184,212,.18)!important}.executivePulseMetric.attention{background:linear-gradient(135deg,#fff7ea,#fff)!important;border-color:rgba(242,155,48,.18)!important}.executivePulseMetric.attention.active{background:linear-gradient(135deg,#fff0f0,#fff7f7)!important;border-color:rgba(255,107,107,.25)!important}
+        .executivePulseMetric:nth-child(2) span,.executivePulseMetric:nth-child(2) strong{color:#6d4dff!important}.executivePulseMetric.profit span,.executivePulseMetric.profit strong{color:#00a67a!important}.executivePulseMetric.money span,.executivePulseMetric.money strong{color:#16b8d4!important}.executivePulseMetric.attention span,.executivePulseMetric.attention strong{color:#f29b30!important}.executivePulseMetric.attention.active span,.executivePulseMetric.attention.active strong{color:#e55050!important}
+        .primaryKpis{gap:14px!important}.businessKpi{min-height:130px!important;border-radius:22px!important;border:1px solid rgba(255,255,255,.36)!important;box-shadow:0 17px 38px rgba(23,32,51,.14)!important}.businessKpi.blue{background:radial-gradient(circle at 95% 0%,rgba(255,255,255,.18),transparent 34%),linear-gradient(135deg,#5a39d6,#6d4dff 52%,#16b8d4)!important}.businessKpi.gold{background:radial-gradient(circle at 95% 0%,rgba(255,255,255,.18),transparent 34%),linear-gradient(135deg,#f29b30,#d97706 55%,#e950a5)!important}.businessKpi.green{background:radial-gradient(circle at 95% 0%,rgba(255,255,255,.18),transparent 34%),linear-gradient(135deg,#00a67a,#18b88c 52%,#16b8d4)!important}.businessKpi.red{background:radial-gradient(circle at 95% 0%,rgba(255,255,255,.18),transparent 34%),linear-gradient(135deg,#e950a5,#ff6b6b 55%,#f29b30)!important}.businessKpiIcon{border-color:rgba(255,255,255,.34)!important;background:rgba(255,255,255,.15)!important}
+        .todayOwnerProfitPanel{border:1px solid rgba(109,77,255,.15)!important;border-radius:24px!important;background:radial-gradient(circle at 90% -10%,rgba(109,77,255,.13),transparent 28%),radial-gradient(circle at 5% 110%,rgba(22,184,212,.08),transparent 30%),linear-gradient(135deg,#fff,#faf9ff 58%,#f3fbfd)!important;box-shadow:0 16px 38px rgba(54,45,108,.09)!important}.todayProfitHeader span{color:#6d4dff!important}.todayProfitOpenButton{border:0!important;background:linear-gradient(135deg,#6d4dff,#16b8d4)!important;color:#fff!important;box-shadow:0 8px 19px rgba(109,77,255,.20)!important}
+        .todayProfitMetric{border-radius:18px!important;background:#fff!important;box-shadow:0 8px 20px rgba(23,32,51,.05)}.todayProfitMetric:nth-child(6n+1){background:linear-gradient(135deg,#f1efff,#fff)!important;border-color:rgba(109,77,255,.18)!important}.todayProfitMetric:nth-child(6n+2){background:linear-gradient(135deg,#eafaf5,#fff)!important;border-color:rgba(0,166,122,.18)!important}.todayProfitMetric:nth-child(6n+3){background:linear-gradient(135deg,#eafaff,#fff)!important;border-color:rgba(22,184,212,.18)!important}.todayProfitMetric:nth-child(6n+4){background:linear-gradient(135deg,#fff7ea,#fff)!important;border-color:rgba(242,155,48,.18)!important}.todayProfitMetric:nth-child(6n+5){background:linear-gradient(135deg,#fff0f7,#fff)!important;border-color:rgba(233,80,165,.18)!important}.todayProfitMetric:nth-child(6n+6){background:linear-gradient(135deg,#f1f2ff,#fff)!important;border-color:rgba(92,107,192,.18)!important}
+        .profitIntelligencePanel{border:1px solid rgba(255,255,255,.18)!important;border-radius:26px!important;background:radial-gradient(circle at 92% 0%,rgba(255,255,255,.15),transparent 29%),radial-gradient(circle at 0% 110%,rgba(233,80,165,.22),transparent 32%),linear-gradient(135deg,#24114a,#5a39d6 45%,#0a75ad 76%,#00a67a)!important;box-shadow:0 22px 52px rgba(40,31,93,.22)!important}.profitMetricCard{border-radius:18px!important;border-color:rgba(255,255,255,.18)!important;background:rgba(255,255,255,.10)!important;backdrop-filter:blur(10px)}.profitMetricCard.highlight{background:rgba(0,166,122,.17)!important;border-color:rgba(82,235,184,.26)!important}.profitMetricCard.warning{background:rgba(242,155,48,.17)!important;border-color:rgba(255,211,120,.28)!important}.profitOpenButton{border:1px solid rgba(255,255,255,.24)!important;background:rgba(255,255,255,.12)!important;color:#fff!important}
+        :global(.miniKpi){border-radius:18px!important;border:1px solid rgba(23,32,51,.08)!important;background:#fff!important;box-shadow:0 9px 22px rgba(23,32,51,.055)!important}.secondaryKpis :global(.miniKpi:nth-child(6n+1)),.catalogueKpis :global(.miniKpi:nth-child(6n+1)){background:linear-gradient(135deg,#f1efff,#fff)!important;border-color:rgba(109,77,255,.18)!important}.secondaryKpis :global(.miniKpi:nth-child(6n+2)),.catalogueKpis :global(.miniKpi:nth-child(6n+2)){background:linear-gradient(135deg,#eafaf5,#fff)!important;border-color:rgba(0,166,122,.18)!important}.secondaryKpis :global(.miniKpi:nth-child(6n+3)),.catalogueKpis :global(.miniKpi:nth-child(6n+3)){background:linear-gradient(135deg,#fff0f7,#fff)!important;border-color:rgba(233,80,165,.18)!important}.secondaryKpis :global(.miniKpi:nth-child(6n+4)),.catalogueKpis :global(.miniKpi:nth-child(6n+4)){background:linear-gradient(135deg,#fff7ea,#fff)!important;border-color:rgba(242,155,48,.18)!important}.secondaryKpis :global(.miniKpi:nth-child(6n+5)),.catalogueKpis :global(.miniKpi:nth-child(6n+5)){background:linear-gradient(135deg,#eafaff,#fff)!important;border-color:rgba(22,184,212,.18)!important}.secondaryKpis :global(.miniKpi:nth-child(6n+6)),.catalogueKpis :global(.miniKpi:nth-child(6n+6)){background:linear-gradient(135deg,#f1f2ff,#fff)!important;border-color:rgba(92,107,192,.18)!important}
+        .quickActionsPanel,.panel,.googleBusinessPanel{border:1px solid rgba(23,32,51,.075)!important;border-radius:23px!important;background:rgba(255,255,255,.97)!important;box-shadow:0 14px 34px rgba(23,32,51,.07)!important}.quickActionsPanel{background:radial-gradient(circle at 0% 0%,rgba(109,77,255,.09),transparent 28%),linear-gradient(135deg,#fff,#f8f7ff)!important}.sectionHeader{background:linear-gradient(90deg,#fff,#fafbfe)!important;border-bottom-color:rgba(23,32,51,.07)!important}.sectionHeader span{color:#6d4dff!important}.sectionHeader h2{color:#172033!important}
+        .quickAction{border:1px solid rgba(23,32,51,.08)!important;border-radius:18px!important;background:#fff!important;box-shadow:0 8px 18px rgba(23,32,51,.045)!important}.quickAction:nth-child(8n+1){background:linear-gradient(135deg,#f1efff,#fff)!important;border-color:rgba(109,77,255,.18)!important}.quickAction:nth-child(8n+2){background:linear-gradient(135deg,#eafaf5,#fff)!important;border-color:rgba(0,166,122,.18)!important}.quickAction:nth-child(8n+3){background:linear-gradient(135deg,#fff0f7,#fff)!important;border-color:rgba(233,80,165,.18)!important}.quickAction:nth-child(8n+4){background:linear-gradient(135deg,#fff7ea,#fff)!important;border-color:rgba(242,155,48,.18)!important}.quickAction:nth-child(8n+5){background:linear-gradient(135deg,#eafaff,#fff)!important;border-color:rgba(22,184,212,.18)!important}.quickAction:nth-child(8n+6){background:linear-gradient(135deg,#f1f2ff,#fff)!important;border-color:rgba(92,107,192,.18)!important}.quickAction:nth-child(8n+7){background:linear-gradient(135deg,#fff2f2,#fff)!important;border-color:rgba(255,107,107,.18)!important}.quickAction:nth-child(8n+8){background:linear-gradient(135deg,#effaf7,#fff)!important;border-color:rgba(0,166,122,.18)!important}
+        .quickAction:nth-child(8n+1) .quickActionIcon{background:linear-gradient(135deg,#6d4dff,#8b5cf6)!important}.quickAction:nth-child(8n+2) .quickActionIcon{background:linear-gradient(135deg,#00a67a,#26bf92)!important}.quickAction:nth-child(8n+3) .quickActionIcon{background:linear-gradient(135deg,#e950a5,#f47fc2)!important}.quickAction:nth-child(8n+4) .quickActionIcon{background:linear-gradient(135deg,#f29b30,#f6b85d)!important}.quickAction:nth-child(8n+5) .quickActionIcon{background:linear-gradient(135deg,#16b8d4,#36c7df)!important}.quickAction:nth-child(8n+6) .quickActionIcon{background:linear-gradient(135deg,#5c6bc0,#7987dc)!important}.quickAction:nth-child(8n+7) .quickActionIcon{background:linear-gradient(135deg,#ff6b6b,#f59898)!important}.quickAction:nth-child(8n+8) .quickActionIcon{background:linear-gradient(135deg,#00a67a,#16b8d4)!important}.quickActionIcon{color:#fff!important;border-color:rgba(255,255,255,.34)!important;box-shadow:0 8px 18px rgba(23,32,51,.10)}
+        .salesTrendPanel{background:radial-gradient(circle at 100% 0%,rgba(22,184,212,.08),transparent 28%),#fff!important}.trendChart{border-radius:16px;background:linear-gradient(to bottom,rgba(109,77,255,.055) 1px,transparent 1px),linear-gradient(180deg,#fbfaff,#f5fbfd)!important;background-size:100% 25%,100% 100%!important}.trendTrack{background:#edf1f7!important}.trendBar{background:linear-gradient(180deg,#6d4dff,#16b8d4 62%,#00a67a)!important;box-shadow:0 5px 14px rgba(109,77,255,.18)}.trendValue{color:#6d4dff!important}
+        .compactRow{border-radius:15px!important;border-color:rgba(23,32,51,.075)!important;background:#fff!important}.compactList .compactRow:nth-child(6n+1){background:linear-gradient(90deg,#f3efff,#fff)!important}.compactList .compactRow:nth-child(6n+2){background:linear-gradient(90deg,#eafaf5,#fff)!important}.compactList .compactRow:nth-child(6n+3){background:linear-gradient(90deg,#fff0f7,#fff)!important}.compactList .compactRow:nth-child(6n+4){background:linear-gradient(90deg,#fff7ea,#fff)!important}.compactList .compactRow:nth-child(6n+5){background:linear-gradient(90deg,#eafaff,#fff)!important}.compactList .compactRow:nth-child(6n+6){background:linear-gradient(90deg,#f1f2ff,#fff)!important}.compactList .compactRow:nth-child(6n+1) .rowIcon{background:#6d4dff!important;color:#fff!important}.compactList .compactRow:nth-child(6n+2) .rowIcon{background:#00a67a!important;color:#fff!important}.compactList .compactRow:nth-child(6n+3) .rowIcon{background:#e950a5!important;color:#fff!important}.compactList .compactRow:nth-child(6n+4) .rowIcon{background:#f29b30!important;color:#fff!important}.compactList .compactRow:nth-child(6n+5) .rowIcon{background:#16b8d4!important;color:#fff!important}.compactList .compactRow:nth-child(6n+6) .rowIcon{background:#5c6bc0!important;color:#fff!important}.rowMain strong{color:#172033!important}
+        .visitorMetric{border-radius:15px!important;box-shadow:0 8px 18px rgba(23,32,51,.08)}.visitorMetrics .visitorMetric:nth-child(5n+1){background:linear-gradient(135deg,#6d4dff,#8b5cf6)!important}.visitorMetrics .visitorMetric:nth-child(5n+2){background:linear-gradient(135deg,#00a67a,#26bf92)!important}.visitorMetrics .visitorMetric:nth-child(5n+3){background:linear-gradient(135deg,#e950a5,#f47fc2)!important}.visitorMetrics .visitorMetric:nth-child(5n+4){background:linear-gradient(135deg,#f29b30,#f6b85d)!important}.visitorMetrics .visitorMetric:nth-child(5n+5){background:linear-gradient(135deg,#16b8d4,#36c7df)!important}.visitorMetric span,.visitorMetric strong{color:#fff!important}
+        .googleBusinessPanel{background:radial-gradient(circle at 100% 0%,rgba(66,133,244,.08),transparent 30%),linear-gradient(135deg,#fff,#f8fbff)!important;border-color:rgba(66,133,244,.13)!important}.googleConnectButton{background:linear-gradient(135deg,#4285f4,#34a853)!important;color:#fff!important;border:0!important}.googleRefreshButton{background:#f1efff!important;color:#6d4dff!important;border-color:rgba(109,77,255,.20)!important}
+        .message{border-radius:16px!important;box-shadow:0 10px 26px rgba(23,32,51,.08)!important}.errorMessage{background:linear-gradient(135deg,#fff0f0,#fff8f8)!important;border-color:rgba(255,107,107,.22)!important}.warningMessage{background:linear-gradient(135deg,#fff7ea,#fffdf7)!important;border-color:rgba(242,155,48,.22)!important}
+        @media(max-width:760px){.dashboardPage{padding:10px!important}.hero{border-radius:22px!important;padding:18px 16px!important}.hero::after{font-size:70px;top:-5px;right:8px}.hero h1{font-size:27px!important}.executivePulseStrip{margin:-10px 7px 16px!important;border-radius:20px!important}.businessKpi{border-radius:18px!important}.todayOwnerProfitPanel,.profitIntelligencePanel,.quickActionsPanel,.panel,.googleBusinessPanel{border-radius:20px!important}}
+
+
+        /* ============================================================
+           DASHBOARD FINAL V2 — STRONG VISIBLE COLOR PASS
+           ============================================================ */
+
+        .dashboardPage .hero {
+          background:
+            radial-gradient(circle at 92% 0%,rgba(255,255,255,.20),transparent 32%),
+            radial-gradient(circle at 10% 120%,rgba(233,80,165,.32),transparent 35%),
+            linear-gradient(120deg,#301269 0%,#6d4dff 35%,#168eb8 69%,#00a67a 100%) !important;
+        }
+
+        .dashboardPage .executivePulseStrip {
+          background:
+            radial-gradient(circle at 0% 0%,rgba(109,77,255,.10),transparent 24%),
+            radial-gradient(circle at 100% 100%,rgba(242,155,48,.10),transparent 25%),
+            rgba(255,255,255,.96) !important;
+        }
+
+        .dashboardPage .executivePulseLead {
+          background:linear-gradient(135deg,#5a39d6,#8b5cf6)!important;
+        }
+
+        .dashboardPage .executivePulseMetric:nth-child(2) {
+          background:linear-gradient(135deg,#eadfff,#f7f1ff)!important;
+        }
+
+        .dashboardPage .executivePulseMetric.profit {
+          background:linear-gradient(135deg,#d9f8eb,#f2fff9)!important;
+        }
+
+        .dashboardPage .executivePulseMetric.money {
+          background:linear-gradient(135deg,#d9f6fc,#f2fdff)!important;
+        }
+
+        .dashboardPage .executivePulseMetric.attention {
+          background:linear-gradient(135deg,#fff0cf,#fff9eb)!important;
+        }
+
+        .dashboardPage .executivePulseMetric.attention.active {
+          background:linear-gradient(135deg,#ffe0e7,#fff2f5)!important;
+        }
+
+        .dashboardPage .businessKpi.blue {
+          background:linear-gradient(135deg,#5031d2,#6d4dff 50%,#16b8d4)!important;
+        }
+
+        .dashboardPage .businessKpi.gold {
+          background:linear-gradient(135deg,#d87908,#f29b30 52%,#e950a5)!important;
+        }
+
+        .dashboardPage .businessKpi.green {
+          background:linear-gradient(135deg,#008864,#00a67a 50%,#16b8d4)!important;
+        }
+
+        .dashboardPage .businessKpi.red {
+          background:linear-gradient(135deg,#ba357f,#e950a5 48%,#ff6b6b)!important;
+        }
+
+        .dashboardPage .businessKpi {
+          border-color:rgba(255,255,255,.55)!important;
+          box-shadow:0 18px 38px rgba(29,29,70,.18)!important;
+        }
+
+        .dashboardPage .businessKpiIcon {
+          width:50px!important;
+          height:50px!important;
+          border:1px solid rgba(255,255,255,.50)!important;
+          background:rgba(255,255,255,.17)!important;
+          color:#fff7c7!important;
+        }
+
+        .dashboardPage .businessKpi > div > span,
+        .dashboardPage .businessKpi > div > strong,
+        .dashboardPage .businessKpi > div > small {
+          color:#fff!important;
+        }
+
+        .dashboardPage .todayOwnerProfitPanel {
+          background:
+            radial-gradient(circle at 92% -5%,rgba(233,80,165,.14),transparent 27%),
+            radial-gradient(circle at 0% 110%,rgba(22,184,212,.13),transparent 30%),
+            linear-gradient(135deg,#f8f3ff 0%,#fff 42%,#edfbff 100%)!important;
+          border-color:rgba(109,77,255,.22)!important;
+        }
+
+        .dashboardPage .todayProfitMetric:nth-child(6n+1) {
+          background:linear-gradient(135deg,#eadfff,#faf7ff)!important;
+        }
+        .dashboardPage .todayProfitMetric:nth-child(6n+2) {
+          background:linear-gradient(135deg,#d8f8eb,#f4fff9)!important;
+        }
+        .dashboardPage .todayProfitMetric:nth-child(6n+3) {
+          background:linear-gradient(135deg,#d9f6fc,#f2fdff)!important;
+        }
+        .dashboardPage .todayProfitMetric:nth-child(6n+4) {
+          background:linear-gradient(135deg,#ffedc8,#fff8eb)!important;
+        }
+        .dashboardPage .todayProfitMetric:nth-child(6n+5) {
+          background:linear-gradient(135deg,#ffddeb,#fff4f8)!important;
+        }
+        .dashboardPage .todayProfitMetric:nth-child(6n+6) {
+          background:linear-gradient(135deg,#e4e8ff,#f7f8ff)!important;
+        }
+
+        .dashboardPage .todayProfitMetric:nth-child(6n+1) span,
+        .dashboardPage .todayProfitMetric:nth-child(6n+1) strong {color:#6d4dff!important}
+        .dashboardPage .todayProfitMetric:nth-child(6n+2) span,
+        .dashboardPage .todayProfitMetric:nth-child(6n+2) strong {color:#00a67a!important}
+        .dashboardPage .todayProfitMetric:nth-child(6n+3) span,
+        .dashboardPage .todayProfitMetric:nth-child(6n+3) strong {color:#16a9c2!important}
+        .dashboardPage .todayProfitMetric:nth-child(6n+4) span,
+        .dashboardPage .todayProfitMetric:nth-child(6n+4) strong {color:#d97c0c!important}
+        .dashboardPage .todayProfitMetric:nth-child(6n+5) span,
+        .dashboardPage .todayProfitMetric:nth-child(6n+5) strong {color:#d63f91!important}
+        .dashboardPage .todayProfitMetric:nth-child(6n+6) span,
+        .dashboardPage .todayProfitMetric:nth-child(6n+6) strong {color:#5c6bc0!important}
+
+        .dashboardPage .profitIntelligencePanel {
+          background:
+            radial-gradient(circle at 95% 0%,rgba(255,255,255,.19),transparent 28%),
+            radial-gradient(circle at 0% 110%,rgba(255,105,180,.28),transparent 32%),
+            linear-gradient(125deg,#321269,#6d4dff 37%,#117da9 70%,#00a67a)!important;
+        }
+
+        .dashboardPage .quickActionsPanel {
+          background:
+            radial-gradient(circle at 0% 0%,rgba(109,77,255,.13),transparent 26%),
+            radial-gradient(circle at 100% 100%,rgba(22,184,212,.11),transparent 27%),
+            #fff!important;
+        }
+
+        .dashboardPage .quickAction {
+          border-width:1.5px!important;
+        }
+
+        .dashboardPage .quickAction:nth-child(8n+1){background:#eee9ff!important;border-color:#b9a9ff!important}
+        .dashboardPage .quickAction:nth-child(8n+2){background:#e2f8ef!important;border-color:#8cddc2!important}
+        .dashboardPage .quickAction:nth-child(8n+3){background:#ffe6f1!important;border-color:#f3a2ca!important}
+        .dashboardPage .quickAction:nth-child(8n+4){background:#fff0d5!important;border-color:#f4c06e!important}
+        .dashboardPage .quickAction:nth-child(8n+5){background:#e2f8fd!important;border-color:#91dcea!important}
+        .dashboardPage .quickAction:nth-child(8n+6){background:#e8ebff!important;border-color:#aeb7ef!important}
+        .dashboardPage .quickAction:nth-child(8n+7){background:#ffe4e4!important;border-color:#f4a4a4!important}
+        .dashboardPage .quickAction:nth-child(8n+8){background:#e1f7ee!important;border-color:#8bd8bd!important}
+
+        .dashboardPage .trendBar {
+          background:linear-gradient(180deg,#8b5cf6 0%,#6d4dff 35%,#16b8d4 70%,#00a67a 100%)!important;
+        }
+
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+1){background:linear-gradient(135deg,#5031d2,#8b5cf6)!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+2){background:linear-gradient(135deg,#008864,#00bd8a)!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+3){background:linear-gradient(135deg,#c63b87,#ef65af)!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+4){background:linear-gradient(135deg,#d67b0d,#ffae45)!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+5){background:linear-gradient(135deg,#079db9,#29c8e1)!important}
+
+        .dashboardPage .panel {
+          border-color:rgba(109,77,255,.12)!important;
+        }
+
+        .dashboardPage .compactList .compactRow:nth-child(6n+1){box-shadow:inset 4px 0 #6d4dff!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+2){box-shadow:inset 4px 0 #00a67a!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+3){box-shadow:inset 4px 0 #e950a5!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+4){box-shadow:inset 4px 0 #f29b30!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+5){box-shadow:inset 4px 0 #16b8d4!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+6){box-shadow:inset 4px 0 #5c6bc0!important}
+
+
+        /* ============================================================
+           DASHBOARD FINAL V3 — ACTUAL CHILD COMPONENT COLOR FIX
+           Styled-JSX child components require :global selectors.
+           ============================================================ */
+
+        /* HERO — visibly multicolor, not navy-only */
+        .dashboardPage .hero {
+          background:
+            radial-gradient(circle at 84% -8%, rgba(255,229,140,.32), transparent 26%),
+            radial-gradient(circle at 8% 108%, rgba(233,80,165,.42), transparent 34%),
+            linear-gradient(118deg,#321269 0%,#6d4dff 32%,#a244b1 49%,#168fb7 72%,#00a67a 100%) !important;
+          border-color:rgba(255,255,255,.42) !important;
+        }
+
+        .dashboardPage .heroMotion span:nth-child(1) {
+          background:#ffe58c !important;
+        }
+        .dashboardPage .heroMotion span:nth-child(2) {
+          background:#ff80c5 !important;
+        }
+        .dashboardPage .heroMotion span:nth-child(3) {
+          background:#5ee7ff !important;
+        }
+
+        /* PRIMARY KPI CARDS are BusinessKpi child components.
+           Use GLOBAL so the page-level redesign actually reaches them. */
+        .dashboardPage :global(.businessKpi) {
+          min-height:142px !important;
+          border-radius:24px !important;
+          border:1px solid rgba(255,255,255,.55) !important;
+          box-shadow:0 20px 42px rgba(29,29,70,.20) !important;
+          overflow:hidden !important;
+        }
+
+        .dashboardPage :global(.businessKpi.blue) {
+          background:
+            radial-gradient(circle at 88% 5%,rgba(255,255,255,.24),transparent 27%),
+            linear-gradient(135deg,#5834dc 0%,#6d4dff 50%,#16b8d4 100%) !important;
+        }
+
+        .dashboardPage :global(.businessKpi.gold) {
+          background:
+            radial-gradient(circle at 88% 5%,rgba(255,255,255,.24),transparent 27%),
+            linear-gradient(135deg,#d77408 0%,#f29b30 48%,#e950a5 100%) !important;
+        }
+
+        .dashboardPage :global(.businessKpi.green) {
+          background:
+            radial-gradient(circle at 88% 5%,rgba(255,255,255,.22),transparent 27%),
+            linear-gradient(135deg,#00845f 0%,#00a67a 50%,#16b8d4 100%) !important;
+        }
+
+        .dashboardPage :global(.businessKpi.red) {
+          background:
+            radial-gradient(circle at 88% 5%,rgba(255,255,255,.22),transparent 27%),
+            linear-gradient(135deg,#b9327c 0%,#e950a5 50%,#ff6b6b 100%) !important;
+        }
+
+        .dashboardPage :global(.businessKpi::after) {
+          background:
+            radial-gradient(circle at 80% 15%,rgba(255,255,255,.16),transparent 32%) !important;
+          opacity:1 !important;
+        }
+
+        .dashboardPage :global(.businessKpiMotion span) {
+          opacity:.20 !important;
+          background:#fff !important;
+        }
+
+        .dashboardPage :global(.businessKpiPulse) {
+          border-color:rgba(255,255,255,.22) !important;
+          opacity:.48 !important;
+        }
+
+        .dashboardPage :global(.businessKpiIcon) {
+          width:52px !important;
+          height:52px !important;
+          border:1px solid rgba(255,255,255,.58) !important;
+          background:rgba(255,255,255,.18) !important;
+          color:#fff3b1 !important;
+          box-shadow:0 8px 18px rgba(0,0,0,.12) !important;
+        }
+
+        .dashboardPage :global(.businessKpi span),
+        .dashboardPage :global(.businessKpi strong),
+        .dashboardPage :global(.businessKpi small) {
+          color:#fff !important;
+        }
+
+        /* EXECUTIVE PULSE — stronger fills */
+        .dashboardPage .executivePulseStrip {
+          border:1px solid rgba(109,77,255,.20) !important;
+          background:
+            radial-gradient(circle at 0% 0%,rgba(109,77,255,.14),transparent 25%),
+            radial-gradient(circle at 100% 100%,rgba(242,155,48,.13),transparent 25%),
+            #fff !important;
+        }
+
+        .dashboardPage .executivePulseLead {
+          background:linear-gradient(135deg,#4e2ad0,#8b5cf6 66%,#e950a5) !important;
+        }
+
+        .dashboardPage .executivePulseMetric:nth-child(2) {
+          background:linear-gradient(135deg,#dfd4ff,#f4efff) !important;
+        }
+        .dashboardPage .executivePulseMetric.profit {
+          background:linear-gradient(135deg,#cef4e3,#effcf6) !important;
+        }
+        .dashboardPage .executivePulseMetric.money {
+          background:linear-gradient(135deg,#ccf2fa,#eefcff) !important;
+        }
+        .dashboardPage .executivePulseMetric.attention {
+          background:linear-gradient(135deg,#ffe8bb,#fff5df) !important;
+        }
+        .dashboardPage .executivePulseMetric.attention.active {
+          background:linear-gradient(135deg,#ffd8df,#fff0f3) !important;
+        }
+
+        /* TODAY PROFIT — visibly different cards */
+        .dashboardPage .todayOwnerProfitPanel {
+          background:
+            radial-gradient(circle at 96% 0%,rgba(233,80,165,.18),transparent 28%),
+            radial-gradient(circle at 0% 100%,rgba(22,184,212,.16),transparent 31%),
+            linear-gradient(135deg,#f4edff,#fff 48%,#eafaff) !important;
+        }
+
+        .dashboardPage .todayProfitMetric {
+          border-width:1.5px !important;
+          box-shadow:0 10px 22px rgba(23,32,51,.07) !important;
+        }
+
+        .dashboardPage .todayProfitMetric.heroMetric {
+          background:linear-gradient(135deg,#e2d5ff,#f5f0ff) !important;
+          border-color:#b9a7ff !important;
+        }
+
+        .dashboardPage .todayProfitMetric:nth-child(2) {
+          background:linear-gradient(135deg,#cdf4e2,#f1fcf7) !important;
+          border-color:#86d7b8 !important;
+        }
+
+        .dashboardPage .todayProfitMetric:nth-child(3) {
+          background:linear-gradient(135deg,#cdeff7,#effbfe) !important;
+          border-color:#87d6e7 !important;
+        }
+
+        .dashboardPage .todayProfitMetric:nth-child(4) {
+          background:linear-gradient(135deg,#ffe6b5,#fff6e3) !important;
+          border-color:#f0bd68 !important;
+        }
+
+        .dashboardPage .todayProfitMetric.warning {
+          background:linear-gradient(135deg,#ffddeb,#fff1f7) !important;
+          border-color:#efa0c7 !important;
+        }
+
+        .dashboardPage .todayProfitMetric.danger {
+          background:linear-gradient(135deg,#ffd7d7,#fff0f0) !important;
+          border-color:#ef9a9a !important;
+        }
+
+        /* QUICK ACTIONS are child QuickAction components — GLOBAL fix */
+        .dashboardPage :global(.quickAction) {
+          border-width:1.5px !important;
+          border-radius:20px !important;
+          min-height:118px !important;
+          box-shadow:0 10px 24px rgba(23,32,51,.08) !important;
+          overflow:hidden !important;
+        }
+
+        .dashboardPage :global(.quickAction:nth-child(8n+1)) {
+          background:linear-gradient(135deg,#e4dcff,#f7f4ff) !important;
+          border-color:#aa98f8 !important;
+        }
+        .dashboardPage :global(.quickAction:nth-child(8n+2)) {
+          background:linear-gradient(135deg,#d4f5e7,#f2fcf7) !important;
+          border-color:#78d2b2 !important;
+        }
+        .dashboardPage :global(.quickAction:nth-child(8n+3)) {
+          background:linear-gradient(135deg,#ffdceb,#fff1f7) !important;
+          border-color:#eb92bd !important;
+        }
+        .dashboardPage :global(.quickAction:nth-child(8n+4)) {
+          background:linear-gradient(135deg,#ffe7b9,#fff5df) !important;
+          border-color:#efb756 !important;
+        }
+        .dashboardPage :global(.quickAction:nth-child(8n+5)) {
+          background:linear-gradient(135deg,#d4f2fa,#effbfe) !important;
+          border-color:#7ccfe0 !important;
+        }
+        .dashboardPage :global(.quickAction:nth-child(8n+6)) {
+          background:linear-gradient(135deg,#dde2ff,#f3f5ff) !important;
+          border-color:#9ba8e9 !important;
+        }
+        .dashboardPage :global(.quickAction:nth-child(8n+7)) {
+          background:linear-gradient(135deg,#ffd9d9,#fff0f0) !important;
+          border-color:#ec9393 !important;
+        }
+        .dashboardPage :global(.quickAction:nth-child(8n+8)) {
+          background:linear-gradient(135deg,#d4f3e7,#effcf6) !important;
+          border-color:#75cfad !important;
+        }
+
+        .dashboardPage :global(.quickAction::after) {
+          opacity:.05 !important;
+        }
+
+        .dashboardPage :global(.quickActionIcon) {
+          width:48px !important;
+          height:48px !important;
+          border-radius:15px !important;
+          color:#fff !important;
+          box-shadow:0 9px 20px rgba(23,32,51,.14) !important;
+        }
+
+        .dashboardPage :global(.quickAction:nth-child(8n+1) .quickActionIcon) { background:linear-gradient(135deg,#6d4dff,#8b5cf6)!important; }
+        .dashboardPage :global(.quickAction:nth-child(8n+2) .quickActionIcon) { background:linear-gradient(135deg,#00a67a,#29bf94)!important; }
+        .dashboardPage :global(.quickAction:nth-child(8n+3) .quickActionIcon) { background:linear-gradient(135deg,#e950a5,#f47fc2)!important; }
+        .dashboardPage :global(.quickAction:nth-child(8n+4) .quickActionIcon) { background:linear-gradient(135deg,#f29b30,#f6b85d)!important; }
+        .dashboardPage :global(.quickAction:nth-child(8n+5) .quickActionIcon) { background:linear-gradient(135deg,#16b8d4,#38cce2)!important; }
+        .dashboardPage :global(.quickAction:nth-child(8n+6) .quickActionIcon) { background:linear-gradient(135deg,#5c6bc0,#7d8be0)!important; }
+        .dashboardPage :global(.quickAction:nth-child(8n+7) .quickActionIcon) { background:linear-gradient(135deg,#ff6b6b,#f69b9b)!important; }
+        .dashboardPage :global(.quickAction:nth-child(8n+8) .quickActionIcon) { background:linear-gradient(135deg,#00a67a,#16b8d4)!important; }
+
+        .dashboardPage :global(.quickActionIcon b) {
+          color:#fff !important;
+        }
+
+        /* MINI KPI child components — stronger pastel color blocks */
+        .dashboardPage .secondaryKpis :global(.miniKpi),
+        .dashboardPage .catalogueKpis :global(.miniKpi) {
+          border-width:1.5px !important;
+          box-shadow:0 10px 22px rgba(23,32,51,.07) !important;
+        }
+
+        .dashboardPage .secondaryKpis :global(.miniKpi:nth-child(6n+1)),
+        .dashboardPage .catalogueKpis :global(.miniKpi:nth-child(6n+1)) {
+          background:#e6dfff !important;
+          border-color:#ad9cf3 !important;
+        }
+        .dashboardPage .secondaryKpis :global(.miniKpi:nth-child(6n+2)),
+        .dashboardPage .catalogueKpis :global(.miniKpi:nth-child(6n+2)) {
+          background:#d9f5e9 !important;
+          border-color:#82d4b5 !important;
+        }
+        .dashboardPage .secondaryKpis :global(.miniKpi:nth-child(6n+3)),
+        .dashboardPage .catalogueKpis :global(.miniKpi:nth-child(6n+3)) {
+          background:#ffe1ee !important;
+          border-color:#eb9ec4 !important;
+        }
+        .dashboardPage .secondaryKpis :global(.miniKpi:nth-child(6n+4)),
+        .dashboardPage .catalogueKpis :global(.miniKpi:nth-child(6n+4)) {
+          background:#ffebc8 !important;
+          border-color:#edbb65 !important;
+        }
+        .dashboardPage .secondaryKpis :global(.miniKpi:nth-child(6n+5)),
+        .dashboardPage .catalogueKpis :global(.miniKpi:nth-child(6n+5)) {
+          background:#d9f3fa !important;
+          border-color:#82d0df !important;
+        }
+        .dashboardPage .secondaryKpis :global(.miniKpi:nth-child(6n+6)),
+        .dashboardPage .catalogueKpis :global(.miniKpi:nth-child(6n+6)) {
+          background:#e1e5ff !important;
+          border-color:#9ea9e8 !important;
+        }
+
+        /* Lists / alerts — stronger colored rails */
+        .dashboardPage .compactList .compactRow {
+          border-width:1px !important;
+          box-shadow:0 7px 17px rgba(23,32,51,.045) !important;
+        }
+
+        .dashboardPage .compactList .compactRow:nth-child(6n+1){background:#f0ecff!important;box-shadow:inset 5px 0 #6d4dff!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+2){background:#e9f9f2!important;box-shadow:inset 5px 0 #00a67a!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+3){background:#fff0f7!important;box-shadow:inset 5px 0 #e950a5!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+4){background:#fff6e6!important;box-shadow:inset 5px 0 #f29b30!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+5){background:#eaf9fd!important;box-shadow:inset 5px 0 #16b8d4!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+6){background:#eff1ff!important;box-shadow:inset 5px 0 #5c6bc0!important}
+
+        /* Chart visibly colorful */
+        .dashboardPage .trendChart {
+          background:
+            linear-gradient(to bottom,rgba(109,77,255,.07) 1px,transparent 1px),
+            linear-gradient(180deg,#f5f0ff,#f2fbfd) !important;
+          background-size:100% 25%,100% 100% !important;
+        }
+
+        .dashboardPage .trendBar {
+          background:linear-gradient(180deg,#e950a5 0%,#8b5cf6 28%,#6d4dff 50%,#16b8d4 74%,#00a67a 100%) !important;
+          box-shadow:0 6px 15px rgba(109,77,255,.24) !important;
+        }
+
+        /* Google panel */
+        .dashboardPage .googleBusinessPanel {
+          border:1.5px solid rgba(66,133,244,.18) !important;
+          background:
+            radial-gradient(circle at 100% 0%,rgba(66,133,244,.13),transparent 28%),
+            linear-gradient(135deg,#f5f9ff,#fff 45%,#f2fff8) !important;
+        }
+
+        @media(max-width:760px){
+          .dashboardPage :global(.businessKpi){min-height:122px!important}
+          .dashboardPage :global(.quickAction){min-height:104px!important}
+        }
+
+
+        /* ============================================================
+           NCS DASHBOARD — HARD BLUE REMOVED FINAL
+           ============================================================ */
+
+        .dashboardPage {
+          background:
+            radial-gradient(circle at 0% 0%,rgba(109,77,255,.14),transparent 24%),
+            radial-gradient(circle at 100% 10%,rgba(22,184,212,.13),transparent 25%),
+            radial-gradient(circle at 52% 100%,rgba(242,155,48,.10),transparent 29%),
+            linear-gradient(180deg,#F8F7FF 0%,#F3F7FB 48%,#FFF8EC 100%) !important;
+        }
+
+        .dashboardPage .hero {
+          background:
+            radial-gradient(circle at 90% -5%,rgba(255,229,140,.30),transparent 27%),
+            radial-gradient(circle at 8% 112%,rgba(233,80,165,.38),transparent 34%),
+            linear-gradient(118deg,#3B1E7A 0%,#6D4DFF 32%,#A244B1 50%,#16B8D4 75%,#00A67A 100%) !important;
+        }
+
+        .dashboardPage .profitIntelligencePanel {
+          background:
+            radial-gradient(circle at 95% 0%,rgba(255,255,255,.17),transparent 28%),
+            radial-gradient(circle at 0% 110%,rgba(233,80,165,.28),transparent 32%),
+            linear-gradient(125deg,#3B1E7A,#6D4DFF 38%,#16B8D4 73%,#00A67A) !important;
+        }
+
+        .dashboardPage .executivePulseLead {
+          background:linear-gradient(135deg,#6D4DFF,#8B5CF6 62%,#E950A5) !important;
+        }
+
+        .dashboardPage .todayProfitOpenButton,
+        .dashboardPage .profitOpenButton {
+          background:linear-gradient(135deg,#6D4DFF,#16B8D4) !important;
+          color:#fff !important;
+        }
+
+        .dashboardPage .todayOwnerProfitPanel {
+          background:
+            radial-gradient(circle at 100% 0%,rgba(233,80,165,.16),transparent 26%),
+            radial-gradient(circle at 0% 100%,rgba(22,184,212,.16),transparent 29%),
+            linear-gradient(135deg,#F3ECFF,#FFFFFF 46%,#EAFBFF) !important;
+        }
+
+        .dashboardPage .sectionHeader span {
+          color:#6D4DFF !important;
+        }
+
+        .dashboardPage .sectionHeader h2,
+        .dashboardPage h2,
+        .dashboardPage h3 {
+          color:#2B2450 !important;
+        }
+
+        /* Directly target common legacy blue text/backgrounds at page level */
+        .dashboardPage a:not(.quickAction):not(.todayProfitOpenButton):not(.profitOpenButton),
+        .dashboardPage button {
+          accent-color:#6D4DFF;
+        }
+
+        /* Stronger light cards so dark navy no longer dominates */
+        .dashboardPage .panel,
+        .dashboardPage .quickActionsPanel,
+        .dashboardPage .googleBusinessPanel,
+        .dashboardPage .todayOwnerProfitPanel {
+          background-color:#fff !important;
+        }
+
+        /* Actual child KPI direct global selectors */
+        .dashboardPage :global(.businessKpi.blue) {
+          background:linear-gradient(135deg,#6D4DFF,#8B5CF6 52%,#16B8D4) !important;
+        }
+        .dashboardPage :global(.businessKpi.gold) {
+          background:linear-gradient(135deg,#F29B30,#F6B85D 50%,#E950A5) !important;
+        }
+        .dashboardPage :global(.businessKpi.green) {
+          background:linear-gradient(135deg,#00A67A,#24BE91 52%,#16B8D4) !important;
+        }
+        .dashboardPage :global(.businessKpi.red) {
+          background:linear-gradient(135deg,#E950A5,#FF6B6B 52%,#F29B30) !important;
+        }
+
+        /* Quick Action cards forced light/colorful */
+        .dashboardPage :global(.quickAction) {
+          color:#172033 !important;
+        }
+        .dashboardPage :global(.quickAction strong) {
+          color:#172033 !important;
+        }
+        .dashboardPage :global(.quickAction > span) {
+          color:#667085 !important;
+        }
+
+
+        /* ============================================================
+           DASHBOARD FINAL — NAMES / LABELS HIGHLIGHT
+           ============================================================ */
+
+        /* Executive pulse names */
+        .dashboardPage .executivePulseMetric > span {
+          display:inline-flex !important;
+          width:max-content !important;
+          padding:5px 9px !important;
+          border-radius:999px !important;
+          font-size:9px !important;
+          font-weight:950 !important;
+          letter-spacing:.65px !important;
+          line-height:1 !important;
+        }
+
+        .dashboardPage .executivePulseMetric:nth-child(2) > span {
+          background:#6d4dff !important;
+          color:#fff !important;
+        }
+        .dashboardPage .executivePulseMetric.profit > span {
+          background:#00a67a !important;
+          color:#fff !important;
+        }
+        .dashboardPage .executivePulseMetric.money > span {
+          background:#16b8d4 !important;
+          color:#fff !important;
+        }
+        .dashboardPage .executivePulseMetric.attention > span {
+          background:#f29b30 !important;
+          color:#fff !important;
+        }
+        .dashboardPage .executivePulseMetric.attention.active > span {
+          background:#e950a5 !important;
+          color:#fff !important;
+        }
+
+        /* Main KPI names become white pills on colorful cards */
+        .dashboardPage :global(.businessKpi > div:not(.businessKpiMotion):not(.businessKpiPulse) > span) {
+          display:inline-flex !important;
+          width:max-content !important;
+          max-width:100% !important;
+          padding:5px 9px !important;
+          border:1px solid rgba(255,255,255,.42) !important;
+          border-radius:999px !important;
+          background:rgba(255,255,255,.18) !important;
+          color:#fff !important;
+          font-size:9px !important;
+          font-weight:950 !important;
+          letter-spacing:.75px !important;
+          text-shadow:0 1px 4px rgba(0,0,0,.14) !important;
+        }
+
+        .dashboardPage :global(.businessKpi strong) {
+          margin-top:8px !important;
+          color:#fff !important;
+          text-shadow:0 2px 6px rgba(0,0,0,.13) !important;
+        }
+
+        .dashboardPage :global(.businessKpi small) {
+          margin-top:5px !important;
+          color:rgba(255,255,255,.82) !important;
+          font-weight:700 !important;
+        }
+
+        /* Today Profit metric names */
+        .dashboardPage .todayProfitMetric > span {
+          display:inline-flex !important;
+          width:max-content !important;
+          padding:4px 8px !important;
+          border-radius:999px !important;
+          font-size:8px !important;
+          font-weight:950 !important;
+        }
+
+        .dashboardPage .todayProfitMetric:nth-child(6n+1) > span {background:#6d4dff!important;color:#fff!important}
+        .dashboardPage .todayProfitMetric:nth-child(6n+2) > span {background:#00a67a!important;color:#fff!important}
+        .dashboardPage .todayProfitMetric:nth-child(6n+3) > span {background:#16b8d4!important;color:#fff!important}
+        .dashboardPage .todayProfitMetric:nth-child(6n+4) > span {background:#f29b30!important;color:#fff!important}
+        .dashboardPage .todayProfitMetric:nth-child(6n+5) > span {background:#e950a5!important;color:#fff!important}
+        .dashboardPage .todayProfitMetric:nth-child(6n+6) > span {background:#5c6bc0!important;color:#fff!important}
+
+        /* Quick action names */
+        .dashboardPage :global(.quickAction strong) {
+          color:#20283a !important;
+          font-size:12px !important;
+          font-weight:950 !important;
+          line-height:1.15 !important;
+        }
+
+        .dashboardPage :global(.quickAction > span) {
+          color:#667085 !important;
+          font-size:8px !important;
+          font-weight:650 !important;
+        }
+
+        /* Panel headings / names */
+        .dashboardPage .sectionHeader h2 {
+          color:#2b2450 !important;
+          font-size:17px !important;
+          font-weight:950 !important;
+        }
+
+        .dashboardPage .sectionHeader span {
+          display:inline-flex !important;
+          padding:4px 8px !important;
+          border-radius:999px !important;
+          background:#eee9ff !important;
+          color:#6d4dff !important;
+          font-weight:950 !important;
+        }
+
+        .dashboardPage .todayProfitHeader > div > span {
+          display:inline-flex !important;
+          padding:5px 9px !important;
+          border-radius:999px !important;
+          background:linear-gradient(135deg,#6d4dff,#e950a5) !important;
+          color:#fff !important;
+          font-weight:950 !important;
+        }
+
+        .dashboardPage .todayProfitHeader h2 {
+          color:#4f35bd !important;
+          font-weight:950 !important;
+        }
+
+
+        /* ============================================================
+           NCS DASHBOARD — PREMIUM MUTED INTERNATIONAL FINAL
+           Softer saturation, stronger readability, luxury balance.
+           ============================================================ */
+
+        .dashboardPage {
+          background:
+            radial-gradient(circle at 0% 0%,rgba(130,112,207,.05),transparent 24%),
+            radial-gradient(circle at 100% 8%,rgba(87,156,168,.05),transparent 24%),
+            linear-gradient(180deg,#f7f7f8 0%,#f3f4f6 52%,#f8f5ee 100%) !important;
+        }
+
+        .dashboardPage .hero {
+          background:
+            radial-gradient(circle at 90% -5%,rgba(242,213,110,.18),transparent 28%),
+            radial-gradient(circle at 10% 110%,rgba(187,109,153,.18),transparent 32%),
+            linear-gradient(120deg,#3a2a54 0%,#62529a 40%,#557f93 72%,#4f8c7d 100%) !important;
+          border-color:rgba(255,255,255,.18) !important;
+          box-shadow:0 18px 44px rgba(39,35,66,.18) !important;
+        }
+
+        .dashboardPage .hero h1 {
+          color:#fff !important;
+          text-shadow:none !important;
+        }
+
+        .dashboardPage .hero p,
+        .dashboardPage .hero small {
+          color:rgba(255,255,255,.72) !important;
+        }
+
+        .dashboardPage .executivePulseStrip {
+          background:#fff !important;
+          border-color:#e7e8ec !important;
+          box-shadow:0 10px 26px rgba(32,39,55,.07) !important;
+        }
+
+        .dashboardPage .executivePulseLead {
+          background:linear-gradient(135deg,#514373,#7162a4) !important;
+        }
+
+        .dashboardPage .executivePulseMetric:nth-child(2) {
+          background:#f4f1fb !important;
+        }
+        .dashboardPage .executivePulseMetric.profit {
+          background:#edf7f2 !important;
+        }
+        .dashboardPage .executivePulseMetric.money {
+          background:#edf6f8 !important;
+        }
+        .dashboardPage .executivePulseMetric.attention {
+          background:#fbf5e9 !important;
+        }
+        .dashboardPage .executivePulseMetric.attention.active {
+          background:#faf0f2 !important;
+        }
+
+        .dashboardPage .executivePulseMetric > span {
+          padding:0 !important;
+          background:transparent !important;
+          border:0 !important;
+          color:#70778a !important;
+          font-size:8px !important;
+          letter-spacing:.7px !important;
+        }
+
+        .dashboardPage .executivePulseMetric:nth-child(2) > span {color:#6f5ca8!important}
+        .dashboardPage .executivePulseMetric.profit > span {color:#4f9077!important}
+        .dashboardPage .executivePulseMetric.money > span {color:#4d8994!important}
+        .dashboardPage .executivePulseMetric.attention > span {color:#ad7d3f!important}
+        .dashboardPage .executivePulseMetric.attention.active > span {color:#a76373!important}
+
+        .dashboardPage :global(.businessKpi) {
+          min-height:132px !important;
+          border:1px solid rgba(255,255,255,.28) !important;
+          box-shadow:0 11px 28px rgba(32,39,55,.10) !important;
+        }
+
+        .dashboardPage :global(.businessKpi.blue) {
+          background:linear-gradient(135deg,#6e5bc2,#6f7fb8 54%,#5d9fb0) !important;
+        }
+        .dashboardPage :global(.businessKpi.gold) {
+          background:linear-gradient(135deg,#b98949,#c5965b 54%,#b56f8e) !important;
+        }
+        .dashboardPage :global(.businessKpi.green) {
+          background:linear-gradient(135deg,#4f927a,#55a088 54%,#5a99a2) !important;
+        }
+        .dashboardPage :global(.businessKpi.red) {
+          background:linear-gradient(135deg,#a96686,#b9687f 54%,#bd795e) !important;
+        }
+
+        .dashboardPage :global(.businessKpi > div:not(.businessKpiMotion):not(.businessKpiPulse) > span) {
+          padding:0 !important;
+          border:0 !important;
+          background:transparent !important;
+          color:rgba(255,255,255,.78) !important;
+          font-size:8px !important;
+          letter-spacing:.8px !important;
+          text-shadow:none !important;
+        }
+
+        .dashboardPage :global(.businessKpi strong) {
+          color:#fff !important;
+          font-size:28px !important;
+          text-shadow:none !important;
+        }
+
+        .dashboardPage :global(.businessKpi small) {
+          color:rgba(255,255,255,.74) !important;
+          font-weight:600 !important;
+        }
+
+        .dashboardPage :global(.businessKpiIcon) {
+          background:rgba(255,255,255,.10) !important;
+          border-color:rgba(255,255,255,.28) !important;
+          color:#f1dda0 !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage .todayOwnerProfitPanel {
+          background:#fffdf9 !important;
+          border-color:#e8e1d4 !important;
+          box-shadow:0 10px 28px rgba(32,39,55,.06) !important;
+        }
+
+        .dashboardPage .todayProfitHeader h2 {
+          color:#5f4b8b !important;
+        }
+
+        .dashboardPage .todayProfitHeader > div > span,
+        .dashboardPage .todayProfitMetric > span {
+          padding:0 !important;
+          border:0 !important;
+          background:transparent !important;
+          color:#777d8c !important;
+          font-size:8px !important;
+        }
+
+        .dashboardPage .todayProfitMetric {
+          background:#fff !important;
+          border-color:#e6e8ed !important;
+          box-shadow:0 7px 18px rgba(32,39,55,.045) !important;
+        }
+
+        .dashboardPage .todayProfitMetric.heroMetric {background:#f4f1fb!important}
+        .dashboardPage .todayProfitMetric:nth-child(2) {background:#eef7f2!important}
+        .dashboardPage .todayProfitMetric:nth-child(3) {background:#eef6f8!important}
+        .dashboardPage .todayProfitMetric:nth-child(4) {background:#fbf6ec!important}
+        .dashboardPage .todayProfitMetric.warning {background:#faf0f4!important}
+        .dashboardPage .todayProfitMetric.danger {background:#faf0f0!important}
+
+        .dashboardPage .profitIntelligencePanel {
+          background:
+            linear-gradient(125deg,#3b2b54,#62529a 42%,#557f93 72%,#4f8c7d) !important;
+          box-shadow:0 15px 38px rgba(39,35,66,.16) !important;
+        }
+
+        .dashboardPage .quickActionsPanel,
+        .dashboardPage .panel,
+        .dashboardPage .googleBusinessPanel {
+          background:#fff !important;
+          border-color:#e6e8ed !important;
+          box-shadow:0 9px 24px rgba(32,39,55,.055) !important;
+        }
+
+        .dashboardPage :global(.quickAction) {
+          min-height:108px !important;
+          background:#fff !important;
+          border-color:#e4e7ec !important;
+          box-shadow:0 6px 16px rgba(32,39,55,.045) !important;
+        }
+
+        .dashboardPage :global(.quickAction:nth-child(8n+1)){background:#f5f3fb!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+2)){background:#f0f7f4!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+3)){background:#faf2f6!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+4)){background:#fbf6ed!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+5)){background:#f0f7f8!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+6)){background:#f2f3f9!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+7)){background:#faf2f2!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+8)){background:#f0f7f4!important}
+
+        .dashboardPage :global(.quickActionIcon) {
+          width:44px !important;
+          height:44px !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage :global(.quickAction:nth-child(8n+1) .quickActionIcon){background:#7664b8!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+2) .quickActionIcon){background:#5b9a82!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+3) .quickActionIcon){background:#b46f98!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+4) .quickActionIcon){background:#b98949!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+5) .quickActionIcon){background:#5b929e!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+6) .quickActionIcon){background:#6f78a9!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+7) .quickActionIcon){background:#a96868!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+8) .quickActionIcon){background:#578f7c!important}
+
+        .dashboardPage :global(.quickAction strong) {
+          color:#273042 !important;
+          font-size:11px !important;
+        }
+
+        .dashboardPage :global(.quickAction > span) {
+          color:#7a8190 !important;
+          font-size:8px !important;
+        }
+
+        .dashboardPage .sectionHeader span {
+          padding:0 !important;
+          background:transparent !important;
+          color:#7766a8 !important;
+          font-size:8px !important;
+        }
+
+        .dashboardPage .sectionHeader h2 {
+          color:#293247 !important;
+          font-size:16px !important;
+        }
+
+        .dashboardPage .compactList .compactRow {
+          background:#fff !important;
+          border-color:#e8eaee !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage .compactList .compactRow:nth-child(6n+1){box-shadow:inset 3px 0 #7c6ab8!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+2){box-shadow:inset 3px 0 #5f9c84!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+3){box-shadow:inset 3px 0 #b36f97!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+4){box-shadow:inset 3px 0 #b98c4d!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+5){box-shadow:inset 3px 0 #5d97a2!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+6){box-shadow:inset 3px 0 #707aaa!important}
+
+        .dashboardPage .trendChart {
+          background:
+            linear-gradient(to bottom,rgba(87,156,168,.05) 1px,transparent 1px),
+            #fafbfc !important;
+          background-size:100% 25%,100% 100% !important;
+        }
+
+        .dashboardPage .trendBar {
+          background:linear-gradient(180deg,#7766b0,#64859a 58%,#5f9984) !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+1){background:#7564af!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+2){background:#5d9780!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+3){background:#ad6f91!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+4){background:#b58a4d!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+5){background:#5b929e!important}
+
+        .dashboardPage .todayProfitOpenButton,
+        .dashboardPage .profitOpenButton {
+          background:linear-gradient(135deg,#6a58a4,#5e8f9b) !important;
+          box-shadow:none !important;
+        }
+
+
+        /* ============================================================
+           NCS DASHBOARD — PREMIUM BALANCED FINAL
+           Soft color, high readability, luxury retail software feel.
+           ============================================================ */
+
+        .dashboardPage .hero {
+          background:
+            radial-gradient(circle at 88% -6%,rgba(233,211,135,.16),transparent 28%),
+            radial-gradient(circle at 10% 110%,rgba(171,107,143,.13),transparent 31%),
+            linear-gradient(120deg,#3a2f4b 0%,#5f5485 42%,#577b89 72%,#4f7f73 100%) !important;
+          box-shadow:0 16px 38px rgba(35,33,54,.15) !important;
+        }
+
+        .dashboardPage .hero::after {
+          color:rgba(255,255,255,.035) !important;
+        }
+
+        .dashboardPage .executivePulseLead {
+          background:linear-gradient(135deg,#51466b,#6d6187) !important;
+        }
+
+        .dashboardPage .executivePulseStrip {
+          box-shadow:0 8px 22px rgba(32,39,55,.055) !important;
+        }
+
+        /* Main KPI cards: retain color, lower saturation */
+        .dashboardPage :global(.businessKpi.blue) {
+          background:linear-gradient(135deg,#7668ad,#6f88a8 56%,#6799a1) !important;
+        }
+
+        .dashboardPage :global(.businessKpi.gold) {
+          background:linear-gradient(135deg,#b58d5a,#c29a66 55%,#aa768e) !important;
+        }
+
+        .dashboardPage :global(.businessKpi.green) {
+          background:linear-gradient(135deg,#5f8f7c,#639b87 55%,#65959a) !important;
+        }
+
+        .dashboardPage :global(.businessKpi.red) {
+          background:linear-gradient(135deg,#a36f84,#b37582 55%,#b8876e) !important;
+        }
+
+        .dashboardPage :global(.businessKpi) {
+          box-shadow:0 9px 24px rgba(32,39,55,.085) !important;
+        }
+
+        .dashboardPage :global(.businessKpiMotion span),
+        .dashboardPage :global(.businessKpiPulse) {
+          opacity:.16 !important;
+        }
+
+        /* Quick Actions: remove dark-purple blocks entirely */
+        .dashboardPage :global(.quickAction) {
+          min-height:104px !important;
+          border-radius:18px !important;
+          border:1px solid #e4e7ec !important;
+          background:#fff !important;
+          box-shadow:0 6px 16px rgba(32,39,55,.045) !important;
+          padding:16px !important;
+        }
+
+        .dashboardPage :global(.quickAction:nth-child(8n+1)) {background:#f7f5fb!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+2)) {background:#f2f8f5!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+3)) {background:#faf4f7!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+4)) {background:#faf7f0!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+5)) {background:#f2f8f9!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+6)) {background:#f4f5f9!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+7)) {background:#faf4f4!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+8)) {background:#f2f8f5!important}
+
+        .dashboardPage :global(.quickActionIcon) {
+          width:42px !important;
+          height:42px !important;
+          border-radius:13px !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage :global(.quickAction:nth-child(8n+1) .quickActionIcon){background:#7664a3!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+2) .quickActionIcon){background:#5e927d!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+3) .quickActionIcon){background:#a86f8e!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+4) .quickActionIcon){background:#af8954!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+5) .quickActionIcon){background:#5e8f99!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+6) .quickActionIcon){background:#6e769e!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+7) .quickActionIcon){background:#a86e6e!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+8) .quickActionIcon){background:#5a8e7b!important}
+
+        .dashboardPage :global(.quickAction strong) {
+          color:#263044 !important;
+          font-size:11px !important;
+          font-weight:900 !important;
+        }
+
+        .dashboardPage :global(.quickAction > span) {
+          color:#767e8d !important;
+          font-size:8px !important;
+        }
+
+        /* Profit Intelligence: lighter, less purple-heavy */
+        .dashboardPage .profitIntelligencePanel {
+          background:
+            radial-gradient(circle at 92% 0%,rgba(255,255,255,.08),transparent 28%),
+            linear-gradient(125deg,#3e334e 0%,#5c5375 46%,#526f7b 74%,#4f766c 100%) !important;
+          box-shadow:0 12px 30px rgba(35,33,54,.13) !important;
+        }
+
+        .dashboardPage .profitMetricCard {
+          background:rgba(255,255,255,.075) !important;
+          border-color:rgba(255,255,255,.12) !important;
+        }
+
+        .dashboardPage .profitMetricCard.highlight {
+          background:rgba(92,153,126,.12) !important;
+          border-color:rgba(119,183,153,.18) !important;
+        }
+
+        .dashboardPage .profitMetricCard.warning {
+          background:rgba(181,139,78,.11) !important;
+          border-color:rgba(205,163,98,.17) !important;
+        }
+
+        /* Visitors: remove dark-purple repetition */
+        .dashboardPage .visitorMetrics .visitorMetric {
+          background:#f7f8fa !important;
+          border:1px solid #e5e8ed !important;
+          color:#273042 !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+1){border-top:3px solid #7664a3!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+2){border-top:3px solid #5e927d!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+3){border-top:3px solid #a86f8e!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+4){border-top:3px solid #af8954!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+5){border-top:3px solid #5e8f99!important}
+
+        .dashboardPage .visitorMetric span {
+          color:#7a8190 !important;
+        }
+
+        .dashboardPage .visitorMetric strong {
+          color:#273042 !important;
+        }
+
+        /* Sales chart - elegant gold/teal rather than purple/yellow */
+        .dashboardPage .trendBar {
+          background:linear-gradient(180deg,#7b6c9d 0%,#6f8394 52%,#5f917d 100%) !important;
+        }
+
+        .dashboardPage .trendValue {
+          color:#625680 !important;
+        }
+
+        /* Today's profit / panels */
+        .dashboardPage .todayProfitHeader h2,
+        .dashboardPage .sectionHeader h2 {
+          color:#293247 !important;
+        }
+
+        .dashboardPage .todayProfitOpenButton,
+        .dashboardPage .profitOpenButton {
+          background:linear-gradient(135deg,#665a8e,#5c8993) !important;
+        }
+
+        .dashboardPage .googleConnectButton {
+          background:linear-gradient(135deg,#5f789d,#5f8e78) !important;
+        }
+
+        .dashboardPage .googleRefreshButton {
+          background:#f4f2f8 !important;
+          color:#675a89 !important;
+          border-color:#ddd8e7 !important;
+        }
+
+        /* soften gold micro-labels */
+        .dashboardPage .sectionHeader > div > span,
+        .dashboardPage .todayProfitHeader > div > span,
+        .dashboardPage .hero > div > span {
+          letter-spacing:.7px !important;
+        }
+
+
+        /* ============================================================
+           NCS WEB DASHBOARD — MATCH MOBILE COMMAND DECK
+           Deep premium accents + clean light cards.
+           ============================================================ */
+
+        .dashboardPage {
+          background:
+            radial-gradient(circle at 0% 0%,rgba(91,72,145,.04),transparent 22%),
+            radial-gradient(circle at 100% 4%,rgba(65,115,132,.04),transparent 22%),
+            linear-gradient(180deg,#f7f7f8 0%,#f3f4f6 52%,#f7f4ee 100%) !important;
+          color:#20283a !important;
+        }
+
+        .dashboardPage .hero {
+          border:1px solid rgba(255,255,255,.14) !important;
+          border-radius:28px !important;
+          background:
+            radial-gradient(circle at 88% -10%,rgba(241,211,109,.12),transparent 28%),
+            radial-gradient(circle at 8% 112%,rgba(171,88,141,.12),transparent 32%),
+            linear-gradient(120deg,#2b1b49 0%,#493578 40%,#31516f 72%,#245d60 100%) !important;
+          box-shadow:0 18px 42px rgba(28,25,46,.16) !important;
+        }
+
+        .dashboardPage .hero::after {
+          color:rgba(255,255,255,.025) !important;
+        }
+
+        .dashboardPage .hero h1 {
+          color:#fff !important;
+          text-shadow:none !important;
+        }
+
+        .dashboardPage .hero p,
+        .dashboardPage .hero small {
+          color:rgba(255,255,255,.72) !important;
+        }
+
+        .dashboardPage .hero > div > span {
+          color:#e7c96b !important;
+        }
+
+        .dashboardPage .refreshButton {
+          background:rgba(255,255,255,.085) !important;
+          border-color:rgba(255,255,255,.15) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage :global(.newBillButton) {
+          background:linear-gradient(135deg,#f2d56d,#e3bb53) !important;
+          color:#2b1b49 !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage .executivePulseStrip {
+          border:1px solid #e6e8ed !important;
+          border-radius:24px !important;
+          background:#fff !important;
+          box-shadow:0 8px 22px rgba(32,39,55,.055) !important;
+        }
+
+        .dashboardPage .executivePulseLead {
+          background:linear-gradient(135deg,#40325e,#5b4a7c) !important;
+        }
+
+        .dashboardPage .executivePulseMetric {
+          background:#fafbfc !important;
+          border-color:#e7e9ee !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage .executivePulseMetric:nth-child(2){background:#f6f4fa!important}
+        .dashboardPage .executivePulseMetric.profit{background:#f2f7f4!important}
+        .dashboardPage .executivePulseMetric.money{background:#f1f6f7!important}
+        .dashboardPage .executivePulseMetric.attention{background:#faf6ed!important}
+        .dashboardPage .executivePulseMetric.attention.active{background:#faf1f3!important}
+
+        .dashboardPage .executivePulseMetric > span {
+          background:transparent !important;
+          border:0 !important;
+          padding:0 !important;
+          color:#7b8190 !important;
+          font-size:8px !important;
+        }
+
+        /* MAIN KPI — premium dark cards with restrained edge tones */
+        .dashboardPage :global(.businessKpi) {
+          min-height:132px !important;
+          border-radius:22px !important;
+          border:1px solid rgba(255,255,255,.16) !important;
+          box-shadow:0 11px 26px rgba(28,34,47,.10) !important;
+          overflow:hidden !important;
+        }
+
+        .dashboardPage :global(.businessKpi.blue) {
+          background:
+            radial-gradient(circle at 90% 0%,rgba(255,255,255,.08),transparent 30%),
+            linear-gradient(135deg,#342653,#4a3f73 55%,#405f78) !important;
+        }
+
+        .dashboardPage :global(.businessKpi.gold) {
+          background:
+            radial-gradient(circle at 90% 0%,rgba(255,255,255,.08),transparent 30%),
+            linear-gradient(135deg,#5d4830,#745b3a 55%,#705066) !important;
+        }
+
+        .dashboardPage :global(.businessKpi.green) {
+          background:
+            radial-gradient(circle at 90% 0%,rgba(255,255,255,.08),transparent 30%),
+            linear-gradient(135deg,#294d43,#356558 55%,#3f626b) !important;
+        }
+
+        .dashboardPage :global(.businessKpi.red) {
+          background:
+            radial-gradient(circle at 90% 0%,rgba(255,255,255,.08),transparent 30%),
+            linear-gradient(135deg,#5b3449,#6c4152 55%,#70503e) !important;
+        }
+
+        .dashboardPage :global(.businessKpiMotion span),
+        .dashboardPage :global(.businessKpiPulse) {
+          opacity:.11 !important;
+        }
+
+        .dashboardPage :global(.businessKpiIcon) {
+          width:48px !important;
+          height:48px !important;
+          border-radius:14px !important;
+          border:1px solid rgba(255,255,255,.15) !important;
+          background:rgba(255,255,255,.075) !important;
+          color:#e6c969 !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage :global(.businessKpi > div:not(.businessKpiMotion):not(.businessKpiPulse) > span) {
+          padding:0 !important;
+          border:0 !important;
+          background:transparent !important;
+          color:rgba(255,255,255,.70) !important;
+          font-size:8px !important;
+          letter-spacing:.75px !important;
+        }
+
+        .dashboardPage :global(.businessKpi strong) {
+          color:#fff !important;
+          font-size:28px !important;
+          text-shadow:none !important;
+        }
+
+        .dashboardPage :global(.businessKpi small) {
+          color:rgba(255,255,255,.68) !important;
+        }
+
+        /* PROFIT SNAPSHOT — ivory light premium */
+        .dashboardPage .todayOwnerProfitPanel {
+          background:#fffdf8 !important;
+          border:1px solid #e8e1d5 !important;
+          box-shadow:0 8px 22px rgba(32,39,55,.05) !important;
+        }
+
+        .dashboardPage .todayProfitHeader h2 {
+          color:#3f355b !important;
+        }
+
+        .dashboardPage .todayProfitHeader > div > span,
+        .dashboardPage .todayProfitMetric > span {
+          background:transparent !important;
+          border:0 !important;
+          padding:0 !important;
+          color:#817b78 !important;
+          font-size:8px !important;
+        }
+
+        .dashboardPage .todayProfitMetric {
+          background:#fff !important;
+          border:1px solid #e6e8ed !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage .todayProfitMetric.heroMetric {background:#f5f2fa!important}
+        .dashboardPage .todayProfitMetric:nth-child(2) {background:#f3f7f4!important}
+        .dashboardPage .todayProfitMetric:nth-child(3) {background:#f2f6f7!important}
+        .dashboardPage .todayProfitMetric:nth-child(4) {background:#faf7ef!important}
+        .dashboardPage .todayProfitMetric.warning {background:#faf2f5!important}
+        .dashboardPage .todayProfitMetric.danger {background:#faf2f2!important}
+
+        .dashboardPage .todayProfitOpenButton,
+        .dashboardPage .profitOpenButton {
+          background:linear-gradient(135deg,#4e426d,#476f7a) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        /* PROFIT INTELLIGENCE — deep deck, not purple flood */
+        .dashboardPage .profitIntelligencePanel {
+          background:
+            radial-gradient(circle at 94% 0%,rgba(255,255,255,.06),transparent 28%),
+            linear-gradient(125deg,#2c203e 0%,#41365a 46%,#344e60 74%,#2e5b55 100%) !important;
+          box-shadow:0 12px 30px rgba(28,25,46,.13) !important;
+        }
+
+        .dashboardPage .profitMetricCard {
+          background:rgba(255,255,255,.055) !important;
+          border-color:rgba(255,255,255,.10) !important;
+        }
+
+        .dashboardPage .profitMetricCard.highlight {
+          background:rgba(72,123,102,.11) !important;
+          border-color:rgba(108,160,136,.16) !important;
+        }
+
+        .dashboardPage .profitMetricCard.warning {
+          background:rgba(147,113,67,.10) !important;
+          border-color:rgba(184,146,89,.15) !important;
+        }
+
+        /* QUICK ACTIONS — match mobile clarity: light cards + small colored icon */
+        .dashboardPage .quickActionsPanel,
+        .dashboardPage .panel,
+        .dashboardPage .googleBusinessPanel {
+          background:#fff !important;
+          border:1px solid #e6e8ed !important;
+          box-shadow:0 8px 22px rgba(32,39,55,.045) !important;
+        }
+
+        .dashboardPage :global(.quickAction) {
+          min-height:106px !important;
+          padding:15px !important;
+          border-radius:18px !important;
+          border:1px solid #e4e7ec !important;
+          background:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage :global(.quickAction:nth-child(8n+1)){background:#f7f5fa!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+2)){background:#f3f7f5!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+3)){background:#faf5f7!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+4)){background:#faf7f1!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+5)){background:#f3f7f8!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+6)){background:#f4f5f8!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+7)){background:#faf4f4!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+8)){background:#f3f7f5!important}
+
+        .dashboardPage :global(.quickActionIcon) {
+          width:42px !important;
+          height:42px !important;
+          border-radius:13px !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage :global(.quickAction:nth-child(8n+1) .quickActionIcon){background:#655492!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+2) .quickActionIcon){background:#4f8472!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+3) .quickActionIcon){background:#94617e!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+4) .quickActionIcon){background:#9a774a!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+5) .quickActionIcon){background:#4d7d89!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+6) .quickActionIcon){background:#626a92!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+7) .quickActionIcon){background:#956262!important}
+        .dashboardPage :global(.quickAction:nth-child(8n+8) .quickActionIcon){background:#4f806f!important}
+
+        .dashboardPage :global(.quickAction strong) {
+          color:#273042 !important;
+          font-size:11px !important;
+          font-weight:900 !important;
+        }
+
+        .dashboardPage :global(.quickAction > span) {
+          color:#7a8190 !important;
+          font-size:8px !important;
+        }
+
+        /* SALES TREND — clean blue/teal chart */
+        .dashboardPage .trendChart {
+          background:
+            linear-gradient(to bottom,rgba(78,103,128,.05) 1px,transparent 1px),
+            #fafbfc !important;
+          background-size:100% 25%,100% 100% !important;
+        }
+
+        .dashboardPage .trendBar {
+          background:linear-gradient(180deg,#655492 0%,#527383 52%,#4f806f 100%) !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage .trendValue {
+          color:#55486f !important;
+        }
+
+        /* ALERT/LIST cards */
+        .dashboardPage .compactList .compactRow {
+          background:#fff !important;
+          border-color:#e8eaee !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage .compactList .compactRow:nth-child(6n+1){box-shadow:inset 3px 0 #655492!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+2){box-shadow:inset 3px 0 #4f8472!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+3){box-shadow:inset 3px 0 #94617e!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+4){box-shadow:inset 3px 0 #9a774a!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+5){box-shadow:inset 3px 0 #4d7d89!important}
+        .dashboardPage .compactList .compactRow:nth-child(6n+6){box-shadow:inset 3px 0 #626a92!important}
+
+        /* VISITORS — light, not purple blocks */
+        .dashboardPage .visitorMetrics .visitorMetric {
+          background:#f7f8fa !important;
+          border:1px solid #e5e8ed !important;
+          color:#273042 !important;
+          box-shadow:none !important;
+        }
+
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+1){border-top:3px solid #655492!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+2){border-top:3px solid #4f8472!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+3){border-top:3px solid #94617e!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+4){border-top:3px solid #9a774a!important}
+        .dashboardPage .visitorMetrics .visitorMetric:nth-child(5n+5){border-top:3px solid #4d7d89!important}
+
+        .dashboardPage .visitorMetric span { color:#7a8190 !important; }
+        .dashboardPage .visitorMetric strong { color:#273042 !important; }
+
+        .dashboardPage .sectionHeader span {
+          background:transparent !important;
+          padding:0 !important;
+          color:#76655e !important;
+          font-size:8px !important;
+        }
+
+        .dashboardPage .sectionHeader h2 {
+          color:#293247 !important;
+        }
+
+        .dashboardPage .googleConnectButton {
+          background:linear-gradient(135deg,#566b91,#527b68) !important;
+          color:#fff !important;
+        }
+
+        .dashboardPage .googleRefreshButton {
+          background:#f4f2f7 !important;
+          color:#625779 !important;
+          border-color:#ddd9e5 !important;
+        }
+
+
+        /* ============================================================
+           NCS DASHBOARD — NO GOLD LABELS / READABILITY FINAL
+           Gold remains only as a small brand accent, not as dashboard text.
+           ============================================================ */
+
+        /* Hero eyebrow: soft ivory/lavender instead of gold */
+        .dashboardPage .hero > div > span {
+          color:#D8D1EA !important;
+        }
+
+        /* Executive pulse tiny headings */
+        .dashboardPage .executivePulseLead > span {
+          color:#CFC5E8 !important;
+        }
+
+        .dashboardPage .executivePulseMetric > span {
+          color:#687084 !important;
+        }
+
+        .dashboardPage .executivePulseMetric:nth-child(2) > span {color:#665A89!important}
+        .dashboardPage .executivePulseMetric.profit > span {color:#4F806F!important}
+        .dashboardPage .executivePulseMetric.money > span {color:#4D7D89!important}
+        .dashboardPage .executivePulseMetric.attention > span {color:#9A774A!important}
+        .dashboardPage .executivePulseMetric.attention.active > span {color:#94617E!important}
+
+        /* Main KPI names: soft white, never gold */
+        .dashboardPage :global(.businessKpi > div:not(.businessKpiMotion):not(.businessKpiPulse) > span) {
+          color:rgba(255,255,255,.82) !important;
+          font-size:8px !important;
+          font-weight:900 !important;
+        }
+
+        /* Today's profit section */
+        .dashboardPage .todayProfitHeader > div > span {
+          color:#665A89 !important;
+        }
+
+        .dashboardPage .todayProfitMetric > span {
+          color:#687084 !important;
+        }
+
+        .dashboardPage .todayProfitMetric.heroMetric > span {color:#665A89!important}
+        .dashboardPage .todayProfitMetric:nth-child(2) > span {color:#4F806F!important}
+        .dashboardPage .todayProfitMetric:nth-child(3) > span {color:#4D7D89!important}
+        .dashboardPage .todayProfitMetric:nth-child(4) > span {color:#9A774A!important}
+        .dashboardPage .todayProfitMetric.warning > span {color:#94617E!important}
+        .dashboardPage .todayProfitMetric.danger > span {color:#956262!important}
+
+        /* Fix all MiniKpi values/names which were nearly invisible */
+        .dashboardPage .secondaryKpis :global(.miniKpi > span),
+        .dashboardPage .catalogueKpis :global(.miniKpi > span) {
+          color:#665A89 !important;
+          font-size:7.5px !important;
+          font-weight:950 !important;
+          letter-spacing:.35px !important;
+        }
+
+        .dashboardPage .secondaryKpis :global(.miniKpi > strong),
+        .dashboardPage .catalogueKpis :global(.miniKpi > strong) {
+          color:#273042 !important;
+          font-size:16px !important;
+          font-weight:950 !important;
+          opacity:1 !important;
+        }
+
+        .dashboardPage .secondaryKpis :global(.miniKpi > small),
+        .dashboardPage .catalogueKpis :global(.miniKpi > small) {
+          color:#7A8190 !important;
+          opacity:1 !important;
+        }
+
+        .dashboardPage .secondaryKpis :global(.miniKpi:nth-child(6n+1) > span),
+        .dashboardPage .catalogueKpis :global(.miniKpi:nth-child(6n+1) > span) {color:#665A89!important}
+        .dashboardPage .secondaryKpis :global(.miniKpi:nth-child(6n+2) > span),
+        .dashboardPage .catalogueKpis :global(.miniKpi:nth-child(6n+2) > span) {color:#4F806F!important}
+        .dashboardPage .secondaryKpis :global(.miniKpi:nth-child(6n+3) > span),
+        .dashboardPage .catalogueKpis :global(.miniKpi:nth-child(6n+3) > span) {color:#94617E!important}
+        .dashboardPage .secondaryKpis :global(.miniKpi:nth-child(6n+4) > span),
+        .dashboardPage .catalogueKpis :global(.miniKpi:nth-child(6n+4) > span) {color:#9A774A!important}
+        .dashboardPage .secondaryKpis :global(.miniKpi:nth-child(6n+5) > span),
+        .dashboardPage .catalogueKpis :global(.miniKpi:nth-child(6n+5) > span) {color:#4D7D89!important}
+        .dashboardPage .secondaryKpis :global(.miniKpi:nth-child(6n+6) > span),
+        .dashboardPage .catalogueKpis :global(.miniKpi:nth-child(6n+6) > span) {color:#626A92!important}
+
+        /* Profit intelligence labels: lavender/teal on dark deck */
+        .dashboardPage .profitIntelligencePanel > div > span,
+        .dashboardPage .profitMetricCard span {
+          color:#D4CCE8 !important;
+        }
+
+        .dashboardPage .profitMetricCard.highlight span {
+          color:#A9D4C2 !important;
+        }
+
+        .dashboardPage .profitMetricCard.warning span {
+          color:#D6B98A !important;
+        }
+
+        /* All ordinary panel section-eyebrows become muted violet/slate */
+        .dashboardPage .sectionHeader span {
+          color:#665A89 !important;
+        }
+
+        /* Alert / visitor / order labels should be dark and readable */
+        .dashboardPage .compactRow span,
+        .dashboardPage .popularPages span,
+        .dashboardPage .googleBusinessPanel span {
+          color:#687084;
+        }
+
+        /* Keep gold only in actual brand/action accents, not information labels */
+        .dashboardPage .todayProfitHeader h2,
+        .dashboardPage .sectionHeader h2 {
+          color:#293247 !important;
+        }
+
       `}</style>
     </div>
   );

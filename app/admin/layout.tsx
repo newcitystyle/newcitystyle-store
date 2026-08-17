@@ -765,6 +765,7 @@ export default function AdminLayout({
   const [hasAdminAccess, setHasAdminAccess] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [collapsedFlyoutGroup, setCollapsedFlyoutGroup] = useState<string | null>(null);
   const [menuSearch, setMenuSearch] = useState("");
   const [openMenuGroup, setOpenMenuGroup] = useState("overview");
   const [commandOpen, setCommandOpen] = useState(false);
@@ -816,10 +817,12 @@ export default function AdminLayout({
   }, [normalizedMenuSearch]);
 
   useEffect(() => {
-    if (!normalizedMenuSearch) {
-      setOpenMenuGroup(activeMenuGroup.id);
-    }
-  }, [activeMenuGroup.id, normalizedMenuSearch]);
+    setOpenMenuGroup("");
+  }, [pathname]);
+
+  useEffect(() => {
+    setCollapsedFlyoutGroup(null);
+  }, [pathname]);
 
   useEffect(() => {
     try {
@@ -1176,7 +1179,7 @@ export default function AdminLayout({
                 rgba(212, 175, 55, 0.18),
                 transparent 28%
               ),
-              linear-gradient(135deg, #03153f, #0a2e73, #164ca8);
+              linear-gradient(135deg, #24114a, #5a39d6, #164ca8);
             color: #ffffff;
             text-align: center;
             font-family: Poppins, Inter, Arial, sans-serif;
@@ -1335,9 +1338,10 @@ export default function AdminLayout({
         <button
           type="button"
           className="ncsSidebarCollapseButton"
-          onClick={() =>
-            setSidebarCollapsed((current) => !current)
-          }
+          onClick={() => {
+            setCollapsedFlyoutGroup(null);
+            setSidebarCollapsed((current) => !current);
+          }}
           aria-label={
             sidebarCollapsed
               ? "Expand admin sidebar"
@@ -1375,30 +1379,91 @@ export default function AdminLayout({
               <span className="ncsMenuLabel">Billing / POS</span>
             </Link>
           ) : sidebarCollapsed ? (
-            <div className="ncsCollapsedGroupRail">
-              {menuGroups.map((group) => {
-                const groupActive = group.id === activeMenuGroup.id;
+            <div className="ncsCollapsedNavWrap">
+              <div className="ncsCollapsedGroupRail">
+                {menuGroups.map((group) => {
+                  const groupActive = group.id === activeMenuGroup.id;
+                  const flyoutOpen = collapsedFlyoutGroup === group.id;
+
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      className={
+                        `${groupActive ? "ncsCollapsedGroupButton ncsCollapsedGroupButtonActive" : "ncsCollapsedGroupButton"} ${
+                          flyoutOpen ? "ncsCollapsedGroupButtonFlyoutOpen" : ""
+                        }`
+                      }
+                      title={group.label}
+                      aria-label={`Open ${group.label}`}
+                      aria-expanded={flyoutOpen}
+                      onClick={() =>
+                        setCollapsedFlyoutGroup((current) =>
+                          current === group.id ? null : group.id,
+                        )
+                      }
+                    >
+                      <span>{group.icon}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {collapsedFlyoutGroup && (() => {
+                const group = menuGroups.find(
+                  (item) => item.id === collapsedFlyoutGroup,
+                );
+
+                if (!group) return null;
 
                 return (
-                  <button
-                    key={group.id}
-                    type="button"
-                    className={
-                      groupActive
-                        ? "ncsCollapsedGroupButton ncsCollapsedGroupButtonActive"
-                        : "ncsCollapsedGroupButton"
-                    }
-                    title={group.label}
-                    aria-label={`Open ${group.label}`}
-                    onClick={() => {
-                      setSidebarCollapsed(false);
-                      setOpenMenuGroup(group.id);
-                    }}
+                  <section
+                    className="ncsCollapsedFlyout"
+                    aria-label={`${group.label} menu`}
                   >
-                    <span>{group.icon}</span>
-                  </button>
+                    <header className="ncsCollapsedFlyoutHeader">
+                      <div className="ncsCollapsedFlyoutHeaderIcon">
+                        {group.icon}
+                      </div>
+                      <div>
+                        <strong>{group.label}</strong>
+                        <span>{group.items.length} tools</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCollapsedFlyoutGroup(null)}
+                        aria-label={`Close ${group.label} menu`}
+                      >
+                        ×
+                      </button>
+                    </header>
+
+                    <div className="ncsCollapsedFlyoutItems">
+                      {group.items.map((item) => (
+                        <Link
+                          key={`collapsed-${item.href}`}
+                          href={item.href}
+                          className={
+                            isActiveRoute(item.href)
+                              ? "ncsCollapsedFlyoutItem ncsCollapsedFlyoutItemActive"
+                              : "ncsCollapsedFlyoutItem"
+                          }
+                          onClick={() => setCollapsedFlyoutGroup(null)}
+                        >
+                          <span className="ncsCollapsedFlyoutItemIcon">
+                            {item.icon}
+                          </span>
+                          <div>
+                            <strong>{item.label}</strong>
+                            <small>{item.href.replace("/admin/", "").replaceAll("-", " ")}</small>
+                          </div>
+                          <span className="ncsCollapsedFlyoutArrow">›</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
                 );
-              })}
+              })()}
             </div>
           ) : (
             <>
@@ -1496,7 +1561,6 @@ export default function AdminLayout({
                   );
 
                   const groupOpen =
-                    normalizedMenuSearch.length > 0 ||
                     openMenuGroup === group.id;
 
                   return (
@@ -1542,16 +1606,18 @@ export default function AdminLayout({
                       </button>
 
                       <div
-                        className="ncsMenuGroupItems"
-                        style={{
-                          display: groupOpen ? "grid" : "none",
-                        }}
+                        className={
+                          groupOpen
+                            ? "ncsMenuGroupItems ncsMenuGroupItemsOpen"
+                            : "ncsMenuGroupItems"
+                        }
                       >
                           {group.items.map((item) => (
                             <Link
                               key={item.href}
                               href={item.href}
                               title={item.label}
+                              onClick={() => setOpenMenuGroup("")}
                               className={
                                 isActiveRoute(item.href)
                                   ? "ncsMenuItem ncsActiveMenuItem"
@@ -1606,6 +1672,70 @@ export default function AdminLayout({
             </>
           )}
         </nav>
+
+        {!sidebarCollapsed && openMenuGroup && (() => {
+          const group = searchedMenuGroups.find(
+            (item) => item.id === openMenuGroup,
+          );
+
+          if (!group) return null;
+
+          return (
+            <section
+              className="ncsExpandedFlyout"
+              aria-label={`${group.label} menu`}
+            >
+              <header className="ncsExpandedFlyoutHeader">
+                <div className="ncsExpandedFlyoutHeaderIcon">
+                  {group.icon}
+                </div>
+
+                <div>
+                  <strong>{group.label}</strong>
+                  <span>{group.items.length} tools</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setOpenMenuGroup("")}
+                  aria-label={`Close ${group.label} menu`}
+                >
+                  ×
+                </button>
+              </header>
+
+              <div className="ncsExpandedFlyoutItems">
+                {group.items.map((item) => (
+                  <Link
+                    key={`expanded-flyout-${item.href}`}
+                    href={item.href}
+                    className={
+                      isActiveRoute(item.href)
+                        ? "ncsExpandedFlyoutItem ncsExpandedFlyoutItemActive"
+                        : "ncsExpandedFlyoutItem"
+                    }
+                    onClick={() => setOpenMenuGroup("")}
+                  >
+                    <span className="ncsExpandedFlyoutItemIcon">
+                      {item.icon}
+                    </span>
+
+                    <div>
+                      <strong>{item.label}</strong>
+                      <small>
+                        {item.href
+                          .replace("/admin/", "")
+                          .replaceAll("-", " ")}
+                      </small>
+                    </div>
+
+                    <span className="ncsExpandedFlyoutArrow">›</span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          );
+        })()}
 
         <div className="ncsSidebarBottom">
           <div className="ncsAdminIdentity">
@@ -1725,7 +1855,7 @@ export default function AdminLayout({
       rgba(212, 175, 55, 0.22),
       transparent 34%
     ),
-    linear-gradient(135deg, #020b24, #061d4a, #0a2e73);
+    linear-gradient(135deg, #020b24, #3b1e7a, #5a39d6);
   box-shadow: 9px 0 22px rgba(3, 21, 63, 0.2);
   color: #f3d66f !important;
   font-size: 10px;
@@ -1773,7 +1903,7 @@ export default function AdminLayout({
   border: 1px solid rgba(10, 46, 115, 0.17);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.98);
-  color: #0a2e73 !important;
+  color: #5a39d6 !important;
   box-shadow:
     0 7px 18px rgba(3, 21, 63, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.96);
@@ -1868,7 +1998,7 @@ export default function AdminLayout({
 .ncsChequeTickerCard-info .ncsChequeTickerStatus {
   border-color: rgba(10, 46, 115, 0.24);
   background: rgba(10, 46, 115, 0.08);
-  color: #0a2e73;
+  color: #5a39d6;
 }
 
 .ncsTickerBankActive {
@@ -1880,7 +2010,7 @@ export default function AdminLayout({
 .ncsChequeTickerSupplier,
 .ncsChequeTickerAmount {
   overflow: hidden;
-  color: #061d4a;
+  color: #3b1e7a;
   font-size: 12px;
   font-weight: 900;
   text-overflow: ellipsis;
@@ -1987,7 +2117,7 @@ export default function AdminLayout({
               transparent 24%
             ),
             linear-gradient(90deg, #fff8df, #fffdf7);
-          color: #0a2e73;
+          color: #5a39d6;
           box-shadow: 0 8px 22px rgba(3, 21, 63, 0.12);
           text-align: center;
         }
@@ -2025,7 +2155,7 @@ export default function AdminLayout({
               rgba(212, 175, 55, 0.18),
               transparent 26%
             ),
-            linear-gradient(180deg, #03153f 0%, #08265f 48%, #0a2e73 100%);
+            linear-gradient(180deg, #24114a 0%, #08265f 48%, #5a39d6 100%);
           color: #ffffff;
           box-shadow: 12px 0 35px rgba(3, 21, 63, 0.2);
           scrollbar-width: thin;
@@ -2357,7 +2487,7 @@ export default function AdminLayout({
               #d4af37,
               #f1d26a
             );
-          color: #0a2e73 !important;
+          color: #5a39d6 !important;
           box-shadow: 0 8px 20px rgba(212, 175, 55, 0.19);
         }
 
@@ -2612,8 +2742,8 @@ export default function AdminLayout({
             ),
             linear-gradient(
               145deg,
-              #03153f,
-              #0a2e73
+              #24114a,
+              #5a39d6
             );
           box-shadow: 0 35px 90px rgba(0, 0, 0, 0.38);
           color: #ffffff;
@@ -2801,7 +2931,7 @@ export default function AdminLayout({
           flex-shrink: 0;
           border-radius: 12px;
           background: linear-gradient(135deg, #d4af37, #f1d26a);
-          color: #0a2e73;
+          color: #5a39d6;
           font-size: 15px;
           font-weight: 950;
         }
@@ -2882,7 +3012,7 @@ export default function AdminLayout({
           border: 1px solid #d4af37;
           border-radius: 0 11px 11px 0;
           background: linear-gradient(180deg, #d4af37, #f1d26a);
-          color: #0a2e73;
+          color: #5a39d6;
           font-size: 25px;
           font-weight: 950;
           cursor: pointer;
@@ -3085,7 +3215,7 @@ export default function AdminLayout({
             justify-content: center;
             border: 1px solid #d4af37;
             border-radius: 12px;
-            background: #0a2e73;
+            background: #5a39d6;
             color: #d4af37;
             font-size: 23px;
             cursor: pointer;
@@ -3101,7 +3231,1403 @@ export default function AdminLayout({
             background: rgba(3, 21, 63, 0.62);
           }
         }
-            `}</style>
+    
+        /* ============================================================
+           NCS ADMIN SHELL — INTERNATIONAL COLORFUL FINAL
+           SIDEBAR / MENU / COMMAND UI — VISUAL ONLY
+           ============================================================ */
+
+        .ncsAdminShell {
+          --ncs-purple:#6d4dff;
+          --ncs-pink:#e950a5;
+          --ncs-cyan:#16b8d4;
+          --ncs-green:#00a67a;
+          --ncs-orange:#f29b30;
+          --ncs-coral:#ff6b6b;
+          --ncs-indigo:#5c6bc0;
+        }
+
+        .ncsAdminShell .ncsSidebar {
+          width:292px;
+          border-right:1px solid rgba(255,255,255,.15) !important;
+          background:
+            radial-gradient(circle at 12% 0%,rgba(233,80,165,.32),transparent 25%),
+            radial-gradient(circle at 100% 24%,rgba(22,184,212,.22),transparent 29%),
+            radial-gradient(circle at 20% 100%,rgba(242,155,48,.18),transparent 24%),
+            linear-gradient(180deg,#24114a 0%,#392477 34%,#143f73 69%,#0d263f 100%) !important;
+          box-shadow:18px 0 48px rgba(31,24,75,.24) !important;
+        }
+
+        .ncsAdminShell .ncsBrandArea {
+          margin:0 0 6px;
+          padding:10px 10px 17px !important;
+          border:1px solid rgba(255,255,255,.15) !important;
+          border-radius:20px !important;
+          background:
+            radial-gradient(circle at 100% 0%,rgba(255,255,255,.15),transparent 34%),
+            linear-gradient(135deg,rgba(109,77,255,.55),rgba(233,80,165,.28)) !important;
+          box-shadow:0 12px 28px rgba(20,12,57,.22);
+        }
+
+        .ncsAdminShell .ncsBrandLogo {
+          width:58px !important;
+          height:58px !important;
+          border:2px solid rgba(255,230,137,.95) !important;
+          border-radius:18px !important;
+          background:
+            linear-gradient(135deg,#ffe58c,#f29b30) !important;
+          color:#24114a !important;
+          box-shadow:0 8px 20px rgba(242,155,48,.28) !important;
+        }
+
+        .ncsAdminShell .ncsBrandText strong {
+          color:#fff !important;
+          font-size:16px !important;
+          letter-spacing:.6px !important;
+        }
+
+        .ncsAdminShell .ncsBrandText span {
+          color:#ffe58c !important;
+        }
+
+        .ncsAdminShell .ncsMenuSearch {
+          height:44px !important;
+          border:1px solid rgba(22,184,212,.32) !important;
+          border-radius:14px !important;
+          background:rgba(255,255,255,.10) !important;
+          color:#fff !important;
+          box-shadow:inset 0 0 0 1px rgba(255,255,255,.02);
+        }
+
+        .ncsAdminShell .ncsMenuSearch:focus {
+          border-color:#16b8d4 !important;
+          background:rgba(255,255,255,.14) !important;
+          box-shadow:0 0 0 3px rgba(22,184,212,.14) !important;
+        }
+
+        .ncsAdminShell .ncsMenuSearch::placeholder {
+          color:rgba(255,255,255,.55) !important;
+        }
+
+        .ncsAdminShell .ncsMenuSearchIcon {
+          color:#4ce3ff !important;
+        }
+
+        .ncsAdminShell .ncsCommandTrigger {
+          min-height:45px !important;
+          border:1px solid rgba(255,229,140,.32) !important;
+          border-radius:14px !important;
+          background:
+            linear-gradient(135deg,rgba(242,155,48,.20),rgba(109,77,255,.18)) !important;
+          box-shadow:0 8px 18px rgba(20,12,57,.14);
+        }
+
+        .ncsAdminShell .ncsCommandTrigger > span {
+          color:#ffe58c !important;
+        }
+
+        .ncsAdminShell .ncsCommandTrigger strong {
+          color:#fff !important;
+        }
+
+        .ncsAdminShell .ncsCommandTrigger kbd {
+          border-color:rgba(255,255,255,.18) !important;
+          background:rgba(255,255,255,.10) !important;
+          color:#aeefff !important;
+        }
+
+        .ncsAdminShell .ncsSmartBlock {
+          border:1px solid rgba(255,255,255,.11) !important;
+          border-radius:15px !important;
+          background:rgba(255,255,255,.055) !important;
+        }
+
+        .ncsAdminShell .ncsSmartBlock:nth-child(1) {
+          background:linear-gradient(135deg,rgba(233,80,165,.15),rgba(255,255,255,.05)) !important;
+        }
+
+        .ncsAdminShell .ncsSmartBlock:nth-child(2) {
+          background:linear-gradient(135deg,rgba(22,184,212,.14),rgba(255,255,255,.05)) !important;
+        }
+
+        .ncsAdminShell .ncsSmartBlockHeader span {
+          color:#ffe58c !important;
+        }
+
+        .ncsAdminShell .ncsSmartLink {
+          border-radius:10px !important;
+        }
+
+        .ncsAdminShell .ncsSmartLink:nth-child(5n+1) > span { color:#ff88c8 !important; }
+        .ncsAdminShell .ncsSmartLink:nth-child(5n+2) > span { color:#4ce3ff !important; }
+        .ncsAdminShell .ncsSmartLink:nth-child(5n+3) > span { color:#6df0bf !important; }
+        .ncsAdminShell .ncsSmartLink:nth-child(5n+4) > span { color:#ffc75d !important; }
+        .ncsAdminShell .ncsSmartLink:nth-child(5n+5) > span { color:#aa9aff !important; }
+
+        .ncsAdminShell .ncsMenuGroups {
+          gap:9px !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroup {
+          overflow:hidden !important;
+          border:1px solid rgba(255,255,255,.10) !important;
+          border-radius:17px !important;
+          background:rgba(255,255,255,.055) !important;
+          box-shadow:0 8px 20px rgba(9,13,37,.12);
+        }
+
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+1) {
+          --group:#6d4dff;
+          background:linear-gradient(135deg,rgba(109,77,255,.22),rgba(255,255,255,.045)) !important;
+        }
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+2) {
+          --group:#00a67a;
+          background:linear-gradient(135deg,rgba(0,166,122,.20),rgba(255,255,255,.045)) !important;
+        }
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+3) {
+          --group:#e950a5;
+          background:linear-gradient(135deg,rgba(233,80,165,.20),rgba(255,255,255,.045)) !important;
+        }
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+4) {
+          --group:#f29b30;
+          background:linear-gradient(135deg,rgba(242,155,48,.20),rgba(255,255,255,.045)) !important;
+        }
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+5) {
+          --group:#16b8d4;
+          background:linear-gradient(135deg,rgba(22,184,212,.20),rgba(255,255,255,.045)) !important;
+        }
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+6) {
+          --group:#5c6bc0;
+          background:linear-gradient(135deg,rgba(92,107,192,.20),rgba(255,255,255,.045)) !important;
+        }
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+7) {
+          --group:#ff6b6b;
+          background:linear-gradient(135deg,rgba(255,107,107,.18),rgba(255,255,255,.045)) !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupButton {
+          min-height:49px !important;
+          border-radius:15px !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupButton:hover {
+          background:rgba(255,255,255,.09) !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupIcon {
+          width:32px !important;
+          height:32px !important;
+          border:0 !important;
+          border-radius:11px !important;
+          background:var(--group,#6d4dff) !important;
+          color:#fff !important;
+          box-shadow:0 6px 14px color-mix(in srgb,var(--group,#6d4dff) 28%,transparent);
+        }
+
+        .ncsAdminShell .ncsMenuGroupLabel {
+          color:#fff !important;
+          font-size:12px !important;
+          font-weight:900 !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupCount {
+          border-color:color-mix(in srgb,var(--group,#6d4dff) 40%,transparent) !important;
+          background:color-mix(in srgb,var(--group,#6d4dff) 22%,transparent) !important;
+          color:#fff !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupChevronOpen {
+          color:#ffe58c !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupItems {
+          gap:5px !important;
+          padding-bottom:9px !important;
+        }
+
+        .ncsAdminShell .ncsMenuItem {
+          min-height:41px !important;
+          border-radius:12px !important;
+          color:rgba(255,255,255,.78) !important;
+        }
+
+        .ncsAdminShell .ncsMenuItem:hover {
+          transform:translateX(3px) !important;
+          border-color:color-mix(in srgb,var(--group,#6d4dff) 42%,transparent) !important;
+          background:color-mix(in srgb,var(--group,#6d4dff) 14%,rgba(255,255,255,.06)) !important;
+          color:#fff !important;
+        }
+
+        .ncsAdminShell .ncsActiveMenuItem {
+          border:1px solid rgba(255,255,255,.38) !important;
+          background:
+            radial-gradient(circle at 90% 10%,rgba(255,255,255,.22),transparent 34%),
+            linear-gradient(135deg,var(--group,#6d4dff),color-mix(in srgb,var(--group,#6d4dff) 67%,#16b8d4)) !important;
+          color:#fff !important;
+          box-shadow:0 10px 22px color-mix(in srgb,var(--group,#6d4dff) 25%,transparent) !important;
+        }
+
+        .ncsAdminShell .ncsActiveMenuItem .ncsMenuIcon {
+          filter:drop-shadow(0 2px 4px rgba(0,0,0,.15));
+        }
+
+        .ncsAdminShell .ncsSidebarBottom {
+          gap:9px !important;
+        }
+
+        .ncsAdminShell .ncsAdminIdentity {
+          border:1px solid rgba(109,77,255,.25) !important;
+          border-radius:17px !important;
+          background:linear-gradient(135deg,rgba(109,77,255,.22),rgba(22,184,212,.12)) !important;
+        }
+
+        .ncsAdminShell .ncsAdminAvatar {
+          background:linear-gradient(135deg,#ffe58c,#f29b30) !important;
+          color:#24114a !important;
+          box-shadow:0 7px 16px rgba(242,155,48,.22);
+        }
+
+        .ncsAdminShell .ncsViewStoreButton {
+          border:1px solid rgba(22,184,212,.55) !important;
+          background:linear-gradient(135deg,rgba(22,184,212,.18),rgba(0,166,122,.16)) !important;
+          color:#78efff !important;
+        }
+
+        .ncsAdminShell .ncsLogoutButton {
+          border:1px solid rgba(255,107,107,.32) !important;
+          background:linear-gradient(135deg,rgba(255,107,107,.17),rgba(233,80,165,.11)) !important;
+          color:#ffd4d4 !important;
+        }
+
+        .ncsAdminShell .ncsSidebarCollapseButton {
+          border:1px solid rgba(255,255,255,.45) !important;
+          background:linear-gradient(180deg,#ffe58c,#f29b30) !important;
+          color:#24114a !important;
+          box-shadow:6px 8px 20px rgba(35,29,70,.28) !important;
+        }
+
+        .ncsAdminShell .ncsAdminContent {
+          background:
+            radial-gradient(circle at 8% 0%,rgba(109,77,255,.05),transparent 21%),
+            radial-gradient(circle at 92% 4%,rgba(22,184,212,.05),transparent 21%),
+            #f3f6fb !important;
+        }
+
+        .ncsAdminShell .ncsAdminPageContent {
+          background:transparent !important;
+        }
+
+        .ncsCommandOverlay .ncsCommandPanel {
+          border:1px solid rgba(109,77,255,.26) !important;
+          border-radius:24px !important;
+          background:
+            radial-gradient(circle at 100% 0%,rgba(22,184,212,.09),transparent 28%),
+            #fff !important;
+          box-shadow:0 32px 100px rgba(24,20,60,.34) !important;
+        }
+
+        .ncsCommandOverlay .ncsCommandHeader {
+          background:linear-gradient(135deg,#24114a,#6d4dff 60%,#16b8d4) !important;
+          color:#fff !important;
+        }
+
+        .ncsCommandOverlay .ncsCommandResult:nth-child(6n+1) .ncsCommandResultIcon{background:#6d4dff!important;color:#fff!important}
+        .ncsCommandOverlay .ncsCommandResult:nth-child(6n+2) .ncsCommandResultIcon{background:#00a67a!important;color:#fff!important}
+        .ncsCommandOverlay .ncsCommandResult:nth-child(6n+3) .ncsCommandResultIcon{background:#e950a5!important;color:#fff!important}
+        .ncsCommandOverlay .ncsCommandResult:nth-child(6n+4) .ncsCommandResultIcon{background:#f29b30!important;color:#fff!important}
+        .ncsCommandOverlay .ncsCommandResult:nth-child(6n+5) .ncsCommandResultIcon{background:#16b8d4!important;color:#fff!important}
+        .ncsCommandOverlay .ncsCommandResult:nth-child(6n+6) .ncsCommandResultIcon{background:#5c6bc0!important;color:#fff!important}
+
+        @media(max-width:900px){
+          .ncsAdminShell .ncsSidebar{
+            background:linear-gradient(180deg,#24114a,#392477 40%,#143f73 72%,#0d263f)!important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS ADMIN LAYOUT FINAL — NO HARD BLUE + COLLAPSE FIX
+           ============================================================ */
+
+        .ncsAdminShell .ncsSidebar {
+          width:292px !important;
+          background:
+            radial-gradient(circle at 4% 0%,rgba(233,80,165,.36),transparent 26%),
+            radial-gradient(circle at 100% 24%,rgba(22,184,212,.30),transparent 31%),
+            radial-gradient(circle at 10% 100%,rgba(242,155,48,.24),transparent 25%),
+            linear-gradient(180deg,#4b247f 0%,#6636a8 28%,#3956a7 56%,#188f9e 82%,#1d6f70 100%) !important;
+          border-right:1px solid rgba(255,255,255,.25) !important;
+          box-shadow:18px 0 48px rgba(48,35,92,.20) !important;
+          transition:width .25s ease,padding .25s ease,transform .25s ease !important;
+        }
+
+        /* IMPORTANT: override expanded width when collapse state is ON. */
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed {
+          width:86px !important;
+          min-width:86px !important;
+          padding-left:12px !important;
+          padding-right:12px !important;
+          overflow:visible !important;
+        }
+
+        .ncsAdminShellCollapsed .ncsAdminContent {
+          margin-left:86px !important;
+        }
+
+        .ncsAdminShell:not(.ncsAdminShellCollapsed) .ncsAdminContent {
+          margin-left:292px !important;
+        }
+
+        .ncsAdminShell .ncsAdminContent {
+          transition:margin-left .25s ease,width .25s ease !important;
+        }
+
+        /* Expanded state — menu names clearly visible */
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsBrandText,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuLabel,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupLabel,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsAdminText {
+          display:block !important;
+          opacity:1 !important;
+          visibility:visible !important;
+        }
+
+        /* Collapsed state — only icons, truly narrow sidebar */
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsBrandText,
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsMenuLabel,
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsMenuGroupLabel,
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsMenuGroupCount,
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsAdminText,
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsMenuSearchWrap,
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCommandTrigger,
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsMenuSmartArea {
+          display:none !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsBrandArea {
+          justify-content:center !important;
+          padding:8px 0 12px !important;
+          background:transparent !important;
+          border-color:transparent !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsBrandLogo {
+          width:52px !important;
+          height:52px !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupRail {
+          display:flex !important;
+          flex-direction:column !important;
+          gap:9px !important;
+          align-items:center !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton {
+          width:54px !important;
+          height:54px !important;
+          border-radius:16px !important;
+          border:1px solid rgba(255,255,255,.20) !important;
+          background:rgba(255,255,255,.10) !important;
+          color:#fff !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+1){background:linear-gradient(135deg,#6d4dff,#8b5cf6)!important}
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+2){background:linear-gradient(135deg,#00a67a,#25bf91)!important}
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+3){background:linear-gradient(135deg,#e950a5,#f47fc2)!important}
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+4){background:linear-gradient(135deg,#f29b30,#f6b85d)!important}
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+5){background:linear-gradient(135deg,#16b8d4,#36c7df)!important}
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+6){background:linear-gradient(135deg,#5c6bc0,#7987dc)!important}
+
+        .ncsAdminShell .ncsSidebarCollapseButton {
+          background:linear-gradient(135deg,#ffe58c,#f29b30)!important;
+          color:#3b1e7a!important;
+          border-color:rgba(255,255,255,.70)!important;
+        }
+
+        /* Names/highlights in expanded menu */
+        .ncsAdminShell .ncsMenuGroupLabel {
+          color:#fff !important;
+          text-shadow:0 1px 4px rgba(0,0,0,.15);
+        }
+
+        .ncsAdminShell .ncsMenuItem .ncsMenuLabel {
+          color:rgba(255,255,255,.86) !important;
+          font-weight:800 !important;
+        }
+
+        .ncsAdminShell .ncsActiveMenuItem .ncsMenuLabel {
+          color:#fff !important;
+          font-weight:950 !important;
+          text-shadow:0 1px 4px rgba(0,0,0,.16);
+        }
+
+        .ncsAdminShell .ncsActiveMenuItem {
+          background:linear-gradient(135deg,#6d4dff,#8b5cf6 55%,#16b8d4)!important;
+          border-color:rgba(255,255,255,.62)!important;
+          box-shadow:0 10px 23px rgba(62,44,150,.28)!important;
+        }
+
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+2) .ncsActiveMenuItem {
+          background:linear-gradient(135deg,#00a67a,#16b8d4)!important;
+        }
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+3) .ncsActiveMenuItem {
+          background:linear-gradient(135deg,#e950a5,#8b5cf6)!important;
+        }
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+4) .ncsActiveMenuItem {
+          background:linear-gradient(135deg,#f29b30,#e950a5)!important;
+        }
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+5) .ncsActiveMenuItem {
+          background:linear-gradient(135deg,#16b8d4,#00a67a)!important;
+        }
+
+        .ncsAdminShell .ncsAdminIdentity {
+          background:linear-gradient(135deg,rgba(109,77,255,.42),rgba(22,184,212,.28))!important;
+          border-color:rgba(255,255,255,.24)!important;
+        }
+
+        .ncsAdminShell .ncsViewStoreButton {
+          background:linear-gradient(135deg,rgba(22,184,212,.36),rgba(0,166,122,.30))!important;
+          color:#fff!important;
+        }
+
+        .ncsAdminShell .ncsLogoutButton {
+          background:linear-gradient(135deg,rgba(255,107,107,.34),rgba(233,80,165,.26))!important;
+          color:#fff!important;
+        }
+
+        @media(max-width:1100px){
+          .ncsAdminShell:not(.ncsAdminShellCollapsed) .ncsAdminContent,
+          .ncsAdminShellCollapsed .ncsAdminContent{
+            margin-left:0 !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS ADMIN SHELL — PREMIUM MUTED INTERNATIONAL FINAL
+           Less bright, clearer labels, richer depth.
+           ============================================================ */
+
+        .ncsAdminShell .ncsSidebar {
+          background:
+            radial-gradient(circle at 10% 0%,rgba(135,86,180,.22),transparent 28%),
+            radial-gradient(circle at 100% 26%,rgba(52,150,156,.16),transparent 30%),
+            linear-gradient(180deg,#2f2145 0%,#3b2d58 34%,#33465f 68%,#2f5d5f 100%) !important;
+          border-right:1px solid rgba(255,255,255,.12) !important;
+          box-shadow:14px 0 34px rgba(26,23,47,.18) !important;
+        }
+
+        .ncsAdminShell .ncsBrandArea {
+          background:
+            linear-gradient(135deg,rgba(255,255,255,.11),rgba(255,255,255,.055)) !important;
+          border-color:rgba(255,255,255,.13) !important;
+          box-shadow:0 8px 20px rgba(17,15,33,.16) !important;
+        }
+
+        .ncsAdminShell .ncsBrandLogo {
+          background:linear-gradient(135deg,#f4d46f,#e6b94c) !important;
+          color:#2f2145 !important;
+          border-color:rgba(255,239,178,.72) !important;
+          box-shadow:0 6px 14px rgba(175,135,43,.18) !important;
+        }
+
+        .ncsAdminShell .ncsBrandText strong {
+          color:#fff !important;
+          font-weight:900 !important;
+        }
+
+        .ncsAdminShell .ncsBrandText span {
+          color:#e9d995 !important;
+        }
+
+        .ncsAdminShell .ncsMenuSearch {
+          background:rgba(255,255,255,.075) !important;
+          border-color:rgba(255,255,255,.13) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsMenuSearch:focus {
+          border-color:#79cbd0 !important;
+          background:rgba(255,255,255,.10) !important;
+          box-shadow:0 0 0 3px rgba(121,203,208,.10) !important;
+        }
+
+        .ncsAdminShell .ncsCommandTrigger {
+          background:rgba(255,255,255,.075) !important;
+          border-color:rgba(255,255,255,.13) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsCommandTrigger > span {
+          color:#e6c85f !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroup {
+          background:rgba(255,255,255,.045) !important;
+          border-color:rgba(255,255,255,.08) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+1){--group:#8270cf}
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+2){--group:#58a78e}
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+3){--group:#bb6d99}
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+4){--group:#c7904b}
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+5){--group:#579ca8}
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+6){--group:#6c79ad}
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+7){--group:#b46b6b}
+
+        .ncsAdminShell .ncsMenuGroupIcon {
+          background:color-mix(in srgb,var(--group) 82%,#ffffff 18%) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsMenuItem .ncsMenuLabel {
+          color:rgba(255,255,255,.82) !important;
+          font-weight:700 !important;
+        }
+
+        .ncsAdminShell .ncsMenuItem:hover {
+          transform:translateX(2px) !important;
+          background:rgba(255,255,255,.07) !important;
+          border-color:rgba(255,255,255,.10) !important;
+        }
+
+        .ncsAdminShell .ncsActiveMenuItem,
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+2) .ncsActiveMenuItem,
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+3) .ncsActiveMenuItem,
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+4) .ncsActiveMenuItem,
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+5) .ncsActiveMenuItem {
+          background:
+            linear-gradient(135deg,
+              color-mix(in srgb,var(--group,#8270cf) 80%,#ffffff 20%),
+              color-mix(in srgb,var(--group,#8270cf) 64%,#4c8793 36%)
+            ) !important;
+          border-color:rgba(255,255,255,.30) !important;
+          box-shadow:0 7px 16px rgba(12,10,25,.16) !important;
+        }
+
+        .ncsAdminShell .ncsActiveMenuItem .ncsMenuLabel {
+          color:#fff !important;
+          font-weight:900 !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupCount {
+          background:rgba(255,255,255,.08) !important;
+          color:rgba(255,255,255,.82) !important;
+          border-color:rgba(255,255,255,.10) !important;
+        }
+
+        .ncsAdminShell .ncsAdminIdentity {
+          background:rgba(255,255,255,.075) !important;
+          border-color:rgba(255,255,255,.12) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsViewStoreButton {
+          background:rgba(71,155,158,.15) !important;
+          border-color:rgba(115,202,205,.26) !important;
+          color:#c8f0f0 !important;
+        }
+
+        .ncsAdminShell .ncsLogoutButton {
+          background:rgba(166,91,106,.13) !important;
+          border-color:rgba(220,139,151,.22) !important;
+          color:#f3d4d8 !important;
+        }
+
+        .ncsAdminShell .ncsSidebarCollapseButton {
+          background:linear-gradient(135deg,#f2d56e,#e5bd55) !important;
+          color:#2f2145 !important;
+          border-color:rgba(255,255,255,.55) !important;
+          box-shadow:0 7px 16px rgba(25,20,45,.18) !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton {
+          background:rgba(255,255,255,.08) !important;
+          border-color:rgba(255,255,255,.12) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+1){color:#b8a9ff!important}
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+2){color:#91d8c0!important}
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+3){color:#e5a5c5!important}
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+4){color:#ecc28a!important}
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+5){color:#8ed5df!important}
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+6){color:#aab3df!important}
+
+        .ncsAdminShell .ncsAdminContent {
+          background:
+            radial-gradient(circle at 8% 0%,rgba(129,112,207,.035),transparent 22%),
+            radial-gradient(circle at 95% 5%,rgba(87,156,168,.035),transparent 22%),
+            #f5f6f8 !important;
+        }
+
+
+        /* ============================================================
+           NCS ADMIN LAYOUT — PREMIUM BALANCED FINAL
+           ============================================================ */
+
+        .ncsAdminShell .ncsSidebar {
+          background:
+            radial-gradient(circle at 8% 0%,rgba(128,91,163,.18),transparent 28%),
+            radial-gradient(circle at 100% 28%,rgba(75,142,147,.13),transparent 30%),
+            linear-gradient(180deg,#30243f 0%,#3a3150 34%,#34495b 68%,#315d5d 100%) !important;
+          box-shadow:12px 0 30px rgba(30,27,47,.15) !important;
+        }
+
+        .ncsAdminShell .ncsBrandArea {
+          background:rgba(255,255,255,.07) !important;
+          border-color:rgba(255,255,255,.11) !important;
+        }
+
+        .ncsAdminShell .ncsCommandTrigger,
+        .ncsAdminShell .ncsSmartBlock,
+        .ncsAdminShell .ncsMenuGroup,
+        .ncsAdminShell .ncsAdminIdentity {
+          background:rgba(255,255,255,.05) !important;
+          border-color:rgba(255,255,255,.08) !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupIcon {
+          filter:saturate(.72) brightness(.98);
+        }
+
+        .ncsAdminShell .ncsMenuItem .ncsMenuLabel {
+          color:rgba(255,255,255,.84) !important;
+        }
+
+        .ncsAdminShell .ncsActiveMenuItem,
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+2) .ncsActiveMenuItem,
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+3) .ncsActiveMenuItem,
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+4) .ncsActiveMenuItem,
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+5) .ncsActiveMenuItem {
+          background:
+            linear-gradient(135deg,#6e5d9d,#5c8391) !important;
+          border-color:rgba(255,255,255,.28) !important;
+          box-shadow:0 6px 15px rgba(14,13,26,.14) !important;
+        }
+
+        .ncsAdminShell .ncsViewStoreButton {
+          background:rgba(70,142,145,.13) !important;
+          border-color:rgba(106,184,187,.20) !important;
+        }
+
+        .ncsAdminShell .ncsLogoutButton {
+          background:rgba(151,84,97,.11) !important;
+          border-color:rgba(207,126,138,.18) !important;
+        }
+
+        .ncsAdminShell .ncsSidebarCollapseButton {
+          background:linear-gradient(135deg,#efd36f,#dfb957) !important;
+          box-shadow:0 6px 14px rgba(24,20,38,.15) !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton {
+          background:rgba(255,255,255,.06) !important;
+          border-color:rgba(255,255,255,.10) !important;
+        }
+
+
+        /* ============================================================
+           NCS WEB ADMIN — MOBILE COMMAND DECK MATCH
+           Deep premium shell, restrained accents, no rainbow wash.
+           ============================================================ */
+
+        .ncsAdminShell .ncsSidebar {
+          width:292px !important;
+          background:
+            radial-gradient(circle at 15% -4%, rgba(102,62,170,.28), transparent 29%),
+            radial-gradient(circle at 100% 18%, rgba(25,92,145,.20), transparent 31%),
+            linear-gradient(180deg,#17102f 0%,#24184a 38%,#15345a 72%,#10273f 100%) !important;
+          border-right:1px solid rgba(255,255,255,.10) !important;
+          box-shadow:14px 0 34px rgba(9,11,28,.22) !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed {
+          width:86px !important;
+          min-width:86px !important;
+        }
+
+        .ncsAdminShellCollapsed .ncsAdminContent {
+          margin-left:86px !important;
+        }
+
+        .ncsAdminShell:not(.ncsAdminShellCollapsed) .ncsAdminContent {
+          margin-left:292px !important;
+        }
+
+        .ncsAdminShell .ncsBrandArea {
+          padding:10px 10px 16px !important;
+          border:1px solid rgba(255,255,255,.14) !important;
+          border-radius:22px !important;
+          background:
+            radial-gradient(circle at 100% 0%,rgba(255,255,255,.15),transparent 34%),
+            linear-gradient(135deg,#6c3fd1 0%,#b64d91 54%,#ef9d4a 100%) !important;
+          box-shadow:0 12px 26px rgba(14,10,35,.25) !important;
+        }
+
+        .ncsAdminShell .ncsBrandLogo {
+          width:58px !important;
+          height:58px !important;
+          border-radius:18px !important;
+          border:2px solid rgba(255,248,210,.85) !important;
+          background:linear-gradient(135deg,#fff2a8,#e6b94c) !important;
+          color:#2a1c4d !important;
+          box-shadow:0 7px 17px rgba(201,157,54,.22) !important;
+        }
+
+        .ncsAdminShell .ncsBrandText strong {
+          color:#fff !important;
+          font-size:16px !important;
+          font-weight:900 !important;
+        }
+
+        .ncsAdminShell .ncsBrandText span {
+          color:rgba(255,255,255,.70) !important;
+        }
+
+        .ncsAdminShell .ncsMenuSearch {
+          height:46px !important;
+          border:1px solid rgba(222,170,220,.28) !important;
+          border-radius:14px !important;
+          background:rgba(255,255,255,.06) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsMenuSearch::placeholder {
+          color:rgba(255,255,255,.48) !important;
+        }
+
+        .ncsAdminShell .ncsMenuSearch:focus {
+          border-color:rgba(121,177,221,.50) !important;
+          background:rgba(255,255,255,.085) !important;
+          box-shadow:0 0 0 3px rgba(89,131,190,.10) !important;
+        }
+
+        .ncsAdminShell .ncsCommandTrigger {
+          min-height:46px !important;
+          border:1px solid rgba(214,185,116,.28) !important;
+          border-radius:14px !important;
+          background:rgba(255,255,255,.055) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsCommandTrigger > span {
+          color:#e9c96a !important;
+        }
+
+        .ncsAdminShell .ncsCommandTrigger strong {
+          color:#fff !important;
+        }
+
+        .ncsAdminShell .ncsSmartBlock {
+          border:0 !important;
+          background:transparent !important;
+        }
+
+        .ncsAdminShell .ncsSmartBlockHeader span {
+          color:#e8c86a !important;
+        }
+
+        .ncsAdminShell .ncsSmartLink {
+          border:1px solid rgba(255,255,255,.10) !important;
+          border-radius:11px !important;
+          background:rgba(255,255,255,.045) !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroup {
+          border:1px solid rgba(255,255,255,.09) !important;
+          border-radius:18px !important;
+          background:
+            linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.035)) !important;
+          box-shadow:none !important;
+          overflow:hidden !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+1){--group:#7357c7}
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+2){--group:#3b8f84}
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+3){--group:#a85f8c}
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+4){--group:#b98543}
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+5){--group:#477f9b}
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+6){--group:#6672a5}
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+7){--group:#9e6266}
+
+        .ncsAdminShell .ncsMenuGroupIcon {
+          width:32px !important;
+          height:32px !important;
+          border-radius:11px !important;
+          border:1px solid rgba(255,255,255,.12) !important;
+          background:color-mix(in srgb,var(--group) 72%,#24304a 28%) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupLabel {
+          color:#fff !important;
+          font-size:12px !important;
+          font-weight:900 !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupCount {
+          background:rgba(255,255,255,.065) !important;
+          border-color:rgba(255,255,255,.10) !important;
+          color:rgba(255,255,255,.74) !important;
+        }
+
+        .ncsAdminShell .ncsMenuItem {
+          min-height:41px !important;
+          border-radius:12px !important;
+          color:rgba(255,255,255,.76) !important;
+        }
+
+        .ncsAdminShell .ncsMenuItem:hover {
+          transform:translateX(2px) !important;
+          background:rgba(255,255,255,.065) !important;
+          border-color:rgba(255,255,255,.08) !important;
+        }
+
+        .ncsAdminShell .ncsMenuItem .ncsMenuLabel {
+          color:rgba(255,255,255,.80) !important;
+          font-weight:700 !important;
+        }
+
+        .ncsAdminShell .ncsActiveMenuItem,
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+2) .ncsActiveMenuItem,
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+3) .ncsActiveMenuItem,
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+4) .ncsActiveMenuItem,
+        .ncsAdminShell .ncsMenuGroup:nth-child(7n+5) .ncsActiveMenuItem {
+          background:
+            linear-gradient(135deg,#7057c7 0%,#5c68ad 58%,#477f9b 100%) !important;
+          border-color:rgba(255,255,255,.28) !important;
+          box-shadow:0 7px 16px rgba(9,11,28,.18) !important;
+        }
+
+        .ncsAdminShell .ncsActiveMenuItem .ncsMenuLabel {
+          color:#fff !important;
+          font-weight:900 !important;
+        }
+
+        .ncsAdminShell .ncsAdminIdentity {
+          border:1px solid rgba(255,255,255,.10) !important;
+          border-radius:17px !important;
+          background:rgba(255,255,255,.055) !important;
+        }
+
+        .ncsAdminShell .ncsAdminAvatar {
+          background:linear-gradient(135deg,#f3d36d,#e6b94c) !important;
+          color:#2a1c4d !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsViewStoreButton {
+          background:rgba(45,129,129,.12) !important;
+          border-color:rgba(84,177,177,.22) !important;
+          color:#c9efee !important;
+        }
+
+        .ncsAdminShell .ncsLogoutButton {
+          background:rgba(142,72,87,.11) !important;
+          border-color:rgba(202,121,134,.18) !important;
+          color:#f0d1d6 !important;
+        }
+
+        .ncsAdminShell .ncsSidebarCollapseButton {
+          background:linear-gradient(135deg,#f1d56d,#e2b94d) !important;
+          color:#2a1c4d !important;
+          border-color:rgba(255,255,255,.50) !important;
+          box-shadow:0 6px 14px rgba(14,10,35,.18) !important;
+        }
+
+        .ncsAdminShell .ncsAdminContent {
+          background:
+            radial-gradient(circle at 8% 0%,rgba(103,84,164,.035),transparent 22%),
+            radial-gradient(circle at 92% 0%,rgba(67,125,142,.035),transparent 22%),
+            #f5f6f8 !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton {
+          background:rgba(255,255,255,.055) !important;
+          border-color:rgba(255,255,255,.09) !important;
+          box-shadow:none !important;
+        }
+
+        @media(max-width:1100px){
+          .ncsAdminShell:not(.ncsAdminShellCollapsed) .ncsAdminContent,
+          .ncsAdminShellCollapsed .ncsAdminContent{
+            margin-left:0 !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS COLLAPSED SIDEBAR — FLYOUT + HIGH CONTRAST ICONS FINAL
+           ============================================================ */
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed {
+          width:86px !important;
+          min-width:86px !important;
+          overflow:visible !important;
+          background:
+            radial-gradient(circle at 20% 0%,rgba(108,66,176,.28),transparent 28%),
+            linear-gradient(180deg,#17102f 0%,#24184a 38%,#15345a 72%,#10273f 100%) !important;
+        }
+
+        .ncsCollapsedNavWrap {
+          position:relative;
+          min-height:0;
+          flex:1;
+          overflow:visible;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupRail {
+          display:flex !important;
+          flex-direction:column !important;
+          align-items:center !important;
+          gap:10px !important;
+          overflow:visible !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton {
+          width:56px !important;
+          height:56px !important;
+          min-width:56px !important;
+          min-height:56px !important;
+          border:1px solid rgba(255,255,255,.18) !important;
+          border-radius:17px !important;
+          background:rgba(255,255,255,.075) !important;
+          color:#fff !important;
+          font-size:21px !important;
+          font-weight:1000 !important;
+          box-shadow:0 7px 16px rgba(7,10,28,.15) !important;
+          text-shadow:0 1px 4px rgba(0,0,0,.20) !important;
+          opacity:1 !important;
+          filter:none !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton > span {
+          display:grid !important;
+          place-items:center !important;
+          width:100% !important;
+          height:100% !important;
+          color:inherit !important;
+          opacity:1 !important;
+          filter:none !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+1) {
+          background:linear-gradient(135deg,#6d4dff,#8668e8) !important;
+          border-color:#a998ef !important;
+        }
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+2) {
+          background:linear-gradient(135deg,#00a67a,#28b88d) !important;
+          border-color:#69d4b3 !important;
+        }
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+3) {
+          background:linear-gradient(135deg,#e950a5,#ef72bb) !important;
+          border-color:#f3a2d0 !important;
+        }
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+4) {
+          background:linear-gradient(135deg,#f29b30,#f5b057) !important;
+          border-color:#ffd083 !important;
+        }
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+5) {
+          background:linear-gradient(135deg,#16b8d4,#35c6df) !important;
+          border-color:#84e3f1 !important;
+        }
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:nth-child(6n+6) {
+          background:linear-gradient(135deg,#5c6bc0,#7c89d8) !important;
+          border-color:#aab4ef !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton:hover {
+          transform:translateX(3px) scale(1.04) !important;
+          filter:brightness(1.06) !important;
+          box-shadow:0 10px 22px rgba(7,10,28,.22) !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButtonActive,
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButtonFlyoutOpen {
+          outline:2px solid #f1d56d !important;
+          outline-offset:2px !important;
+          box-shadow:0 0 0 4px rgba(241,213,109,.10),0 10px 24px rgba(7,10,28,.22) !important;
+        }
+
+        /* Flyout is OUTSIDE the 86px rail */
+        .ncsCollapsedFlyout {
+          position:fixed !important;
+          z-index:180 !important;
+          top:132px !important;
+          left:98px !important;
+          width:310px !important;
+          max-height:calc(100vh - 160px) !important;
+          overflow:hidden !important;
+          border:1px solid rgba(255,255,255,.16) !important;
+          border-radius:22px !important;
+          background:
+            radial-gradient(circle at 100% 0%,rgba(231,146,87,.18),transparent 27%),
+            radial-gradient(circle at 0% 0%,rgba(111,78,190,.26),transparent 31%),
+            linear-gradient(180deg,#241648 0%,#27365b 54%,#1d5360 100%) !important;
+          color:#fff !important;
+          box-shadow:0 28px 70px rgba(9,10,27,.34) !important;
+          animation:ncsCollapsedFlyoutEnter .20s ease-out both !important;
+        }
+
+        .ncsCollapsedFlyoutHeader {
+          display:grid !important;
+          grid-template-columns:48px minmax(0,1fr) 34px !important;
+          align-items:center !important;
+          gap:11px !important;
+          padding:15px !important;
+          border-bottom:1px solid rgba(255,255,255,.11) !important;
+          background:linear-gradient(135deg,rgba(109,77,255,.22),rgba(233,80,165,.13)) !important;
+        }
+
+        .ncsCollapsedFlyoutHeaderIcon {
+          width:48px !important;
+          height:48px !important;
+          display:grid !important;
+          place-items:center !important;
+          border:1px solid rgba(255,255,255,.22) !important;
+          border-radius:15px !important;
+          background:linear-gradient(135deg,#f3d56f,#eeb04d) !important;
+          color:#2b1b49 !important;
+          font-size:20px !important;
+          font-weight:1000 !important;
+        }
+
+        .ncsCollapsedFlyoutHeader strong,
+        .ncsCollapsedFlyoutHeader span {
+          display:block !important;
+        }
+
+        .ncsCollapsedFlyoutHeader strong {
+          color:#fff !important;
+          font-size:14px !important;
+          font-weight:950 !important;
+        }
+
+        .ncsCollapsedFlyoutHeader span {
+          margin-top:3px !important;
+          color:rgba(255,255,255,.62) !important;
+          font-size:8px !important;
+          font-weight:700 !important;
+        }
+
+        .ncsCollapsedFlyoutHeader > button {
+          width:34px !important;
+          height:34px !important;
+          border:1px solid rgba(255,255,255,.16) !important;
+          border-radius:11px !important;
+          background:rgba(255,255,255,.08) !important;
+          color:#fff !important;
+          font-size:20px !important;
+          cursor:pointer !important;
+        }
+
+        .ncsCollapsedFlyoutItems {
+          display:grid !important;
+          gap:6px !important;
+          max-height:calc(100vh - 245px) !important;
+          padding:10px !important;
+          overflow-y:auto !important;
+          scrollbar-width:thin;
+          scrollbar-color:rgba(241,213,109,.55) transparent;
+        }
+
+        .ncsCollapsedFlyoutItem {
+          display:grid !important;
+          grid-template-columns:42px minmax(0,1fr) 20px !important;
+          align-items:center !important;
+          gap:10px !important;
+          min-height:58px !important;
+          padding:8px 10px !important;
+          border:1px solid rgba(255,255,255,.08) !important;
+          border-radius:14px !important;
+          background:rgba(255,255,255,.045) !important;
+          color:#fff !important;
+          text-decoration:none !important;
+          transition:transform .16s ease,background .16s ease,border-color .16s ease !important;
+        }
+
+        .ncsCollapsedFlyoutItem:hover {
+          transform:translateX(3px) !important;
+          border-color:rgba(255,255,255,.18) !important;
+          background:rgba(255,255,255,.085) !important;
+        }
+
+        .ncsCollapsedFlyoutItemActive {
+          border-color:rgba(241,213,109,.46) !important;
+          background:linear-gradient(135deg,rgba(109,77,255,.30),rgba(22,184,212,.16)) !important;
+        }
+
+        .ncsCollapsedFlyoutItemIcon {
+          width:42px !important;
+          height:42px !important;
+          display:grid !important;
+          place-items:center !important;
+          border:1px solid rgba(255,255,255,.14) !important;
+          border-radius:13px !important;
+          background:rgba(255,255,255,.09) !important;
+          color:#fff !important;
+          font-size:17px !important;
+          opacity:1 !important;
+          filter:none !important;
+        }
+
+        .ncsCollapsedFlyoutItem:nth-child(6n+1) .ncsCollapsedFlyoutItemIcon {background:#6d4dff!important}
+        .ncsCollapsedFlyoutItem:nth-child(6n+2) .ncsCollapsedFlyoutItemIcon {background:#00a67a!important}
+        .ncsCollapsedFlyoutItem:nth-child(6n+3) .ncsCollapsedFlyoutItemIcon {background:#e950a5!important}
+        .ncsCollapsedFlyoutItem:nth-child(6n+4) .ncsCollapsedFlyoutItemIcon {background:#f29b30!important}
+        .ncsCollapsedFlyoutItem:nth-child(6n+5) .ncsCollapsedFlyoutItemIcon {background:#16b8d4!important}
+        .ncsCollapsedFlyoutItem:nth-child(6n+6) .ncsCollapsedFlyoutItemIcon {background:#5c6bc0!important}
+
+        .ncsCollapsedFlyoutItem strong,
+        .ncsCollapsedFlyoutItem small {
+          display:block !important;
+        }
+
+        .ncsCollapsedFlyoutItem strong {
+          color:#fff !important;
+          font-size:11px !important;
+          font-weight:900 !important;
+        }
+
+        .ncsCollapsedFlyoutItem small {
+          margin-top:3px !important;
+          color:rgba(255,255,255,.52) !important;
+          font-size:7px !important;
+          text-transform:capitalize !important;
+        }
+
+        .ncsCollapsedFlyoutArrow {
+          color:#f1d56d !important;
+          font-size:22px !important;
+          font-weight:950 !important;
+        }
+
+        @keyframes ncsCollapsedFlyoutEnter {
+          from {opacity:0;transform:translateX(-8px) scale(.985)}
+          to {opacity:1;transform:translateX(0) scale(1)}
+        }
+
+        @media(max-width:1100px){
+          .ncsCollapsedFlyout {
+            display:none !important;
+          }
+        }
+
+
+        /* ============================================================
+           ALL EXPANDED GROUPS — TOP-LAYER FLYOUT FINAL
+           Inventory / Sales / Finance / Growth / Overview etc.
+           ============================================================ */
+
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroup {
+          overflow:visible !important;
+        }
+
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupItems,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupItemsOpen {
+          display:none !important;
+        }
+
+        .ncsExpandedFlyout {
+          position:fixed !important;
+          z-index:260 !important;
+          top:210px !important;
+          left:304px !important;
+          width:334px !important;
+          max-height:calc(100vh - 236px) !important;
+          overflow:hidden !important;
+          border:1px solid rgba(255,255,255,.18) !important;
+          border-radius:22px !important;
+          background:
+            radial-gradient(circle at 100% 0%,rgba(236,159,84,.18),transparent 28%),
+            radial-gradient(circle at 0% 0%,rgba(111,78,190,.28),transparent 32%),
+            linear-gradient(180deg,#241648 0%,#29375c 54%,#1d5360 100%) !important;
+          color:#fff !important;
+          box-shadow:0 28px 75px rgba(9,10,27,.38) !important;
+          backdrop-filter:blur(16px) !important;
+          animation:ncsExpandedFlyoutEnter .20s ease-out both !important;
+        }
+
+        .ncsExpandedFlyoutHeader {
+          display:grid !important;
+          grid-template-columns:50px minmax(0,1fr) 36px !important;
+          align-items:center !important;
+          gap:12px !important;
+          padding:15px !important;
+          border-bottom:1px solid rgba(255,255,255,.11) !important;
+          background:linear-gradient(
+            135deg,
+            rgba(109,77,255,.24),
+            rgba(233,80,165,.13)
+          ) !important;
+        }
+
+        .ncsExpandedFlyoutHeaderIcon {
+          width:50px !important;
+          height:50px !important;
+          display:grid !important;
+          place-items:center !important;
+          border:1px solid rgba(255,255,255,.28) !important;
+          border-radius:15px !important;
+          background:linear-gradient(135deg,#f3d56f,#efad49) !important;
+          color:#2b1b49 !important;
+          font-size:21px !important;
+          font-weight:1000 !important;
+          box-shadow:0 7px 16px rgba(8,10,25,.16) !important;
+        }
+
+        .ncsExpandedFlyoutHeader strong,
+        .ncsExpandedFlyoutHeader span {
+          display:block !important;
+        }
+
+        .ncsExpandedFlyoutHeader strong {
+          color:#fff !important;
+          font-size:15px !important;
+          font-weight:950 !important;
+        }
+
+        .ncsExpandedFlyoutHeader span {
+          margin-top:3px !important;
+          color:rgba(255,255,255,.60) !important;
+          font-size:8px !important;
+          font-weight:700 !important;
+        }
+
+        .ncsExpandedFlyoutHeader > button {
+          width:36px !important;
+          height:36px !important;
+          border:1px solid rgba(255,255,255,.16) !important;
+          border-radius:11px !important;
+          background:rgba(255,255,255,.08) !important;
+          color:#fff !important;
+          font-size:21px !important;
+          cursor:pointer !important;
+        }
+
+        .ncsExpandedFlyoutItems {
+          display:grid !important;
+          gap:7px !important;
+          max-height:calc(100vh - 325px) !important;
+          padding:11px !important;
+          overflow-y:auto !important;
+          scrollbar-width:thin !important;
+          scrollbar-color:rgba(241,213,109,.58) transparent !important;
+        }
+
+        .ncsExpandedFlyoutItem {
+          display:grid !important;
+          grid-template-columns:44px minmax(0,1fr) 20px !important;
+          align-items:center !important;
+          gap:10px !important;
+          min-height:60px !important;
+          padding:8px 10px !important;
+          border:1px solid rgba(255,255,255,.08) !important;
+          border-radius:14px !important;
+          background:rgba(255,255,255,.045) !important;
+          color:#fff !important;
+          text-decoration:none !important;
+          transition:
+            transform .16s ease,
+            background .16s ease,
+            border-color .16s ease !important;
+        }
+
+        .ncsExpandedFlyoutItem:hover {
+          transform:translateX(3px) !important;
+          border-color:rgba(255,255,255,.18) !important;
+          background:rgba(255,255,255,.085) !important;
+        }
+
+        .ncsExpandedFlyoutItemActive {
+          border-color:rgba(241,213,109,.48) !important;
+          background:linear-gradient(
+            135deg,
+            rgba(109,77,255,.32),
+            rgba(22,184,212,.17)
+          ) !important;
+          box-shadow:inset 3px 0 #f1d56d !important;
+        }
+
+        .ncsExpandedFlyoutItemIcon {
+          width:44px !important;
+          height:44px !important;
+          display:grid !important;
+          place-items:center !important;
+          border:1px solid rgba(255,255,255,.16) !important;
+          border-radius:13px !important;
+          color:#fff !important;
+          font-size:18px !important;
+          font-weight:950 !important;
+          opacity:1 !important;
+          filter:none !important;
+        }
+
+        .ncsExpandedFlyoutItem:nth-child(6n+1) .ncsExpandedFlyoutItemIcon {background:#6d4dff!important}
+        .ncsExpandedFlyoutItem:nth-child(6n+2) .ncsExpandedFlyoutItemIcon {background:#00a67a!important}
+        .ncsExpandedFlyoutItem:nth-child(6n+3) .ncsExpandedFlyoutItemIcon {background:#e950a5!important}
+        .ncsExpandedFlyoutItem:nth-child(6n+4) .ncsExpandedFlyoutItemIcon {background:#f29b30!important}
+        .ncsExpandedFlyoutItem:nth-child(6n+5) .ncsExpandedFlyoutItemIcon {background:#16b8d4!important}
+        .ncsExpandedFlyoutItem:nth-child(6n+6) .ncsExpandedFlyoutItemIcon {background:#5c6bc0!important}
+
+        .ncsExpandedFlyoutItem strong,
+        .ncsExpandedFlyoutItem small {
+          display:block !important;
+        }
+
+        .ncsExpandedFlyoutItem strong {
+          color:#fff !important;
+          font-size:11px !important;
+          font-weight:900 !important;
+        }
+
+        .ncsExpandedFlyoutItem small {
+          margin-top:3px !important;
+          color:rgba(255,255,255,.52) !important;
+          font-size:7px !important;
+          text-transform:capitalize !important;
+        }
+
+        .ncsExpandedFlyoutArrow {
+          color:#f1d56d !important;
+          font-size:23px !important;
+          font-weight:950 !important;
+        }
+
+        @keyframes ncsExpandedFlyoutEnter {
+          from {
+            opacity:0;
+            transform:translateX(-10px) scale(.985);
+          }
+          to {
+            opacity:1;
+            transform:translateX(0) scale(1);
+          }
+        }
+
+        /* Small screens keep the old in-sidebar accordion behavior. */
+        @media(max-width:1100px){
+          .ncsExpandedFlyout {
+            display:none !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupItems {
+            display:none !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupItemsOpen {
+            display:grid !important;
+          }
+        }
+
+        `}</style>
     </div>
   );
 }
