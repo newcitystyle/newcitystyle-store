@@ -753,6 +753,16 @@ export default function ProductPage() {
   async function addToWishlist() {
     if (!product || addingToWishlist) return;
 
+    if (designMode && !selectedDesign) {
+      alert("Please select the design you want.");
+      return;
+    }
+
+    if (sizes.length > 0 && !selectedSize) {
+      alert("Please select a size");
+      return;
+    }
+
     setAddingToWishlist(true);
 
     try {
@@ -764,29 +774,52 @@ export default function ProductPage() {
         return;
       }
 
-      const { data } = await supabase
+      const wishlistImage = selectedImage || images[0] || "";
+      const wishlistName =
+        designMode && selectedDesign?.designName
+          ? `${getProductName(product)} — ${selectedDesign.designName}`
+          : getProductName(product);
+
+      /*
+       * IMPORTANT:
+       * Wishlist uniqueness is per selected design image, not only product_id.
+       * This lets one parent product save multiple design photos separately
+       * without changing the existing wishlist table schema.
+       */
+      const { data: existingItems, error: existingError } = await supabase
         .from("wishlist")
-        .select("*")
+        .select("id")
         .eq("user_id", user.id)
         .eq("product_id", product.id)
-        .maybeSingle();
+        .eq("image", wishlistImage)
+        .limit(1);
 
-      if (data) {
-        alert("Product Already in Wishlist ❤️");
+      if (existingError) throw existingError;
+
+      if ((existingItems || []).length > 0) {
+        alert(
+          designMode
+            ? "This design is already in your Wishlist ❤️"
+            : "Product Already in Wishlist ❤️"
+        );
         return;
       }
 
       const { error } = await supabase.from("wishlist").insert({
         user_id: user.id,
         product_id: product.id,
-        name: getProductName(product),
-        image: selectedImage || images[0] || "",
+        name: wishlistName,
+        image: wishlistImage,
         price,
       });
 
       if (error) throw error;
 
-      alert("Added To Wishlist ❤️");
+      alert(
+        designMode && selectedDesign?.designName
+          ? `${selectedDesign.designName} added to Wishlist ❤️`
+          : "Added To Wishlist ❤️"
+      );
     } catch (error) {
       alert(
         error instanceof Error
