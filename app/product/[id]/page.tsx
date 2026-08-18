@@ -753,16 +753,6 @@ export default function ProductPage() {
   async function addToWishlist() {
     if (!product || addingToWishlist) return;
 
-    if (designMode && !selectedDesign) {
-      alert("Please select the design you want.");
-      return;
-    }
-
-    if (sizes.length > 0 && !selectedSize) {
-      alert("Please select a size");
-      return;
-    }
-
     setAddingToWishlist(true);
 
     try {
@@ -774,52 +764,29 @@ export default function ProductPage() {
         return;
       }
 
-      const wishlistImage = selectedImage || images[0] || "";
-      const wishlistName =
-        designMode && selectedDesign?.designName
-          ? `${getProductName(product)} — ${selectedDesign.designName}`
-          : getProductName(product);
-
-      /*
-       * IMPORTANT:
-       * Wishlist uniqueness is per selected design image, not only product_id.
-       * This lets one parent product save multiple design photos separately
-       * without changing the existing wishlist table schema.
-       */
-      const { data: existingItems, error: existingError } = await supabase
+      const { data } = await supabase
         .from("wishlist")
-        .select("id")
+        .select("*")
         .eq("user_id", user.id)
         .eq("product_id", product.id)
-        .eq("image", wishlistImage)
-        .limit(1);
+        .maybeSingle();
 
-      if (existingError) throw existingError;
-
-      if ((existingItems || []).length > 0) {
-        alert(
-          designMode
-            ? "This design is already in your Wishlist ❤️"
-            : "Product Already in Wishlist ❤️"
-        );
+      if (data) {
+        alert("Product Already in Wishlist ❤️");
         return;
       }
 
       const { error } = await supabase.from("wishlist").insert({
         user_id: user.id,
         product_id: product.id,
-        name: wishlistName,
-        image: wishlistImage,
+        name: getProductName(product),
+        image: selectedImage || images[0] || "",
         price,
       });
 
       if (error) throw error;
 
-      alert(
-        designMode && selectedDesign?.designName
-          ? `${selectedDesign.designName} added to Wishlist ❤️`
-          : "Added To Wishlist ❤️"
-      );
+      alert("Added To Wishlist ❤️");
     } catch (error) {
       alert(
         error instanceof Error
@@ -832,27 +799,37 @@ export default function ProductPage() {
   }
 
   async function shareProduct() {
-    const productTitle = getProductName(product || ({} as Product));
+    if (!product) return;
+
+    const productTitle = getProductName(product);
     const productUrl = window.location.href;
     const imageUrl = selectedImage || images[0] || "";
 
-    const shareText =
-      `Check out ${productTitle} on NEW CITY STYLE\n${productUrl}`;
+    // Keep the caption intentionally short.
+    // WhatsApp/Facebook/Instagram can reject or trim very long share text.
+    const shortCaption = `${productTitle}\nNEW CITY STYLE`;
 
     try {
-      // On supported mobile browsers, share the actual product image file
-      // together with the product text/link so WhatsApp, Instagram, Facebook,
-      // etc. can receive the image instead of only a plain URL.
-      if (navigator.share && imageUrl) {
+      /*
+       * BEST MOBILE EXPERIENCE:
+       * Share the actual selected product photo as a file.
+       * Do NOT add the long description or image URL to the caption.
+       */
+      if (
+        navigator.share &&
+        typeof navigator.canShare === "function" &&
+        imageUrl
+      ) {
         try {
           const imageResponse = await fetch(imageUrl, {
             cache: "no-store",
+            mode: "cors",
           });
 
           if (imageResponse.ok) {
             const imageBlob = await imageResponse.blob();
-
             const mimeType = imageBlob.type || "image/jpeg";
+
             const extension =
               mimeType.includes("png")
                 ? "png"
@@ -872,33 +849,33 @@ export default function ProductPage() {
               { type: mimeType }
             );
 
-            const fileShareData = {
-              title: productTitle,
-              text: shareText,
-              files: [imageFile],
-            };
-
-            if (
-              typeof navigator.canShare === "function" &&
-              navigator.canShare({ files: [imageFile] })
-            ) {
-              await navigator.share(fileShareData);
+            if (navigator.canShare({ files: [imageFile] })) {
+              await navigator.share({
+                title: productTitle,
+                text: shortCaption,
+                files: [imageFile],
+              });
               return;
             }
           }
         } catch (imageShareError) {
           console.info(
-            "Image share unavailable; falling back to link share.",
+            "Direct photo share unavailable; using link preview fallback.",
             imageShareError
           );
         }
       }
 
-      // Safe fallback for browsers/apps that do not support file sharing.
+      /*
+       * FALLBACK:
+       * Share only the product link with a very short caption.
+       * The new product layout metadata supplies the preview photo
+       * for WhatsApp/Facebook link previews.
+       */
       if (navigator.share) {
         await navigator.share({
           title: productTitle,
-          text: `Check out ${productTitle} on NEW CITY STYLE`,
+          text: shortCaption,
           url: productUrl,
         });
         return;

@@ -18,6 +18,9 @@ type WishlistItem = {
   description?: string | null;
   size?: string | null;
   color?: string | null;
+  design_unit_id?: number | null;
+  variant_id?: number | null;
+  barcode?: string | null;
 };
 
 type ToastState = {
@@ -136,33 +139,76 @@ export default function WishlistPage() {
         return;
       }
 
-      const { data: existingItem, error: existingError } = await supabase
+      /*
+       * Keep each selected design separate in cart.
+       * Older wishlist rows may not yet contain design_unit_id/variant_id,
+       * so image + size remain safe fallback identity fields.
+       */
+      let existingQuery = supabase
         .from("cart")
         .select("*")
         .eq("user_id", user.id)
         .eq("product_id", item.product_id)
-        .maybeSingle();
+        .eq("image", item.image || "")
+        .eq("size", item.size || "");
+
+      if (item.design_unit_id != null) {
+        existingQuery = existingQuery.eq(
+          "design_unit_id",
+          item.design_unit_id
+        );
+      }
+
+      if (item.variant_id != null) {
+        existingQuery = existingQuery.eq(
+          "variant_id",
+          item.variant_id
+        );
+      }
+
+      const { data: existingItems, error: existingError } =
+        await existingQuery.limit(1);
 
       if (existingError) throw existingError;
+
+      const existingItem = existingItems?.[0] || null;
 
       if (existingItem) {
         const { error: updateError } = await supabase
           .from("cart")
-          .update({ quantity: Number(existingItem.quantity || 0) + 1 })
+          .update({
+            quantity: Number(existingItem.quantity || 0) + 1,
+          })
           .eq("id", existingItem.id);
 
         if (updateError) throw updateError;
       } else {
-        const { error: insertError } = await supabase.from("cart").insert({
+        const cartRow: Record<string, unknown> = {
           user_id: user.id,
           product_id: item.product_id,
           name: item.name,
           image: item.image,
           price: Number(item.price),
           quantity: 1,
-          size: item.size || "M",
-          color: item.color || "Blue",
-        });
+          size: item.size || "",
+          color: item.color || null,
+        };
+
+        if (item.design_unit_id != null) {
+          cartRow.design_unit_id = item.design_unit_id;
+        }
+
+        if (item.variant_id != null) {
+          cartRow.variant_id = item.variant_id;
+        }
+
+        if (item.barcode) {
+          cartRow.barcode = item.barcode;
+        }
+
+        const { error: insertError } = await supabase
+          .from("cart")
+          .insert(cartRow);
 
         if (insertError) throw insertError;
       }
@@ -179,7 +225,7 @@ export default function WishlistPage() {
       );
 
       setToast({
-        message: "Moved to cart successfully.",
+        message: "Selected design moved to cart successfully.",
         type: "success",
       });
     } catch (error) {
