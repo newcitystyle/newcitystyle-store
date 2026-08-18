@@ -178,12 +178,8 @@ function resolveInvoiceTemplate(languageValue: unknown) {
   }
 
   return {
-    templateName:
-      process.env.WHATSAPP_INVOICE_TEMPLATE_TELUGU?.trim() ||
-      "new_city_style_bill_telugu",
-    templateLanguage:
-      process.env.WHATSAPP_INVOICE_TEMPLATE_TELUGU_LANGUAGE?.trim() ||
-      "te",
+    templateName: "new_city_style_bill_utility",
+    templateLanguage: "te",
     selectedLanguage: "telugu" as const,
   };
 }
@@ -2380,10 +2376,8 @@ export async function GET() {
       process.env.WHATSAPP_INVOICE_TEMPLATE_ENGLISH_LANGUAGE?.trim() ||
       "en_US",
     teluguTemplateName:
-      process.env.WHATSAPP_INVOICE_TEMPLATE_TELUGU?.trim() ||
-      "new_city_style_bill_telugu",
+      "new_city_style_bill_utility",
     teluguTemplateLanguage:
-      process.env.WHATSAPP_INVOICE_TEMPLATE_TELUGU_LANGUAGE?.trim() ||
       "te",
     whatsappMode: "DOCUMENT_TEMPLATE",
   });
