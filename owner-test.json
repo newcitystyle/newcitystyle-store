@@ -1,0 +1,21 @@
+{
+  "orderId": "TEST-1001",
+  "customerName": "Test Customer",
+  "customerPhone": "7337564457",
+  "totalAmount": 499,
+  "paymentMethod": "Razorpay Online Payment",
+  "paymentStatus": "Paid",
+  "address": "Main Road",
+  "city": "Sarubujjili",
+  "state": "Andhra Pradesh",
+  "pincode": "532458",
+  "items": [
+    {
+      "name": "Test Product",
+      "quantity": 1,
+      "price": 499,
+      "size": "XL",
+      "color": "Blue"
+    }
+  ]
+}
