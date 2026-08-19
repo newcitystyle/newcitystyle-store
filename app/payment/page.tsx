@@ -324,6 +324,54 @@ export default function PaymentPage() {
     }
   }
 
+
+  async function sendCustomerOrderConfirmation(payload: {
+    orderId: string;
+    customerName: string;
+    customerPhone: string;
+    totalAmount: number;
+    paymentMethod: string;
+    paymentStatus: string;
+    items: Array<{
+      name: string;
+      quantity: number;
+      price: number;
+      size?: string | null;
+      color?: string | null;
+    }>;
+  }) {
+    try {
+      const response = await fetch(
+        "/api/whatsapp/customer-order-confirmation",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const data = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        message?: string;
+      };
+
+      if (!response.ok || data.success === false) {
+        console.error(
+          "Customer WhatsApp order confirmation failed:",
+          data.error || data.message || "Unknown WhatsApp error"
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Customer WhatsApp order confirmation request failed:",
+        error
+      );
+    }
+  }
+
   async function decrementPurchasedStock(items: CartItem[]) {
     /*
      * Online order stock rule:
@@ -469,68 +517,55 @@ export default function PaymentPage() {
 
       if (variantUpdateError) throw variantUpdateError;
 
-      if (nextOnline <= 0) {
-        const { data: links, error: linksError } = await supabase
-          .from("product_design_unit_variants")
-          .select("id,design_unit_id,status")
-          .eq("variant_id", variantId)
-          .neq("status", "hidden");
+      /*
+       * IMPORTANT:
+       * A single parent variant may be shared by many uploaded design cards.
+       * Never bulk-mark every design linked to a variant as sold_out just
+       * because the aggregate variant online_stock_limit reached zero.
+       *
+       * Exact design availability is handled above using
+       * design_unit_id + variant_id. Here we only keep the shared variant
+       * row in sync without touching unrelated designs.
+       */
+      const {
+        data: remainingVariantDesignLinks,
+        error: remainingVariantDesignLinksError,
+      } = await supabase
+        .from("product_design_unit_variants")
+        .select("id")
+        .eq("variant_id", variantId)
+        .eq("status", "available");
 
-        if (linksError) {
-          console.error(
-            "Design link lookup after stock sale failed:",
-            linksError
+      if (remainingVariantDesignLinksError) {
+        console.error(
+          "Unable to check remaining shared design availability:",
+          remainingVariantDesignLinksError
+        );
+      } else {
+        const availableDesignLinkCount =
+          remainingVariantDesignLinks?.length || 0;
+
+        if (availableDesignLinkCount > 0) {
+          const safeOnlineQuantity = Math.max(
+            nextOnline,
+            availableDesignLinkCount
           );
-        } else {
-          for (const link of links || []) {
-            const { error: linkUpdateError } = await supabase
-              .from("product_design_unit_variants")
-              .update({ status: "sold_out" })
-              .eq("id", link.id);
 
-            if (linkUpdateError) {
-              console.error(
-                "Unable to mark design link sold out:",
-                linkUpdateError
-              );
-              continue;
-            }
+          const { error: sharedVariantAvailabilityError } =
+            await supabase
+              .from("product_variants")
+              .update({
+                online_stock_limit: safeOnlineQuantity,
+                sell_online: true,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", variantId);
 
-            const designUnitId = Number(link.design_unit_id || 0);
-
-            if (designUnitId <= 0) continue;
-
-            const {
-              data: remainingLinks,
-              error: remainingLinksError,
-            } = await supabase
-              .from("product_design_unit_variants")
-              .select("id")
-              .eq("design_unit_id", designUnitId)
-              .eq("status", "available")
-              .limit(1);
-
-            if (remainingLinksError) {
-              console.error(
-                "Unable to check remaining design stock:",
-                remainingLinksError
-              );
-              continue;
-            }
-
-            if (!remainingLinks || remainingLinks.length === 0) {
-              const { error: designUpdateError } = await supabase
-                .from("product_design_units")
-                .update({ status: "sold_out" })
-                .eq("id", designUnitId);
-
-              if (designUpdateError) {
-                console.error(
-                  "Unable to mark design sold out:",
-                  designUpdateError
-                );
-              }
-            }
+          if (sharedVariantAvailabilityError) {
+            console.error(
+              "Unable to preserve shared variant online availability:",
+              sharedVariantAvailabilityError
+            );
           }
         }
       }
@@ -711,26 +746,47 @@ export default function PaymentPage() {
         String(data.id)
       );
 
-      void sendOwnerOrderAlert({
-        orderId: String(data.id),
-        customerName: checkoutDetails.fullName,
-        customerPhone: checkoutDetails.mobile,
-        totalAmount: total,
-        paymentMethod: method,
-        paymentStatus,
-        address: checkoutDetails.address,
-        city: checkoutDetails.city,
-        state: checkoutDetails.state,
-        pincode: checkoutDetails.pincode,
-        items: cartItems.map((item) => ({
-          name: item.name,
-          quantity: Number(item.quantity),
-          price: Number(item.price),
-          size: item.size || null,
-          color: item.color || null,
-          barcode: item.barcode || null,
-        })),
-      });
+      /*
+       * Send both WhatsApp messages before navigating away.
+       * Notification errors are intentionally non-fatal: the order remains saved.
+       */
+      await Promise.allSettled([
+        sendOwnerOrderAlert({
+          orderId: String(data.id),
+          customerName: checkoutDetails.fullName,
+          customerPhone: checkoutDetails.mobile,
+          totalAmount: total,
+          paymentMethod: method,
+          paymentStatus,
+          address: checkoutDetails.address,
+          city: checkoutDetails.city,
+          state: checkoutDetails.state,
+          pincode: checkoutDetails.pincode,
+          items: cartItems.map((item) => ({
+            name: item.name,
+            quantity: Number(item.quantity),
+            price: Number(item.price),
+            size: item.size || null,
+            color: item.color || null,
+            barcode: item.barcode || null,
+          })),
+        }),
+        sendCustomerOrderConfirmation({
+          orderId: String(data.id),
+          customerName: checkoutDetails.fullName,
+          customerPhone: checkoutDetails.mobile,
+          totalAmount: total,
+          paymentMethod: method,
+          paymentStatus,
+          items: cartItems.map((item) => ({
+            name: item.name,
+            quantity: Number(item.quantity),
+            price: Number(item.price),
+            size: item.size || null,
+            color: item.color || null,
+          })),
+        }),
+      ]);
     }
 
     return data?.id;
