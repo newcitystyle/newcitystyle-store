@@ -75,7 +75,11 @@ function normalizeText(
     return fallback;
   }
 
-  const cleaned = value.trim();
+  const cleaned = value
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
   return cleaned || fallback;
 }
 
@@ -153,7 +157,7 @@ function buildItemSummary(
     );
   }
 
-  return lines.join("\n");
+  return lines.join(" | ");
 }
 
 function buildMetaError(
@@ -326,7 +330,7 @@ export async function POST(
       `Order ${orderId}`,
       itemSummary,
       `Total ₹${totalAmount}`,
-    ].join("\n");
+    ].join(" | ");
 
     const customerDetails = [
       customerName,
