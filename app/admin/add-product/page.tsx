@@ -77,21 +77,24 @@ type ExistingStockProduct = {
   color: string;
 };
 
-type BulkDesignItem = {
-  productId: number;
+type BulkDesignVariantOption = {
   variantId: number;
-  productName: string;
   barcode: string;
   sku: string;
   size: string;
   color: string;
   stock: number;
-  existingVariantName: string;
+};
+
+type BulkDesignItem = {
+  productId: number;
+  productName: string;
   designName: string;
   image: string;
   sellOnline: boolean;
-  onlineStockLimit: number;
   aiStatus: "idle" | "loading" | "success" | "error";
+  variantOptions: BulkDesignVariantOption[];
+  selectedVariantIds: number[];
 };
 
 type PhotoStudioPreset = {
@@ -1569,7 +1572,7 @@ export default function AddProductPage() {
 
   async function startBulkDesignSetup() {
     if (!bulkSelectedStock.length) {
-      alert("Select at least one barcode variant first.");
+      alert("Select all size/barcode variants that can belong to this design family first.");
       return;
     }
 
@@ -1580,42 +1583,85 @@ export default function AddProductPage() {
 
     const parentId = bulkSelectedStock[0].id;
     if (bulkSelectedStock.some((item) => item.id !== parentId)) {
-      alert("Please select variants from the same product only.");
+      alert("Please select variants from the same parent product only.");
       return;
     }
 
     const first = bulkSelectedStock[0];
     await linkExistingStockProduct(first);
 
-    setBulkDesignItems(
-      bulkSelectedStock.map((item, index) => ({
-        productId: item.id,
-        variantId: item.variantId as number,
-        productName: item.name,
-        barcode: item.variantBarcode || item.barcode,
-        sku: item.variantSku || item.sku,
-        size: item.size,
-        color: item.color,
-        stock: item.stock,
-        existingVariantName: item.variantName,
-        designName:
-          item.variantName ||
-          [item.color, item.size, `Design ${index + 1}`]
-            .filter(Boolean)
-            .join(" • "),
-        image: item.variantMainImage || "",
+    const variantOptions: BulkDesignVariantOption[] = bulkSelectedStock.map((item) => ({
+      variantId: item.variantId as number,
+      barcode: item.variantBarcode || item.barcode,
+      sku: item.variantSku || item.sku,
+      size: item.size,
+      color: item.color,
+      stock: Math.max(0, Number(item.stock || 0)),
+    }));
+
+    setBulkDesignItems([
+      {
+        productId: parentId,
+        productName: first.name,
+        designName: first.variantName || "Design 1",
+        image: first.variantMainImage || "",
         sellOnline: true,
-        onlineStockLimit: Math.max(0, item.stock),
-        aiStatus: "idle" as const,
-      }))
-    );
+        aiStatus: "idle",
+        variantOptions,
+        selectedVariantIds: variantOptions.map((item) => item.variantId),
+      },
+    ]);
+
     setBulkSelectedStock([]);
 
     setAiStatus({
       type: "success",
       message:
-        "Bulk Design mode ready. Upload the photos in the same order as the barcode cards below, then generate AI names and save once.",
+        "Bulk Design mode ready. Design 1 contains all selected sizes. Add more designs, upload one photo per design, and choose exactly which sizes belong to each design.",
     });
+  }
+
+  function addBulkDesignGroup() {
+    setBulkDesignItems((current) => {
+      if (!current.length) return current;
+      const source = current[0];
+      return [
+        ...current,
+        {
+          productId: source.productId,
+          productName: source.productName,
+          designName: `Design ${current.length + 1}`,
+          image: "",
+          sellOnline: true,
+          aiStatus: "idle" as const,
+          variantOptions: source.variantOptions.map((item) => ({ ...item })),
+          selectedVariantIds: source.variantOptions.map((item) => item.variantId),
+        },
+      ];
+    });
+  }
+
+  function removeBulkDesignGroup(index: number) {
+    setBulkDesignItems((current) =>
+      current.length <= 1
+        ? current
+        : current.filter((_, itemIndex) => itemIndex !== index)
+    );
+  }
+
+  function toggleBulkDesignVariant(designIndex: number, variantId: number) {
+    setBulkDesignItems((current) =>
+      current.map((item, itemIndex) => {
+        if (itemIndex !== designIndex) return item;
+        const exists = item.selectedVariantIds.includes(variantId);
+        return {
+          ...item,
+          selectedVariantIds: exists
+            ? item.selectedVariantIds.filter((id) => id !== variantId)
+            : [...item.selectedVariantIds, variantId],
+        };
+      })
+    );
   }
 
   function updateBulkDesignItem(
@@ -1644,7 +1690,7 @@ export default function AddProductPage() {
 
     if (files.length !== bulkDesignItems.length) {
       alert(
-        `Please select exactly ${bulkDesignItems.length} photos — one photo for each selected barcode, in the same order shown.`
+        `Please select exactly ${bulkDesignItems.length} photos — one photo for each DESIGN card, in the same order shown.`
       );
       event.target.value = "";
       return;
@@ -1682,7 +1728,7 @@ export default function AddProductPage() {
       }
 
       alert(
-        `${urls.length} design photos uploaded and matched to the selected barcodes in order.`
+        `${urls.length} design photos uploaded and matched to the design cards in order.`
       );
     } catch (error) {
       console.error(error);
@@ -1704,7 +1750,7 @@ export default function AddProductPage() {
     }
 
     if (bulkDesignItems.some((item) => !item.image)) {
-      alert("Upload one photo for every selected barcode before generating AI design names.");
+      alert("Upload one photo for every design card before generating AI design names.");
       return;
     }
 
@@ -1734,8 +1780,17 @@ export default function AddProductPage() {
                 category: form.category.trim(),
                 subcategory: form.subcategory.trim(),
                 gender: form.gender.trim(),
-                size: item.size || form.sizes.join(", "),
-                colour: item.color || "",
+                size:
+                  item.variantOptions
+                    .filter((variant) => item.selectedVariantIds.includes(variant.variantId))
+                    .map((variant) => variant.size)
+                    .filter(Boolean)
+                    .join(", ") || form.sizes.join(", "),
+                colour: item.variantOptions
+                  .filter((variant) => item.selectedVariantIds.includes(variant.variantId))
+                  .map((variant) => variant.color)
+                  .filter(Boolean)
+                  .join(", "),
                 material: form.material.trim(),
                 fabric: form.fabric.trim(),
                 pattern: "",
@@ -3502,11 +3557,18 @@ export default function AddProductPage() {
     };
 
     if (bulkDesignItems.length > 0) {
-      const missingImage = bulkDesignItems.find((item) => !item.image);
-      if (missingImage) {
-        alert(
-          `Photo missing for barcode ${missingImage.barcode || missingImage.variantId}. Upload all design photos before saving.`
-        );
+      const missingImageIndex = bulkDesignItems.findIndex((item) => !item.image);
+      if (missingImageIndex >= 0) {
+        alert(`Photo missing for Design ${missingImageIndex + 1}. Upload one photo for every design card before saving.`);
+        setSaving(false);
+        return;
+      }
+
+      const emptySizeIndex = bulkDesignItems.findIndex(
+        (item) => item.selectedVariantIds.length === 0
+      );
+      if (emptySizeIndex >= 0) {
+        alert(`Select at least one available size/barcode for Design ${emptySizeIndex + 1}.`);
         setSaving(false);
         return;
       }
@@ -3527,9 +3589,27 @@ export default function AddProductPage() {
         ...sharedDetails
       } = productData;
 
+      const uniqueSelectedVariantIds = Array.from(
+        new Set(bulkDesignItems.flatMap((item) => item.selectedVariantIds))
+      );
+      const allVariantOptions = bulkDesignItems[0].variantOptions;
+      const parentOnlineQuantity = allVariantOptions
+        .filter((variant) => uniqueSelectedVariantIds.includes(variant.variantId))
+        .reduce((total, variant) => total + Math.max(0, Number(variant.stock || 0)), 0);
+
       const { error: parentError } = await supabase
         .from("products")
-        .update(sharedDetails)
+        .update({
+          ...sharedDetails,
+          sell_online: true,
+          online_stock_limit: Math.min(
+            Math.max(0, Number(form.stock || 0)),
+            Math.max(1, parentOnlineQuantity)
+          ),
+          image: bulkDesignItems[0].image || form.mainImage || null,
+          social_preview_url:
+            form.socialPreviewUrl.trim() || bulkDesignItems[0].image || form.mainImage || null,
+        })
         .eq("id", parentId);
 
       if (parentError) {
@@ -3539,60 +3619,200 @@ export default function AddProductPage() {
         return;
       }
 
+      const { data: existingDesignUnitRows, error: existingDesignUnitsError } =
+        await supabase
+          .from("product_design_units")
+          .select(
+            "id,product_id,parent_variant_id,parent_barcode,design_name,image_url,status,sort_order"
+          )
+          .eq("product_id", parentId)
+          .order("sort_order", { ascending: true })
+          .order("id", { ascending: true });
+
+      if (existingDesignUnitsError) {
+        console.error(existingDesignUnitsError);
+        alert(`Unable to read existing storefront designs: ${existingDesignUnitsError.message}`);
+        setSaving(false);
+        return;
+      }
+
+      const existingDesignUnits = (existingDesignUnitRows || []) as Array<{
+        id: number;
+        product_id: number;
+        parent_variant_id: number | null;
+        parent_barcode: string | null;
+        design_name: string | null;
+        image_url: string | null;
+        status: string | null;
+        sort_order: number | null;
+      }>;
+
+      const claimedDesignUnitIds = new Set<number>();
+      const touchedVariantIds = new Set<number>();
+
       for (let index = 0; index < bulkDesignItems.length; index += 1) {
         const design = bulkDesignItems[index];
-        const finalDesignName =
-          design.designName.trim() ||
-          design.existingVariantName ||
-          `Design ${index + 1}`;
+        const selectedVariants = design.variantOptions.filter((variant) =>
+          design.selectedVariantIds.includes(variant.variantId)
+        );
 
-        const { error: variantError } = await supabase
-          .from("product_variants")
-          .update({
-            variant_name: finalDesignName,
-            main_image: design.image,
-            sell_online: design.sellOnline,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", design.variantId)
-          .eq("product_id", design.productId);
+        const finalDesignName = design.designName.trim() || `Design ${index + 1}`;
+        const primaryVariant = selectedVariants[0];
+        const designHasStock = selectedVariants.some((variant) => Number(variant.stock || 0) > 0);
+        const designStatus = design.sellOnline && designHasStock ? "available" : "sold_out";
 
-        if (variantError) {
-          console.error(variantError);
-          alert(
-            `Barcode ${design.barcode || design.variantId} photo/name failed: ${variantError.message}`
+        for (const variant of selectedVariants) {
+          if (touchedVariantIds.has(variant.variantId)) continue;
+
+          const onlineQuantity = design.sellOnline
+            ? Math.max(0, Number(variant.stock || 0))
+            : 0;
+
+          const { error: variantError } = await supabase
+            .from("product_variants")
+            .update({
+              sell_online: design.sellOnline,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", variant.variantId)
+            .eq("product_id", parentId);
+
+          if (variantError) {
+            console.error(variantError);
+            alert(`Variant ${variant.barcode || variant.variantId} online visibility failed: ${variantError.message}`);
+            setSaving(false);
+            return;
+          }
+
+          const { error: onlineStockError } = await supabase.rpc(
+            "set_product_online_stock",
+            {
+              p_product_id: parentId,
+              p_variant_id: variant.variantId,
+              p_online_quantity: onlineQuantity,
+              p_sell_online: design.sellOnline,
+            }
           );
+
+          if (onlineStockError) {
+            console.error(onlineStockError);
+            alert(`Variant ${variant.barcode || variant.variantId} online quantity failed: ${onlineStockError.message}`);
+            setSaving(false);
+            return;
+          }
+
+          touchedVariantIds.add(variant.variantId);
+        }
+
+        const existingDesignUnit = existingDesignUnits.find((unit) => {
+          if (claimedDesignUnitIds.has(Number(unit.id))) return false;
+          return Number(unit.sort_order || 0) === index + 1;
+        });
+
+        let designUnitId: number;
+        const primaryBarcode = String(primaryVariant?.barcode || "").trim();
+
+        if (existingDesignUnit) {
+          const { error: designUnitUpdateError } = await supabase
+            .from("product_design_units")
+            .update({
+              parent_variant_id: primaryVariant?.variantId || null,
+              parent_barcode: primaryBarcode || null,
+              design_name: finalDesignName,
+              image_url: design.image,
+              status: designStatus,
+              sort_order: index + 1,
+            })
+            .eq("id", existingDesignUnit.id)
+            .eq("product_id", parentId);
+
+          if (designUnitUpdateError) {
+            console.error(designUnitUpdateError);
+            alert(`Storefront design ${index + 1} update failed: ${designUnitUpdateError.message}`);
+            setSaving(false);
+            return;
+          }
+
+          designUnitId = Number(existingDesignUnit.id);
+          claimedDesignUnitIds.add(designUnitId);
+        } else {
+          const { data: insertedDesignUnit, error: designUnitInsertError } =
+            await supabase
+              .from("product_design_units")
+              .insert({
+                product_id: parentId,
+                parent_variant_id: primaryVariant?.variantId || null,
+                parent_barcode: primaryBarcode || null,
+                design_name: finalDesignName,
+                image_url: design.image,
+                status: designStatus,
+                sort_order: index + 1,
+              })
+              .select("id")
+              .single();
+
+          if (designUnitInsertError || !insertedDesignUnit?.id) {
+            console.error(designUnitInsertError);
+            alert(`Storefront design ${index + 1} creation failed: ${designUnitInsertError?.message || "No design unit id returned."}`);
+            setSaving(false);
+            return;
+          }
+
+          designUnitId = Number(insertedDesignUnit.id);
+          claimedDesignUnitIds.add(designUnitId);
+        }
+
+        const { error: oldLinksDeleteError } = await supabase
+          .from("product_design_unit_variants")
+          .delete()
+          .eq("product_id", parentId)
+          .eq("design_unit_id", designUnitId);
+
+        if (oldLinksDeleteError) {
+          console.error(oldLinksDeleteError);
+          alert(`Unable to refresh size links for Design ${index + 1}: ${oldLinksDeleteError.message}`);
           setSaving(false);
           return;
         }
 
-        const { error: onlineStockError } = await supabase.rpc(
-          "set_product_online_stock",
-          {
-            p_product_id: design.productId,
-            p_variant_id: design.variantId,
-            p_online_quantity: design.sellOnline
-              ? Math.min(
-                  Math.max(0, design.onlineStockLimit),
-                  Math.max(0, design.stock)
-                )
-              : 0,
-            p_sell_online: design.sellOnline,
-          }
-        );
+        const linkRows = selectedVariants.map((variant) => ({
+          product_id: parentId,
+          design_unit_id: designUnitId,
+          variant_id: variant.variantId,
+          status:
+            design.sellOnline && Number(variant.stock || 0) > 0
+              ? "available"
+              : "sold_out",
+        }));
 
-        if (onlineStockError) {
-          console.error(onlineStockError);
-          alert(
-            `Barcode ${design.barcode || design.variantId} online quantity failed: ${onlineStockError.message}`
-          );
+        const { error: linkInsertError } = await supabase
+          .from("product_design_unit_variants")
+          .insert(linkRows);
+
+        if (linkInsertError) {
+          console.error(linkInsertError);
+          alert(`Size links for Design ${index + 1} failed: ${linkInsertError.message}`);
           setSaving(false);
           return;
         }
       }
 
+      const unusedDesignIds = existingDesignUnits
+        .map((unit) => Number(unit.id))
+        .filter((id) => !claimedDesignUnitIds.has(id));
+
+      if (unusedDesignIds.length > 0) {
+        const { error: hideUnusedError } = await supabase
+          .from("product_design_units")
+          .update({ status: "hidden" })
+          .in("id", unusedDesignIds)
+          .eq("product_id", parentId);
+
+        if (hideUnusedError) console.error(hideUnusedError);
+      }
+
       alert(
-        `${bulkDesignItems.length} designs saved successfully. Existing barcodes and physical stock were preserved.`
+        `${bulkDesignItems.length} designs saved successfully. Each design is one storefront card, and each card now has its own selected sizes. Existing barcodes, SKU and physical stock were preserved.`
       );
 
       setForm(initialForm);
@@ -3981,34 +4201,32 @@ export default function AddProductPage() {
 
               {bulkDesignItems.length > 0 && (
                 <Panel
-                  title="Bulk Design Photos — Existing Barcodes"
-                  subtitle="Easy mode: every card is already tied to its existing barcode and stock. Upload the same number of photos in the same order, optionally let AI name each design, then Save once."
+                  title="Bulk Designs — One Card, Multiple Sizes"
+                  subtitle="Final system: each design/photo becomes one storefront card. Inside each card, select all sizes/barcodes that belong to that design. Different designs can have different size combinations."
                 >
                   <div style={bulkInstructionStyle}>
-                    <strong>1. Check the barcode order below</strong>
-                    <span>2. Select exactly {bulkDesignItems.length} photos in that same order</span>
-                    <span>3. Generate AI names (optional)</span>
-                    <span>4. Press Save once — barcodes and physical stock never change</span>
+                    <strong>1. Create the number of visual designs you have</strong>
+                    <span>2. Upload exactly one photo for each design card</span>
+                    <span>3. On each design card, tick every size that customer can buy</span>
+                    <span>4. Save once — design cards are separate, sizes stay linked under that design</span>
                   </div>
 
-                  <UploadBox
-                    uploading={uploadingBulkDesigns}
-                    label={`Upload ${bulkDesignItems.length} Design Photos Together`}
-                    description="Select one photo per barcode. File order = barcode card order below."
-                    multiple
-                    onChange={uploadBulkDesignImages}
-                  />
-
                   <div style={bulkToolbarStyle}>
+                    <button
+                      type="button"
+                      onClick={addBulkDesignGroup}
+                      disabled={generatingBulkAi || uploadingBulkDesigns}
+                      style={bulkStartButtonStyle}
+                    >
+                      + Add Another Design
+                    </button>
                     <button
                       type="button"
                       onClick={generateBulkDesignNamesWithAi}
                       disabled={generatingBulkAi || uploadingBulkDesigns}
                       style={bulkAiButtonStyle}
                     >
-                      {generatingBulkAi
-                        ? "✨ AI Naming Designs..."
-                        : "✨ Generate Different AI Name for Every Design"}
+                      {generatingBulkAi ? "✨ AI Naming Designs..." : "✨ Generate AI Name for Every Design"}
                     </button>
                     <button
                       type="button"
@@ -4020,110 +4238,141 @@ export default function AddProductPage() {
                     </button>
                   </div>
 
+                  <UploadBox
+                    uploading={uploadingBulkDesigns}
+                    label={`Upload ${bulkDesignItems.length} Design Photos Together`}
+                    description="Select one photo per DESIGN card. File order = Design 1, Design 2, Design 3..."
+                    multiple
+                    onChange={uploadBulkDesignImages}
+                  />
+
                   <div style={bulkDesignGridStyle}>
-                    {bulkDesignItems.map((item, index) => (
-                      <div
-                        key={`${item.productId}-${item.variantId}`}
-                        style={bulkDesignCardStyle}
-                      >
-                        <div style={bulkDesignOrderStyle}>
-                          DESIGN {index + 1}
-                        </div>
+                    {bulkDesignItems.map((item, index) => {
+                      const selectedVariants = item.variantOptions.filter((variant) =>
+                        item.selectedVariantIds.includes(variant.variantId)
+                      );
+                      const selectedStock = selectedVariants.reduce(
+                        (total, variant) => total + Math.max(0, Number(variant.stock || 0)),
+                        0
+                      );
 
-                        <div style={bulkDesignImageBoxStyle}>
-                          {item.image ? (
-                            <img
-                              src={item.image}
-                              alt={item.designName || `Design ${index + 1}`}
-                              style={bulkDesignImageStyle}
-                            />
-                          ) : (
-                            <div style={bulkDesignEmptyStyle}>
-                              <span>📷</span>
-                              <small>Photo {index + 1}</small>
-                            </div>
+                      return (
+                        <div key={`${item.productId}-design-${index}`} style={bulkDesignCardStyle}>
+                          <div style={bulkDesignOrderStyle}>DESIGN {index + 1}</div>
+
+                          {bulkDesignItems.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeBulkDesignGroup(index)}
+                              style={{ ...bulkCancelButtonStyle, width: "100%", marginBottom: "10px" }}
+                            >
+                              Remove This Design
+                            </button>
                           )}
-                        </div>
 
-                        <div style={bulkBarcodeBadgeStyle}>
-                          BARCODE: {item.barcode || "No barcode"}
-                        </div>
+                          <div style={bulkDesignImageBoxStyle}>
+                            {item.image ? (
+                              <img
+                                src={item.image}
+                                alt={item.designName || `Design ${index + 1}`}
+                                style={bulkDesignImageStyle}
+                              />
+                            ) : (
+                              <div style={bulkDesignEmptyStyle}>
+                                <span>📷</span>
+                                <small>Photo {index + 1}</small>
+                              </div>
+                            )}
+                          </div>
 
-                        <div style={bulkMetaStyle}>
-                          <span>Size: <strong>{item.size || "—"}</strong></span>
-                          <span>Colour: <strong>{item.color || "—"}</strong></span>
-                          <span>Physical Stock: <strong>{item.stock}</strong></span>
-                        </div>
-
-                        <Field label="Design Name">
-                          <input
-                            value={item.designName}
-                            onChange={(event) =>
-                              updateBulkDesignItem(index, {
-                                designName: event.target.value,
-                              })
-                            }
-                            placeholder={`Design ${index + 1} name`}
-                            style={inputStyle}
-                          />
-                        </Field>
-
-                        <div style={bulkAiStateStyle}>
-                          {item.aiStatus === "loading"
-                            ? "✨ AI analysing this photo..."
-                            : item.aiStatus === "success"
-                              ? "✅ AI name ready — editable"
-                              : item.aiStatus === "error"
-                                ? "⚠️ AI name failed — type/edit manually"
-                                : "AI name optional"}
-                        </div>
-
-                        <div style={bulkOnlineRowStyle}>
-                          <label style={bulkCheckboxLabelStyle}>
+                          <Field label="Design / Colour Name">
                             <input
-                              type="checkbox"
-                              checked={item.sellOnline}
+                              value={item.designName}
                               onChange={(event) =>
-                                updateBulkDesignItem(index, {
-                                  sellOnline: event.target.checked,
-                                  onlineStockLimit: event.target.checked
-                                    ? Math.min(item.stock, Math.max(1, item.onlineStockLimit || item.stock))
-                                    : 0,
-                                })
+                                updateBulkDesignItem(index, { designName: event.target.value })
                               }
+                              placeholder={`Design ${index + 1} name`}
+                              style={inputStyle}
                             />
-                            Sell Online
-                          </label>
+                          </Field>
 
-                          <label style={bulkQtyLabelStyle}>
-                            Online Qty
-                            <input
-                              type="number"
-                              min="0"
-                              max={item.stock}
-                              value={item.sellOnline ? item.onlineStockLimit : 0}
-                              disabled={!item.sellOnline}
-                              onChange={(event) =>
-                                updateBulkDesignItem(index, {
-                                  onlineStockLimit: Math.min(
-                                    item.stock,
-                                    Math.max(0, Number(event.target.value || 0))
-                                  ),
-                                })
-                              }
-                              style={bulkQtyInputStyle}
-                            />
-                          </label>
+                          <div style={bulkAiStateStyle}>
+                            {item.aiStatus === "loading"
+                              ? "✨ AI analysing this photo..."
+                              : item.aiStatus === "success"
+                                ? "✅ AI name ready — editable"
+                                : item.aiStatus === "error"
+                                  ? "⚠️ AI name failed — type/edit manually"
+                                  : "AI name optional"}
+                          </div>
+
+                          <div style={{ marginTop: "14px", padding: "13px", border: "1px solid #E5E7EB", borderRadius: "12px", background: "#F8FAFC" }}>
+                            <strong style={{ display: "block", color: "#0A2E73", marginBottom: "9px" }}>
+                              Available Sizes / Barcodes
+                            </strong>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "8px" }}>
+                              {item.variantOptions.map((variant) => {
+                                const checked = item.selectedVariantIds.includes(variant.variantId);
+                                return (
+                                  <label
+                                    key={`${index}-${variant.variantId}`}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "flex-start",
+                                      gap: "7px",
+                                      padding: "9px",
+                                      border: checked ? "1px solid #D4AF37" : "1px solid #D1D5DB",
+                                      borderRadius: "9px",
+                                      background: checked ? "#FFFBEB" : "#FFFFFF",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => toggleBulkDesignVariant(index, variant.variantId)}
+                                    />
+                                    <span>
+                                      <strong style={{ color: "#0A2E73" }}>
+                                        {variant.size || variant.color || "Variant"}
+                                      </strong>
+                                      <small style={{ display: "block", marginTop: "2px", color: "#667085", fontSize: "10px" }}>
+                                        Stock {variant.stock}
+                                      </small>
+                                      <small style={{ display: "block", color: "#98A2B3", fontSize: "8px" }}>
+                                        {variant.barcode || `#${variant.variantId}`}
+                                      </small>
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            <div style={{ marginTop: "10px", color: item.selectedVariantIds.length > 0 ? "#067647" : "#B42318", fontSize: "11px", fontWeight: 800 }}>
+                              {item.selectedVariantIds.length} size(s) selected • Shared stock {selectedStock}
+                            </div>
+                          </div>
+
+                          <div style={{ ...bulkOnlineRowStyle, marginTop: "14px" }}>
+                            <label style={bulkCheckboxLabelStyle}>
+                              <input
+                                type="checkbox"
+                                checked={item.sellOnline}
+                                onChange={(event) => updateBulkDesignItem(index, { sellOnline: event.target.checked })}
+                              />
+                              Sell This Design Online
+                            </label>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   <div style={bulkSafetyNoteStyle}>
-                    🔒 Safe mode: this bulk save updates only each variant's design name, online photo and online visibility/quantity. Existing barcode, SKU and physical stock are not rewritten.
+                    🔒 Final safe mode: one design/photo = one storefront card. Each design can have its own S/M/L/XL/etc selection. The same parent product remains in the database, and existing barcode, SKU and physical stock are never duplicated.
                   </div>
                 </Panel>
               )}
+
 
               <Panel
                 title="Basic Information"

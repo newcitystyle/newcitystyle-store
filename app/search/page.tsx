@@ -33,6 +33,30 @@ type Product = {
   is_on_sale?: boolean | null;
   discount_percent?: number | string | null;
   created_at?: string | null;
+
+  // Storefront-only fields for individual uploaded designs.
+  listing_key?: string | null;
+  design_unit_id?: number | null;
+  design_name?: string | null;
+  parent_name?: string | null;
+  is_design_card?: boolean | null;
+};
+
+type ProductDesignUnit = {
+  id: number;
+  product_id: number;
+  design_name?: string | null;
+  image_url?: string | null;
+  status?: string | null;
+  sort_order?: number | null;
+};
+
+type ProductDesignLink = {
+  id: number;
+  product_id: number;
+  design_unit_id: number;
+  variant_id: number;
+  status?: string | null;
 };
 
 type SortOption =
@@ -100,6 +124,16 @@ function getStringArray(value?: string[] | string | null) {
 
 function getProductName(product: Product) {
   return product.name || "Untitled Product";
+}
+
+function getProductCardKey(product: Product) {
+  return product.listing_key || String(product.id);
+}
+
+function getProductHref(product: Product) {
+  return product.design_unit_id
+    ? `/product/${product.id}?design=${product.design_unit_id}`
+    : `/product/${product.id}`;
 }
 
 function getPrice(product: Product) {
@@ -213,20 +247,110 @@ function SearchPageContent() {
 
       if (error) throw error;
 
-      const allProducts = ((data as Product[]) || []).filter((product) => {
-        const isOnline =
-          product.sell_online === true &&
-          product.is_active === true &&
-          Number(product.stock ?? 0) > 0 &&
-          Number(product.online_stock_limit ?? 0) > 0;
+      const parentProducts = ((data as Product[]) || []).filter((product) =>
+        product.sell_online === true &&
+        product.is_active === true &&
+        Number(product.stock ?? 0) > 0 &&
+        Number(product.online_stock_limit ?? 0) > 0
+      );
 
-        if (!isOnline) return false;
+      const productIds = parentProducts
+        .map((product) => Number(product.id))
+        .filter((id) => Number.isFinite(id) && id > 0);
+
+      let designUnits: ProductDesignUnit[] = [];
+      let designLinks: ProductDesignLink[] = [];
+
+      if (productIds.length > 0) {
+        const [designResponse, linkResponse] = await Promise.all([
+          supabase
+            .from("product_design_units")
+            .select("id,product_id,design_name,image_url,status,sort_order")
+            .in("product_id", productIds)
+            .neq("status", "hidden")
+            .order("sort_order", { ascending: true })
+            .order("id", { ascending: true }),
+
+          supabase
+            .from("product_design_unit_variants")
+            .select("id,product_id,design_unit_id,variant_id,status")
+            .in("product_id", productIds)
+            .neq("status", "hidden"),
+        ]);
+
+        if (designResponse.error) {
+          console.info("Search design units error:", designResponse.error.message);
+        } else {
+          designUnits = (designResponse.data || []) as ProductDesignUnit[];
+        }
+
+        if (linkResponse.error) {
+          console.info("Search design links error:", linkResponse.error.message);
+        } else {
+          designLinks = (linkResponse.data || []) as ProductDesignLink[];
+        }
+      }
+
+      const expandedProducts: Product[] = [];
+
+      for (const parent of parentProducts) {
+        const parentId = Number(parent.id);
+        const parentName = getProductName(parent);
+
+        const availableDesigns = designUnits
+          .filter((design) =>
+            Number(design.product_id) === parentId &&
+            design.status !== "hidden" &&
+            design.status !== "sold_out" &&
+            Boolean(design.image_url?.trim()) &&
+            designLinks.some((link) =>
+              Number(link.design_unit_id) === Number(design.id) &&
+              link.status === "available"
+            )
+          )
+          .sort((a, b) => {
+            const orderDiff = Number(a.sort_order || 0) - Number(b.sort_order || 0);
+            return orderDiff !== 0 ? orderDiff : Number(a.id) - Number(b.id);
+          });
+
+        if (availableDesigns.length > 0) {
+          availableDesigns.forEach((design, index) => {
+            expandedProducts.push({
+              ...parent,
+              name: design.design_name?.trim() || `${parentName} Design ${index + 1}`,
+              parent_name: parentName,
+              image_url: design.image_url?.trim() || getProductImage(parent),
+              image: design.image_url?.trim() || getProductImage(parent),
+              stock: 1,
+              online_stock_limit: 1,
+              listing_key: `product-${parentId}-design-${design.id}`,
+              design_unit_id: Number(design.id),
+              design_name: design.design_name?.trim() || `Design ${index + 1}`,
+              is_design_card: true,
+            });
+          });
+          continue;
+        }
+
+        expandedProducts.push({
+          ...parent,
+          listing_key: `product-${parentId}`,
+          design_unit_id: null,
+          design_name: null,
+          parent_name: null,
+          is_design_card: false,
+        });
+      }
+
+      const normalizedQuery = query.toLowerCase();
+
+      const allProducts = expandedProducts.filter((product) => {
         if (!query) return true;
-
-        const normalizedQuery = query.toLowerCase();
 
         return [
           product.name,
+          product.parent_name,
+          product.design_name,
           product.description,
           product.category,
           product.subcategory,
@@ -265,7 +389,7 @@ function SearchPageContent() {
   }
 
   async function addToWishlist(product: Product) {
-    setBusyProductId(product.id);
+    setBusyProductId(getProductCardKey(product));
 
     try {
       const {
@@ -287,6 +411,8 @@ function SearchPageContent() {
         .select("id")
         .eq("user_id", user.id)
         .eq("product_id", product.id)
+        .eq("image", getProductImage(product))
+        .limit(1)
         .maybeSingle();
 
       if (existingError) throw existingError;
@@ -329,7 +455,12 @@ function SearchPageContent() {
   }
 
   async function addToCart(product: Product) {
-    setBusyProductId(product.id);
+    if (product.design_unit_id) {
+      router.push(getProductHref(product));
+      return;
+    }
+
+    setBusyProductId(getProductCardKey(product));
 
     try {
       const {
@@ -1026,15 +1157,15 @@ function SearchPageContent() {
                     const stock = getStock(product);
                     const savings = Math.max(mrp - price, 0);
                     const discount = getDiscount(product);
-                    const isBusy = busyProductId === product.id;
+                    const isBusy = busyProductId === getProductCardKey(product);
 
                     return (
                       <article
-                        key={String(product.id)}
+                        key={getProductCardKey(product)}
                         className="productCard"
                       >
                         <div className="imageWrap">
-                          <Link href={`/product/${product.id}`}>
+                          <Link href={getProductHref(product)}>
                             {image ? (
                               <img src={image} alt={name} />
                             ) : (
@@ -1069,7 +1200,7 @@ function SearchPageContent() {
                           </button>
 
                           <Link
-                            href={`/product/${product.id}`}
+                            href={getProductHref(product)}
                             className="quickView"
                           >
                             Quick View
@@ -1084,7 +1215,7 @@ function SearchPageContent() {
                           </span>
 
                           <Link
-                            href={`/product/${product.id}`}
+                            href={getProductHref(product)}
                             className="productName"
                           >
                             {name}
@@ -1142,10 +1273,12 @@ function SearchPageContent() {
                                 ? "Please Wait..."
                                 : stock <= 0
                                   ? "Out of Stock"
-                                  : "Add to Cart"}
+                                  : product.design_unit_id
+                                    ? "Choose Options"
+                                    : "Add to Cart"}
                             </button>
 
-                            <Link href={`/product/${product.id}`}>
+                            <Link href={getProductHref(product)}>
                               View
                             </Link>
                           </div>

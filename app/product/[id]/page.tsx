@@ -503,11 +503,42 @@ export default function ProductPage() {
       setDesignVariantLinks(cleanDesignVariantLinks);
 
       if (availableDesignUnits.length > 0) {
-        const firstDesign = availableDesignUnits[0];
-        const firstAvailableLink = cleanDesignVariantLinks.find((link) => link.designUnitId === firstDesign.id && link.status === "available");
-        const firstVariant = cleanVariantRefs.find((variant) => variant.id === firstAvailableLink?.variantId);
-        setSelectedImage(firstDesign.imageUrl);
-        setSelectedDesignId(firstDesign.id);
+        /*
+         * Storefront design cards open this page with:
+         * /product/<productId>?design=<designUnitId>
+         *
+         * Read that design id here and select the exact design that the
+         * customer clicked. If the URL is missing/invalid/sold-out, safely
+         * fall back to the first available design.
+         */
+        const requestedDesignId =
+          typeof window !== "undefined"
+            ? Number(
+                new URLSearchParams(window.location.search).get("design") || 0
+              )
+            : 0;
+
+        const requestedDesign =
+          requestedDesignId > 0
+            ? availableDesignUnits.find(
+                (unit) => unit.id === requestedDesignId
+              ) || null
+            : null;
+
+        const initialDesign = requestedDesign || availableDesignUnits[0];
+
+        const firstAvailableLink = cleanDesignVariantLinks.find(
+          (link) =>
+            link.designUnitId === initialDesign.id &&
+            link.status === "available"
+        );
+
+        const firstVariant = cleanVariantRefs.find(
+          (variant) => variant.id === firstAvailableLink?.variantId
+        );
+
+        setSelectedImage(initialDesign.imageUrl);
+        setSelectedDesignId(initialDesign.id);
         setSelectedSize(firstVariant?.size || "");
       } else {
         setSelectedImage(parentImages[0] || "");
@@ -753,6 +784,16 @@ export default function ProductPage() {
   async function addToWishlist() {
     if (!product || addingToWishlist) return;
 
+    if (designMode && !selectedDesign) {
+      alert("Please select the design you want.");
+      return;
+    }
+
+    if (sizes.length > 0 && !selectedSize) {
+      alert("Please select a size");
+      return;
+    }
+
     setAddingToWishlist(true);
 
     try {
@@ -764,29 +805,52 @@ export default function ProductPage() {
         return;
       }
 
-      const { data } = await supabase
+      const wishlistImage = selectedImage || images[0] || "";
+      const wishlistName =
+        designMode && selectedDesign?.designName
+          ? `${getProductName(product)} — ${selectedDesign.designName}`
+          : getProductName(product);
+
+      /*
+       * IMPORTANT:
+       * Wishlist uniqueness is per selected design image, not only product_id.
+       * This lets one parent product save multiple design photos separately
+       * without changing the existing wishlist table schema.
+       */
+      const { data: existingItems, error: existingError } = await supabase
         .from("wishlist")
-        .select("*")
+        .select("id")
         .eq("user_id", user.id)
         .eq("product_id", product.id)
-        .maybeSingle();
+        .eq("image", wishlistImage)
+        .limit(1);
 
-      if (data) {
-        alert("Product Already in Wishlist ❤️");
+      if (existingError) throw existingError;
+
+      if ((existingItems || []).length > 0) {
+        alert(
+          designMode
+            ? "This design is already in your Wishlist ❤️"
+            : "Product Already in Wishlist ❤️"
+        );
         return;
       }
 
       const { error } = await supabase.from("wishlist").insert({
         user_id: user.id,
         product_id: product.id,
-        name: getProductName(product),
-        image: selectedImage || images[0] || "",
+        name: wishlistName,
+        image: wishlistImage,
         price,
       });
 
       if (error) throw error;
 
-      alert("Added To Wishlist ❤️");
+      alert(
+        designMode && selectedDesign?.designName
+          ? `${selectedDesign.designName} added to Wishlist ❤️`
+          : "Added To Wishlist ❤️"
+      );
     } catch (error) {
       alert(
         error instanceof Error
@@ -802,18 +866,52 @@ export default function ProductPage() {
     if (!product) return;
 
     const productTitle = getProductName(product);
-    const productUrl = window.location.href;
     const imageUrl = selectedImage || images[0] || "";
 
-    // Keep the caption intentionally short.
-    // WhatsApp/Facebook/Instagram can reject or trim very long share text.
-    const shortCaption = `${productTitle}\nNEW CITY STYLE`;
+    /*
+     * Build the EXACT product/design URL.
+     *
+     * Even if the customer changed the design after opening the page,
+     * the shared link should reopen that selected design directly.
+     */
+    const shareUrl = new URL(window.location.href);
+
+    if (designMode && selectedDesignId) {
+      shareUrl.searchParams.set("design", String(selectedDesignId));
+    }
+
+    const productUrl = shareUrl.toString();
+
+    const selectedShareTitle =
+      designMode && selectedDesign?.designName
+        ? `${productTitle} — ${selectedDesign.designName}`
+        : productTitle;
+
+    /*
+     * IMPORTANT:
+     * Put the clickable website URL INSIDE the share text too.
+     *
+     * Some apps (especially WhatsApp when sharing an actual image file)
+     * may ignore the separate `url` field. Keeping the URL in `text`
+     * ensures the customer receives:
+     *
+     * 1. Product image
+     * 2. Product/design name
+     * 3. NEW CITY STYLE
+     * 4. Clickable website link
+     */
+    const shareCaption =
+      `${selectedShareTitle}
+` +
+      `NEW CITY STYLE
+` +
+      `View Product: ${productUrl}`;
 
     try {
       /*
        * BEST MOBILE EXPERIENCE:
-       * Share the actual selected product photo as a file.
-       * Do NOT add the long description or image URL to the caption.
+       * Share the actual selected product photo as a file,
+       * together with the clickable exact product/design link.
        */
       if (
         navigator.share &&
@@ -838,7 +936,7 @@ export default function ProductPage() {
                   : "jpg";
 
             const safeProductName =
-              productTitle
+              selectedShareTitle
                 .replace(/[^a-z0-9]+/gi, "-")
                 .replace(/^-+|-+$/g, "")
                 .toLowerCase() || "new-city-style-product";
@@ -851,8 +949,9 @@ export default function ProductPage() {
 
             if (navigator.canShare({ files: [imageFile] })) {
               await navigator.share({
-                title: productTitle,
-                text: shortCaption,
+                title: selectedShareTitle,
+                text: shareCaption,
+                url: productUrl,
                 files: [imageFile],
               });
               return;
@@ -868,21 +967,24 @@ export default function ProductPage() {
 
       /*
        * FALLBACK:
-       * Share only the product link with a very short caption.
-       * The new product layout metadata supplies the preview photo
-       * for WhatsApp/Facebook link previews.
+       * Share caption + exact product URL.
+       * This also allows WhatsApp/Facebook to build a normal link preview.
        */
       if (navigator.share) {
         await navigator.share({
-          title: productTitle,
-          text: shortCaption,
+          title: selectedShareTitle,
+          text: shareCaption,
           url: productUrl,
         });
         return;
       }
 
-      await navigator.clipboard.writeText(productUrl);
-      alert("Product link copied.");
+      /*
+       * Desktop/unsupported-browser fallback:
+       * copy the complete share message, not only the bare URL.
+       */
+      await navigator.clipboard.writeText(shareCaption);
+      alert("Product photo link and website link copied.");
     } catch (error) {
       if (
         error instanceof DOMException &&
@@ -894,8 +996,10 @@ export default function ProductPage() {
       console.error("Share product error:", error);
 
       try {
-        await navigator.clipboard.writeText(productUrl);
-        alert("Unable to open share menu. Product link copied.");
+        await navigator.clipboard.writeText(shareCaption);
+        alert(
+          "Unable to open share menu. Product name and website link copied."
+        );
       } catch {
         alert("Unable to share this product right now.");
       }
