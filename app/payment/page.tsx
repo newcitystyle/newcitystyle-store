@@ -13,6 +13,9 @@ type CartItem = {
   quantity: number;
   size?: string | null;
   color?: string | null;
+  design_unit_id?: number | null;
+  variant_id?: number | null;
+  barcode?: string | null;
 };
 
 type CheckoutDetails = {
@@ -29,6 +32,8 @@ type SavedOrderSummary = {
   subtotal?: number;
   shipping?: number;
   tax?: number;
+  tax_enabled?: boolean;
+  tax_rate?: number;
   total?: number;
   items?: CartItem[];
 };
@@ -267,6 +272,312 @@ export default function PaymentPage() {
       .in("id", cartIds);
   }
 
+  async function sendOwnerOrderAlert(payload: {
+    orderId: string;
+    customerName: string;
+    customerPhone: string;
+    totalAmount: number;
+    paymentMethod: string;
+    paymentStatus: string;
+    address: string;
+    city: string;
+    state: string;
+    pincode: string;
+    items: Array<{
+      name: string;
+      quantity: number;
+      price: number;
+      size?: string | null;
+      color?: string | null;
+      barcode?: string | null;
+    }>;
+  }) {
+    try {
+      const response = await fetch(
+        "/api/whatsapp/owner-order-alert",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const data = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        message?: string;
+      };
+
+      if (!response.ok || data.success === false) {
+        console.error(
+          "Owner WhatsApp order alert failed:",
+          data.error || data.message || "Unknown WhatsApp error"
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Owner WhatsApp order alert request failed:",
+        error
+      );
+    }
+  }
+
+  async function decrementPurchasedStock(items: CartItem[]) {
+    /*
+     * Online order stock rule:
+     * - Always reduce parent products.stock + products.online_stock_limit.
+     * - If variant_id exists, reduce that exact product_variants row too.
+     * - When a variant's online quantity reaches zero, mark the linked
+     *   design link sold_out. If that design has no available links left,
+     *   mark the design unit sold_out as well.
+     *
+     * This keeps the website, design cards and billing stock aligned.
+     */
+
+    const productQuantities = new Map<number, number>();
+    const variantQuantities = new Map<number, number>();
+
+    for (const item of items) {
+      const quantity = Math.max(1, Number(item.quantity || 1));
+      const productId = Number(item.product_id || 0);
+      const variantId = Number(item.variant_id || 0);
+
+      if (productId > 0) {
+        productQuantities.set(
+          productId,
+          (productQuantities.get(productId) || 0) + quantity
+        );
+      }
+
+      if (variantId > 0) {
+        variantQuantities.set(
+          variantId,
+          (variantQuantities.get(variantId) || 0) + quantity
+        );
+      }
+    }
+
+    /*
+     * DESIGN-LEVEL AVAILABILITY
+     * -------------------------
+     * product_design_unit_variants is the availability map for the exact
+     * storefront design + size/barcode combination.
+     *
+     * A parent variant can be shared by several uploaded design cards, so
+     * waiting until the aggregate variant quantity reaches zero is not enough:
+     * the exact purchased design would continue to appear online.
+     *
+     * Mark only the purchased design+variant link sold_out immediately.
+     * If that design has no other available size/variant links, mark the
+     * whole design unit sold_out. Other designs linked to the same parent
+     * variant remain untouched.
+     */
+    for (const item of items) {
+      const designUnitId = Number(item.design_unit_id || 0);
+      const variantId = Number(item.variant_id || 0);
+
+      if (designUnitId <= 0 || variantId <= 0) {
+        continue;
+      }
+
+      const { error: exactLinkUpdateError } = await supabase
+        .from("product_design_unit_variants")
+        .update({ status: "sold_out" })
+        .eq("design_unit_id", designUnitId)
+        .eq("variant_id", variantId)
+        .eq("status", "available");
+
+      if (exactLinkUpdateError) {
+        console.error(
+          "Unable to mark purchased design/variant sold out:",
+          exactLinkUpdateError
+        );
+      }
+
+      const {
+        data: remainingDesignLinks,
+        error: remainingDesignLinksError,
+      } = await supabase
+        .from("product_design_unit_variants")
+        .select("id")
+        .eq("design_unit_id", designUnitId)
+        .eq("status", "available")
+        .limit(1);
+
+      if (remainingDesignLinksError) {
+        console.error(
+          "Unable to check remaining purchased design availability:",
+          remainingDesignLinksError
+        );
+      } else if (
+        !remainingDesignLinks ||
+        remainingDesignLinks.length === 0
+      ) {
+        const { error: designSoldOutError } = await supabase
+          .from("product_design_units")
+          .update({ status: "sold_out" })
+          .eq("id", designUnitId);
+
+        if (designSoldOutError) {
+          console.error(
+            "Unable to mark purchased design sold out:",
+            designSoldOutError
+          );
+        }
+      }
+    }
+
+    for (const [variantId, quantity] of variantQuantities) {
+      const { data: variant, error: variantLoadError } =
+        await supabase
+          .from("product_variants")
+          .select(
+            "id,product_id,stock,online_stock_limit,sell_online"
+          )
+          .eq("id", variantId)
+          .maybeSingle();
+
+      if (variantLoadError) throw variantLoadError;
+      if (!variant) continue;
+
+      const currentStock = Math.max(
+        0,
+        Number(variant.stock || 0)
+      );
+      const currentOnline = Math.max(
+        0,
+        Number(variant.online_stock_limit || 0)
+      );
+
+      const nextStock = Math.max(0, currentStock - quantity);
+      const nextOnline = Math.max(
+        0,
+        currentOnline - quantity
+      );
+
+      const { error: variantUpdateError } = await supabase
+        .from("product_variants")
+        .update({
+          stock: nextStock,
+          online_stock_limit: nextOnline,
+          sell_online: nextOnline > 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", variantId);
+
+      if (variantUpdateError) throw variantUpdateError;
+
+      if (nextOnline <= 0) {
+        const { data: links, error: linksError } = await supabase
+          .from("product_design_unit_variants")
+          .select("id,design_unit_id,status")
+          .eq("variant_id", variantId)
+          .neq("status", "hidden");
+
+        if (linksError) {
+          console.error(
+            "Design link lookup after stock sale failed:",
+            linksError
+          );
+        } else {
+          for (const link of links || []) {
+            const { error: linkUpdateError } = await supabase
+              .from("product_design_unit_variants")
+              .update({ status: "sold_out" })
+              .eq("id", link.id);
+
+            if (linkUpdateError) {
+              console.error(
+                "Unable to mark design link sold out:",
+                linkUpdateError
+              );
+              continue;
+            }
+
+            const designUnitId = Number(link.design_unit_id || 0);
+
+            if (designUnitId <= 0) continue;
+
+            const {
+              data: remainingLinks,
+              error: remainingLinksError,
+            } = await supabase
+              .from("product_design_unit_variants")
+              .select("id")
+              .eq("design_unit_id", designUnitId)
+              .eq("status", "available")
+              .limit(1);
+
+            if (remainingLinksError) {
+              console.error(
+                "Unable to check remaining design stock:",
+                remainingLinksError
+              );
+              continue;
+            }
+
+            if (!remainingLinks || remainingLinks.length === 0) {
+              const { error: designUpdateError } = await supabase
+                .from("product_design_units")
+                .update({ status: "sold_out" })
+                .eq("id", designUnitId);
+
+              if (designUpdateError) {
+                console.error(
+                  "Unable to mark design sold out:",
+                  designUpdateError
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+
+    for (const [productId, quantity] of productQuantities) {
+      const { data: product, error: productLoadError } =
+        await supabase
+          .from("products")
+          .select(
+            "id,stock,online_stock_limit,sell_online"
+          )
+          .eq("id", productId)
+          .maybeSingle();
+
+      if (productLoadError) throw productLoadError;
+      if (!product) continue;
+
+      const currentStock = Math.max(
+        0,
+        Number(product.stock || 0)
+      );
+      const currentOnline = Math.max(
+        0,
+        Number(product.online_stock_limit || 0)
+      );
+
+      const nextStock = Math.max(0, currentStock - quantity);
+      const nextOnline = Math.max(
+        0,
+        currentOnline - quantity
+      );
+
+      const { error: productUpdateError } = await supabase
+        .from("products")
+        .update({
+          stock: nextStock,
+          online_stock_limit: nextOnline,
+          sell_online: nextOnline > 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", productId);
+
+      if (productUpdateError) throw productUpdateError;
+    }
+  }
+
   function createOrderItems() {
     return cartItems.map((item) => ({
       product_id: item.product_id,
@@ -276,6 +587,15 @@ export default function PaymentPage() {
       quantity: Number(item.quantity),
       size: item.size || null,
       color: item.color || null,
+      design_unit_id:
+        Number(item.design_unit_id || 0) > 0
+          ? Number(item.design_unit_id)
+          : null,
+      variant_id:
+        Number(item.variant_id || 0) > 0
+          ? Number(item.variant_id)
+          : null,
+      barcode: item.barcode || null,
       item_total:
         Number(item.price) * Number(item.quantity),
     }));
@@ -298,6 +618,33 @@ export default function PaymentPage() {
       throw new Error("Shipping details are missing.");
     }
 
+    /*
+     * Avoid duplicate paid orders / duplicate stock decrement if a payment
+     * callback is retried by the browser or Razorpay.
+     */
+    if (razorpayPaymentId) {
+      const { data: existingOrder, error: existingOrderError } =
+        await supabase
+          .from("orders")
+          .select("id")
+          .eq("razorpay_payment_id", razorpayPaymentId)
+          .maybeSingle();
+
+      if (existingOrderError) throw existingOrderError;
+
+      if (existingOrder?.id) {
+        localStorage.setItem(
+          "new-city-style-last-order-id",
+          String(existingOrder.id)
+        );
+        localStorage.removeItem("new-city-style-checkout");
+        localStorage.removeItem("new-city-style-order-summary");
+        return existingOrder.id;
+      }
+    }
+
+    const orderItems = createOrderItems();
+
     const orderData = {
       customer_name: checkoutDetails.fullName,
       phone: checkoutDetails.mobile,
@@ -306,12 +653,14 @@ export default function PaymentPage() {
       city: checkoutDetails.city,
       state: checkoutDetails.state,
       pincode: checkoutDetails.pincode,
-      items: createOrderItems(),
+      items: orderItems,
       total_amount: total,
       payment_method: method,
       payment_status: paymentStatus,
-      order_status: "Pending",
-      status: "Pending",
+      order_status:
+        paymentStatus === "Paid" ? "Confirmed" : "Pending",
+      status:
+        paymentStatus === "Paid" ? "Confirmed" : "Pending",
       razorpay_order_id: razorpayOrderId || null,
       razorpay_payment_id: razorpayPaymentId || null,
     };
@@ -323,6 +672,28 @@ export default function PaymentPage() {
       .single();
 
     if (error) throw error;
+
+    /*
+     * Reduce stock only AFTER the order row exists.
+     * This applies to paid online orders and COD orders once placed,
+     * so reserved online stock cannot be sold twice.
+     */
+    try {
+      await decrementPurchasedStock(cartItems);
+    } catch (stockError) {
+      console.error(
+        "Order created, but stock decrement failed:",
+        stockError
+      );
+
+      /*
+       * Keep the successfully created order. We do not delete it because
+       * payment may already be captured. Surface a clear warning instead.
+       */
+      alert(
+        `Order #${data.id} was created, but stock sync needs attention. Please check Admin Orders.`
+      );
+    }
 
     const { error: cartError } =
       await clearCustomerCart(userId);
@@ -339,7 +710,30 @@ export default function PaymentPage() {
         "new-city-style-last-order-id",
         String(data.id)
       );
+
+      void sendOwnerOrderAlert({
+        orderId: String(data.id),
+        customerName: checkoutDetails.fullName,
+        customerPhone: checkoutDetails.mobile,
+        totalAmount: total,
+        paymentMethod: method,
+        paymentStatus,
+        address: checkoutDetails.address,
+        city: checkoutDetails.city,
+        state: checkoutDetails.state,
+        pincode: checkoutDetails.pincode,
+        items: cartItems.map((item) => ({
+          name: item.name,
+          quantity: Number(item.quantity),
+          price: Number(item.price),
+          size: item.size || null,
+          color: item.color || null,
+          barcode: item.barcode || null,
+        })),
+      });
     }
+
+    return data?.id;
   }
 
   async function placeCodOrder() {
@@ -673,10 +1067,14 @@ export default function PaymentPage() {
                 title="Shipping"
                 value={shipping === 0 ? "FREE" : `₹${shipping}`}
               />
-              <SummaryRow
-                title="Tax (5%)"
-                value={`₹${tax.toLocaleString("en-IN")}`}
-              />
+              {tax > 0 && (
+                <SummaryRow
+                  title={`Tax (${Math.round(
+                    Number(savedSummary?.tax_rate || 0.05) * 100
+                  )}%)`}
+                  value={`₹${tax.toLocaleString("en-IN")}`}
+                />
+              )}
             </div>
 
             <div className="totalRow">

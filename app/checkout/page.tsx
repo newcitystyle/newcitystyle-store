@@ -38,6 +38,8 @@ type ShippingSettings = {
   free_shipping_min: number | string | null;
   flat_rate: number | string | null;
   estimated_days: string | null;
+  tax_enabled: boolean | null;
+  tax_percent: number | string | null;
 };
 
 const initialDetails: CheckoutDetails = {
@@ -55,6 +57,8 @@ const defaultShippingSettings: ShippingSettings = {
   free_shipping_min: 999,
   flat_rate: 79,
   estimated_days: "3-7 business days",
+  tax_enabled: false,
+  tax_percent: 5,
 };
 
 export default function CheckoutPage() {
@@ -122,7 +126,7 @@ export default function CheckoutPage() {
         supabase
           .from("shipping_settings")
           .select(
-            "free_shipping,free_shipping_min,flat_rate,estimated_days"
+            "free_shipping,free_shipping_min,flat_rate,estimated_days,tax_enabled,tax_percent"
           )
           .order("id", { ascending: true })
           .limit(1)
@@ -152,6 +156,12 @@ export default function CheckoutPage() {
           estimated_days:
             shippingData.estimated_days ||
             defaultShippingSettings.estimated_days,
+          tax_enabled:
+            shippingData.tax_enabled ??
+            defaultShippingSettings.tax_enabled,
+          tax_percent:
+            shippingData.tax_percent ??
+            defaultShippingSettings.tax_percent,
         });
       }
 
@@ -207,7 +217,23 @@ export default function CheckoutPage() {
       ? 0
       : flatRate;
 
-  const tax = Math.round(subtotal * 0.05);
+  const taxEnabled =
+    shippingSettings.tax_enabled === true;
+
+  const taxPercent = Math.max(
+    0,
+    Number(
+      shippingSettings.tax_percent ??
+        defaultShippingSettings.tax_percent
+    ) || 0
+  );
+
+  const taxRate = taxPercent / 100;
+
+  const tax = taxEnabled
+    ? Math.round(subtotal * taxRate)
+    : 0;
+
   const total = subtotal + shipping + tax;
 
   function updateField(
@@ -315,6 +341,8 @@ export default function CheckoutPage() {
         subtotal,
         shipping,
         tax,
+        tax_enabled: taxEnabled,
+        tax_rate: taxEnabled ? taxRate : 0,
         total,
         items: cleanItems,
       })
@@ -537,10 +565,14 @@ export default function CheckoutPage() {
                 }
               />
 
-              <SummaryRow
-                title="Tax (5%)"
-                value={`₹${tax.toLocaleString("en-IN")}`}
-              />
+              {taxEnabled && (
+                <div className="summaryRow">
+                  <span>Tax ({taxPercent}%)</span>
+                  <strong>
+                    ₹{tax.toLocaleString("en-IN")}
+                  </strong>
+                </div>
+              )}
             </div>
 
             {shippingSettings.free_shipping &&
@@ -787,6 +819,81 @@ export default function CheckoutPage() {
           display: grid;
           gap: 12px;
           margin-top: 18px;
+        }
+
+        .taxControl {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          margin-top: 4px;
+          padding: 13px 14px;
+          border: 1px solid rgba(10, 46, 115, 0.12);
+          border-radius: 12px;
+          background: #f8fafc;
+        }
+
+        .taxControlText {
+          display: grid;
+          gap: 3px;
+        }
+
+        .taxControlText strong {
+          color: #0a2e73;
+          font-size: 14px;
+        }
+
+        .taxControlText span {
+          color: #667085;
+          font-size: 12px;
+          line-height: 1.4;
+        }
+
+        .taxToggle {
+          min-width: 82px;
+          height: 38px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 7px;
+          padding: 4px 9px 4px 4px;
+          border: 1px solid #cbd5e1;
+          border-radius: 999px;
+          background: #e5e7eb;
+          color: #475569;
+          font-size: 11px;
+          font-weight: 900;
+          cursor: pointer;
+          transition:
+            background 0.2s ease,
+            border-color 0.2s ease,
+            color 0.2s ease;
+        }
+
+        .taxToggleKnob {
+          width: 28px;
+          height: 28px;
+          flex-shrink: 0;
+          border-radius: 50%;
+          background: white;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+          transition: transform 0.2s ease;
+        }
+
+        .taxToggleOn {
+          flex-direction: row-reverse;
+          padding: 4px 4px 4px 9px;
+          border-color: #d4af37;
+          background: linear-gradient(
+            135deg,
+            #d4af37,
+            #f0cf63
+          );
+          color: #0a2e73;
+        }
+
+        .taxToggleOn .taxToggleKnob {
+          transform: translateX(0);
         }
 
         .freeShippingNotice,

@@ -33,6 +33,8 @@ type ShippingSettings = {
   auto_generate_label?: boolean | null;
   auto_schedule_pickup?: boolean | null;
   api_key_configured?: boolean | null;
+  tax_enabled?: boolean | null;
+  tax_percent?: number | null;
   created_at: string;
 };
 
@@ -59,6 +61,8 @@ type ShippingForm = {
   autoGenerateLabel: boolean;
   autoSchedulePickup: boolean;
   apiKeyConfigured: boolean;
+  taxEnabled: boolean;
+  taxPercent: string;
 };
 
 const defaultForm: ShippingForm = {
@@ -84,6 +88,8 @@ const defaultForm: ShippingForm = {
   autoGenerateLabel: false,
   autoSchedulePickup: false,
   apiKeyConfigured: false,
+  taxEnabled: false,
+  taxPercent: "5",
 };
 
 export default function ShippingSettingsPage() {
@@ -133,6 +139,8 @@ export default function ShippingSettingsPage() {
             flat_rate: 79,
             cod_charge: 0,
             estimated_days: "3-7 business days",
+            tax_enabled: false,
+            tax_percent: 5,
           })
           .select()
           .single();
@@ -213,6 +221,8 @@ export default function ShippingSettingsPage() {
         settings.auto_schedule_pickup ?? false,
       apiKeyConfigured:
         settings.api_key_configured ?? false,
+      taxEnabled: settings.tax_enabled ?? false,
+      taxPercent: String(settings.tax_percent ?? 5),
     });
 
     setLastSaved(
@@ -231,6 +241,10 @@ export default function ShippingSettingsPage() {
 
     const codCharge = Number(
       form.codCharge
+    );
+
+    const taxPercent = Number(
+      form.taxPercent
     );
 
     if (
@@ -261,6 +275,19 @@ export default function ShippingSettingsPage() {
     ) {
       alert(
         "Please enter a valid Cash on Delivery charge."
+      );
+
+      return false;
+    }
+
+    if (
+      form.taxEnabled &&
+      (Number.isNaN(taxPercent) ||
+        taxPercent < 0 ||
+        taxPercent > 100)
+    ) {
+      alert(
+        "Please enter a valid tax percentage between 0 and 100."
       );
 
       return false;
@@ -353,6 +380,11 @@ export default function ShippingSettingsPage() {
       auto_generate_label: form.autoGenerateLabel,
       auto_schedule_pickup: form.autoSchedulePickup,
       api_key_configured: form.apiKeyConfigured,
+      tax_enabled: form.taxEnabled,
+      tax_percent: Math.max(
+        0,
+        Math.min(100, Number(form.taxPercent || 0))
+      ),
     };
 
     if (settingsId === null) {
@@ -990,6 +1022,84 @@ export default function ShippingSettingsPage() {
                   >
                     Enter 0 when Cash on Delivery should not have
                     an additional charge.
+                  </p>
+                </div>
+              </div>
+            </SettingsPanel>
+
+            <SettingsPanel
+              title="Checkout Tax"
+              subtitle="Control tax from Admin. Customers cannot switch tax on or off."
+            >
+              <ShippingToggle
+                icon="🧾"
+                title="Enable Checkout Tax"
+                description="When enabled, tax is added automatically to every customer checkout."
+                enabled={form.taxEnabled}
+                onChange={(enabled) =>
+                  setForm((current) => ({
+                    ...current,
+                    taxEnabled: enabled,
+                  }))
+                }
+              />
+
+              <FormField label="Tax Percentage">
+                <div style={{ position: "relative" }}>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    disabled={!form.taxEnabled}
+                    value={form.taxPercent}
+                    placeholder="5"
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        taxPercent: event.target.value,
+                      }))
+                    }
+                    style={{
+                      ...inputStyle,
+                      paddingRight: "42px",
+                      opacity: form.taxEnabled ? 1 : 0.55,
+                      cursor: form.taxEnabled
+                        ? "text"
+                        : "not-allowed",
+                    }}
+                  />
+                  <span
+                    style={{
+                      position: "absolute",
+                      right: "14px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "#0A2E73",
+                      fontWeight: 800,
+                    }}
+                  >
+                    %
+                  </span>
+                </div>
+              </FormField>
+
+              <div style={informationBoxStyle}>
+                <div style={{ fontSize: "24px" }}>🔒</div>
+                <div>
+                  <strong style={{ color: "#0A2E73" }}>
+                    Admin controlled
+                  </strong>
+                  <p
+                    style={{
+                      color: "#555",
+                      margin: "5px 0 0",
+                      lineHeight: 1.6,
+                      fontSize: "14px",
+                    }}
+                  >
+                    Customers only see the calculated tax amount.
+                    They never get an ON/OFF tax switch.
                   </p>
                 </div>
               </div>
