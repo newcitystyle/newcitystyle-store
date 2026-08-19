@@ -128,7 +128,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return new NextResponse(null, { status: 200 });
+    return NextResponse.json(
+      {},
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    );
   } catch (error) {
     console.error("WhatsApp OTP hook error:", error);
     return NextResponse.json(
