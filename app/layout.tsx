@@ -4,6 +4,7 @@ import "./globals.css";
 import VisitorTracker from "../components/VisitorTracker";
 import NcsAiAssistant from "../components/NcsAiAssistant";
 import Navbar from "../components/Navbar";
+import NcsClubPopup from "../components/NcsClubPopup";
 type SeoSettings = {
   site_title: string;
   site_description: string;
@@ -591,6 +592,7 @@ export default async function RootLayout({
         <Navbar />
         {children}
         <NcsAiAssistant />
+        <NcsClubPopup />
       </body>
     </html>
   );
