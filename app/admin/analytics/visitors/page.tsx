@@ -101,35 +101,37 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function startOfLocalDay(date = new Date()) {
-  return new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-    0,
-    0,
-    0,
-    0
-  );
+const BUSINESS_TIME_ZONE = "Asia/Kolkata";
+const INDIA_UTC_OFFSET = "+05:30";
+
+function startOfIndiaDay(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BUSINESS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === "year")?.value || "1970";
+  const month = parts.find((part) => part.type === "month")?.value || "01";
+  const day = parts.find((part) => part.type === "day")?.value || "01";
+
+  return new Date(`${year}-${month}-${day}T00:00:00${INDIA_UTC_OFFSET}`);
 }
 
 function rangeStart(range: RangeKey) {
-  const today = startOfLocalDay();
+  const today = startOfIndiaDay();
 
   if (range === "today") {
     return today;
   }
 
   if (range === "7d") {
-    const date = new Date(today);
-    date.setDate(date.getDate() - 6);
-    return date;
+    return new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000);
   }
 
   if (range === "30d") {
-    const date = new Date(today);
-    date.setDate(date.getDate() - 29);
-    return date;
+    return new Date(today.getTime() - 29 * 24 * 60 * 60 * 1000);
   }
 
   return null;
@@ -270,6 +272,8 @@ export default function VisitorsAnalyticsPage() {
     setErrorMessage("");
 
     try {
+      const start = rangeStart(range);
+
       let query = supabase
         .from("website_visits")
         .select(
@@ -277,6 +281,13 @@ export default function VisitorsAnalyticsPage() {
         )
         .order("visited_at", { ascending: false })
         .limit(20000);
+
+      // Use one fixed NEW CITY STYLE business day for every device.
+      // Today / 7 Days / 30 Days are always calculated from IST (Asia/Kolkata),
+      // so mobile, desktop and laptop show the same numbers.
+      if (start) {
+        query = query.gte("visited_at", start.toISOString());
+      }
 
       const { data, error } = await query;
 
@@ -303,13 +314,19 @@ export default function VisitorsAnalyticsPage() {
 
   useEffect(() => {
     void loadAnalytics();
-  }, []);
+  }, [range]);
 
   const filteredVisits = useMemo(() => {
+    // The database query is already range-filtered using the fixed IST boundary.
+    // Keep this lightweight client-side guard so stale/incomplete timestamps
+    // cannot enter the visible analytics totals.
     const start = rangeStart(range);
 
     if (!start) {
-      return visits;
+      return visits.filter((visit) => {
+        if (!visit.visited_at) return false;
+        return !Number.isNaN(new Date(visit.visited_at).getTime());
+      });
     }
 
     return visits.filter((visit) => {
@@ -317,10 +334,7 @@ export default function VisitorsAnalyticsPage() {
 
       const date = new Date(visit.visited_at);
 
-      return (
-        !Number.isNaN(date.getTime()) &&
-        date >= start
-      );
+      return !Number.isNaN(date.getTime()) && date >= start;
     });
   }, [range, visits]);
 
@@ -674,11 +688,11 @@ export default function VisitorsAnalyticsPage() {
             <span>ANALYTICS RANGE</span>
             <strong>
               {range === "today"
-                ? "Today"
+                ? "Today • IST"
                 : range === "7d"
-                  ? "Last 7 Days"
+                  ? "Last 7 Days • IST"
                   : range === "30d"
-                    ? "Last 30 Days"
+                    ? "Last 30 Days • IST"
                     : "All Time"}
             </strong>
           </div>
