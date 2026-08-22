@@ -27,21 +27,6 @@ type Product = {
   is_active?: boolean | null;
 };
 
-type ProductVariant = {
-  id: number;
-  product_id: number;
-  variant_name?: string | null;
-  size?: string | null;
-  color?: string | null;
-  barcode?: string | null;
-  stock?: number | string | null;
-  online_stock_limit?: number | string | null;
-  sell_online?: boolean | null;
-  mrp?: number | string | null;
-  online_price?: number | string | null;
-  main_image?: string | null;
-};
-
 type ProductDesignUnit = {
   id: number;
   product_id: number;
@@ -53,7 +38,7 @@ type ProductDesignUnit = {
   sort_order?: number | null;
 };
 
-type ProductDesignVariantLink = {
+type ProductDesignLink = {
   id: number;
   product_id: number;
   design_unit_id: number;
@@ -63,19 +48,34 @@ type ProductDesignVariantLink = {
 
 type StoreCard = {
   key: string;
+
   productId: string | number;
+
   designId: number | null;
+
   name: string;
+
   designName: string;
-  price: number;
-  mrp: number;
-  stock: number;
-  brand: string;
-  category: string;
+
   image: string;
+
+  price: number;
+
+  mrp: number;
+
+  stock: number;
+
+  category: string;
+
+  brand: string;
+
   isNewArrival: boolean;
+
   isFeatured: boolean;
+
   isOnSale: boolean;
+
+  createdOrder: number;
 };
 
 type AiProduct = {
@@ -100,18 +100,33 @@ type AiResponse = {
 
 function num(value: unknown) {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : 0;
 }
 
 function enabled(value: unknown) {
-  if (value === true || value === 1) return true;
+  if (
+    value === true ||
+    value === 1
+  ) {
+    return true;
+  }
 
-  return ["true", "1", "yes", "on"].includes(
-    String(value ?? "").trim().toLowerCase()
+  return [
+    "true",
+    "1",
+    "yes",
+    "on",
+  ].includes(
+    String(value ?? "")
+      .trim()
+      .toLowerCase()
   );
 }
 
-function nameOf(product: Product) {
+function productName(product: Product) {
   return (
     product.name ||
     product.product_name ||
@@ -120,125 +135,209 @@ function nameOf(product: Product) {
   );
 }
 
-function imageOf(product: Product) {
-  return product.image_url || product.image || "";
+function productImage(product: Product) {
+  return (
+    product.image_url ||
+    product.image ||
+    ""
+  );
 }
 
-function onlineStock(product: Product) {
-  const stock = Math.max(0, num(product.stock));
-  const limit = Math.max(0, num(product.online_stock_limit));
+function productOnlineStock(
+  product: Product
+) {
+  const stock = Math.max(
+    0,
+    num(product.stock)
+  );
 
-  if (limit <= 0 || stock <= 0) return 0;
+  const onlineLimit = Math.max(
+    0,
+    num(product.online_stock_limit)
+  );
 
-  return Math.min(stock, limit);
-}
-
-function variantOnlineStock(variant: ProductVariant) {
-  if (variant.sell_online !== true) return 0;
-
-  const stock = Math.max(0, num(variant.stock));
-  const limit = Math.max(0, num(variant.online_stock_limit));
-
-  if (stock <= 0 || limit <= 0) return 0;
-
-  return Math.min(stock, limit);
-}
-
-function discountOf(product: Product) {
-  const price = num(product.price);
-
-  if (price <= 0) return 0;
-
-  const mrp = Math.max(price, num(product.mrp));
-
-  if (num(product.discount_percent) > 0) {
-    return Math.round(num(product.discount_percent));
+  if (
+    stock <= 0 ||
+    onlineLimit <= 0
+  ) {
+    return 0;
   }
 
-  return mrp > price && mrp > 0
-    ? Math.round(((mrp - price) / mrp) * 100)
-    : 0;
+  return Math.min(
+    stock,
+    onlineLimit
+  );
+}
+
+function productDiscount(
+  product: Product
+) {
+  const price = num(product.price);
+
+  const mrp = Math.max(
+    price,
+    num(product.mrp)
+  );
+
+  const saved =
+    num(product.discount_percent);
+
+  if (saved > 0) {
+    return Math.round(saved);
+  }
+
+  if (
+    price <= 0 ||
+    mrp <= price
+  ) {
+    return 0;
+  }
+
+  return Math.round(
+    ((mrp - price) / mrp) *
+      100
+  );
 }
 
 function money(value: number) {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return new Intl.NumberFormat(
+    "en-IN",
+    {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }
+  ).format(value);
 }
 
 export default function AiSmartHome() {
   const router = useRouter();
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [storeCards, setStoreCards] = useState<StoreCard[]>([]);
+  const [
+    parentProducts,
+    setParentProducts,
+  ] = useState<Product[]>([]);
 
-  const [aiProducts, setAiProducts] = useState<AiProduct[]>([]);
-  const [aiAnswer, setAiAnswer] = useState("");
-  const [lastQuery, setLastQuery] = useState("");
+  const [
+    storeCards,
+    setStoreCards,
+  ] = useState<StoreCard[]>([]);
 
-  const [loading, setLoading] = useState(true);
+  const [
+    aiProducts,
+    setAiProducts,
+  ] = useState<AiProduct[]>([]);
+
+  const [
+    aiAnswer,
+    setAiAnswer,
+  ] = useState("");
+
+  const [
+    lastQuery,
+    setLastQuery,
+  ] = useState("");
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
   useEffect(() => {
-    void load();
+    void loadCatalogue();
   }, []);
 
-  async function load() {
+  async function loadCatalogue() {
     setLoading(true);
 
     try {
-      const { data: productData, error: productError } = await supabase
+      /*
+       * -------------------------------------------------------
+       * 1. LOAD ONLINE PARENT PRODUCTS
+       * -------------------------------------------------------
+       */
+
+      const {
+        data: productData,
+        error: productError,
+      } = await supabase
         .from("products")
         .select("*")
         .eq("is_active", true)
-        .limit(100);
+        .order("id", {
+          ascending: false,
+        })
+        .limit(120);
 
       if (productError) {
         throw productError;
       }
 
-      const parentProducts = ((productData || []) as Product[]).filter(
-        (item) => item.is_active === true
+      const allProducts =
+        ((productData ||
+          []) as Product[]);
+
+      /*
+       * Parent product must still be
+       * available for online selling.
+       */
+
+      const onlineProducts =
+        allProducts.filter(
+          (item) =>
+            item.is_active === true &&
+            item.sell_online === true &&
+            num(item.price) > 0 &&
+            productOnlineStock(item) > 0
+        );
+
+      setParentProducts(
+        onlineProducts
       );
 
-      const productIds = parentProducts
-        .map((item) => Number(item.id))
-        .filter((id) => Number.isFinite(id) && id > 0);
+      const productIds =
+        onlineProducts
+          .map((item) =>
+            Number(item.id)
+          )
+          .filter(
+            (id) =>
+              Number.isFinite(id) &&
+              id > 0
+          );
 
-      let variants: ProductVariant[] = [];
-      let designUnits: ProductDesignUnit[] = [];
-      let designLinks: ProductDesignVariantLink[] = [];
+      /*
+       * -------------------------------------------------------
+       * 2. LOAD DESIGN UNITS + DESIGN LINKS
+       * -------------------------------------------------------
+       *
+       * IMPORTANT:
+       *
+       * We DO NOT use variant_id as
+       * the unique storefront card.
+       *
+       * One variant can have many
+       * different design units.
+       *
+       * design_unit.id is the unique
+       * shopping card identity.
+       */
+
+      let designUnits:
+        ProductDesignUnit[] = [];
+
+      let designLinks:
+        ProductDesignLink[] = [];
 
       if (productIds.length > 0) {
         const [
-          variantResponse,
           designResponse,
-          designLinkResponse,
+          linkResponse,
         ] = await Promise.all([
           supabase
-            .from("product_variants")
-            .select(
-              `
-                id,
-                product_id,
-                variant_name,
-                size,
-                color,
-                barcode,
-                stock,
-                online_stock_limit,
-                sell_online,
-                mrp,
-                online_price,
-                main_image
-              `
+            .from(
+              "product_design_units"
             )
-            .in("product_id", productIds)
-            .order("id", { ascending: true }),
-
-          supabase
-            .from("product_design_units")
             .select(
               `
                 id,
@@ -251,13 +350,28 @@ export default function AiSmartHome() {
                 sort_order
               `
             )
-            .in("product_id", productIds)
-            .neq("status", "hidden")
-            .order("sort_order", { ascending: true })
-            .order("id", { ascending: true }),
+            .in(
+              "product_id",
+              productIds
+            )
+            .neq(
+              "status",
+              "hidden"
+            )
+            .order(
+              "sort_order",
+              {
+                ascending: true,
+              }
+            )
+            .order("id", {
+              ascending: true,
+            }),
 
           supabase
-            .from("product_design_unit_variants")
+            .from(
+              "product_design_unit_variants"
+            )
             .select(
               `
                 id,
@@ -267,285 +381,375 @@ export default function AiSmartHome() {
                 status
               `
             )
-            .in("product_id", productIds)
-            .neq("status", "hidden")
-            .order("id", { ascending: true }),
+            .in(
+              "product_id",
+              productIds
+            )
+            .neq(
+              "status",
+              "hidden"
+            )
+            .order("id", {
+              ascending: true,
+            }),
         ]);
 
-        if (variantResponse.error) {
-          console.info(
-            "AI Smart Home variants load error:",
-            variantResponse.error.message
-          );
-        } else {
-          variants =
-            (variantResponse.data || []) as ProductVariant[];
-        }
-
-        if (designResponse.error) {
-          console.info(
-            "AI Smart Home design units load error:",
-            designResponse.error.message
+        if (
+          designResponse.error
+        ) {
+          console.error(
+            "Design units error:",
+            designResponse.error
           );
         } else {
           designUnits =
-            (designResponse.data || []) as ProductDesignUnit[];
+            (designResponse.data ||
+              []) as ProductDesignUnit[];
         }
 
-        if (designLinkResponse.error) {
-          console.info(
-            "AI Smart Home design links load error:",
-            designLinkResponse.error.message
+        if (
+          linkResponse.error
+        ) {
+          console.error(
+            "Design links error:",
+            linkResponse.error
           );
         } else {
           designLinks =
-            (designLinkResponse.data ||
-              []) as ProductDesignVariantLink[];
+            (linkResponse.data ||
+              []) as ProductDesignLink[];
         }
       }
 
-      const expandedCards: StoreCard[] = [];
+      /*
+       * -------------------------------------------------------
+       * 3. EXPAND EACH PARENT PRODUCT
+       *    INTO INDIVIDUAL DESIGN CARDS
+       * -------------------------------------------------------
+       */
 
-      for (const parent of parentProducts) {
-        const parentId = Number(parent.id);
-        const parentName = nameOf(parent);
-        const parentImage = imageOf(parent);
+      const cards:
+        StoreCard[] = [];
 
-        const parentPrice = num(parent.price);
+      for (
+        const product of onlineProducts
+      ) {
+        const id =
+          Number(product.id);
 
-        const parentMrp = Math.max(
-          parentPrice,
-          num(parent.mrp)
-        );
-
-        const productDesigns = designUnits.filter(
-          (unit) =>
-            Number(unit.product_id) === parentId &&
-            unit.status !== "hidden" &&
-            Boolean(unit.image_url?.trim())
-        );
-
-        const productVariants = variants.filter(
-          (variant) =>
-            Number(variant.product_id) === parentId
-        );
-
-        const individualDesignCards: StoreCard[] = [];
-
-        for (const design of productDesigns) {
-          const linkedVariantIds = designLinks
+        const designs =
+          designUnits
             .filter(
-              (link) =>
-                Number(link.design_unit_id) ===
-                  Number(design.id) &&
-                link.status === "available"
-            )
-            .map((link) => Number(link.variant_id));
-
-          if (
-            linkedVariantIds.length === 0 &&
-            Number(design.parent_variant_id || 0) > 0
-          ) {
-            linkedVariantIds.push(
-              Number(design.parent_variant_id)
-            );
-          }
-
-          const linkedVariants = productVariants.filter(
-            (variant) =>
-              linkedVariantIds.includes(Number(variant.id))
-          );
-
-          const availableVariants = linkedVariants.filter(
-            (variant) => variantOnlineStock(variant) > 0
-          );
-
-          const designQuantity = availableVariants.reduce(
-            (total, variant) =>
-              total + variantOnlineStock(variant),
-            0
-          );
-
-          if (designQuantity <= 0) {
-            continue;
-          }
-
-          const firstAvailableVariant =
-            availableVariants[0] || null;
-
-          const variantPrice =
-            firstAvailableVariant &&
-            num(firstAvailableVariant.online_price) > 0
-              ? num(firstAvailableVariant.online_price)
-              : parentPrice;
-
-          const variantMrp =
-            firstAvailableVariant &&
-            num(firstAvailableVariant.mrp) > 0
-              ? Math.max(
-                  variantPrice,
-                  num(firstAvailableVariant.mrp)
+              (design) =>
+                Number(
+                  design.product_id
+                ) === id &&
+                design.status !==
+                  "hidden" &&
+                Boolean(
+                  design.image_url?.trim()
                 )
-              : Math.max(variantPrice, parentMrp);
+            )
+            .sort((a, b) => {
+              const sortA = num(
+                a.sort_order
+              );
 
-          individualDesignCards.push({
-            key: `product-${parentId}-design-${design.id}`,
+              const sortB = num(
+                b.sort_order
+              );
 
-            productId: parent.id,
+              if (
+                sortA !== sortB
+              ) {
+                return (
+                  sortA -
+                  sortB
+                );
+              }
 
-            designId: Number(design.id),
-
-            name: parentName,
-
-            designName:
-              design.design_name?.trim() ||
-              firstAvailableVariant?.variant_name?.trim() ||
-              [firstAvailableVariant?.color]
-                .filter(Boolean)
-                .join(" • ") ||
-              `Design ${design.id}`,
-
-            price: variantPrice,
-
-            mrp: variantMrp,
-
-            stock: designQuantity,
-
-            brand:
-              parent.brand || "NEW CITY STYLE",
-
-            category:
-              parent.category || "Fashion",
-
-            image:
-              design.image_url?.trim() ||
-              firstAvailableVariant?.main_image?.trim() ||
-              parentImage,
-
-            isNewArrival: enabled(
-              parent.is_new_arrival
-            ),
-
-            isFeatured: enabled(
-              parent.is_featured
-            ),
-
-            isOnSale:
-              enabled(parent.is_on_sale) ||
-              variantMrp > variantPrice,
-          });
-        }
+              return (
+                Number(a.id) -
+                Number(b.id)
+              );
+            });
 
         /*
-         * IMPORTANT:
-         * If this parent product has individual online designs,
-         * do NOT show the parent as one card.
-         * Show every design separately.
+         * A design is considered
+         * available when:
+         *
+         * - design itself is available
+         * - AND at least one link is
+         *   marked available
+         *
+         * This matches Product Details.
          */
-        if (individualDesignCards.length > 0) {
-          expandedCards.push(...individualDesignCards);
+
+        const availableDesigns =
+          designs.filter(
+            (design) => {
+              if (
+                design.status ===
+                "sold_out"
+              ) {
+                return false;
+              }
+
+              return designLinks.some(
+                (link) =>
+                  Number(
+                    link.design_unit_id
+                  ) ===
+                    Number(
+                      design.id
+                    ) &&
+                  link.status ===
+                    "available"
+              );
+            }
+          );
+
+        /*
+         * -----------------------------------------
+         * DESIGN PRODUCT
+         *
+         * Each design becomes
+         * ONE SEPARATE CARD.
+         * -----------------------------------------
+         */
+
+        if (
+          availableDesigns.length >
+          0
+        ) {
+          availableDesigns.forEach(
+            (design, index) => {
+              const price =
+                num(product.price);
+
+              const mrp =
+                Math.max(
+                  price,
+                  num(product.mrp)
+                );
+
+              cards.push({
+                key:
+                  `product-${id}` +
+                  `-design-${design.id}`,
+
+                productId:
+                  product.id,
+
+                designId:
+                  Number(design.id),
+
+                name:
+                  productName(
+                    product
+                  ),
+
+                designName:
+                  design.design_name?.trim() ||
+                  `Design ${
+                    index + 1
+                  }`,
+
+                image:
+                  design.image_url?.trim() ||
+                  productImage(
+                    product
+                  ),
+
+                price,
+
+                mrp,
+
+                /*
+                 * Parent online stock is
+                 * used for display only.
+                 *
+                 * Design availability is
+                 * controlled by the
+                 * design link status.
+                 */
+                stock:
+                  productOnlineStock(
+                    product
+                  ),
+
+                category:
+                  product.category ||
+                  "Fashion",
+
+                brand:
+                  product.brand ||
+                  "NEW CITY STYLE",
+
+                isNewArrival:
+                  enabled(
+                    product.is_new_arrival
+                  ),
+
+                isFeatured:
+                  enabled(
+                    product.is_featured
+                  ),
+
+                isOnSale:
+                  enabled(
+                    product.is_on_sale
+                  ) ||
+                  productDiscount(
+                    product
+                  ) > 0,
+
+                createdOrder:
+                  Number(
+                    design.sort_order ||
+                      design.id
+                  ),
+              });
+            }
+          );
+
+          /*
+           * IMPORTANT:
+           *
+           * Do NOT add parent card
+           * after designs are added.
+           */
           continue;
         }
 
         /*
-         * Legacy / normal product:
-         * no design units = original single-card behaviour.
+         * -----------------------------------------
+         * NORMAL / LEGACY PRODUCT
+         *
+         * No design units:
+         * keep original one-card system.
+         * -----------------------------------------
          */
-        const parentOnlineQuantity =
-          onlineStock(parent);
 
-        if (
-          parent.sell_online === true &&
-          parent.is_active === true &&
-          parentPrice > 0 &&
-          parentOnlineQuantity > 0
-        ) {
-          expandedCards.push({
-            key: `product-${parentId}`,
+        cards.push({
+          key:
+            `product-${id}`,
 
-            productId: parent.id,
+          productId:
+            product.id,
 
-            designId: null,
+          designId:
+            null,
 
-            name: parentName,
-
-            designName: "",
-
-            price: parentPrice,
-
-            mrp: parentMrp,
-
-            stock: parentOnlineQuantity,
-
-            brand:
-              parent.brand || "NEW CITY STYLE",
-
-            category:
-              parent.category || "Fashion",
-
-            image: parentImage,
-
-            isNewArrival: enabled(
-              parent.is_new_arrival
+          name:
+            productName(
+              product
             ),
 
-            isFeatured: enabled(
-              parent.is_featured
+          designName: "",
+
+          image:
+            productImage(
+              product
             ),
 
-            isOnSale:
-              enabled(parent.is_on_sale) ||
-              parentMrp > parentPrice,
-          });
-        }
+          price:
+            num(product.price),
+
+          mrp:
+            Math.max(
+              num(product.price),
+              num(product.mrp)
+            ),
+
+          stock:
+            productOnlineStock(
+              product
+            ),
+
+          category:
+            product.category ||
+            "Fashion",
+
+          brand:
+            product.brand ||
+            "NEW CITY STYLE",
+
+          isNewArrival:
+            enabled(
+              product.is_new_arrival
+            ),
+
+          isFeatured:
+            enabled(
+              product.is_featured
+            ),
+
+          isOnSale:
+            enabled(
+              product.is_on_sale
+            ) ||
+            productDiscount(
+              product
+            ) > 0,
+
+          createdOrder: id,
+        });
       }
 
-      setStoreCards(expandedCards);
+      /*
+       * Latest parent products first.
+       * Designs remain in their
+       * saved sort order.
+       */
+
+      setStoreCards(cards);
 
       /*
-       * Keep parent products for existing AI API.
-       * We are not changing the AI endpoint now.
+       * -------------------------------------------------------
+       * 4. EXISTING AI PERSONALIZATION
+       * -------------------------------------------------------
        */
-      const onlineParentProducts =
-        parentProducts.filter(
-          (item) =>
-            item.sell_online === true &&
-            item.is_active === true &&
-            num(item.price) > 0 &&
-            onlineStock(item) > 0
-        );
-
-      setProducts(onlineParentProducts);
 
       let storedQuery = "";
 
       try {
         storedQuery =
           window.localStorage
-            .getItem("ncs_ai_last_query")
+            .getItem(
+              "ncs_ai_last_query"
+            )
             ?.trim() || "";
       } catch {
-        // Personalization is optional.
+        // optional
       }
 
-      setLastQuery(storedQuery);
+      setLastQuery(
+        storedQuery
+      );
 
       if (storedQuery) {
         try {
-          const response = await fetch(
-            "/api/ai-shopping",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-              body: JSON.stringify({
-                question: storedQuery,
-                path: "/",
-              }),
-            }
-          );
+          const response =
+            await fetch(
+              "/api/ai-shopping",
+              {
+                method: "POST",
+
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+
+                body:
+                  JSON.stringify({
+                    question:
+                      storedQuery,
+
+                    path: "/",
+                  }),
+              }
+            );
 
           const result =
             (await response.json()) as AiResponse;
@@ -555,19 +759,32 @@ export default function AiSmartHome() {
             result.success
           ) {
             setAiProducts(
-              (result.products || []).filter(
+              (
+                result.products ||
+                []
+              ).filter(
                 (item) =>
-                  num(item.price) > 0 &&
-                  num(item.onlineStock) > 0
+                  num(
+                    item.price
+                  ) > 0 &&
+                  num(
+                    item.onlineStock
+                  ) > 0
               )
             );
 
             setAiAnswer(
-              result.answer || ""
+              result.answer ||
+                ""
             );
           }
-        } catch {
-          // Existing catalogue remains available.
+        } catch (
+          aiError
+        ) {
+          console.info(
+            "AI recommendation fallback:",
+            aiError
+          );
         }
       }
     } catch (error) {
@@ -576,188 +793,191 @@ export default function AiSmartHome() {
         error
       );
 
-      setProducts([]);
+      setParentProducts(
+        []
+      );
+
       setStoreCards([]);
     } finally {
       setLoading(false);
     }
   }
 
-  const newArrivals = useMemo(() => {
-    return [...storeCards]
-      .filter((item) => item.stock > 0)
-      .sort((a, b) => {
-        const newDiff =
-          Number(b.isNewArrival) -
-          Number(a.isNewArrival);
+  /*
+   * ---------------------------------------------------------
+   * NEW ARRIVALS
+   * ---------------------------------------------------------
+   */
 
-        if (newDiff !== 0) {
-          return newDiff;
-        }
+  const newArrivals =
+    useMemo(() => {
+      return [
+        ...storeCards,
+      ]
+        .filter(
+          (item) =>
+            item.stock > 0
+        )
+        .sort((a, b) => {
+          const newDiff =
+            Number(
+              b.isNewArrival
+            ) -
+            Number(
+              a.isNewArrival
+            );
 
-        return b.stock - a.stock;
-      })
-      .slice(0, 8);
-  }, [storeCards]);
+          if (
+            newDiff !== 0
+          ) {
+            return newDiff;
+          }
 
-  const smartDeals = useMemo(() => {
-    return [...storeCards]
-      .filter(
-        (item) =>
-          item.stock > 0 &&
-          item.price > 0 &&
-          item.mrp > item.price
-      )
-      .sort((a, b) => {
-        const discountA =
-          a.mrp > 0
-            ? ((a.mrp - a.price) /
-                a.mrp) *
-              100
-            : 0;
+          return (
+            Number(
+              b.productId
+            ) -
+            Number(
+              a.productId
+            )
+          );
+        })
+        /*
+         * More than 4 so all six
+         * designs can appear.
+         */
+        .slice(0, 12);
+    }, [storeCards]);
 
-        const discountB =
-          b.mrp > 0
-            ? ((b.mrp - b.price) /
-                b.mrp) *
-              100
-            : 0;
+  /*
+   * ---------------------------------------------------------
+   * DEALS
+   * ---------------------------------------------------------
+   */
 
-        return discountB - discountA;
-      })
-      .slice(0, 8);
-  }, [storeCards]);
+  const smartDeals =
+    useMemo(() => {
+      return [
+        ...storeCards,
+      ]
+        .filter(
+          (item) =>
+            item.stock > 0 &&
+            item.price > 0 &&
+            item.mrp >
+              item.price
+        )
+        .sort((a, b) => {
+          const discountA =
+            a.mrp > 0
+              ? ((a.mrp -
+                  a.price) /
+                  a.mrp) *
+                100
+              : 0;
 
-  const fastMoving = useMemo(() => {
-    return [...storeCards]
-      .filter((item) => item.stock > 0)
-      .sort((a, b) => {
-        const featuredDiff =
-          Number(b.isFeatured) -
-          Number(a.isFeatured);
+          const discountB =
+            b.mrp > 0
+              ? ((b.mrp -
+                  b.price) /
+                  b.mrp) *
+                100
+              : 0;
 
-        if (featuredDiff !== 0) {
-          return featuredDiff;
-        }
+          return (
+            discountB -
+            discountA
+          );
+        })
+        .slice(0, 12);
+    }, [storeCards]);
 
-        return a.stock - b.stock;
-      })
-      .slice(0, 8);
-  }, [storeCards]);
+  /*
+   * ---------------------------------------------------------
+   * SMART PICKS
+   * ---------------------------------------------------------
+   */
 
-  function renderAiProduct(
-    product: AiProduct,
-    keyPrefix: string
-  ) {
-    const id = product.id;
-    const name = product.name;
-    const image = product.image;
-    const price = num(product.price);
+  const fastMoving =
+    useMemo(() => {
+      return [
+        ...storeCards,
+      ]
+        .filter(
+          (item) =>
+            item.stock > 0
+        )
+        .sort((a, b) => {
+          const featuredDiff =
+            Number(
+              b.isFeatured
+            ) -
+            Number(
+              a.isFeatured
+            );
 
-    const mrp = Math.max(
-      price,
-      num(product.mrp)
-    );
+          if (
+            featuredDiff !== 0
+          ) {
+            return featuredDiff;
+          }
 
-    const stock =
-      num(product.onlineStock);
+          return (
+            Number(
+              b.productId
+            ) -
+            Number(
+              a.productId
+            )
+          );
+        })
+        .slice(0, 12);
+    }, [storeCards]);
 
-    const discount =
-      mrp > price &&
-      mrp > 0
-        ? Math.round(
-            ((mrp - price) / mrp) *
-              100
-          )
-        : 0;
-
-    return (
-      <button
-        type="button"
-        key={`${keyPrefix}-${id}`}
-        className="smartProduct"
-        onClick={() =>
-          router.push(`/product/${id}`)
-        }
-      >
-        <div className="smartImage">
-          {image ? (
-            <img
-              src={image}
-              alt={name}
-              loading="lazy"
-            />
-          ) : (
-            <span>NCS</span>
-          )}
-
-          {discount > 0 && (
-            <b className="dealBadge">
-              {discount}% OFF
-            </b>
-          )}
-        </div>
-
-        <div className="smartProductInfo">
-          <strong>{name}</strong>
-
-          <div>
-            <b>{money(price)}</b>
-
-            {mrp > price && (
-              <del>{money(mrp)}</del>
-            )}
-          </div>
-
-          <small>
-            {stock > 0
-              ? `${stock} available online`
-              : "Out of stock"}
-          </small>
-
-          <em>View product →</em>
-        </div>
-      </button>
-    );
-  }
+  /*
+   * ---------------------------------------------------------
+   * STORE DESIGN CARD
+   * ---------------------------------------------------------
+   */
 
   function renderStoreCard(
-    product: StoreCard,
-    keyPrefix: string
+    item: StoreCard,
+    prefix: string
   ) {
     const discount =
-      product.mrp > product.price &&
-      product.mrp > 0
+      item.mrp >
+        item.price &&
+      item.mrp > 0
         ? Math.round(
-            ((product.mrp -
-              product.price) /
-              product.mrp) *
+            ((item.mrp -
+              item.price) /
+              item.mrp) *
               100
           )
         : 0;
 
-    const productUrl =
-      product.designId !== null
-        ? `/product/${product.productId}?design=${product.designId}`
-        : `/product/${product.productId}`;
+    const url =
+      item.designId !== null
+        ? `/product/${item.productId}?design=${item.designId}`
+        : `/product/${item.productId}`;
 
     return (
       <button
         type="button"
-        key={`${keyPrefix}-${product.key}`}
+        key={`${prefix}-${item.key}`}
         className="smartProduct"
         onClick={() =>
-          router.push(productUrl)
+          router.push(url)
         }
       >
         <div className="smartImage">
-          {product.image ? (
+          {item.image ? (
             <img
-              src={product.image}
+              src={item.image}
               alt={
-                product.designName
-                  ? `${product.name} ${product.designName}`
-                  : product.name
+                item.designName
+                  ? `${item.name} - ${item.designName}`
+                  : item.name
               }
               loading="lazy"
             />
@@ -765,52 +985,159 @@ export default function AiSmartHome() {
             <span>NCS</span>
           )}
 
-          {discount > 0 && (
+          {discount >
+            0 && (
             <b className="dealBadge">
               {discount}% OFF
             </b>
           )}
 
-          {product.designName && (
+          {item.designName && (
             <span className="designBadge">
-              {product.designName}
+              DESIGN
             </span>
           )}
         </div>
 
         <div className="smartProductInfo">
           <strong>
-            {product.name}
+            {item.name}
           </strong>
 
-          {product.designName && (
-            <span className="designTitle">
-              {product.designName}
+          {item.designName && (
+            <span className="designName">
+              {item.designName}
             </span>
           )}
 
-          <div>
+          <div className="priceLine">
             <b>
-              {money(product.price)}
+              {money(
+                item.price
+              )}
             </b>
 
-            {product.mrp >
-              product.price && (
+            {item.mrp >
+              item.price && (
               <del>
-                {money(product.mrp)}
+                {money(
+                  item.mrp
+                )}
               </del>
             )}
           </div>
 
           <small>
-            {product.stock} available online
+            Available online
           </small>
 
-          <em>View product →</em>
+          <em>
+            View Product →
+          </em>
         </div>
       </button>
     );
   }
+
+  /*
+   * ---------------------------------------------------------
+   * EXISTING AI CARD
+   * ---------------------------------------------------------
+   */
+
+  function renderAiProduct(
+    item: AiProduct,
+    prefix: string
+  ) {
+    const price =
+      num(item.price);
+
+    const mrp =
+      Math.max(
+        price,
+        num(item.mrp)
+      );
+
+    const discount =
+      mrp > price &&
+      mrp > 0
+        ? Math.round(
+            ((mrp -
+              price) /
+              mrp) *
+              100
+          )
+        : 0;
+
+    return (
+      <button
+        type="button"
+        key={`${prefix}-${item.id}`}
+        className="smartProduct"
+        onClick={() =>
+          router.push(
+            `/product/${item.id}`
+          )
+        }
+      >
+        <div className="smartImage">
+          {item.image ? (
+            <img
+              src={item.image}
+              alt={item.name}
+              loading="lazy"
+            />
+          ) : (
+            <span>NCS</span>
+          )}
+
+          {discount >
+            0 && (
+            <b className="dealBadge">
+              {discount}% OFF
+            </b>
+          )}
+        </div>
+
+        <div className="smartProductInfo">
+          <strong>
+            {item.name}
+          </strong>
+
+          <div className="priceLine">
+            <b>
+              {money(price)}
+            </b>
+
+            {mrp >
+              price && (
+              <del>
+                {money(mrp)}
+              </del>
+            )}
+          </div>
+
+          <small>
+            {num(
+              item.onlineStock
+            ) > 0
+              ? `${item.onlineStock} available online`
+              : "Available online"}
+          </small>
+
+          <em>
+            View Product →
+          </em>
+        </div>
+      </button>
+    );
+  }
+
+  /*
+   * ---------------------------------------------------------
+   * LOADING
+   * ---------------------------------------------------------
+   */
 
   if (loading) {
     return (
@@ -819,19 +1146,23 @@ export default function AiSmartHome() {
           <span />
 
           <strong>
-            Preparing smart shopping
-            picks…
+            Preparing smart
+            shopping picks…
           </strong>
         </div>
 
-        <style jsx>{styles}</style>
+        <style jsx>
+          {styles}
+        </style>
       </section>
     );
   }
 
   if (
-    storeCards.length === 0 &&
-    products.length === 0
+    storeCards.length ===
+      0 &&
+    parentProducts.length ===
+      0
   ) {
     return null;
   }
@@ -846,22 +1177,26 @@ export default function AiSmartHome() {
           </span>
 
           <h2>
-            Smarter Shopping, Live From
-            Our Catalogue
+            Smarter Shopping,
+            Live From Our
+            Catalogue
           </h2>
 
           <p>
-            Recommendations adapt to
-            live online stock, offers
-            and your recent Ask NCS
-            shopping intent.
+            Recommendations adapt
+            to live online stock,
+            offers and your recent
+            Ask NCS shopping
+            intent.
           </p>
         </div>
 
         <button
           type="button"
           onClick={() =>
-            router.push("/search")
+            router.push(
+              "/search"
+            )
           }
         >
           Explore All Products →
@@ -869,7 +1204,8 @@ export default function AiSmartHome() {
       </div>
 
       {lastQuery &&
-        aiProducts.length > 0 && (
+        aiProducts.length >
+          0 && (
           <section className="aiPersonalCard">
             <div className="aiPersonalHeader">
               <div className="aiIcon">
@@ -878,12 +1214,14 @@ export default function AiSmartHome() {
 
               <div>
                 <span>
-                  PERSONALIZED FOR YOU
+                  PERSONALIZED FOR
+                  YOU
                 </span>
 
                 <h3>
-                  Based on your recent
-                  Ask NCS request
+                  Based on your
+                  recent Ask NCS
+                  request
                 </h3>
 
                 <p>
@@ -916,21 +1254,24 @@ export default function AiSmartHome() {
           </section>
         )}
 
-      {newArrivals.length > 0 && (
+      {newArrivals.length >
+        0 && (
         <div className="smartSection">
           <div className="sectionTitle">
             <div>
-              <span>JUST IN</span>
+              <span>
+                JUST IN
+              </span>
 
               <h3>
-                Fresh & Available Now
+                Fresh & Available
+                Now
               </h3>
             </div>
 
             <small>
-              Live catalogue • each
-              available design shown
-              separately
+              Individual designs
+              shown separately
             </small>
           </div>
 
@@ -946,7 +1287,8 @@ export default function AiSmartHome() {
         </div>
       )}
 
-      {smartDeals.length > 0 && (
+      {smartDeals.length >
+        0 && (
         <div className="smartSection">
           <div className="sectionTitle">
             <div>
@@ -960,8 +1302,7 @@ export default function AiSmartHome() {
             </div>
 
             <small>
-              Calculated from current
-              price vs MRP
+              Current price vs MRP
             </small>
           </div>
 
@@ -977,7 +1318,8 @@ export default function AiSmartHome() {
         </div>
       )}
 
-      {fastMoving.length > 0 && (
+      {fastMoving.length >
+        0 && (
         <div className="smartSection">
           <div className="sectionTitle">
             <div>
@@ -986,8 +1328,8 @@ export default function AiSmartHome() {
               </span>
 
               <h3>
-                Popular-Looking Picks
-                Ready To Shop
+                Popular-Looking
+                Picks Ready To Shop
               </h3>
             </div>
 
@@ -1011,11 +1353,13 @@ export default function AiSmartHome() {
 
       <div className="smartTrustStrip">
         <div>
-          <b>Live Stock</b>
+          <b>
+            Live Stock
+          </b>
 
           <span>
-            Recommendations respect
-            online availability
+            Online availability
+            respected
           </span>
         </div>
 
@@ -1025,31 +1369,37 @@ export default function AiSmartHome() {
           </b>
 
           <span>
-            Available designs can appear
-            as separate shopping cards
+            Every available design
+            can appear separately
           </span>
         </div>
 
         <div>
-          <b>AI-Safe Fallback</b>
+          <b>
+            AI-Safe Fallback
+          </b>
 
           <span>
-            Core shopping still works if
-            AI is unavailable
+            Shopping works even
+            without AI
           </span>
         </div>
 
         <div>
-          <b>Private by Design</b>
+          <b>
+            NEW CITY STYLE
+          </b>
 
           <span>
-            No payment or private
-            customer data is sent to AI
+            Premium catalogue
+            experience
           </span>
         </div>
       </div>
 
-      <style jsx>{styles}</style>
+      <style jsx>
+        {styles}
+      </style>
     </section>
   );
 }
@@ -1060,14 +1410,14 @@ const styles = `
   background:
     radial-gradient(
       circle at 90% 0%,
-      rgba(212, 175, 55, 0.09),
+      rgba(var(--ncs-secondary-rgb, 212,175,55), .09),
       transparent 30%
     ),
     linear-gradient(
       180deg,
-      #f7f9fc 0%,
-      #ffffff 45%,
-      #f8f4ec 100%
+      var(--ncs-page-bg, #F7F8FC) 0%,
+      var(--ncs-surface, #ffffff) 45%,
+      color-mix(in srgb, var(--ncs-page-bg, #F7F8FC) 88%, var(--ncs-secondary, #D4AF37) 12%) 100%
     );
 }
 
@@ -1083,7 +1433,7 @@ const styles = `
 .smartHeading span,
 .sectionTitle span,
 .aiPersonalHeader span {
-  color: #c89d1e;
+  color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 86%, black 14%);
   font-size: 10px;
   font-weight: 950;
   letter-spacing: 1.7px;
@@ -1092,8 +1442,9 @@ const styles = `
 .smartHeading h2 {
   max-width: 850px;
   margin: 8px 0 0;
-  color: #0a2e73;
-  font-size: clamp(34px, 4.5vw, 58px);
+  color: var(--ncs-primary, #0a2e73);
+  font-size:
+    clamp(34px, 4.5vw, 58px);
   line-height: 1.05;
   letter-spacing: -1.8px;
 }
@@ -1101,7 +1452,7 @@ const styles = `
 .smartHeading p {
   max-width: 760px;
   margin: 13px 0 0;
-  color: #667085;
+  color: var(--ncs-muted, #667085);
   font-size: 14px;
   line-height: 1.7;
 }
@@ -1110,10 +1461,11 @@ const styles = `
   min-height: 48px;
   flex: 0 0 auto;
   padding: 0 18px;
-  border: 1px solid #d4af37;
+  border:
+    1px solid var(--ncs-secondary, #d4af37);
   border-radius: 12px;
-  background: #0a2e73;
-  color: #ffffff;
+  background: var(--ncs-primary, #0a2e73);
+  color: #fff;
   font-size: 11px;
   font-weight: 850;
   cursor: pointer;
@@ -1124,24 +1476,27 @@ const styles = `
   width: min(1400px, 100%);
   margin: 0 auto 30px;
   padding: 24px;
-  border: 1px solid rgba(10, 46, 115, 0.09);
+  border:
+    1px solid
+    rgba(var(--ncs-primary-rgb, 10,46,115), .09);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.96);
+  background:
+    color-mix(in srgb, var(--ncs-surface, #ffffff) 96%, transparent 4%);
   box-shadow:
     0 16px 45px
-    rgba(10, 46, 115, 0.07);
+    rgba(var(--ncs-primary-rgb, 10,46,115), .07);
 }
 
 .aiPersonalCard {
   border-color:
-    rgba(212, 175, 55, 0.4);
+    rgba(var(--ncs-secondary-rgb, 212,175,55), .40);
   background:
     radial-gradient(
       circle at 100% 0%,
-      rgba(212, 175, 55, 0.13),
+      rgba(var(--ncs-secondary-rgb, 212,175,55), .13),
       transparent 28%
     ),
-    #ffffff;
+    #fff;
 }
 
 .aiPersonalHeader {
@@ -1160,10 +1515,10 @@ const styles = `
   background:
     linear-gradient(
       135deg,
-      #0a2e73,
-      #164ca9
+      var(--ncs-primary, #0a2e73),
+      color-mix(in srgb, var(--ncs-primary, #0A2E73) 72%, white 28%)
     );
-  color: #f2d66c;
+  color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 70%, white 30%);
   font-size: 13px;
   font-weight: 950;
 }
@@ -1171,13 +1526,13 @@ const styles = `
 .aiPersonalHeader h3,
 .sectionTitle h3 {
   margin: 5px 0 0;
-  color: #0a2e73;
+  color: var(--ncs-primary, #0a2e73);
   font-size: 24px;
 }
 
 .aiPersonalHeader p {
   margin: 5px 0 0;
-  color: #667085;
+  color: var(--ncs-muted, #667085);
   font-size: 11px;
 }
 
@@ -1185,11 +1540,11 @@ const styles = `
   margin: 16px 0 0;
   padding: 13px 15px;
   border-left:
-    3px solid #d4af37;
+    3px solid var(--ncs-secondary, #d4af37);
   border-radius:
     0 10px 10px 0;
-  background: #fffdf5;
-  color: #475467;
+  background: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 5%, white 95%);
+  color: var(--ncs-muted, #475467);
   font-size: 11px;
   line-height: 1.6;
 }
@@ -1203,7 +1558,7 @@ const styles = `
 }
 
 .sectionTitle small {
-  color: #98a2b3;
+  color: var(--ncs-muted, #98a2b3);
   font-size: 9px;
   font-weight: 700;
 }
@@ -1211,7 +1566,10 @@ const styles = `
 .smartGrid {
   display: grid;
   grid-template-columns:
-    repeat(4, minmax(0, 1fr));
+    repeat(
+      4,
+      minmax(0, 1fr)
+    );
   gap: 14px;
   margin-top: 18px;
 }
@@ -1221,18 +1579,18 @@ const styles = `
   display: block;
   padding: 0;
   border:
-    1px solid #e5e9f0;
+    1px solid var(--ncs-border, #e5e9f0);
   border-radius: 16px;
-  background: #ffffff;
+  background: #fff;
   color: inherit;
   text-align: left;
   cursor: pointer;
   box-shadow:
     0 8px 22px
-    rgba(10, 46, 115, 0.05);
+    rgba(var(--ncs-primary-rgb, 10,46,115), .05);
   transition:
-    transform 0.22s ease,
-    box-shadow 0.22s ease;
+    transform .22s ease,
+    box-shadow .22s ease;
 }
 
 .smartProduct:hover {
@@ -1240,7 +1598,7 @@ const styles = `
     translateY(-4px);
   box-shadow:
     0 16px 32px
-    rgba(10, 46, 115, 0.11);
+    rgba(var(--ncs-primary-rgb, 10,46,115), .11);
 }
 
 .smartImage {
@@ -1249,14 +1607,15 @@ const styles = `
   overflow: hidden;
   display: grid;
   place-items: center;
-  background: #edf1f8;
-  color: #d4af37;
+  background: color-mix(in srgb, var(--ncs-primary, #0A2E73) 7%, white 93%);
+  color: var(--ncs-secondary, #d4af37);
   font-weight: 950;
 }
 
 .smartImage img {
   width: 100%;
   height: 100%;
+  display: block;
   object-fit: cover;
 }
 
@@ -1267,28 +1626,24 @@ const styles = `
   z-index: 3;
   padding: 5px 8px;
   border-radius: 999px;
-  background: #d4af37;
-  color: #0a2e73;
+  background: var(--ncs-secondary, #d4af37);
+  color: var(--ncs-primary, #0a2e73);
   font-size: 8px;
   font-weight: 950;
 }
 
 .designBadge {
   position: absolute;
+  top: 9px;
   right: 9px;
-  bottom: 9px;
   z-index: 3;
-  max-width: 80%;
-  overflow: hidden;
   padding: 5px 8px;
   border-radius: 999px;
   background:
-    rgba(10, 46, 115, 0.92);
-  color: #ffffff;
+    rgba(var(--ncs-primary-rgb, 10,46,115), .92);
+  color: #fff;
   font-size: 8px;
-  font-weight: 850;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 900;
 }
 
 .smartProductInfo {
@@ -1299,7 +1654,7 @@ const styles = `
   min-height: 38px;
   display: -webkit-box;
   overflow: hidden;
-  color: #0a2e73;
+  color: var(--ncs-primary, #0a2e73);
   font-size: 12px;
   line-height: 1.4;
   -webkit-box-orient:
@@ -1307,31 +1662,34 @@ const styles = `
   -webkit-line-clamp: 2;
 }
 
-.designTitle {
-  display: block;
-  margin-top: 5px;
+.designName {
+  min-height: 28px;
+  display: -webkit-box;
   overflow: hidden;
-  color: #667085;
+  margin-top: 5px;
+  color: var(--ncs-muted, #667085);
   font-size: 9px;
   font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
+  -webkit-box-orient:
+    vertical;
+  -webkit-line-clamp: 2;
 }
 
-.smartProductInfo > div {
+.priceLine {
   display: flex;
   align-items: center;
   gap: 7px;
   margin-top: 8px;
 }
 
-.smartProductInfo > div b {
-  color: #c49a1f;
+.priceLine b {
+  color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 86%, black 14%);
   font-size: 15px;
 }
 
-.smartProductInfo del {
-  color: #98a2b3;
+.priceLine del {
+  color: var(--ncs-muted, #98a2b3);
   font-size: 9px;
 }
 
@@ -1349,7 +1707,7 @@ const styles = `
 
 .smartProductInfo em {
   margin-top: 9px;
-  color: #0a2e73;
+  color: var(--ncs-primary, #0a2e73);
   font-size: 8px;
   font-style: normal;
   font-weight: 850;
@@ -1359,7 +1717,10 @@ const styles = `
   width: min(1400px, 100%);
   display: grid;
   grid-template-columns:
-    repeat(4, minmax(0, 1fr));
+    repeat(
+      4,
+      minmax(0, 1fr)
+    );
   gap: 10px;
   margin: 0 auto;
 }
@@ -1368,9 +1729,9 @@ const styles = `
   padding: 15px;
   border:
     1px solid
-    rgba(10, 46, 115, 0.08);
+    rgba(var(--ncs-primary-rgb, 10,46,115), .08);
   border-radius: 14px;
-  background: #ffffff;
+  background: #fff;
 }
 
 .smartTrustStrip b,
@@ -1379,13 +1740,13 @@ const styles = `
 }
 
 .smartTrustStrip b {
-  color: #0a2e73;
+  color: var(--ncs-primary, #0a2e73);
   font-size: 11px;
 }
 
 .smartTrustStrip span {
   margin-top: 4px;
-  color: #667085;
+  color: var(--ncs-muted, #667085);
   font-size: 8px;
   line-height: 1.4;
 }
@@ -1396,19 +1757,19 @@ const styles = `
   place-items: center;
   align-content: center;
   gap: 12px;
-  color: #0a2e73;
+  color: var(--ncs-primary, #0a2e73);
 }
 
 .smartLoading span {
   width: 34px;
   height: 34px;
   border:
-    3px solid #e7ebf3;
+    3px solid color-mix(in srgb, var(--ncs-primary, #0A2E73) 8%, white 92%);
   border-top-color:
-    #d4af37;
+    var(--ncs-secondary, #d4af37);
   border-radius: 50%;
   animation:
-    smartSpin 0.8s
+    smartSpin .8s
     linear infinite;
 }
 
@@ -1446,8 +1807,7 @@ const styles = `
   .aiPersonalCard,
   .smartSection {
     padding: 13px;
-    border-radius:
-      17px;
+    border-radius: 17px;
   }
 
   .smartGrid {
@@ -1455,8 +1815,7 @@ const styles = `
   }
 
   .smartProduct {
-    border-radius:
-      12px;
+    border-radius: 12px;
   }
 
   .smartProductInfo {
@@ -1464,15 +1823,16 @@ const styles = `
   }
 
   .smartProductInfo > strong {
-    min-height:
-      34px;
-    font-size:
-      10px;
+    min-height: 34px;
+    font-size: 10px;
+  }
+
+  .designName {
+    font-size: 8px;
   }
 
   .smartHeading h2 {
-    font-size:
-      34px;
+    font-size: 34px;
   }
 
   .sectionTitle {
@@ -1485,8 +1845,7 @@ const styles = `
 
   .sectionTitle h3,
   .aiPersonalHeader h3 {
-    font-size:
-      19px;
+    font-size: 19px;
   }
 }
 `;

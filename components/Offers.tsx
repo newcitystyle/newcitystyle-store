@@ -394,21 +394,21 @@ export default function Offers() {
           background:
             radial-gradient(
               circle at 12% 15%,
-              rgba(212, 175, 55, 0.2),
+              rgba(var(--ncs-secondary-rgb, 212,175,55), 0.20),
               transparent 23%
             ),
             radial-gradient(
               circle at 88% 80%,
-              rgba(60, 126, 255, 0.24),
+              rgba(var(--ncs-primary-rgb, 10,46,115), 0.20),
               transparent 26%
             ),
             linear-gradient(
               135deg,
-              #03153f,
-              #0a2e73 55%,
-              #164ca8
+              color-mix(in srgb, var(--ncs-primary, #0A2E73) 82%, black 18%),
+              var(--ncs-primary, #0a2e73) 55%,
+              color-mix(in srgb, var(--ncs-primary, #0A2E73) 72%, white 28%)
             );
-          color: #ffffff;
+          color: var(--ncs-surface, #ffffff);
         }
 
         .offersContainer {
@@ -426,7 +426,7 @@ export default function Offers() {
           align-items: center;
           justify-content: center;
           gap: 10px;
-          color: #f1d26a;
+          color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%);
           font-size: 11px;
           font-weight: 900;
           letter-spacing: 2px;
@@ -435,7 +435,7 @@ export default function Offers() {
         .eyebrow span {
           width: 35px;
           height: 2px;
-          background: #d4af37;
+          background: var(--ncs-secondary, #d4af37);
         }
 
         h2 {
@@ -444,7 +444,7 @@ export default function Offers() {
           justify-content: center;
           gap: 10px;
           margin: 13px 0 0;
-          color: #d4af37;
+          color: var(--ncs-secondary, #d4af37);
           font-size: clamp(36px, 5vw, 58px);
           line-height: 1.05;
           letter-spacing: -1.5px;
@@ -493,26 +493,26 @@ export default function Offers() {
 
         .gold {
           border: 1px solid rgba(255, 255, 255, 0.5);
-          background: linear-gradient(135deg, #c99d24, #f1d26a);
-          color: #061b45;
+          background: linear-gradient(135deg, color-mix(in srgb, var(--ncs-secondary, #D4AF37) 84%, black 16%), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%));
+          color: color-mix(in srgb, var(--ncs-primary, #0A2E73) 84%, black 16%);
         }
 
         .white {
           border: 1px solid rgba(255, 255, 255, 0.75);
-          background: linear-gradient(145deg, #ffffff, #edf3ff);
-          color: #0a2e73;
+          background: linear-gradient(145deg, var(--ncs-surface, #ffffff), color-mix(in srgb, var(--ncs-primary, #0A2E73) 6%, white 94%));
+          color: var(--ncs-primary, #0a2e73);
         }
 
         .blue {
-          border: 1px solid rgba(212, 175, 55, 0.5);
-          background: linear-gradient(145deg, #03153f, #164ca8);
-          color: #ffffff;
+          border: 1px solid rgba(var(--ncs-secondary-rgb, 212,175,55), 0.50);
+          background: linear-gradient(145deg, color-mix(in srgb, var(--ncs-primary, #0A2E73) 82%, black 18%), color-mix(in srgb, var(--ncs-primary, #0A2E73) 72%, white 28%));
+          color: var(--ncs-surface, #ffffff);
         }
 
         .ivory {
           border: 1px solid rgba(212, 175, 55, 0.55);
-          background: linear-gradient(145deg, #f8f4ec, #e8d594);
-          color: #0a2e73;
+          background: linear-gradient(145deg, color-mix(in srgb, var(--ncs-secondary, #D4AF37) 9%, white 91%), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 58%, white 42%));
+          color: var(--ncs-primary, #0a2e73);
         }
 
         .topRow {
@@ -543,7 +543,7 @@ export default function Offers() {
           overflow: hidden;
           padding: 6px 9px;
           border-radius: 999px;
-          background: rgba(10, 46, 115, 0.12);
+          background: rgba(var(--ncs-primary-rgb, 10,46,115), 0.12);
           color: inherit;
           font-size: 8px;
           font-weight: 950;
@@ -553,8 +553,8 @@ export default function Offers() {
         }
 
         .blue .badge {
-          background: rgba(212, 175, 55, 0.16);
-          color: #f1d26a;
+          background: rgba(var(--ncs-secondary-rgb, 212,175,55), 0.16);
+          color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%);
         }
 
         .offerContent {
@@ -611,8 +611,8 @@ export default function Offers() {
         }
 
         .blue .cardActions button {
-          border-color: rgba(212, 175, 55, 0.45);
-          color: #f1d26a;
+          border-color: rgba(var(--ncs-secondary-rgb, 212,175,55), 0.45);
+          color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%);
         }
 
         .arrowButton {
@@ -651,12 +651,12 @@ export default function Offers() {
           padding: 0 28px;
           border: 1px solid rgba(255, 255, 255, 0.38);
           border-radius: 14px;
-          background: linear-gradient(135deg, #d4af37, #f1d26a);
-          color: #0a2e73;
+          background: linear-gradient(135deg, var(--ncs-secondary, #d4af37), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%));
+          color: var(--ncs-primary, #0a2e73);
           font-size: 15px;
           font-weight: 950;
           cursor: pointer;
-          box-shadow: 0 15px 32px rgba(212, 175, 55, 0.25);
+          box-shadow: 0 15px 32px rgba(var(--ncs-secondary-rgb, 212,175,55), 0.25);
         }
 
         .allOffersButton span {

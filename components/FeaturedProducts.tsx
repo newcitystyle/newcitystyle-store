@@ -589,7 +589,7 @@ export default function FeaturedProducts() {
 const styles: Record<string, CSSProperties> = {
   section: {
     padding: "58px 4%",
-    background: "#f7f9fc",
+    background: "var(--ncs-page-bg, #f7f9fc)",
   },
 
   heading: {
@@ -600,7 +600,7 @@ const styles: Record<string, CSSProperties> = {
 
   eyebrow: {
     display: "block",
-    color: "#d4af37",
+    color: "var(--ncs-secondary, #d4af37)",
     fontSize: 11,
     fontWeight: 900,
     letterSpacing: 2,
@@ -608,14 +608,14 @@ const styles: Record<string, CSSProperties> = {
 
   title: {
     margin: "8px 0 0",
-    color: "#0a2e73",
+    color: "var(--ncs-primary, #0a2e73)",
     fontSize: "clamp(32px,4vw,48px)",
     fontWeight: 900,
   },
 
   subtitle: {
     margin: "10px 0 0",
-    color: "#667085",
+    color: "var(--ncs-muted, #667085)",
     fontSize: 14,
   },
 
@@ -629,10 +629,10 @@ const styles: Record<string, CSSProperties> = {
 
   card: {
     overflow: "hidden",
-    border: "1px solid #e3e7ef",
+    border: "1px solid var(--ncs-border, #e3e7ef)",
     borderRadius: 18,
-    background: "#ffffff",
-    boxShadow: "0 10px 28px rgba(10,46,115,.08)",
+    background: "var(--ncs-surface, #ffffff)",
+    boxShadow: "0 10px 28px rgba(var(--ncs-primary-rgb, 10,46,115), .10)",
     cursor: "pointer",
   },
 
@@ -640,7 +640,7 @@ const styles: Record<string, CSSProperties> = {
     position: "relative",
     overflow: "hidden",
     aspectRatio: "4 / 5",
-    background: "#edf1f8",
+    background: "color-mix(in srgb, var(--ncs-primary, #0A2E73) 7%, white 93%)",
   },
 
   image: {
@@ -655,8 +655,8 @@ const styles: Record<string, CSSProperties> = {
     height: "100%",
     display: "grid",
     placeItems: "center",
-    background: "linear-gradient(135deg,#0a2e73,#174ba9)",
-    color: "#d4af37",
+    background: "linear-gradient(135deg,var(--ncs-primary, #0A2E73),color-mix(in srgb, var(--ncs-primary, #0A2E73) 76%, white 24%))",
+    color: "var(--ncs-secondary, #d4af37)",
     fontWeight: 900,
   },
 
@@ -666,8 +666,8 @@ const styles: Record<string, CSSProperties> = {
     left: 13,
     padding: "6px 11px",
     borderRadius: 999,
-    background: "#f2c62f",
-    color: "#082b6e",
+    background: "var(--ncs-secondary, #D4AF37)",
+    color: "var(--ncs-primary, #082b6e)",
     fontSize: 10,
     fontWeight: 900,
   },
@@ -678,7 +678,7 @@ const styles: Record<string, CSSProperties> = {
     right: 13,
     padding: "6px 10px",
     borderRadius: 999,
-    background: "#0a2e73",
+    background: "var(--ncs-primary, #0a2e73)",
     color: "#ffffff",
     fontSize: 9,
     fontWeight: 900,
@@ -692,7 +692,7 @@ const styles: Record<string, CSSProperties> = {
     overflow: "hidden",
     padding: "6px 10px",
     borderRadius: 999,
-    background: "rgba(10,46,115,.92)",
+    background: "rgba(var(--ncs-primary-rgb, 10,46,115), .92)",
     color: "#ffffff",
     fontSize: 9,
     fontWeight: 900,
@@ -708,7 +708,7 @@ const styles: Record<string, CSSProperties> = {
     minHeight: 52,
     margin: 0,
     overflow: "hidden",
-    color: "#082b6e",
+    color: "var(--ncs-primary, #082b6e)",
     fontSize: 19,
     fontWeight: 900,
     lineHeight: 1.35,
@@ -716,14 +716,14 @@ const styles: Record<string, CSSProperties> = {
 
   parentName: {
     marginTop: 5,
-    color: "#667085",
+    color: "var(--ncs-muted, #667085)",
     fontSize: 10,
     fontWeight: 700,
   },
 
   sizesLine: {
     marginTop: 7,
-    color: "#0a2e73",
+    color: "var(--ncs-primary, #0a2e73)",
     fontSize: 10,
     fontWeight: 800,
   },
@@ -736,7 +736,7 @@ const styles: Record<string, CSSProperties> = {
   },
 
   price: {
-    color: "#d3aa25",
+    color: "var(--ncs-secondary, #d3aa25)",
     fontSize: 27,
     fontWeight: 900,
   },
@@ -763,7 +763,7 @@ const styles: Record<string, CSSProperties> = {
     marginTop: 17,
     border: 0,
     borderRadius: 11,
-    background: "linear-gradient(90deg,#0a2e73,#174fb7)",
+    background: "linear-gradient(90deg,var(--ncs-primary, #0A2E73),color-mix(in srgb, var(--ncs-primary, #0A2E73) 74%, white 26%))",
     color: "#ffffff",
     fontSize: 13,
     fontWeight: 900,

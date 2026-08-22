@@ -295,7 +295,7 @@ export default function Hero() {
           min-height: min(820px, calc(100vh - 80px));
           overflow: hidden;
           isolation: isolate;
-          background: #061b45;
+          background: color-mix(in srgb, var(--ncs-primary, #0A2E73) 84%, black 16%);
         }
 
         .slides,
@@ -351,10 +351,10 @@ export default function Hero() {
           background:
             radial-gradient(
               circle at 78% 36%,
-              rgba(212, 175, 55, 0.24),
+              rgba(var(--ncs-secondary-rgb, 212,175,55), 0.24),
               transparent 25%
             ),
-            linear-gradient(120deg, #061b45 0%, #0a2e73 52%, #123f91 100%);
+            linear-gradient(120deg, color-mix(in srgb, var(--ncs-primary, #0A2E73) 84%, black 16%) 0%, var(--ncs-primary, #0a2e73) 52%, color-mix(in srgb, var(--ncs-primary, #0A2E73) 70%, white 30%) 100%);
         }
 
         .blueOverlay {
@@ -379,12 +379,12 @@ export default function Hero() {
           background:
             radial-gradient(
               circle at 80% 26%,
-              rgba(212, 175, 55, 0.23),
+              rgba(var(--ncs-secondary-rgb, 212,175,55), 0.23),
               transparent 22%
             ),
             radial-gradient(
               circle at 18% 78%,
-              rgba(212, 175, 55, 0.13),
+              rgba(var(--ncs-secondary-rgb, 212,175,55), 0.13),
               transparent 25%
             );
           pointer-events: none;
@@ -435,7 +435,7 @@ export default function Hero() {
           align-items: center;
           gap: 13px;
           margin-bottom: 22px;
-          color: #f1d26a;
+          color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%);
           font-size: clamp(11px, 1.2vw, 14px);
           font-weight: 850;
           letter-spacing: 2.4px;
@@ -444,7 +444,7 @@ export default function Hero() {
         .eyebrowLine {
           width: 48px;
           height: 2px;
-          background: linear-gradient(90deg, #d4af37, #fff0aa);
+          background: linear-gradient(90deg, var(--ncs-secondary, #d4af37), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 52%, white 48%));
           box-shadow: 0 0 18px rgba(212, 175, 55, 0.7);
         }
 
@@ -468,7 +468,7 @@ export default function Hero() {
 
         h1 strong {
           margin-top: 8px;
-          color: #d4af37;
+          color: var(--ncs-secondary, #d4af37);
           font-weight: 900;
           text-shadow: 0 10px 38px rgba(212, 175, 55, 0.2);
         }
@@ -513,10 +513,10 @@ export default function Hero() {
           align-items: center;
           justify-content: center;
           gap: 14px;
-          border: 1px solid #d4af37;
-          background: linear-gradient(135deg, #d4af37, #f1d26a);
-          color: #071d49;
-          box-shadow: 0 16px 35px rgba(212, 175, 55, 0.25);
+          border: 1px solid var(--ncs-secondary, #d4af37);
+          background: linear-gradient(135deg, var(--ncs-secondary, #d4af37), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%));
+          color: color-mix(in srgb, var(--ncs-primary, #0A2E73) 84%, black 16%);
+          box-shadow: 0 16px 35px rgba(var(--ncs-secondary-rgb, 212,175,55), 0.25);
         }
 
         .primaryButton::after {
@@ -543,8 +543,8 @@ export default function Hero() {
         }
 
         .secondaryButton:hover {
-          border-color: #d4af37;
-          background: rgba(212, 175, 55, 0.12);
+          border-color: var(--ncs-secondary, #d4af37);
+          background: rgba(var(--ncs-secondary-rgb, 212,175,55), 0.12);
         }
 
         .trustRow {
@@ -574,8 +574,8 @@ export default function Hero() {
           justify-content: center;
           flex-shrink: 0;
           border-radius: 10px;
-          background: rgba(212, 175, 55, 0.17);
-          color: #f1d26a;
+          background: rgba(var(--ncs-secondary-rgb, 212,175,55), 0.17);
+          color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%);
           font-size: 15px;
           font-weight: 900;
         }
@@ -617,8 +617,8 @@ export default function Hero() {
           display: inline-flex;
           padding: 6px 9px;
           border-radius: 999px;
-          background: rgba(212, 175, 55, 0.16);
-          color: #f1d26a;
+          background: rgba(var(--ncs-secondary-rgb, 212,175,55), 0.16);
+          color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%);
           font-size: 10px;
           font-weight: 900;
           letter-spacing: 1.4px;
@@ -627,7 +627,7 @@ export default function Hero() {
         .floatingCard > strong {
           display: block;
           margin-top: 15px;
-          color: #d4af37;
+          color: var(--ncs-secondary, #d4af37);
           font-size: 26px;
           line-height: 1.2;
         }
@@ -689,8 +689,8 @@ export default function Hero() {
         }
 
         .sliderArrow:hover {
-          border-color: #d4af37;
-          background: rgba(10, 46, 115, 0.9);
+          border-color: var(--ncs-secondary, #d4af37);
+          background: rgba(var(--ncs-primary-rgb, 10,46,115), 0.90);
           transform: translateY(-50%) scale(1.06);
         }
 
@@ -740,7 +740,7 @@ export default function Hero() {
 
         .dots .activeDot {
           width: 60px;
-          background: #d4af37;
+          background: var(--ncs-secondary, #d4af37);
         }
 
         .slideCounter {
@@ -751,7 +751,7 @@ export default function Hero() {
         }
 
         .slideCounter strong {
-          color: #d4af37;
+          color: var(--ncs-secondary, #d4af37);
           font-size: 18px;
         }
 
@@ -774,7 +774,7 @@ export default function Hero() {
           display: block;
           width: 0;
           height: 100%;
-          background: linear-gradient(90deg, #d4af37, #fff0aa);
+          background: linear-gradient(90deg, var(--ncs-secondary, #d4af37), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 52%, white 48%));
           animation: progress 6.5s linear forwards;
         }
 
@@ -786,7 +786,7 @@ export default function Hero() {
           left: -4%;
           height: 105px;
           border-radius: 50% 50% 0 0;
-          background: #f8f4ec;
+          background: var(--ncs-page-bg, #F7F8FC);
         }
 
         @keyframes cinematicZoom {

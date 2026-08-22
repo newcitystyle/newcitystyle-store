@@ -98,6 +98,20 @@ function formatCurrency(value: number | string | null | undefined) {
   }).format(Number.isFinite(amount) ? amount : 0);
 }
 
+function hexToRgbCss(value: string) {
+  const normalized = value.trim().replace("#", "");
+
+  if (!/^[0-9A-F]{6}$/i.test(normalized)) {
+    return "10, 46, 115";
+  }
+
+  const red = Number.parseInt(normalized.slice(0, 2), 16);
+  const green = Number.parseInt(normalized.slice(2, 4), 16);
+  const blue = Number.parseInt(normalized.slice(4, 6), 16);
+
+  return `${red}, ${green}, ${blue}`;
+}
+
 export default function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
@@ -114,6 +128,33 @@ export default function Navbar() {
   const [cartCount, setCartCount] = useState(0);
   const [wishlistCount, setWishlistCount] = useState(0);
   const [branding, setBranding] = useState<NavbarBranding>(DEFAULT_BRANDING);
+
+
+  useEffect(() => {
+    const root = document.documentElement;
+
+    root.style.setProperty("--ncs-primary", branding.primaryColor);
+    root.style.setProperty("--ncs-secondary", branding.secondaryColor);
+    root.style.setProperty("--ncs-primary-rgb", hexToRgbCss(branding.primaryColor));
+    root.style.setProperty("--ncs-secondary-rgb", hexToRgbCss(branding.secondaryColor));
+
+    root.style.setProperty("--ncs-surface", "#FFFFFF");
+    root.style.setProperty("--ncs-page-bg", "#F7F8FC");
+    root.style.setProperty("--ncs-text", "#172033");
+    root.style.setProperty("--ncs-muted", "#667085");
+    root.style.setProperty("--ncs-border", "#E4E7EC");
+
+    root.dataset.ncsThemeReady = "true";
+
+    window.dispatchEvent(
+      new CustomEvent("ncs-theme-change", {
+        detail: {
+          primaryColor: branding.primaryColor,
+          secondaryColor: branding.secondaryColor,
+        },
+      })
+    );
+  }, [branding.primaryColor, branding.secondaryColor]);
 
   useEffect(() => {
     loadProducts();
@@ -433,8 +474,8 @@ export default function Navbar() {
       className="navbar"
       style={
         {
-          "--navbar-primary": branding.primaryColor,
-          "--navbar-secondary": branding.secondaryColor,
+          "--navbar-primary": "var(--ncs-primary, #0A2E73)",
+          "--navbar-secondary": "var(--ncs-secondary, #D4AF37)",
         } as CSSProperties
       }
     >

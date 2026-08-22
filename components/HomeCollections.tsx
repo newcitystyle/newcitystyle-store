@@ -255,10 +255,14 @@ export default function HomeCollections() {
           background:
             radial-gradient(
               circle at top right,
-              rgba(212, 175, 55, 0.14),
+              rgba(var(--ncs-secondary-rgb, 212,175,55), 0.14),
               transparent 30%
             ),
-            linear-gradient(180deg, #ffffff 0%, #f8f4ec 100%);
+            linear-gradient(
+              180deg,
+              var(--ncs-surface, #ffffff) 0%,
+              color-mix(in srgb, var(--ncs-page-bg, #F7F8FC) 88%, var(--ncs-secondary, #D4AF37) 12%) 100%
+            );
         }
 
         .collectionsContainer {
@@ -277,7 +281,7 @@ export default function HomeCollections() {
 
         .eyebrow {
           margin: 0 0 9px;
-          color: #d4af37;
+          color: var(--ncs-secondary, #d4af37);
           font-size: 11px;
           font-weight: 900;
           letter-spacing: 2px;
@@ -285,7 +289,7 @@ export default function HomeCollections() {
 
         h2 {
           margin: 0;
-          color: #0a2e73;
+          color: var(--ncs-primary, #0a2e73);
           font-size: clamp(32px, 4vw, 48px);
           line-height: 1.08;
         }
@@ -293,7 +297,7 @@ export default function HomeCollections() {
         .subtitle {
           max-width: 700px;
           margin: 12px 0 0;
-          color: #667085;
+          color: var(--ncs-muted, #667085);
           font-size: 15px;
           line-height: 1.7;
         }
@@ -305,9 +309,9 @@ export default function HomeCollections() {
           justify-content: center;
           flex-shrink: 0;
           padding: 0 18px;
-          border: 1px solid #0a2e73;
+          border: 1px solid var(--ncs-primary, #0a2e73);
           border-radius: 12px;
-          color: #0a2e73;
+          color: var(--ncs-primary, #0a2e73);
           font-size: 13px;
           font-weight: 850;
           text-decoration: none;
@@ -322,10 +326,10 @@ export default function HomeCollections() {
 
         .collectionCard {
           overflow: hidden;
-          border: 1px solid rgba(10, 46, 115, 0.12);
+          border: 1px solid rgba(var(--ncs-primary-rgb, 10,46,115), 0.12);
           border-radius: 22px;
-          background: #ffffff;
-          box-shadow: 0 16px 38px rgba(10, 46, 115, 0.1);
+          background: var(--ncs-surface, #ffffff);
+          box-shadow: 0 16px 38px rgba(var(--ncs-primary-rgb, 10,46,115), 0.10);
           transition:
             transform 0.25s ease,
             box-shadow 0.25s ease;
@@ -333,14 +337,14 @@ export default function HomeCollections() {
 
         .collectionCard:hover {
           transform: translateY(-5px);
-          box-shadow: 0 22px 48px rgba(10, 46, 115, 0.16);
+          box-shadow: 0 22px 48px rgba(var(--ncs-primary-rgb, 10,46,115), 0.16);
         }
 
         .imageArea {
           position: relative;
           height: 260px;
           overflow: hidden;
-          background: linear-gradient(135deg, #0a2e73, #164ca8);
+          background: linear-gradient(135deg, var(--ncs-primary, #0a2e73), color-mix(in srgb, var(--ncs-primary, #0A2E73) 72%, white 28%));
         }
 
         .imageArea img {
@@ -360,8 +364,8 @@ export default function HomeCollections() {
           inset: 0;
           background: linear-gradient(
             180deg,
-            rgba(10, 46, 115, 0.04) 20%,
-            rgba(10, 46, 115, 0.42) 100%
+            rgba(var(--ncs-primary-rgb, 10,46,115), 0.04) 20%,
+            rgba(var(--ncs-primary-rgb, 10,46,115), 0.42) 100%
           );
           pointer-events: none;
         }
@@ -374,7 +378,7 @@ export default function HomeCollections() {
           font-size: 42px;
           font-weight: 900;
           line-height: 1;
-          text-shadow: 0 2px 12px rgba(10, 46, 115, 0.32);
+          text-shadow: 0 2px 12px rgba(var(--ncs-primary-rgb, 10,46,115), 0.32);
         }
 
         .activeBadge {
@@ -397,7 +401,7 @@ export default function HomeCollections() {
 
         h3 {
           margin: 0;
-          color: #0a2e73;
+          color: var(--ncs-primary, #0a2e73);
           font-size: 25px;
           line-height: 1.25;
         }
@@ -405,7 +409,7 @@ export default function HomeCollections() {
         .contentArea p {
           min-height: 50px;
           margin: 11px 0 0;
-          color: #667085;
+          color: var(--ncs-muted, #667085);
           font-size: 13px;
           line-height: 1.65;
         }
@@ -418,8 +422,8 @@ export default function HomeCollections() {
           gap: 8px;
           margin-top: 20px;
           border-radius: 12px;
-          background: linear-gradient(135deg, #d4af37, #f1d26a);
-          color: #0a2e73;
+          background: linear-gradient(135deg, var(--ncs-secondary, #d4af37), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%));
+          color: var(--ncs-primary, #0a2e73);
           font-size: 13px;
           font-weight: 900;
           text-decoration: none;
@@ -429,7 +433,7 @@ export default function HomeCollections() {
           display: block;
           margin-top: 10px;
           overflow: hidden;
-          color: #98a2b3;
+          color: var(--ncs-muted, #98a2b3);
           font-size: 9px;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -440,9 +444,9 @@ export default function HomeCollections() {
           border-radius: 22px;
           background: linear-gradient(
             90deg,
-            #eef1f5 25%,
-            #f8f9fb 50%,
-            #eef1f5 75%
+            color-mix(in srgb, var(--ncs-primary, #0A2E73) 7%, white 93%) 25%,
+            color-mix(in srgb, var(--ncs-primary, #0A2E73) 3%, white 97%) 50%,
+            color-mix(in srgb, var(--ncs-primary, #0A2E73) 7%, white 93%) 75%
           );
           background-size: 200% 100%;
           animation: shimmer 1.3s infinite linear;

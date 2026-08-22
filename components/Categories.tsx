@@ -513,15 +513,19 @@ export default function Categories() {
           background:
             radial-gradient(
               circle at 15% 20%,
-              rgba(212, 175, 55, 0.11),
+              rgba(var(--ncs-secondary-rgb, 212,175,55), 0.11),
               transparent 26%
             ),
             radial-gradient(
               circle at 85% 80%,
-              rgba(10, 46, 115, 0.08),
+              rgba(var(--ncs-primary-rgb, 10,46,115), 0.08),
               transparent 28%
             ),
-            linear-gradient(180deg, #f8f4ec 0%, #ffffff 100%);
+            linear-gradient(
+              180deg,
+              color-mix(in srgb, var(--ncs-page-bg, #F7F8FC) 88%, var(--ncs-secondary, #D4AF37) 12%) 0%,
+              var(--ncs-surface, #ffffff) 100%
+            );
         }
 
         .container {
@@ -540,7 +544,7 @@ export default function Categories() {
 
         .eyebrow {
           margin: 0 0 12px;
-          color: #d4af37;
+          color: var(--ncs-secondary, #d4af37);
           font-size: 12px;
           font-weight: 900;
           letter-spacing: 2.3px;
@@ -548,7 +552,7 @@ export default function Categories() {
 
         h2 {
           margin: 0;
-          color: #0a2e73;
+          color: var(--ncs-primary, #0a2e73);
           font-size: clamp(38px, 5vw, 58px);
           line-height: 1.08;
           letter-spacing: -1.6px;
@@ -556,7 +560,7 @@ export default function Categories() {
 
         .subtitle {
           margin: 17px auto 0;
-          color: #667085;
+          color: var(--ncs-muted, #667085);
           font-size: 17px;
           line-height: 1.7;
         }
@@ -573,9 +577,9 @@ export default function Categories() {
           position: relative;
           overflow: hidden;
           min-height: 340px;
-          border: 1px solid rgba(10, 46, 115, 0.1);
+          border: 1px solid rgba(var(--ncs-primary-rgb, 10,46,115), 0.10);
           border-radius: 22px;
-          background: rgba(255, 255, 255, 0.97);
+          background: color-mix(in srgb, var(--ncs-surface, #ffffff) 97%, transparent 3%);
           box-shadow: 0 12px 32px rgba(16, 24, 40, 0.08);
         }
 
@@ -589,7 +593,7 @@ export default function Categories() {
 
         .categoryCard:hover {
           transform: translateY(-10px);
-          border-color: rgba(212, 175, 55, 0.75);
+          border-color: rgba(var(--ncs-secondary-rgb, 212,175,55), 0.75);
           box-shadow: 0 26px 55px rgba(16, 24, 40, 0.16);
         }
 
@@ -603,7 +607,7 @@ export default function Categories() {
           border-radius: 50%;
           background: radial-gradient(
             circle,
-            rgba(212, 175, 55, 0.2),
+            rgba(var(--ncs-secondary-rgb, 212,175,55), 0.20),
             transparent 70%
           );
           pointer-events: none;
@@ -614,7 +618,7 @@ export default function Categories() {
           width: 100%;
           height: 180px;
           overflow: hidden;
-          background: #f8f4ec;
+          background: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 8%, white 92%);
         }
 
         .imageWrap img {
@@ -635,8 +639,8 @@ export default function Categories() {
           inset: 0;
           background: linear-gradient(
             180deg,
-            rgba(10, 46, 115, 0.02) 20%,
-            rgba(10, 46, 115, 0.45) 100%
+            rgba(var(--ncs-primary-rgb, 10,46,115), 0.02) 20%,
+            rgba(var(--ncs-primary-rgb, 10,46,115), 0.45) 100%
           );
           pointer-events: none;
         }
@@ -648,10 +652,10 @@ export default function Categories() {
           z-index: 2;
           min-width: 48px;
           padding: 8px 10px;
-          border: 1px solid rgba(212, 175, 55, 0.8);
+          border: 1px solid rgba(var(--ncs-secondary-rgb, 212,175,55), 0.80);
           border-radius: 12px;
-          background: rgba(10, 46, 115, 0.86);
-          color: #ffffff;
+          background: rgba(var(--ncs-primary-rgb, 10,46,115), 0.86);
+          color: var(--ncs-surface, #ffffff);
           font-size: 17px;
           font-weight: 950;
           line-height: 1;
@@ -669,7 +673,7 @@ export default function Categories() {
           position: relative;
           z-index: 2;
           margin: 0;
-          color: #0a2e73;
+          color: var(--ncs-primary, #0a2e73);
           font-size: 25px;
           font-weight: 900;
           line-height: 1.2;
@@ -680,7 +684,7 @@ export default function Categories() {
           z-index: 2;
           min-height: 43px;
           margin: 9px 0 0;
-          color: #667085;
+          color: var(--ncs-muted, #667085);
           font-size: 13px;
           line-height: 1.6;
         }
@@ -695,10 +699,10 @@ export default function Categories() {
           justify-content: center;
           gap: 10px;
           margin-top: 18px;
-          border: 1px solid #d4af37;
+          border: 1px solid var(--ncs-secondary, #d4af37);
           border-radius: 11px;
-          background: linear-gradient(135deg, #d4af37, #f1d26a);
-          color: #0a2e73;
+          background: linear-gradient(135deg, var(--ncs-secondary, #d4af37), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%));
+          color: var(--ncs-primary, #0a2e73);
           font-size: 13px;
           font-weight: 900;
           cursor: pointer;
@@ -709,7 +713,7 @@ export default function Categories() {
 
         .categoryCard button:hover {
           transform: translateY(-1px);
-          box-shadow: 0 8px 18px rgba(212, 175, 55, 0.28);
+          box-shadow: 0 8px 18px rgba(var(--ncs-secondary-rgb, 212,175,55), 0.28);
         }
 
         .bottomAccent {
@@ -721,9 +725,9 @@ export default function Categories() {
           height: 5px;
           background: linear-gradient(
             90deg,
-            #0a2e73,
-            #d4af37,
-            #0a2e73
+            var(--ncs-primary, #0a2e73),
+            var(--ncs-secondary, #d4af37),
+            var(--ncs-primary, #0a2e73)
           );
           transform: scaleX(0);
           transition: transform 0.35s ease;
@@ -739,7 +743,7 @@ export default function Categories() {
           justify-content: center;
           gap: 8px;
           margin-top: 31px;
-          color: #667085;
+          color: var(--ncs-muted, #667085);
           font-size: 12px;
           text-align: center;
         }
@@ -749,13 +753,13 @@ export default function Categories() {
           height: 8px;
           flex: 0 0 auto;
           border-radius: 50%;
-          background: #d4af37;
-          box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.16);
+          background: var(--ncs-secondary, #d4af37);
+          box-shadow: 0 0 0 4px rgba(var(--ncs-secondary-rgb, 212,175,55), 0.16);
         }
 
         .decor {
           position: absolute;
-          border: 1px solid rgba(212, 175, 55, 0.22);
+          border: 1px solid rgba(var(--ncs-secondary-rgb, 212,175,55), 0.22);
           pointer-events: none;
         }
 
@@ -781,9 +785,9 @@ export default function Categories() {
         .skeletonButton {
           background: linear-gradient(
             90deg,
-            #eef1f5,
-            #f8f9fb,
-            #eef1f5
+            color-mix(in srgb, var(--ncs-primary, #0A2E73) 7%, white 93%),
+            color-mix(in srgb, var(--ncs-primary, #0A2E73) 3%, white 97%),
+            color-mix(in srgb, var(--ncs-primary, #0A2E73) 7%, white 93%)
           );
           background-size: 200% 100%;
           animation: skeleton 1.3s infinite linear;
