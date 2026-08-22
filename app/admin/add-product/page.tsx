@@ -1200,7 +1200,38 @@ export default function AddProductPage() {
       .filter((item) => item.label || item.value);
   }
 
-  function asFaqs(value: unknown): Faq[] {
+  
+function isLikelyPhysicalSizeLabel(value: string) {
+  const normalized = value.trim().toUpperCase();
+
+  if (!normalized) return false;
+
+  const namedSizes = new Set([
+    "XXS",
+    "XS",
+    "S",
+    "M",
+    "L",
+    "XL",
+    "XXL",
+    "2XL",
+    "3XL",
+    "4XL",
+    "5XL",
+    "6XL",
+    "FREE SIZE",
+    "FREESIZE",
+  ]);
+
+  if (namedSizes.has(normalized)) {
+    return true;
+  }
+
+  // Common garment numeric sizes such as 18, 20, 28, 30, 32, 34, 36, 38, 40, 42...
+  return /^\d{2,3}$/.test(normalized);
+}
+
+function asFaqs(value: unknown): Faq[] {
     if (!Array.isArray(value)) return [];
 
     return value
@@ -3557,6 +3588,23 @@ export default function AddProductPage() {
     };
 
     if (bulkDesignItems.length > 0) {
+      const sizeEnteredAsDesignIndex = bulkDesignItems.findIndex((item) =>
+        isLikelyPhysicalSizeLabel(item.designName)
+      );
+
+      if (sizeEnteredAsDesignIndex >= 0) {
+        const wrongValue =
+          bulkDesignItems[sizeEnteredAsDesignIndex].designName.trim();
+
+        alert(
+          `"${wrongValue}" looks like a SIZE, not a design/colour name. ` +
+            `Do not type sizes in Design / Colour Name. ` +
+            `Sizes must come only from Purchase Stock and must be selected below under Available Physical Sizes / Barcodes.`
+        );
+        setSaving(false);
+        return;
+      }
+
       const missingImageIndex = bulkDesignItems.findIndex((item) => !item.image);
       if (missingImageIndex >= 0) {
         alert(`Photo missing for Design ${missingImageIndex + 1}. Upload one photo for every design card before saving.`);
@@ -4201,14 +4249,15 @@ export default function AddProductPage() {
 
               {bulkDesignItems.length > 0 && (
                 <Panel
-                  title="Bulk Designs — One Card, Multiple Sizes"
-                  subtitle="Final system: each design/photo becomes one storefront card. Inside each card, select all sizes/barcodes that belong to that design. Different designs can have different size combinations."
+                  title="Bulk Designs — One Card, Multiple Physical Sizes"
+                  subtitle="Each design/photo becomes one storefront card. Design / Colour Name is only a visual name; NEVER type a size there. Physical sizes come only from Purchase Stock and are selected below."
                 >
                   <div style={bulkInstructionStyle}>
                     <strong>1. Create the number of visual designs you have</strong>
                     <span>2. Upload exactly one photo for each design card</span>
-                    <span>3. On each design card, tick every size that customer can buy</span>
-                    <span>4. Save once — design cards are separate, sizes stay linked under that design</span>
+                    <span>3. Design / Colour Name = visual name only (example: Blue Floral, Design 1) — do not enter 28/34/L/XL here</span>
+                    <span>4. Tick the actual physical sizes below. These sizes come from Purchase Stock / barcode variants only</span>
+                    <span>5. Save once — design cards stay separate and exact physical sizes remain linked safely</span>
                   </div>
 
                   <div style={bulkToolbarStyle}>
@@ -4285,16 +4334,34 @@ export default function AddProductPage() {
                             )}
                           </div>
 
-                          <Field label="Design / Colour Name">
+                          <Field label="Design / Colour Name — NOT SIZE">
                             <input
                               value={item.designName}
                               onChange={(event) =>
                                 updateBulkDesignItem(index, { designName: event.target.value })
                               }
-                              placeholder={`Design ${index + 1} name`}
+                              placeholder={`Example: Blue Floral / Design ${index + 1}`}
                               style={inputStyle}
                             />
                           </Field>
+
+                          <div
+                            style={{
+                              marginTop: "-2px",
+                              marginBottom: "10px",
+                              padding: "9px 11px",
+                              borderRadius: "10px",
+                              border: "1px solid #F3D7A2",
+                              background: "#FFF8E7",
+                              color: "#7A4E00",
+                              fontSize: "11px",
+                              fontWeight: 800,
+                              lineHeight: 1.45,
+                            }}
+                          >
+                            ⚠️ Do not type 28, 34, S, M, L, XL here. Those are physical sizes.
+                            Select physical sizes only in the section below.
+                          </div>
 
                           <div style={bulkAiStateStyle}>
                             {item.aiStatus === "loading"
@@ -4308,7 +4375,7 @@ export default function AddProductPage() {
 
                           <div style={{ marginTop: "14px", padding: "13px", border: "1px solid #E5E7EB", borderRadius: "12px", background: "#F8FAFC" }}>
                             <strong style={{ display: "block", color: "#0A2E73", marginBottom: "9px" }}>
-                              Available Sizes / Barcodes
+                              Available Physical Sizes / Barcodes — from Purchase Stock
                             </strong>
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "8px" }}>
                               {item.variantOptions.map((variant) => {
@@ -4368,7 +4435,7 @@ export default function AddProductPage() {
                   </div>
 
                   <div style={bulkSafetyNoteStyle}>
-                    🔒 Final safe mode: one design/photo = one storefront card. Each design can have its own S/M/L/XL/etc selection. The same parent product remains in the database, and existing barcode, SKU and physical stock are never duplicated.
+                    🔒 Final safe mode: one design/photo = one storefront card. Design name never creates a size. Physical sizes come only from existing Purchase Stock / barcode variants. Existing barcode, SKU, stock, photos and all current features remain preserved.
                   </div>
                 </Panel>
               )}
