@@ -38,6 +38,22 @@ type SavedOrderSummary = {
   items?: CartItem[];
 };
 
+type AppliedClubVoucher = {
+  code: string;
+  discountAmount: number;
+  memberId?: number | null;
+  expiresAt?: string | null;
+};
+
+type AppliedStoreCoupon = {
+  id: number;
+  code: string;
+  title: string;
+  discountAmount: number;
+  discountType: "percentage" | "fixed";
+  discountValue: number;
+};
+
 type StoredAttribution = {
   source?: string;
   medium?: string;
@@ -279,10 +295,29 @@ export default function PaymentPage() {
   const [loading, setLoading] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"cod" | "online">("cod");
+  const [clubCode, setClubCode] = useState("");
+  const [clubVoucher, setClubVoucher] =
+    useState<AppliedClubVoucher | null>(null);
+  const [clubChecking, setClubChecking] = useState(false);
+  const [clubMessage, setClubMessage] = useState("");
+  const [storeCouponCode, setStoreCouponCode] = useState("");
+  const [storeCoupon, setStoreCoupon] =
+    useState<AppliedStoreCoupon | null>(null);
+  const [storeCouponChecking, setStoreCouponChecking] = useState(false);
+  const [storeCouponMessage, setStoreCouponMessage] = useState("");
 
   useEffect(() => {
     loadPaymentData();
   }, []);
+
+  useEffect(() => {
+    if (paymentMethod === "cod" && clubVoucher) {
+      setClubVoucher(null);
+      setClubMessage(
+        "Club welcome voucher is reserved for online / UPI payment."
+      );
+    }
+  }, [paymentMethod, clubVoucher]);
 
   async function loadPaymentData() {
     setLoading(true);
@@ -372,10 +407,273 @@ export default function PaymentPage() {
       ? savedSummary.tax
       : Math.round(subtotal * 0.05);
 
-  const total =
+  const baseTotal =
     typeof savedSummary?.total === "number"
       ? savedSummary.total
       : subtotal + shipping + tax;
+
+  const clubDiscount =
+    paymentMethod === "online" && clubVoucher
+      ? Math.min(
+          Math.max(0, Number(clubVoucher.discountAmount || 0)),
+          Math.max(0, baseTotal)
+        )
+      : 0;
+
+  const storeCouponDiscount = storeCoupon
+    ? Math.min(
+        Math.max(0, Number(storeCoupon.discountAmount || 0)),
+        Math.max(0, baseTotal)
+      )
+    : 0;
+
+  // Money-off offers do not stack. NEW CITY STYLE Club welcome voucher
+  // and a normal store coupon are mutually exclusive.
+  const totalDiscount =
+    clubDiscount > 0 ? clubDiscount : storeCouponDiscount;
+
+  const total = Math.max(0, baseTotal - totalDiscount);
+
+  async function applyClubVoucher() {
+    if (storeCoupon) {
+      setClubMessage(
+        "Remove the regular offer coupon first. Only one money-off coupon can be used per order."
+      );
+      return;
+    }
+
+    if (!checkoutDetails) {
+      setClubMessage("Shipping details are required before applying the voucher.");
+      return;
+    }
+
+    const code = clubCode.trim().toUpperCase();
+
+    if (!code) {
+      setClubMessage("Enter your NEW CITY STYLE Club voucher code.");
+      return;
+    }
+
+    if (paymentMethod !== "online") {
+      setClubVoucher(null);
+      setClubMessage("₹100 Club welcome voucher is available only with online / UPI payment.");
+      return;
+    }
+
+    setClubChecking(true);
+    setClubMessage("");
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "ncs_validate_club_voucher_v1",
+        {
+          p_code: code,
+          p_phone: checkoutDetails.mobile,
+          p_order_amount: baseTotal,
+          p_payment_method: "UPI",
+        }
+      );
+
+      if (error) throw error;
+
+      const payload = (data || {}) as {
+        success?: boolean;
+        valid?: boolean;
+        member_id?: number;
+        discount_amount?: number | string;
+        voucher_expires_at?: string;
+        message?: string;
+      };
+
+      if (payload.success !== true || payload.valid !== true) {
+        setClubVoucher(null);
+        setClubMessage(
+          payload.message || "This Club voucher is not valid for this order."
+        );
+        return;
+      }
+
+      const discountAmount = Math.max(
+        0,
+        Number(payload.discount_amount || 0)
+      );
+
+      setClubVoucher({
+        code,
+        discountAmount,
+        memberId: payload.member_id || null,
+        expiresAt: payload.voucher_expires_at || null,
+      });
+      setClubCode(code);
+      setClubMessage(
+        payload.message ||
+          `NEW CITY STYLE Club ₹${discountAmount.toFixed(0)} voucher applied.`
+      );
+    } catch (error) {
+      console.error("Club voucher validation error:", error);
+      setClubVoucher(null);
+      setClubMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to validate Club voucher."
+      );
+    } finally {
+      setClubChecking(false);
+    }
+  }
+
+  function removeClubVoucher() {
+    setClubVoucher(null);
+    setClubMessage("Club voucher removed.");
+  }
+
+  async function markClubVoucherUsed(orderId: string | number) {
+    if (!clubVoucher || !checkoutDetails) return;
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "ncs_mark_club_voucher_used_v1",
+        {
+          p_code: clubVoucher.code,
+          p_phone: checkoutDetails.mobile,
+          p_order_id: String(orderId),
+        }
+      );
+
+      if (error) throw error;
+
+      const payload = (data || {}) as {
+        success?: boolean;
+        message?: string;
+      };
+
+      if (payload.success !== true) {
+        console.error(
+          "Club voucher usage was not confirmed:",
+          payload.message || "Unknown voucher error"
+        );
+      }
+    } catch (error) {
+      console.error("Unable to mark Club voucher used:", error);
+    }
+  }
+
+  async function applyStoreCoupon() {
+    const code = storeCouponCode.trim().toUpperCase();
+
+    if (!code) {
+      setStoreCouponMessage("Enter your offer coupon code.");
+      return;
+    }
+
+    if (clubVoucher) {
+      setStoreCouponMessage(
+        "Remove the NCS Club welcome voucher first. Only one money-off coupon can be used per order."
+      );
+      return;
+    }
+
+    setStoreCouponChecking(true);
+    setStoreCouponMessage("");
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "ncs_validate_store_coupon_v1",
+        {
+          p_code: code,
+          p_order_amount: baseTotal,
+        }
+      );
+
+      if (error) throw error;
+
+      const payload = (data || {}) as {
+        success?: boolean;
+        valid?: boolean;
+        coupon_id?: number;
+        code?: string;
+        title?: string;
+        discount_type?: "percentage" | "fixed";
+        discount_value?: number | string;
+        discount_amount?: number | string;
+        message?: string;
+      };
+
+      if (payload.success !== true || payload.valid !== true) {
+        setStoreCoupon(null);
+        setStoreCouponMessage(
+          payload.message || "This coupon is not valid for this order."
+        );
+        return;
+      }
+
+      const discountAmount = Math.max(
+        0,
+        Number(payload.discount_amount || 0)
+      );
+
+      setStoreCoupon({
+        id: Number(payload.coupon_id || 0),
+        code: payload.code || code,
+        title: payload.title || "NEW CITY STYLE Offer",
+        discountType:
+          payload.discount_type === "fixed" ? "fixed" : "percentage",
+        discountValue: Number(payload.discount_value || 0),
+        discountAmount,
+      });
+      setStoreCouponCode(payload.code || code);
+      setStoreCouponMessage(
+        payload.message ||
+          `Coupon applied. You saved ₹${discountAmount.toFixed(0)}.`
+      );
+    } catch (error) {
+      console.error("Store coupon validation error:", error);
+      setStoreCoupon(null);
+      setStoreCouponMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to validate coupon."
+      );
+    } finally {
+      setStoreCouponChecking(false);
+    }
+  }
+
+  function removeStoreCoupon() {
+    setStoreCoupon(null);
+    setStoreCouponMessage("Offer coupon removed.");
+  }
+
+  async function markStoreCouponUsed(orderId: string | number) {
+    if (!storeCoupon) return;
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "ncs_mark_store_coupon_used_v1",
+        {
+          p_coupon_id: storeCoupon.id,
+          p_code: storeCoupon.code,
+          p_order_id: String(orderId),
+        }
+      );
+
+      if (error) throw error;
+
+      const payload = (data || {}) as {
+        success?: boolean;
+        message?: string;
+      };
+
+      if (payload.success !== true) {
+        console.error(
+          "Store coupon usage was not confirmed:",
+          payload.message || "Unknown coupon error"
+        );
+      }
+    } catch (error) {
+      console.error("Unable to mark store coupon used:", error);
+    }
+  }
 
   function validateOrder() {
     if (!checkoutDetails) {
@@ -978,6 +1276,14 @@ export default function PaymentPage() {
           })),
         }),
       ]);
+
+      if (storeCoupon) {
+        await markStoreCouponUsed(data.id);
+      }
+
+      if (paymentStatus === "Paid" && clubVoucher) {
+        await markClubVoucherUsed(data.id);
+      }
     }
 
     return data?.id;
@@ -999,6 +1305,18 @@ export default function PaymentPage() {
 
   async function startOnlinePayment() {
     if (!checkoutDetails) return;
+
+    if (clubCode.trim() && !clubVoucher) {
+      throw new Error(
+        "Please apply your Club voucher code first, or clear the code before payment."
+      );
+    }
+
+    if (storeCouponCode.trim() && !storeCoupon) {
+      throw new Error(
+        "Please apply your offer coupon first, or clear the code before payment."
+      );
+    }
 
     const scriptLoaded = await loadRazorpayScript();
 
@@ -1022,6 +1340,10 @@ export default function PaymentPage() {
           notes: {
             customer_name: checkoutDetails.fullName,
             customer_mobile: checkoutDetails.mobile,
+            ncs_club_voucher: clubVoucher?.code || "",
+            ncs_club_discount: String(clubDiscount || 0),
+            ncs_store_coupon: storeCoupon?.code || "",
+            ncs_store_coupon_discount: String(storeCouponDiscount || 0),
           },
         }),
       }
@@ -1105,6 +1427,10 @@ export default function PaymentPage() {
       },
       notes: {
         address: `${checkoutDetails.address}, ${checkoutDetails.city}, ${checkoutDetails.state} - ${checkoutDetails.pincode}`,
+        ncs_club_voucher: clubVoucher?.code || "",
+        ncs_club_discount: String(clubDiscount || 0),
+        ncs_store_coupon: storeCoupon?.code || "",
+        ncs_store_coupon_discount: String(storeCouponDiscount || 0),
       },
       theme: {
         color: "#0A2E73",
@@ -1267,9 +1593,173 @@ export default function PaymentPage() {
                 selectedValue={paymentMethod}
                 onChange={setPaymentMethod}
                 title="Razorpay Online Payment"
-                description="UPI, cards, net banking and supported wallets."
+                description="UPI, cards, net banking and supported wallets. Club welcome voucher applies here."
                 icon="🔒"
               />
+
+              <div className="storeCouponBox">
+                <div className="storeCouponHead">
+                  <div>
+                    <span>NEW CITY STYLE OFFERS</span>
+                    <strong>Have a Coupon Code?</strong>
+                  </div>
+                  <b>🎟️</b>
+                </div>
+
+                <p>
+                  Festival, special-sale and customer offer coupons work with
+                  both Cash on Delivery and Online Payment.
+                </p>
+
+                <div className="storeCouponEntry">
+                  <input
+                    value={storeCouponCode}
+                    onChange={(event) => {
+                      setStoreCouponCode(
+                        event.target.value
+                          .toUpperCase()
+                          .replace(/[^A-Z0-9_-]/g, "")
+                          .slice(0, 30)
+                      );
+                      if (storeCoupon) {
+                        setStoreCoupon(null);
+                      }
+                    }}
+                    placeholder="Example: NCS20"
+                    disabled={storeCouponChecking}
+                  />
+
+                  {storeCoupon ? (
+                    <button
+                      type="button"
+                      className="storeCouponRemoveButton"
+                      onClick={removeStoreCoupon}
+                    >
+                      Remove
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="storeCouponApplyButton"
+                      onClick={() => void applyStoreCoupon()}
+                      disabled={storeCouponChecking || !storeCouponCode.trim()}
+                    >
+                      {storeCouponChecking ? "Checking..." : "Apply"}
+                    </button>
+                  )}
+                </div>
+
+                <small className="storeCouponHint">
+                  Valid coupons can be used on COD or Online Payment. Minimum
+                  order, dates and usage limits are checked automatically.
+                </small>
+
+                {storeCouponMessage && (
+                  <div
+                    className={
+                      storeCoupon
+                        ? "storeCouponMessage storeCouponMessageSuccess"
+                        : "storeCouponMessage"
+                    }
+                  >
+                    {storeCouponMessage}
+                  </div>
+                )}
+
+                {storeCoupon && (
+                  <div className="storeCouponApplied">
+                    <span>✓ {storeCoupon.code}</span>
+                    <strong>
+                      -₹{storeCouponDiscount.toLocaleString("en-IN")}
+                    </strong>
+                  </div>
+                )}
+              </div>
+
+              <div className="clubVoucherBox">
+                <div className="clubVoucherHead">
+                  <div>
+                    <span>NEW CITY STYLE CLUB</span>
+                    <strong>₹100 Welcome Voucher</strong>
+                  </div>
+                  <b>🎁</b>
+                </div>
+
+                <p>
+                  Join the Club and save ₹100 on your first online / UPI order
+                  of ₹1,000 or more. Club voucher cannot be combined with another
+                  money-off coupon.
+                </p>
+
+                <div className="clubVoucherEntry">
+                  <input
+                    value={clubCode}
+                    onChange={(event) => {
+                      setClubCode(
+                        event.target.value
+                          .toUpperCase()
+                          .replace(/[^A-Z0-9]/g, "")
+                          .slice(0, 20)
+                      );
+                      if (clubVoucher) {
+                        setClubVoucher(null);
+                      }
+                    }}
+                    placeholder="Enter Club voucher code"
+                    disabled={paymentMethod !== "online" || clubChecking}
+                  />
+
+                  {clubVoucher ? (
+                    <button
+                      type="button"
+                      className="clubRemoveButton"
+                      onClick={removeClubVoucher}
+                    >
+                      Remove
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="clubApplyButton"
+                      onClick={() => void applyClubVoucher()}
+                      disabled={
+                        paymentMethod !== "online" ||
+                        clubChecking ||
+                        !clubCode.trim()
+                      }
+                    >
+                      {clubChecking ? "Checking..." : "Apply"}
+                    </button>
+                  )}
+                </div>
+
+                {paymentMethod !== "online" && (
+                  <small className="clubHint">
+                    Select Razorpay Online Payment to use the Club voucher.
+                  </small>
+                )}
+
+                {clubMessage && (
+                  <div
+                    className={
+                      clubVoucher
+                        ? "clubMessage clubMessageSuccess"
+                        : "clubMessage"
+                    }
+                  >
+                    {clubMessage}
+                  </div>
+                )}
+
+                {clubVoucher && (
+                  <div className="clubApplied">
+                    <span>✓ {clubVoucher.code}</span>
+                    <strong>
+                      -₹{clubDiscount.toLocaleString("en-IN")}
+                    </strong>
+                  </div>
+                )}
+              </div>
 
               <div className="securityNote">
                 🔐 Online payments are verified securely on the server.
@@ -1322,11 +1812,30 @@ export default function PaymentPage() {
                   value={`₹${tax.toLocaleString("en-IN")}`}
                 />
               )}
+
+              {storeCouponDiscount > 0 && clubDiscount === 0 && (
+                <SummaryRow
+                  title={`Coupon ${storeCoupon?.code || ""}`}
+                  value={`-₹${storeCouponDiscount.toLocaleString("en-IN")}`}
+                />
+              )}
+
+              {clubDiscount > 0 && (
+                <SummaryRow
+                  title="NCS Club Welcome Voucher"
+                  value={`-₹${clubDiscount.toLocaleString("en-IN")}`}
+                />
+              )}
             </div>
 
             <div className="totalRow">
               <span>Total</span>
-              <strong>₹{total.toLocaleString("en-IN")}</strong>
+              <div className="totalAmountWrap">
+                {totalDiscount > 0 && (
+                  <del>₹{baseTotal.toLocaleString("en-IN")}</del>
+                )}
+                <strong>₹{total.toLocaleString("en-IN")}</strong>
+              </div>
             </div>
 
             <button
@@ -1467,6 +1976,314 @@ export default function PaymentPage() {
           cursor: pointer;
         }
 
+        .storeCouponBox {
+          margin-top: 18px;
+          padding: 17px;
+          border: 1px solid rgba(10, 46, 115, 0.18);
+          border-radius: 14px;
+          background:
+            radial-gradient(
+              circle at 95% 5%,
+              rgba(10, 46, 115, 0.10),
+              transparent 34%
+            ),
+            linear-gradient(145deg, #f9fbff, #ffffff);
+        }
+
+        .storeCouponHead {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+
+        .storeCouponHead span,
+        .storeCouponHead strong {
+          display: block;
+        }
+
+        .storeCouponHead span {
+          color: #61708a;
+          font-size: 9px;
+          font-weight: 900;
+          letter-spacing: 0.8px;
+        }
+
+        .storeCouponHead strong {
+          margin-top: 3px;
+          color: #0a2e73;
+          font-size: 15px;
+        }
+
+        .storeCouponHead b {
+          font-size: 24px;
+        }
+
+        .storeCouponBox > p {
+          margin: 9px 0 0 !important;
+          color: #6d6d6d !important;
+          font-size: 11px !important;
+          line-height: 1.6 !important;
+        }
+
+        .storeCouponEntry {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 8px;
+          margin-top: 13px;
+        }
+
+        .storeCouponEntry input {
+          width: 100%;
+          height: 44px;
+          min-width: 0;
+          padding: 0 12px;
+          border: 1px solid #d9dfe8;
+          border-radius: 10px;
+          outline: none;
+          background: white;
+          color: #172033;
+          font: inherit;
+          font-size: 12px;
+          font-weight: 750;
+          text-transform: uppercase;
+        }
+
+        .storeCouponEntry input:focus {
+          border-color: #0a2e73;
+          box-shadow: 0 0 0 3px rgba(10, 46, 115, 0.10);
+        }
+
+        .storeCouponApplyButton,
+        .storeCouponRemoveButton {
+          min-width: 82px;
+          padding: 0 13px;
+          border: 0;
+          border-radius: 10px;
+          font-size: 11px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .storeCouponApplyButton {
+          background: linear-gradient(135deg, #0a2e73, #164ca8);
+          color: white;
+        }
+
+        .storeCouponRemoveButton {
+          background: #fff0f0;
+          color: #a23636;
+        }
+
+        .storeCouponApplyButton:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .storeCouponHint {
+          display: block;
+          margin-top: 8px;
+          color: #7d8796;
+          font-size: 9px;
+          line-height: 1.45;
+        }
+
+        .storeCouponMessage {
+          margin-top: 10px;
+          padding: 9px 10px;
+          border-radius: 9px;
+          background: #fff3f3;
+          color: #a14242;
+          font-size: 10px;
+          font-weight: 750;
+          line-height: 1.45;
+        }
+
+        .storeCouponMessageSuccess {
+          background: #ebf9f0;
+          color: #157545;
+        }
+
+        .storeCouponApplied {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-top: 10px;
+          padding: 10px 11px;
+          border: 1px dashed rgba(10, 46, 115, 0.35);
+          border-radius: 10px;
+          background: #0a2e73;
+          color: white;
+        }
+
+        .storeCouponApplied span {
+          color: #f3d86d;
+          font-size: 10px;
+          font-weight: 900;
+        }
+
+        .storeCouponApplied strong {
+          color: white;
+          font-size: 14px;
+        }
+
+        .clubVoucherBox {
+          margin-top: 18px;
+          padding: 17px;
+          border: 1px solid rgba(212, 175, 55, 0.55);
+          border-radius: 14px;
+          background:
+            radial-gradient(
+              circle at 95% 5%,
+              rgba(212, 175, 55, 0.18),
+              transparent 34%
+            ),
+            linear-gradient(145deg, #fffdf8, #fff8e9);
+        }
+
+        .clubVoucherHead {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+
+        .clubVoucherHead span,
+        .clubVoucherHead strong {
+          display: block;
+        }
+
+        .clubVoucherHead span {
+          color: #9b7621;
+          font-size: 9px;
+          font-weight: 900;
+          letter-spacing: 0.8px;
+        }
+
+        .clubVoucherHead strong {
+          margin-top: 3px;
+          color: #0a2e73;
+          font-size: 15px;
+        }
+
+        .clubVoucherHead b {
+          font-size: 24px;
+        }
+
+        .clubVoucherBox > p {
+          margin: 9px 0 0 !important;
+          color: #6d6d6d !important;
+          font-size: 11px !important;
+          line-height: 1.6 !important;
+        }
+
+        .clubVoucherEntry {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 8px;
+          margin-top: 13px;
+        }
+
+        .clubVoucherEntry input {
+          width: 100%;
+          height: 44px;
+          min-width: 0;
+          padding: 0 12px;
+          border: 1px solid #d9dfe8;
+          border-radius: 10px;
+          outline: none;
+          background: white;
+          color: #172033;
+          font: inherit;
+          font-size: 12px;
+          font-weight: 750;
+          text-transform: uppercase;
+        }
+
+        .clubVoucherEntry input:focus {
+          border-color: #d4af37;
+          box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.12);
+        }
+
+        .clubVoucherEntry input:disabled {
+          background: #f4f4f4;
+          color: #9b9b9b;
+        }
+
+        .clubApplyButton,
+        .clubRemoveButton {
+          min-width: 82px;
+          padding: 0 13px;
+          border: 0;
+          border-radius: 10px;
+          font-size: 11px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .clubApplyButton {
+          background: linear-gradient(135deg, #d4af37, #efd25f);
+          color: #0a2e73;
+        }
+
+        .clubRemoveButton {
+          background: #fff0f0;
+          color: #a23636;
+        }
+
+        .clubApplyButton:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .clubHint {
+          display: block;
+          margin-top: 8px;
+          color: #8b8b8b;
+          font-size: 9px;
+        }
+
+        .clubMessage {
+          margin-top: 10px;
+          padding: 9px 10px;
+          border-radius: 9px;
+          background: #fff3f3;
+          color: #a14242;
+          font-size: 10px;
+          font-weight: 750;
+          line-height: 1.45;
+        }
+
+        .clubMessageSuccess {
+          background: #ebf9f0;
+          color: #157545;
+        }
+
+        .clubApplied {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-top: 10px;
+          padding: 10px 11px;
+          border: 1px dashed #d4af37;
+          border-radius: 10px;
+          background: #0a2e73;
+          color: white;
+        }
+
+        .clubApplied span {
+          color: #f3d86d;
+          font-size: 10px;
+          font-weight: 900;
+        }
+
+        .clubApplied strong {
+          color: white;
+          font-size: 14px;
+        }
+
         .securityNote {
           margin-top: 16px;
           padding: 12px 14px;
@@ -1541,6 +2358,19 @@ export default function PaymentPage() {
           font-size: 27px;
         }
 
+        .totalAmountWrap {
+          display: flex;
+          align-items: flex-end;
+          flex-direction: column;
+          gap: 3px;
+        }
+
+        .totalAmountWrap del {
+          color: #98a2b3;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
         .placeOrderButton {
           width: 100%;
           min-height: 54px;
@@ -1589,6 +2419,18 @@ export default function PaymentPage() {
 
           .hero h1 {
             font-size: 28px;
+          }
+
+          .storeCouponEntry,
+          .clubVoucherEntry {
+            grid-template-columns: 1fr;
+          }
+
+          .storeCouponApplyButton,
+          .storeCouponRemoveButton,
+          .clubApplyButton,
+          .clubRemoveButton {
+            min-height: 42px;
           }
         }
       `}</style>
