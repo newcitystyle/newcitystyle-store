@@ -224,6 +224,11 @@ const menuGroups: AdminMenuGroup[] = [
         href: "/admin/customer-requests",
         icon: "🔔",
       },
+      {
+        label: "NCS Club Members",
+        href: "/admin/club-members",
+        icon: "🎁",
+      },
       { label: "Reviews", href: "/admin/reviews", icon: "⭐" },
       { label: "Coupons", href: "/admin/coupons", icon: "🎟️" },
     ],
