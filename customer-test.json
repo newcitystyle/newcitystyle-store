@@ -1,0 +1,17 @@
+{
+  "orderId": "TEST-CUST-1001",
+  "customerName": "Test Customer",
+  "customerPhone": "7337564457",
+  "totalAmount": 499,
+  "paymentMethod": "Razorpay Online Payment",
+  "paymentStatus": "Paid",
+  "items": [
+    {
+      "name": "Test Product",
+      "quantity": 1,
+      "price": 499,
+      "size": "XL",
+      "color": "Blue"
+    }
+  ]
+}

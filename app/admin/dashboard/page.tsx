@@ -53,8 +53,17 @@ type Order = {
 type WebsiteVisit = {
   id: string | number;
   visitor_id?: string | null;
+  session_id?: string | null;
   page_path?: string | null;
+  source?: string | null;
+  medium?: string | null;
+  campaign?: string | null;
+  device_type?: string | null;
+  browser?: string | null;
+  event_type?: string | null;
+  event_value?: number | string | null;
   visited_at?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 type PosSale = {
@@ -206,6 +215,167 @@ type VisitorStats = {
   totalUniqueVisitors: number;
   totalPageViews: number;
 };
+type TrafficSourceMetric = {
+  key: string;
+  label: string;
+  visitors: number;
+  productViews: number;
+  addToCarts: number;
+  checkouts: number;
+  purchases: number;
+  revenue: number;
+  conversionRate: number;
+};
+
+type DeviceMetric = {
+  key: string;
+  label: string;
+  visitors: number;
+};
+
+type CampaignMetric = {
+  name: string;
+  visitors: number;
+  purchases: number;
+  revenue: number;
+};
+
+type TodayTrafficAnalytics = {
+  uniqueVisitors: number;
+  sessions: number;
+  pageViews: number;
+  productViews: number;
+  addToCarts: number;
+  checkouts: number;
+  checkoutContinues: number;
+  purchases: number;
+  purchaseRevenue: number;
+  conversionRate: number;
+  sourceMetrics: TrafficSourceMetric[];
+  deviceMetrics: DeviceMetric[];
+  campaigns: CampaignMetric[];
+};
+
+function normalizeTrafficSource(value?: string | null) {
+  const source = String(value || "")
+    .trim()
+    .toLowerCase();
+
+  if (!source) return "untracked";
+
+  if (
+    source === "facebook" ||
+    source === "fb" ||
+    source.includes("facebook.com") ||
+    source.includes("fb.com")
+  ) {
+    return "facebook";
+  }
+
+  if (
+    source === "instagram" ||
+    source === "ig" ||
+    source.includes("instagram.com")
+  ) {
+    return "instagram";
+  }
+
+  if (
+    source === "google" ||
+    source.includes("google.")
+  ) {
+    return "google";
+  }
+
+  if (
+    source === "x" ||
+    source === "twitter" ||
+    source.includes("x.com") ||
+    source.includes("twitter.com") ||
+    source.includes("t.co")
+  ) {
+    return "x";
+  }
+
+  if (
+    source === "direct" ||
+    source === "(direct)"
+  ) {
+    return "direct";
+  }
+
+  return "other";
+}
+
+function trafficSourceLabel(source: string) {
+  switch (source) {
+    case "facebook":
+      return "Facebook";
+    case "instagram":
+      return "Instagram";
+    case "google":
+      return "Google";
+    case "x":
+      return "X / Twitter";
+    case "direct":
+      return "Direct";
+    case "other":
+      return "Other";
+    default:
+      return "Untracked";
+  }
+}
+
+function normalizeDeviceType(value?: string | null) {
+  const device = String(value || "")
+    .trim()
+    .toLowerCase();
+
+  if (device === "mobile") return "mobile";
+  if (device === "tablet") return "tablet";
+  if (device === "desktop") return "desktop";
+  return "unknown";
+}
+
+function isPageViewEvent(visit: WebsiteVisit) {
+  const eventType = String(visit.event_type || "")
+    .trim()
+    .toLowerCase();
+
+  // Old rows were created before event_type existed, so blank = legacy page view.
+  return !eventType || eventType === "page_view";
+}
+
+function isVisitOnOrAfter(
+  visit: WebsiteVisit,
+  startDate: Date,
+) {
+  if (!visit.visited_at) return false;
+
+  const visitDate = new Date(visit.visited_at);
+
+  return (
+    !Number.isNaN(visitDate.getTime()) &&
+    visitDate >= startDate
+  );
+}
+
+function uniqueVisitorCountForRows(rows: WebsiteVisit[]) {
+  return new Set(
+    rows
+      .map((row) => String(row.visitor_id || "").trim())
+      .filter(Boolean),
+  ).size;
+}
+
+function uniqueSessionCountForRows(rows: WebsiteVisit[]) {
+  return new Set(
+    rows
+      .map((row) => String(row.session_id || "").trim())
+      .filter(Boolean),
+  ).size;
+}
+
 
 type SalesPoint = {
   key: string;
@@ -574,7 +744,9 @@ export default function AdminDashboardPage() {
 
           supabase
             .from("website_visits")
-            .select("id,visitor_id,page_path,visited_at")
+            .select(
+              "id,visitor_id,session_id,page_path,source,medium,campaign,device_type,browser,event_type,event_value,visited_at,metadata",
+            )
             .order("visited_at", { ascending: false })
             .limit(10000),
 
@@ -1134,24 +1306,228 @@ export default function AdminDashboardPage() {
   }, [orders, products, variants]);
 
   const visitorStats = useMemo<VisitorStats>(
-    () => ({
-      todayVisitors: getUniqueVisitorCount(
-        visits,
-        todayStart,
-      ),
-      sevenDayVisitors: getUniqueVisitorCount(
-        visits,
-        sevenDaysStart,
-      ),
-      thirtyDayVisitors: getUniqueVisitorCount(
-        visits,
-        thirtyDaysStart,
-      ),
-      totalUniqueVisitors: getUniqueVisitorCount(visits),
-      totalPageViews: visits.length,
-    }),
+    () => {
+      const pageViewRows = visits.filter(isPageViewEvent);
+
+      return {
+        todayVisitors: getUniqueVisitorCount(
+          pageViewRows,
+          todayStart,
+        ),
+        sevenDayVisitors: getUniqueVisitorCount(
+          pageViewRows,
+          sevenDaysStart,
+        ),
+        thirtyDayVisitors: getUniqueVisitorCount(
+          pageViewRows,
+          thirtyDaysStart,
+        ),
+        totalUniqueVisitors: getUniqueVisitorCount(pageViewRows),
+        totalPageViews: pageViewRows.length,
+      };
+    },
     [thirtyDaysStart, todayStart, sevenDaysStart, visits],
   );
+
+  const todayTraffic = useMemo<TodayTrafficAnalytics>(() => {
+    const todayRows = visits.filter((visit) =>
+      isVisitOnOrAfter(visit, todayStart),
+    );
+
+    const pageViewRows = todayRows.filter(isPageViewEvent);
+    const productViewRows = todayRows.filter(
+      (visit) => visit.event_type === "product_view",
+    );
+    const addToCartRows = todayRows.filter(
+      (visit) => visit.event_type === "add_to_cart",
+    );
+    const checkoutRows = todayRows.filter(
+      (visit) => visit.event_type === "checkout",
+    );
+    const checkoutContinueRows = todayRows.filter(
+      (visit) => visit.event_type === "checkout_continue",
+    );
+    const purchaseRows = todayRows.filter(
+      (visit) => visit.event_type === "purchase",
+    );
+
+    const uniqueVisitors =
+      uniqueVisitorCountForRows(pageViewRows);
+
+    const sessions =
+      uniqueSessionCountForRows(pageViewRows);
+
+    const purchaseRevenue = purchaseRows.reduce(
+      (sum, visit) =>
+        sum + Math.max(0, toNumber(visit.event_value)),
+      0,
+    );
+
+    const sourceOrder = [
+      "facebook",
+      "instagram",
+      "google",
+      "x",
+      "direct",
+      "other",
+      "untracked",
+    ];
+
+    const sourceMetrics = sourceOrder
+      .map((sourceKey) => {
+        const rowsForSource = (rows: WebsiteVisit[]) =>
+          rows.filter(
+            (row) =>
+              normalizeTrafficSource(row.source) === sourceKey,
+          );
+
+        const sourcePageViews = rowsForSource(pageViewRows);
+        const sourceProductViews = rowsForSource(productViewRows);
+        const sourceAddToCarts = rowsForSource(addToCartRows);
+        const sourceCheckouts = rowsForSource(checkoutRows);
+        const sourcePurchases = rowsForSource(purchaseRows);
+
+        const visitors =
+          uniqueVisitorCountForRows(sourcePageViews);
+
+        const purchases = sourcePurchases.length;
+
+        const revenue = sourcePurchases.reduce(
+          (sum, visit) =>
+            sum + Math.max(0, toNumber(visit.event_value)),
+          0,
+        );
+
+        return {
+          key: sourceKey,
+          label: trafficSourceLabel(sourceKey),
+          visitors,
+          productViews: sourceProductViews.length,
+          addToCarts: sourceAddToCarts.length,
+          checkouts: sourceCheckouts.length,
+          purchases,
+          revenue,
+          conversionRate:
+            visitors > 0
+              ? (purchases / visitors) * 100
+              : 0,
+        };
+      })
+      .filter(
+        (metric) =>
+          metric.visitors > 0 ||
+          metric.productViews > 0 ||
+          metric.addToCarts > 0 ||
+          metric.checkouts > 0 ||
+          metric.purchases > 0,
+      );
+
+    const deviceOrder = [
+      "mobile",
+      "desktop",
+      "tablet",
+      "unknown",
+    ];
+
+    const deviceMetrics = deviceOrder
+      .map((deviceKey) => {
+        const deviceRows = pageViewRows.filter(
+          (row) =>
+            normalizeDeviceType(row.device_type) === deviceKey,
+        );
+
+        return {
+          key: deviceKey,
+          label:
+            deviceKey === "mobile"
+              ? "Mobile"
+              : deviceKey === "desktop"
+                ? "Desktop"
+                : deviceKey === "tablet"
+                  ? "Tablet"
+                  : "Unknown",
+          visitors:
+            uniqueVisitorCountForRows(deviceRows),
+        };
+      })
+      .filter((metric) => metric.visitors > 0);
+
+    const campaignMap = new Map<
+      string,
+      {
+        visitorIds: Set<string>;
+        purchases: number;
+        revenue: number;
+      }
+    >();
+
+    todayRows.forEach((row) => {
+      const campaign = String(row.campaign || "").trim();
+
+      if (!campaign) return;
+
+      const current =
+        campaignMap.get(campaign) || {
+          visitorIds: new Set<string>(),
+          purchases: 0,
+          revenue: 0,
+        };
+
+      if (isPageViewEvent(row)) {
+        const visitorId =
+          String(row.visitor_id || "").trim();
+
+        if (visitorId) {
+          current.visitorIds.add(visitorId);
+        }
+      }
+
+      if (row.event_type === "purchase") {
+        current.purchases += 1;
+        current.revenue += Math.max(
+          0,
+          toNumber(row.event_value),
+        );
+      }
+
+      campaignMap.set(campaign, current);
+    });
+
+    const campaigns = Array.from(campaignMap.entries())
+      .map(([name, value]) => ({
+        name,
+        visitors: value.visitorIds.size,
+        purchases: value.purchases,
+        revenue: value.revenue,
+      }))
+      .sort((first, second) => {
+        if (second.revenue !== first.revenue) {
+          return second.revenue - first.revenue;
+        }
+
+        return second.visitors - first.visitors;
+      })
+      .slice(0, 5);
+
+    return {
+      uniqueVisitors,
+      sessions,
+      pageViews: pageViewRows.length,
+      productViews: productViewRows.length,
+      addToCarts: addToCartRows.length,
+      checkouts: checkoutRows.length,
+      checkoutContinues: checkoutContinueRows.length,
+      purchases: purchaseRows.length,
+      purchaseRevenue,
+      conversionRate:
+        uniqueVisitors > 0
+          ? (purchaseRows.length / uniqueVisitors) * 100
+          : 0,
+      sourceMetrics,
+      deviceMetrics,
+      campaigns,
+    };
+  }, [todayStart, visits]);
 
   const salesTrend = useMemo<SalesPoint[]>(() => {
     const points: SalesPoint[] = [];
@@ -1301,10 +1677,13 @@ export default function AdminDashboardPage() {
 
   const popularPages = useMemo(() => {
     const counts = new Map<string, number>();
-    visits.forEach((visit) => {
-      const path = visit.page_path?.trim() || "/";
-      counts.set(path, (counts.get(path) || 0) + 1);
-    });
+
+    visits
+      .filter(isPageViewEvent)
+      .forEach((visit) => {
+        const path = visit.page_path?.trim() || "/";
+        counts.set(path, (counts.get(path) || 0) + 1);
+      });
 
     return Array.from(counts.entries())
       .map(([pagePath, count]) => ({ pagePath, count }))
@@ -2391,47 +2770,44 @@ export default function AdminDashboardPage() {
           </div>
         </article>
 
-        <article className="panel">
-          <div className="sectionHeader">
+        <article className="panel visitorSummaryPanel">
+          <div className="visitorSummaryGlow" aria-hidden="true" />
+
+          <div className="visitorSummaryCopy">
+            <span>WEBSITE VISITORS • TODAY</span>
+            <h2>Visitor Intelligence</h2>
+            <p>
+              Track traffic sources, devices, campaigns, product views,
+              carts, checkouts and purchases on the dedicated analytics page.
+            </p>
+          </div>
+
+          <div className="visitorSummaryMetrics">
             <div>
-              <span>WEBSITE ANALYTICS</span>
-              <h2>Customer Visitors</h2>
+              <span>REAL VISITORS</span>
+              <strong>{todayTraffic.uniqueVisitors}</strong>
+              <small>{todayTraffic.sessions} session(s)</small>
             </div>
-            <span className="liveBadge">● Live</span>
+
+            <div>
+              <span>PURCHASES</span>
+              <strong>{todayTraffic.purchases}</strong>
+              <small>{formatCurrency(todayTraffic.purchaseRevenue)}</small>
+            </div>
+
+            <div>
+              <span>CONVERSION</span>
+              <strong>{todayTraffic.conversionRate.toFixed(1)}%</strong>
+              <small>Purchases ÷ visitors</small>
+            </div>
           </div>
 
-          <div className="visitorMetrics">
-            <VisitorMetric
-              label="Today"
-              value={visitorStats.todayVisitors}
-            />
-            <VisitorMetric
-              label="7 Days"
-              value={visitorStats.sevenDayVisitors}
-            />
-            <VisitorMetric
-              label="30 Days"
-              value={visitorStats.thirtyDayVisitors}
-            />
-            <VisitorMetric
-              label="Total"
-              value={visitorStats.totalUniqueVisitors}
-            />
-            <VisitorMetric
-              label="Page Views"
-              value={visitorStats.totalPageViews}
-            />
-          </div>
-
-          <div className="popularPages">
-            {popularPages.map((page, index) => (
-              <div key={page.pagePath}>
-                <b>{index + 1}</b>
-                <span>{page.pagePath}</span>
-                <strong>{page.count}</strong>
-              </div>
-            ))}
-          </div>
+          <Link
+            href="/admin/analytics/visitors"
+            className="visitorAnalyticsButton"
+          >
+            Open Visitor Analytics →
+          </Link>
         </article>
       </section>
 
@@ -4896,12 +5272,663 @@ export default function AdminDashboardPage() {
             grid-column: auto;
           }
 
+
           .visitorMetrics {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
+          .trafficHeroMetrics,
+          .trafficInsightGrid,
+          .trafficLowerGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .sourcePerformanceRow {
+            grid-template-columns: minmax(0, 1fr) repeat(2, auto);
+          }
+
+          .sourceMiniMetric:nth-of-type(3),
+          .sourceMiniMetric.revenue,
+          .sourceConversion {
+            display: none;
+          }
+
           .trendChart {
             height: 250px;
+          }
+        }
+
+
+        .visitorSummaryPanel {
+          position: relative;
+          grid-column: 1 / -1;
+          overflow: hidden;
+          display: grid;
+          grid-template-columns: minmax(250px, 1.25fr) minmax(360px, 1fr) auto;
+          align-items: center;
+          gap: 16px;
+          padding: 16px 18px;
+          background:
+            radial-gradient(
+              circle at 86% 18%,
+              rgba(109, 77, 255, 0.11),
+              transparent 25%
+            ),
+            linear-gradient(135deg, #ffffff, #faf8ff);
+        }
+
+        .visitorSummaryGlow {
+          position: absolute;
+          right: -40px;
+          bottom: -75px;
+          width: 180px;
+          height: 180px;
+          border-radius: 50%;
+          background: rgba(212, 175, 55, 0.08);
+          pointer-events: none;
+        }
+
+        .visitorSummaryCopy,
+        .visitorSummaryMetrics,
+        .visitorAnalyticsButton {
+          position: relative;
+          z-index: 1;
+        }
+
+        .visitorSummaryCopy > span {
+          color: #6d4dff;
+          font-size: 6.5px;
+          font-weight: 950;
+          letter-spacing: 0.55px;
+        }
+
+        .visitorSummaryCopy h2 {
+          margin: 4px 0 0;
+          color: #2e3547;
+          font-size: 15px;
+        }
+
+        .visitorSummaryCopy p {
+          max-width: 520px;
+          margin: 5px 0 0;
+          color: #7f8594;
+          font-size: 7px;
+          line-height: 1.5;
+        }
+
+        .visitorSummaryMetrics {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 7px;
+        }
+
+        .visitorSummaryMetrics > div {
+          min-width: 0;
+          padding: 9px 10px;
+          border: 1px solid #ebe7f2;
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.84);
+          text-align: center;
+        }
+
+        .visitorSummaryMetrics span,
+        .visitorSummaryMetrics strong,
+        .visitorSummaryMetrics small {
+          display: block;
+        }
+
+        .visitorSummaryMetrics span {
+          color: #837a96;
+          font-size: 5.5px;
+          font-weight: 900;
+          letter-spacing: 0.35px;
+        }
+
+        .visitorSummaryMetrics strong {
+          margin-top: 3px;
+          color: #323a4c;
+          font-size: 13px;
+        }
+
+        .visitorSummaryMetrics small {
+          margin-top: 2px;
+          color: #8c92a0;
+          font-size: 5.7px;
+        }
+
+        .visitorAnalyticsButton {
+          min-height: 38px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 13px;
+          border: 1px solid #6d4dff;
+          border-radius: 10px;
+          background: linear-gradient(135deg, #6d4dff, #806df1);
+          color: #ffffff;
+          font-size: 7.5px;
+          font-weight: 900;
+          text-decoration: none;
+          white-space: nowrap;
+          box-shadow: 0 8px 20px rgba(109, 77, 255, 0.18);
+        }
+
+        @media (max-width: 1050px) {
+          .visitorSummaryPanel {
+            grid-template-columns: 1fr;
+          }
+
+          .visitorAnalyticsButton {
+            width: 100%;
+          }
+        }
+
+        @media (max-width: 620px) {
+          .visitorSummaryMetrics {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .visitorSummaryMetrics > :last-child {
+            grid-column: 1 / -1;
+          }
+        }
+
+        .trafficIntelligencePanel {
+          grid-column: 1 / -1;
+          overflow: hidden;
+          background:
+            radial-gradient(
+              circle at 100% 0%,
+              rgba(109, 77, 255, 0.10),
+              transparent 28%
+            ),
+            linear-gradient(180deg, #ffffff 0%, #fbfaff 100%);
+        }
+
+        .trafficHeader {
+          align-items: flex-start;
+        }
+
+        .trafficHeader p {
+          max-width: 720px;
+          margin: 6px 0 0;
+          color: #7a8190;
+          font-size: 8px;
+          line-height: 1.55;
+        }
+
+        .trafficHeroMetrics {
+          display: grid;
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+          gap: 8px;
+          padding: 11px;
+        }
+
+        .trafficHeroMetric {
+          position: relative;
+          min-width: 0;
+          overflow: hidden;
+          padding: 12px;
+          border: 1px solid rgba(109, 77, 255, 0.12);
+          border-radius: 12px;
+          background: linear-gradient(145deg, #f5f2ff, #ffffff);
+        }
+
+        .trafficHeroMetric::after {
+          position: absolute;
+          right: -12px;
+          bottom: -20px;
+          width: 52px;
+          height: 52px;
+          border-radius: 50%;
+          background: rgba(109, 77, 255, 0.08);
+          content: "";
+        }
+
+        .trafficHeroMetric.cart {
+          background: linear-gradient(145deg, #fff8ed, #ffffff);
+        }
+
+        .trafficHeroMetric.checkout {
+          background: linear-gradient(145deg, #eef8ff, #ffffff);
+        }
+
+        .trafficHeroMetric.purchase {
+          background: linear-gradient(145deg, #eefbf5, #ffffff);
+        }
+
+        .trafficHeroMetric.conversion {
+          background: linear-gradient(145deg, #fff2f8, #ffffff);
+        }
+
+        .trafficHeroMetric > span {
+          display: block;
+          color: #665a89;
+          font-size: 6.5px;
+          font-weight: 950;
+          letter-spacing: 0.45px;
+        }
+
+        .trafficHeroMetric > strong {
+          position: relative;
+          z-index: 1;
+          display: block;
+          margin-top: 4px;
+          color: #293247;
+          font-size: 18px;
+          font-weight: 950;
+        }
+
+        .trafficHeroMetric > small {
+          position: relative;
+          z-index: 1;
+          display: block;
+          margin-top: 3px;
+          color: #7a8190;
+          font-size: 6.5px;
+          line-height: 1.35;
+        }
+
+        .trafficInsightGrid {
+          display: grid;
+          grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.55fr);
+          gap: 10px;
+          padding: 0 11px 10px;
+        }
+
+        .trafficLowerGrid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px;
+          padding: 0 11px 11px;
+        }
+
+        .trafficInsightCard {
+          min-width: 0;
+          padding: 11px;
+          border: 1px solid #e8e5f1;
+          border-radius: 12px;
+          background: rgba(255, 255, 255, 0.92);
+          box-shadow: 0 8px 22px rgba(42, 35, 74, 0.045);
+        }
+
+        .trafficSubHeader span {
+          color: #665a89;
+          font-size: 6.5px;
+          font-weight: 950;
+          letter-spacing: 0.45px;
+        }
+
+        .trafficSubHeader h3 {
+          margin: 3px 0 0;
+          color: #293247;
+          font-size: 11px;
+        }
+
+        .sourcePerformanceList {
+          display: grid;
+          gap: 6px;
+          margin-top: 10px;
+        }
+
+        .sourcePerformanceRow {
+          display: grid;
+          grid-template-columns:
+            minmax(120px, 1.35fr)
+            repeat(3, minmax(42px, 0.52fr))
+            minmax(76px, 0.8fr)
+            minmax(62px, 0.62fr);
+          align-items: center;
+          gap: 7px;
+          padding: 8px;
+          border: 1px solid #eceaf2;
+          border-radius: 10px;
+          background: #fcfbfe;
+        }
+
+        .sourceIdentity {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+        }
+
+        .sourceIdentity .sourceDot {
+          width: 9px;
+          height: 9px;
+          flex-shrink: 0;
+          border-radius: 50%;
+          background: #7b68ee;
+          box-shadow: 0 0 0 4px rgba(123, 104, 238, 0.10);
+        }
+
+        .source-facebook .sourceDot {
+          background: #5076b8;
+        }
+
+        .source-instagram .sourceDot {
+          background: #b65f8d;
+        }
+
+        .source-google .sourceDot {
+          background: #5c8d72;
+        }
+
+        .source-x .sourceDot {
+          background: #4e5565;
+        }
+
+        .source-direct .sourceDot {
+          background: #9b7b4f;
+        }
+
+        .sourceIdentity strong,
+        .sourceIdentity small {
+          display: block;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .sourceIdentity strong {
+          color: #2f3545;
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        .sourceIdentity small {
+          margin-top: 2px;
+          color: #8a90a0;
+          font-size: 6px;
+        }
+
+        .sourceMiniMetric {
+          text-align: center;
+        }
+
+        .sourceMiniMetric span,
+        .sourceMiniMetric strong {
+          display: block;
+        }
+
+        .sourceMiniMetric span {
+          color: #8a90a0;
+          font-size: 5.8px;
+        }
+
+        .sourceMiniMetric strong {
+          margin-top: 2px;
+          color: #3a4254;
+          font-size: 8px;
+        }
+
+        .sourceMiniMetric.revenue strong {
+          color: #4f806f;
+        }
+
+        .sourceConversion {
+          text-align: right;
+        }
+
+        .sourceConversion strong,
+        .sourceConversion span {
+          display: block;
+        }
+
+        .sourceConversion strong {
+          color: #6d4dff;
+          font-size: 9px;
+        }
+
+        .sourceConversion span {
+          margin-top: 2px;
+          color: #8a90a0;
+          font-size: 5.5px;
+        }
+
+        .deviceMixList {
+          display: grid;
+          gap: 10px;
+          margin-top: 12px;
+        }
+
+        .deviceMixTop {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+
+        .deviceMixTop strong {
+          color: #354052;
+          font-size: 8px;
+        }
+
+        .deviceMixTop span {
+          color: #7a8190;
+          font-size: 6.5px;
+        }
+
+        .deviceMixBar {
+          height: 7px;
+          margin-top: 5px;
+          overflow: hidden;
+          border-radius: 999px;
+          background: #eeecf4;
+        }
+
+        .deviceMixBar span {
+          display: block;
+          height: 100%;
+          border-radius: inherit;
+          background: linear-gradient(90deg, #7b68ee, #9b8cf3);
+        }
+
+        .device-desktop .deviceMixBar span {
+          background: linear-gradient(90deg, #5c8d72, #85b79f);
+        }
+
+        .device-tablet .deviceMixBar span {
+          background: linear-gradient(90deg, #b98254, #d9ad84);
+        }
+
+        .historicalVisitorStrip {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 6px;
+          margin-top: 13px;
+        }
+
+        .historicalVisitorStrip > div {
+          padding: 8px 5px;
+          border-radius: 9px;
+          background: #f7f5fb;
+          text-align: center;
+        }
+
+        .historicalVisitorStrip span,
+        .historicalVisitorStrip strong {
+          display: block;
+        }
+
+        .historicalVisitorStrip span {
+          color: #8a819f;
+          font-size: 5.5px;
+          font-weight: 850;
+        }
+
+        .historicalVisitorStrip strong {
+          margin-top: 3px;
+          color: #384053;
+          font-size: 10px;
+        }
+
+        .conversionFunnel {
+          display: grid;
+          gap: 8px;
+          margin-top: 12px;
+        }
+
+        .funnelStep > div:first-child {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+
+        .funnelStep span {
+          color: #72798a;
+          font-size: 7px;
+        }
+
+        .funnelStep strong {
+          color: #31394a;
+          font-size: 8px;
+        }
+
+        .funnelTrack {
+          height: 7px;
+          margin-top: 4px;
+          overflow: hidden;
+          border-radius: 999px;
+          background: #eeecf4;
+        }
+
+        .funnelTrack span {
+          display: block;
+          height: 100%;
+          border-radius: inherit;
+          background: #7b68ee;
+        }
+
+        .funnelStep.product .funnelTrack span {
+          background: #60869a;
+        }
+
+        .funnelStep.cart .funnelTrack span {
+          background: #b18457;
+        }
+
+        .funnelStep.checkout .funnelTrack span {
+          background: #9a6688;
+        }
+
+        .funnelStep.purchase .funnelTrack span {
+          background: #578471;
+        }
+
+        .campaignList {
+          display: grid;
+          gap: 6px;
+          margin-top: 10px;
+        }
+
+        .campaignRow {
+          display: grid;
+          grid-template-columns: 24px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 7px;
+          padding: 8px;
+          border: 1px solid #eceaf2;
+          border-radius: 9px;
+          background: #fcfbfe;
+        }
+
+        .campaignRow > b {
+          width: 23px;
+          height: 23px;
+          display: grid;
+          place-items: center;
+          border-radius: 7px;
+          background: #f0edff;
+          color: #6d4dff;
+          font-size: 6.5px;
+        }
+
+        .campaignRow div {
+          min-width: 0;
+        }
+
+        .campaignRow div strong,
+        .campaignRow div span {
+          display: block;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .campaignRow div strong {
+          color: #374052;
+          font-size: 7.5px;
+        }
+
+        .campaignRow div span {
+          margin-top: 2px;
+          color: #8a90a0;
+          font-size: 5.8px;
+        }
+
+        .campaignRevenue {
+          color: #4f806f;
+          font-size: 7.5px;
+        }
+
+        .trafficPopularPages {
+          margin-top: 8px;
+          padding: 0;
+        }
+
+        .analyticsEmpty {
+          margin-top: 10px;
+          padding: 12px;
+          border: 1px dashed #d9d5e6;
+          border-radius: 9px;
+          background: #faf9fc;
+          color: #858b99;
+          font-size: 7px;
+          line-height: 1.5;
+          text-align: center;
+        }
+
+        @media (max-width: 1150px) {
+          .trafficHeroMetrics {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+
+          .trafficInsightGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .trafficLowerGrid {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .trafficLowerGrid > :last-child {
+            grid-column: 1 / -1;
+          }
+        }
+
+        @media (max-width: 760px) {
+          .trafficHeroMetrics {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .trafficLowerGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .trafficLowerGrid > :last-child {
+            grid-column: auto;
+          }
+
+          .sourcePerformanceRow {
+            grid-template-columns: minmax(0, 1fr) repeat(2, auto);
+          }
+
+          .sourceMiniMetric:nth-of-type(3),
+          .sourceMiniMetric.revenue,
+          .sourceConversion {
+            display: none;
           }
         }
       `}</style>

@@ -38,6 +38,186 @@ type SavedOrderSummary = {
   items?: CartItem[];
 };
 
+type StoredAttribution = {
+  source?: string;
+  medium?: string;
+  campaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
+  fbclid?: string;
+  landingUrl?: string;
+  landingPath?: string;
+  initialReferrer?: string;
+};
+
+function getAnalyticsDeviceType() {
+  const userAgent = navigator.userAgent.toLowerCase();
+
+  if (/tablet|ipad|playbook|silk/.test(userAgent)) {
+    return "tablet";
+  }
+
+  if (
+    /mobile|iphone|ipod|android|blackberry|opera mini|iemobile/.test(
+      userAgent
+    )
+  ) {
+    return "mobile";
+  }
+
+  return "desktop";
+}
+
+function getAnalyticsBrowserName() {
+  const userAgent = navigator.userAgent;
+
+  if (userAgent.includes("Edg/")) return "Edge";
+  if (userAgent.includes("OPR/") || userAgent.includes("Opera")) return "Opera";
+  if (userAgent.includes("Chrome/")) return "Chrome";
+  if (userAgent.includes("Firefox/")) return "Firefox";
+
+  if (
+    userAgent.includes("Safari/") &&
+    !userAgent.includes("Chrome/")
+  ) {
+    return "Safari";
+  }
+
+  return "Unknown";
+}
+
+function getStoredAttribution(): StoredAttribution {
+  try {
+    const raw = sessionStorage.getItem("ncs_visit_attribution");
+
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as StoredAttribution;
+
+    return parsed && typeof parsed === "object"
+      ? parsed
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+async function recordPurchaseAnalytics({
+  orderId,
+  total,
+  subtotal,
+  shipping,
+  tax,
+  paymentMethod,
+  paymentStatus,
+  items,
+}: {
+  orderId: string | number;
+  total: number;
+  subtotal: number;
+  shipping: number;
+  tax: number;
+  paymentMethod: string;
+  paymentStatus: string;
+  items: CartItem[];
+}) {
+  try {
+    const visitorId =
+      localStorage.getItem("ncs_visitor_id") || "";
+
+    const sessionId =
+      sessionStorage.getItem("ncs_session_id") || "";
+
+    if (!visitorId || !sessionId) {
+      return;
+    }
+
+    const purchaseKey =
+      `ncs_purchase_tracked_${String(orderId)}`;
+
+    if (
+      sessionStorage.getItem(purchaseKey) === "1"
+    ) {
+      return;
+    }
+
+    const attribution = getStoredAttribution();
+
+    const { error } = await supabase
+      .from("website_visits")
+      .insert({
+        visitor_id: visitorId,
+        session_id: sessionId,
+        page_path: window.location.pathname,
+        page_title: document.title || "Payment",
+        referrer: document.referrer || "",
+        device_type: getAnalyticsDeviceType(),
+        browser: getAnalyticsBrowserName(),
+        visited_at: new Date().toISOString(),
+
+        source: attribution.source || "direct",
+        medium: attribution.medium || "none",
+        campaign: attribution.campaign || "",
+        utm_content: attribution.utmContent || "",
+        utm_term: attribution.utmTerm || "",
+        fbclid: attribution.fbclid || "",
+
+        event_type: "purchase",
+        event_value: total,
+
+        metadata: {
+          order_id: String(orderId),
+          payment_method: paymentMethod,
+          payment_status: paymentStatus,
+          subtotal,
+          shipping,
+          tax,
+          total,
+          item_count: items.reduce(
+            (sum, item) => sum + Number(item.quantity || 0),
+            0
+          ),
+          unique_products: items.length,
+          product_ids: items.map((item) => item.product_id),
+          items: items.map((item) => ({
+            product_id: item.product_id,
+            name: item.name,
+            price: Number(item.price || 0),
+            quantity: Number(item.quantity || 0),
+            size: item.size || null,
+            color: item.color || null,
+            design_unit_id: item.design_unit_id || null,
+            variant_id: item.variant_id || null,
+            barcode: item.barcode || null,
+          })),
+          landing_url: attribution.landingUrl || "",
+          landing_path: attribution.landingPath || "",
+          initial_referrer: attribution.initialReferrer || "",
+        },
+      });
+
+    if (error) {
+      console.error(
+        "Website purchase tracking error:",
+        error
+      );
+      return;
+    }
+
+    sessionStorage.setItem(
+      purchaseKey,
+      "1"
+    );
+  } catch (error) {
+    console.error(
+      "Unable to record purchase analytics:",
+      error
+    );
+  }
+}
+
 type RazorpayOrderResponse = {
   id: string;
   amount: number;
@@ -745,6 +925,17 @@ export default function PaymentPage() {
         "new-city-style-last-order-id",
         String(data.id)
       );
+
+      await recordPurchaseAnalytics({
+        orderId: data.id,
+        total,
+        subtotal,
+        shipping,
+        tax,
+        paymentMethod: method,
+        paymentStatus,
+        items: cartItems,
+      });
 
       /*
        * Send both WhatsApp messages before navigating away.

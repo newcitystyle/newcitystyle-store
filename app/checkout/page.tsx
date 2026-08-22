@@ -61,6 +61,163 @@ const defaultShippingSettings: ShippingSettings = {
   tax_percent: 5,
 };
 
+type StoredAttribution = {
+  source?: string;
+  medium?: string;
+  campaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
+  fbclid?: string;
+  landingUrl?: string;
+  landingPath?: string;
+  initialReferrer?: string;
+};
+
+function getAnalyticsDeviceType() {
+  const userAgent = navigator.userAgent.toLowerCase();
+
+  if (/tablet|ipad|playbook|silk/.test(userAgent)) {
+    return "tablet";
+  }
+
+  if (
+    /mobile|iphone|ipod|android|blackberry|opera mini|iemobile/.test(
+      userAgent
+    )
+  ) {
+    return "mobile";
+  }
+
+  return "desktop";
+}
+
+function getAnalyticsBrowserName() {
+  const userAgent = navigator.userAgent;
+
+  if (userAgent.includes("Edg/")) return "Edge";
+  if (userAgent.includes("OPR/") || userAgent.includes("Opera")) return "Opera";
+  if (userAgent.includes("Chrome/")) return "Chrome";
+  if (userAgent.includes("Firefox/")) return "Firefox";
+
+  if (
+    userAgent.includes("Safari/") &&
+    !userAgent.includes("Chrome/")
+  ) {
+    return "Safari";
+  }
+
+  return "Unknown";
+}
+
+function getStoredAttribution(): StoredAttribution {
+  try {
+    const raw = sessionStorage.getItem("ncs_visit_attribution");
+
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as StoredAttribution;
+
+    return parsed && typeof parsed === "object"
+      ? parsed
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+async function recordCheckoutAnalytics({
+  eventType,
+  total,
+  subtotal,
+  shipping,
+  tax,
+  items,
+}: {
+  eventType: "checkout" | "checkout_continue";
+  total: number;
+  subtotal: number;
+  shipping: number;
+  tax: number;
+  items: CartItem[];
+}) {
+  try {
+    const visitorId =
+      localStorage.getItem("ncs_visitor_id") || "";
+
+    const sessionId =
+      sessionStorage.getItem("ncs_session_id") || "";
+
+    if (!visitorId || !sessionId) {
+      return;
+    }
+
+    const attribution = getStoredAttribution();
+
+    const { error } = await supabase
+      .from("website_visits")
+      .insert({
+        visitor_id: visitorId,
+        session_id: sessionId,
+        page_path: window.location.pathname,
+        page_title: document.title || "Checkout",
+        referrer: document.referrer || "",
+        device_type: getAnalyticsDeviceType(),
+        browser: getAnalyticsBrowserName(),
+        visited_at: new Date().toISOString(),
+
+        source: attribution.source || "direct",
+        medium: attribution.medium || "none",
+        campaign: attribution.campaign || "",
+        utm_content: attribution.utmContent || "",
+        utm_term: attribution.utmTerm || "",
+        fbclid: attribution.fbclid || "",
+
+        event_type: eventType,
+        event_value: total,
+
+        metadata: {
+          subtotal,
+          shipping,
+          tax,
+          total,
+          item_count: items.reduce(
+            (sum, item) => sum + Number(item.quantity || 0),
+            0
+          ),
+          unique_products: items.length,
+          product_ids: items.map((item) => item.product_id),
+          items: items.map((item) => ({
+            product_id: item.product_id,
+            name: item.name,
+            price: Number(item.price || 0),
+            quantity: Number(item.quantity || 0),
+            size: item.size || null,
+            design_unit_id: item.design_unit_id || null,
+            variant_id: item.variant_id || null,
+            barcode: item.barcode || null,
+          })),
+          landing_url: attribution.landingUrl || "",
+          landing_path: attribution.landingPath || "",
+          initial_referrer: attribution.initialReferrer || "",
+        },
+      });
+
+    if (error) {
+      console.error(
+        `Website ${eventType} tracking error:`,
+        error
+      );
+    }
+  } catch (error) {
+    console.error(
+      `Unable to record ${eventType} analytics:`,
+      error
+    );
+  }
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
 
@@ -236,6 +393,65 @@ export default function CheckoutPage() {
 
   const total = subtotal + shipping + tax;
 
+  useEffect(() => {
+    if (
+      loading ||
+      cartItems.length === 0
+    ) {
+      return;
+    }
+
+    const sessionId =
+      sessionStorage.getItem("ncs_session_id") || "";
+
+    if (!sessionId) {
+      return;
+    }
+
+    const cartSignature = cartItems
+      .map(
+        (item) =>
+          `${item.product_id}:${item.quantity}:${item.size || ""}:${item.design_unit_id || ""}`
+      )
+      .sort()
+      .join("|");
+
+    const checkoutTrackKey =
+      `ncs_checkout_tracked_${sessionId}_${cartSignature}`;
+
+    if (
+      sessionStorage.getItem(checkoutTrackKey) === "1"
+    ) {
+      return;
+    }
+
+    sessionStorage.setItem(
+      checkoutTrackKey,
+      "1"
+    );
+
+    recordCheckoutAnalytics({
+      eventType: "checkout",
+      total,
+      subtotal,
+      shipping,
+      tax,
+      items: cartItems,
+    }).catch((error) => {
+      console.error(
+        "Checkout analytics promise error:",
+        error
+      );
+    });
+  }, [
+    loading,
+    cartItems,
+    subtotal,
+    shipping,
+    tax,
+    total,
+  ]);
+
   function updateField(
     field: keyof CheckoutDetails,
     event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -347,6 +563,20 @@ export default function CheckoutPage() {
         items: cleanItems,
       })
     );
+
+    recordCheckoutAnalytics({
+      eventType: "checkout_continue",
+      total,
+      subtotal,
+      shipping,
+      tax,
+      items: cleanItems,
+    }).catch((error) => {
+      console.error(
+        "Continue-to-payment analytics error:",
+        error
+      );
+    });
 
     router.push("/payment");
   }

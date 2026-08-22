@@ -369,6 +369,233 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+type StoredVisitAttribution = {
+  source?: string;
+  medium?: string;
+  campaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
+  fbclid?: string;
+  landingUrl?: string;
+  landingPath?: string;
+  initialReferrer?: string;
+};
+
+function createAnalyticsId(prefix: string) {
+  return `${prefix}_${Date.now()}_${Math.random()
+    .toString(36)
+    .slice(2, 12)}`;
+}
+
+function getAnalyticsVisitorId() {
+  const storageKey = "ncs_visitor_id";
+
+  let visitorId = localStorage.getItem(storageKey);
+
+  if (!visitorId) {
+    visitorId = createAnalyticsId("visitor");
+    localStorage.setItem(storageKey, visitorId);
+  }
+
+  return visitorId;
+}
+
+function getAnalyticsSessionId() {
+  const storageKey = "ncs_session_id";
+
+  let sessionId = sessionStorage.getItem(storageKey);
+
+  if (!sessionId) {
+    sessionId = createAnalyticsId("session");
+    sessionStorage.setItem(storageKey, sessionId);
+  }
+
+  return sessionId;
+}
+
+function getAnalyticsDeviceType() {
+  const userAgent = navigator.userAgent.toLowerCase();
+
+  if (/tablet|ipad|playbook|silk/.test(userAgent)) {
+    return "tablet";
+  }
+
+  if (
+    /mobile|iphone|ipod|android|blackberry|opera mini|iemobile/.test(
+      userAgent
+    )
+  ) {
+    return "mobile";
+  }
+
+  return "desktop";
+}
+
+function getAnalyticsBrowserName() {
+  const userAgent = navigator.userAgent;
+
+  if (userAgent.includes("Edg/")) return "Edge";
+
+  if (
+    userAgent.includes("OPR/") ||
+    userAgent.includes("Opera")
+  ) {
+    return "Opera";
+  }
+
+  if (userAgent.includes("Chrome/")) return "Chrome";
+  if (userAgent.includes("Firefox/")) return "Firefox";
+
+  if (
+    userAgent.includes("Safari/") &&
+    !userAgent.includes("Chrome/")
+  ) {
+    return "Safari";
+  }
+
+  return "Unknown";
+}
+
+function readStoredVisitAttribution(): StoredVisitAttribution {
+  try {
+    const raw =
+      sessionStorage.getItem(
+        "ncs_visit_attribution"
+      );
+
+    if (!raw) {
+      return {};
+    }
+
+    const parsed =
+      JSON.parse(
+        raw
+      ) as StoredVisitAttribution;
+
+    return parsed || {};
+  } catch {
+    return {};
+  }
+}
+
+async function trackProductAnalyticsEvent(
+  eventType: "product_view" | "add_to_cart",
+  product: Product,
+  options?: {
+    quantity?: number;
+    size?: string;
+    designUnitId?: number | null;
+    designName?: string | null;
+    action?: string;
+  }
+) {
+  try {
+    const attribution =
+      readStoredVisitAttribution();
+
+    const numericProductId =
+      Number(product.id);
+
+    const productId =
+      Number.isFinite(numericProductId) &&
+      numericProductId > 0
+        ? numericProductId
+        : null;
+
+    const eventValue =
+      Number(product.price ?? 0);
+
+    const { error } =
+      await supabase
+        .from("website_visits")
+        .insert({
+          visitor_id:
+            getAnalyticsVisitorId(),
+          session_id:
+            getAnalyticsSessionId(),
+          page_path:
+            window.location.pathname,
+          page_title:
+            document.title || "",
+          referrer:
+            document.referrer || "",
+          device_type:
+            getAnalyticsDeviceType(),
+          browser:
+            getAnalyticsBrowserName(),
+          visited_at:
+            new Date().toISOString(),
+
+          source:
+            attribution.source ||
+            "direct",
+          medium:
+            attribution.medium ||
+            "none",
+          campaign:
+            attribution.campaign ||
+            "",
+          utm_content:
+            attribution.utmContent ||
+            "",
+          utm_term:
+            attribution.utmTerm ||
+            "",
+          fbclid:
+            attribution.fbclid ||
+            "",
+
+          event_type:
+            eventType,
+          product_id:
+            productId,
+          event_value:
+            Number.isFinite(eventValue)
+              ? eventValue
+              : 0,
+
+          metadata: {
+            product_name:
+              getProductName(product),
+            brand:
+              product.brand || "",
+            category:
+              product.category || "",
+            subcategory:
+              product.subcategory || "",
+            quantity:
+              options?.quantity ?? 1,
+            size:
+              options?.size || "",
+            design_unit_id:
+              options?.designUnitId ?? null,
+            design_name:
+              options?.designName || "",
+            action:
+              options?.action || "",
+            landing_url:
+              attribution.landingUrl || "",
+            landing_path:
+              attribution.landingPath || "",
+            current_url:
+              window.location.href,
+          },
+        });
+
+    if (error) {
+      console.error(
+        `${eventType} analytics error:`,
+        error
+      );
+    }
+  } catch (error) {
+    console.error(
+      `Unable to record ${eventType} analytics:`,
+      error
+    );
+  }
+}
+
 export default function ProductPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -396,6 +623,9 @@ export default function ProductPage() {
   >("details");
 
   const imageAreaRef = useRef<HTMLDivElement | null>(null);
+
+  const trackedProductViewRef =
+    useRef<string>("");
 
   useEffect(() => {
     loadProduct();
@@ -547,6 +777,63 @@ export default function ProductPage() {
       }
 
       setQuantity(1);
+
+      const productViewKey =
+        `${loadedProduct.id}|${window.location.search}`;
+
+      if (
+        trackedProductViewRef.current !==
+        productViewKey
+      ) {
+        trackedProductViewRef.current =
+          productViewKey;
+
+        const requestedDesignForTracking =
+          typeof window !== "undefined"
+            ? Number(
+                new URLSearchParams(
+                  window.location.search
+                ).get("design") || 0
+              )
+            : 0;
+
+        const trackedDesign =
+          requestedDesignForTracking > 0
+            ? cleanDesignUnits.find(
+                (unit) =>
+                  unit.id ===
+                  requestedDesignForTracking
+              ) || null
+            : availableDesignUnits[0] || null;
+
+        void trackProductAnalyticsEvent(
+          "product_view",
+          loadedProduct,
+          {
+            quantity: 1,
+            size:
+              trackedDesign
+                ? cleanVariantRefs.find(
+                    (variant) =>
+                      variant.id ===
+                      cleanDesignVariantLinks.find(
+                        (link) =>
+                          link.designUnitId ===
+                            trackedDesign.id &&
+                          link.status ===
+                            "available"
+                      )?.variantId
+                  )?.size || ""
+                : "",
+            designUnitId:
+              trackedDesign?.id ?? null,
+            designName:
+              trackedDesign?.designName || "",
+            action:
+              "product_page_open",
+          }
+        );
+      }
     } catch (error) {
       console.error("Load product error:", error);
       setProduct(null);
@@ -754,6 +1041,29 @@ export default function ProductPage() {
 
         if (error) throw error;
       }
+
+      await trackProductAnalyticsEvent(
+        "add_to_cart",
+        product,
+        {
+          quantity:
+            designMode ? 1 : quantity,
+          size:
+            selectedSize,
+          designUnitId:
+            designMode
+              ? selectedDesignId
+              : null,
+          designName:
+            designMode
+              ? selectedDesign?.designName || ""
+              : "",
+          action:
+            goToCart
+              ? "add_to_cart"
+              : "buy_now",
+        }
+      );
 
       if (goToCart) {
         alert("Product Added To Cart");
