@@ -145,6 +145,9 @@ type PosDesignChoice = {
   imageUrl: string;
   status: string;
   sortOrder: number;
+  purchaseId: string;
+  purchaseNumber: string;
+  purchaseDate: string;
 };
 
 type PosDesignUnitRow = {
@@ -154,6 +157,7 @@ type PosDesignUnitRow = {
   image_url?: string | null;
   status?: string | null;
   sort_order?: number | string | null;
+  purchase_id?: string | null;
 };
 
 type PosDesignVariantRow = {
@@ -164,7 +168,79 @@ type PosDesignVariantRow = {
   status?: string | null;
 };
 
-const POS_DESIGN_CACHE_KEY = "ncs_pos_design_choices_v1";
+type PosDesignPurchaseRow = {
+  id: string;
+  purchase_number?: string | null;
+  purchase_date?: string | null;
+};
+
+type PosDesignBatchGroup = {
+  key: string;
+  title: string;
+  subtitle: string;
+  purchaseDate: string;
+  choices: PosDesignChoice[];
+};
+
+function groupPosDesignChoicesByPurchase(
+  choices: PosDesignChoice[],
+): PosDesignBatchGroup[] {
+  const grouped = new Map<string, PosDesignChoice[]>();
+
+  choices.forEach((choice) => {
+    const key = choice.purchaseId || "__unbatched__";
+    grouped.set(key, [...(grouped.get(key) || []), choice]);
+  });
+
+  const batches = Array.from(grouped.entries()).map(
+    ([key, batchChoices]) => {
+      const first = batchChoices[0];
+      const purchaseDate = first?.purchaseDate || "";
+      const purchaseNumber = first?.purchaseNumber || "";
+
+      return {
+        key,
+        title:
+          key === "__unbatched__"
+            ? "Older Stock"
+            : purchaseNumber || "Purchase Batch",
+        subtitle:
+          key === "__unbatched__"
+            ? "Old photos saved before purchase-batch tracking"
+            : purchaseDate
+              ? new Date(`${purchaseDate}T00:00:00`).toLocaleDateString("en-IN", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })
+              : "Purchase batch",
+        purchaseDate,
+        choices: [...batchChoices].sort(
+          (a, b) =>
+            a.sortOrder - b.sortOrder ||
+            b.designUnitId - a.designUnitId,
+        ),
+      };
+    },
+  );
+
+  return batches.sort((a, b) => {
+    if (a.key === "__unbatched__") return 1;
+    if (b.key === "__unbatched__") return -1;
+
+    const dateCompare =
+      (b.purchaseDate || "").localeCompare(a.purchaseDate || "");
+
+    if (dateCompare !== 0) return dateCompare;
+
+    return (
+      Math.max(...b.choices.map((choice) => choice.designUnitId)) -
+      Math.max(...a.choices.map((choice) => choice.designUnitId))
+    );
+  });
+}
+
+const POS_DESIGN_CACHE_KEY = "ncs_pos_design_choices_v2";
 
 type QuickItemForm = {
   name: string;
@@ -2272,7 +2348,9 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
       const [designResponse, mappingResponse] = await Promise.all([
         supabase
           .from("product_design_units")
-          .select("id,product_id,design_name,image_url,status,sort_order")
+          .select(
+            "id,product_id,design_name,image_url,status,sort_order,purchase_id",
+          )
           .neq("status", "hidden")
           .order("sort_order", { ascending: true }),
         supabase
@@ -2285,7 +2363,34 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
       if (mappingResponse.error) throw mappingResponse.error;
 
       const units = (designResponse.data || []) as unknown as PosDesignUnitRow[];
-      const mappings = (mappingResponse.data || []) as unknown as PosDesignVariantRow[];
+      const mappings =
+        (mappingResponse.data || []) as unknown as PosDesignVariantRow[];
+
+      const purchaseIds = Array.from(
+        new Set(
+          units
+            .map((unit) => unit.purchase_id?.trim() || "")
+            .filter(Boolean),
+        ),
+      );
+
+      const purchaseMap = new Map<string, PosDesignPurchaseRow>();
+
+      if (purchaseIds.length > 0) {
+        const purchaseResponse = await supabase
+          .from("purchases")
+          .select("id,purchase_number,purchase_date")
+          .in("id", purchaseIds);
+
+        if (purchaseResponse.error) throw purchaseResponse.error;
+
+        (
+          (purchaseResponse.data || []) as unknown as PosDesignPurchaseRow[]
+        ).forEach((purchase) => {
+          purchaseMap.set(String(purchase.id), purchase);
+        });
+      }
+
       const unitMap = new Map<number, PosDesignUnitRow>();
       units.forEach((unit) => unitMap.set(Number(unit.id), unit));
 
@@ -2295,22 +2400,38 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
         const designUnitId = Number(mapping.design_unit_id);
         const unit = unitMap.get(designUnitId);
         if (!variantId || !designUnitId || !unit) return;
+
+        const purchaseId = unit.purchase_id?.trim() || "";
+        const purchase = purchaseId
+          ? purchaseMap.get(purchaseId)
+          : undefined;
+
         const key = String(variantId);
         const choice: PosDesignChoice = {
           mappingId: Number(mapping.id),
           productId: Number(mapping.product_id || unit.product_id),
           variantId,
           designUnitId,
-          designName: unit.design_name?.trim() || `Design ${designUnitId}`,
+          designName:
+            unit.design_name?.trim() || `Design ${designUnitId}`,
           imageUrl: unit.image_url?.trim() || "",
           status: mapping.status?.trim() || "available",
           sortOrder: Math.max(0, toNumber(unit.sort_order)),
+          purchaseId,
+          purchaseNumber:
+            purchase?.purchase_number?.trim() || "",
+          purchaseDate:
+            purchase?.purchase_date?.trim() || "",
         };
         next[key] = [...(next[key] || []), choice];
       });
 
       Object.keys(next).forEach((key) => {
-        next[key] = next[key].sort((a, b) => a.sortOrder - b.sortOrder || a.designUnitId - b.designUnitId);
+        next[key] = next[key].sort(
+          (a, b) =>
+            (b.purchaseDate || "").localeCompare(a.purchaseDate || "") ||
+            b.designUnitId - a.designUnitId,
+        );
       });
 
       setDesignChoicesByVariant(next);
@@ -6986,19 +7107,70 @@ if (!variantsError) {
               </div>
               <button type="button" onClick={() => setDesignPickerProduct(null)} aria-label="Close design picker">×</button>
             </header>
-            <div className="ncsPosDesignPickerGrid">
-              {(designChoicesByVariant[String(designPickerProduct.variantId || "")] || [])
-                .filter((choice) => !cartItems.some((item) => item.variantId === designPickerProduct.variantId && item.designUnitId === choice.designUnitId))
-                .map((choice, index) => (
-                  <button key={`${choice.mappingId}-${choice.designUnitId}`} type="button" className="ncsPosDesignChoice" onClick={() => selectPosDesign(choice)}>
-                    <div className="ncsPosDesignChoiceImage">
-                      {choice.imageUrl ? <img src={choice.imageUrl} alt={choice.designName} /> : <span>NCS</span>}
-                      <b>{index + 1}</b>
+            <div className="ncsPosDesignPickerBatches">
+              {groupPosDesignChoicesByPurchase(
+                (
+                  designChoicesByVariant[
+                    String(designPickerProduct.variantId || "")
+                  ] || []
+                ).filter(
+                  (choice) =>
+                    !cartItems.some(
+                      (item) =>
+                        item.variantId === designPickerProduct.variantId &&
+                        item.designUnitId === choice.designUnitId,
+                    ),
+                ),
+              ).map((batch, batchIndex) => (
+                <section
+                  key={batch.key}
+                  className={`ncsPosDesignBatch ${
+                    batchIndex === 0 ? "isLatest" : ""
+                  }`}
+                >
+                  <div className="ncsPosDesignBatchHeader">
+                    <div>
+                      <span>
+                        {batchIndex === 0 && batch.key !== "__unbatched__"
+                          ? "LATEST PURCHASE"
+                          : batch.key === "__unbatched__"
+                            ? "OLDER / UNLINKED"
+                            : "PREVIOUS PURCHASE"}
+                      </span>
+                      <strong>{batch.title}</strong>
+                      <small>{batch.subtitle}</small>
                     </div>
-                    <strong>{choice.designName}</strong>
-                    <small>Tap this photo if this is the item at the counter</small>
-                  </button>
-                ))}
+                    <b>{batch.choices.length} photos</b>
+                  </div>
+
+                  <div className="ncsPosDesignPickerGrid">
+                    {batch.choices.map((choice, index) => (
+                      <button
+                        key={`${choice.mappingId}-${choice.designUnitId}`}
+                        type="button"
+                        className="ncsPosDesignChoice"
+                        onClick={() => selectPosDesign(choice)}
+                      >
+                        <div className="ncsPosDesignChoiceImage">
+                          {choice.imageUrl ? (
+                            <img
+                              src={choice.imageUrl}
+                              alt={choice.designName}
+                            />
+                          ) : (
+                            <span>NCS</span>
+                          )}
+                          <b>{index + 1}</b>
+                        </div>
+                        <strong>{choice.designName}</strong>
+                        <small>
+                          Tap this photo if this is the item at the counter
+                        </small>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ))}
             </div>
             <footer><span>Only the tapped design + this size will be hidden online after the bill completes.</span></footer>
           </section>
@@ -17567,7 +17739,7 @@ if (!variantsError) {
         .ncsPosDesignPicker>header span{color:#d4af37;font-size:9px;font-weight:1000;letter-spacing:1.2px}.ncsPosDesignPicker>header h2{margin:4px 0 2px;font-size:22px;font-weight:1000}.ncsPosDesignPicker>header p{margin:0;color:rgba(255,255,255,.76);font-size:11px;font-weight:750}
         .ncsPosDesignPicker>header>button{width:38px;height:38px;flex:0 0 auto;border:1px solid rgba(255,255,255,.36);border-radius:12px;background:rgba(255,255,255,.10);color:#fff;font-size:24px;cursor:pointer}
         .ncsPosDesignPickerGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;max-height:560px;overflow:auto;padding:16px;background:linear-gradient(180deg,#fff,#f8f4ec)}
-        .ncsPosDesignChoice{min-width:0;padding:8px;border:1px solid #dbe3ee;border-radius:16px;background:#fff;text-align:left;cursor:pointer;box-shadow:0 8px 20px rgba(3,21,63,.08);transition:.14s ease}.ncsPosDesignChoice:hover{transform:translateY(-2px);border-color:#d4af37;box-shadow:0 12px 28px rgba(3,21,63,.14)}
+        .ncsPosDesignPickerBatches{display:grid;gap:14px;padding:14px;overflow:auto;background:linear-gradient(180deg,#fbfcff,#f4f8fc)}.ncsPosDesignBatch{border:1px solid #dbe3ee;border-radius:18px;background:#fff;overflow:hidden;box-shadow:0 8px 24px rgba(3,21,63,.06)}.ncsPosDesignBatch.isLatest{border:2px solid #d4af37;box-shadow:0 12px 30px rgba(212,175,55,.18)}.ncsPosDesignBatchHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:linear-gradient(135deg,#03153f,#0a2e73);color:#fff}.ncsPosDesignBatchHeader>div{min-width:0;display:grid;gap:2px}.ncsPosDesignBatchHeader span{font-size:8px;font-weight:1000;letter-spacing:.12em;color:#d4af37}.ncsPosDesignBatchHeader strong{font-size:12px;font-weight:1000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ncsPosDesignBatchHeader small{font-size:9px;font-weight:750;color:#e7edf8}.ncsPosDesignBatchHeader>b{flex:0 0 auto;padding:5px 8px;border-radius:999px;background:#fff;color:#0a2e73;font-size:9px;font-weight:1000}.ncsPosDesignBatch .ncsPosDesignPickerGrid{padding:10px;background:#fff}.ncsPosDesignChoice{min-width:0;padding:8px;border:1px solid #dbe3ee;border-radius:16px;background:#fff;text-align:left;cursor:pointer;box-shadow:0 8px 20px rgba(3,21,63,.08);transition:.14s ease}.ncsPosDesignChoice:hover{transform:translateY(-2px);border-color:#d4af37;box-shadow:0 12px 28px rgba(3,21,63,.14)}
         .ncsPosDesignChoiceImage{position:relative;width:100%;aspect-ratio:4/5;overflow:hidden;border-radius:12px;background:#eef2f7}.ncsPosDesignChoiceImage img{width:100%;height:100%;object-fit:cover;display:block}.ncsPosDesignChoiceImage>span{width:100%;height:100%;display:grid;place-items:center;color:#0a2e73;font-weight:1000}.ncsPosDesignChoiceImage b{position:absolute;right:7px;top:7px;min-width:26px;height:26px;display:grid;place-items:center;padding:0 7px;border-radius:999px;background:#d4af37;color:#03153f;font-size:11px;font-weight:1000}
         .ncsPosDesignChoice>strong{display:block;margin:8px 2px 2px;color:#03153f;font-size:11px;font-weight:1000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ncsPosDesignChoice>small{display:block;margin:0 2px 2px;color:#64748b;font-size:8px;font-weight:750;line-height:1.35}.ncsPosDesignPicker>footer{padding:10px 16px 12px;border-top:1px solid #edf1f5;color:#0a2e73;font-size:9px;font-weight:850;text-align:center}
         .ncsPosCartDesignName{display:inline-flex;align-items:center;width:max-content;max-width:100%;margin-top:3px;padding:2px 7px;border:1px solid rgba(212,175,55,.55);border-radius:999px;background:#fff8df;color:#7a5a00;font-size:8px;font-weight:950;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
