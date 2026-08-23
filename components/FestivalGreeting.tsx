@@ -92,6 +92,68 @@ function festivalIcon(name: string, key: string) {
   return "✦";
 }
 
+function festivalMotifs(name: string, key: string) {
+  const text = `${name} ${key}`.toLowerCase();
+
+  if (text.includes("sankranti")) {
+    return ["🪁", "🌾", "☀️"];
+  }
+
+  if (text.includes("ugadi")) {
+    return ["🌿", "🥭", "🌼"];
+  }
+
+  if (text.includes("diwali")) {
+    return ["🪔", "✨", "🪔"];
+  }
+
+  if (text.includes("dussehra") || text.includes("dashami")) {
+    return ["🌺", "✨", "🏹"];
+  }
+
+  if (text.includes("vinayaka") || text.includes("ganesh")) {
+    return ["🌺", "🪔", "🌿"];
+  }
+
+  if (text.includes("janmashtami") || text.includes("krishna")) {
+    return ["🦚", "🪈", "🌼"];
+  }
+
+  if (text.includes("shivaratri")) {
+    return ["🔱", "🌙", "🪔"];
+  }
+
+  if (text.includes("holi")) {
+    return ["🎨", "🌈", "✨"];
+  }
+
+  if (text.includes("eid")) {
+    return ["🌙", "⭐", "✨"];
+  }
+
+  if (text.includes("christmas")) {
+    return ["🎄", "⭐", "🎁"];
+  }
+
+  if (text.includes("republic") || text.includes("independence")) {
+    return ["🟧", "⚪", "🟩"];
+  }
+
+  if (text.includes("gandhi")) {
+    return ["🕊️", "🌿", "✦"];
+  }
+
+  if (text.includes("new year")) {
+    return ["🎉", "✨", "🎊"];
+  }
+
+  if (text.includes("good friday")) {
+    return ["🕊️", "✦", "🌿"];
+  }
+
+  return ["✦", "◇", "✦"];
+}
+
 function getPhaseLabel(item: ActiveFestival) {
   if (item.isFestivalDay) return "TODAY • CELEBRATION";
 
@@ -281,6 +343,11 @@ export default function FestivalGreeting() {
     campaign.festival_key
   );
 
+  const motifs = festivalMotifs(
+    campaign.festival_name,
+    campaign.festival_key
+  );
+
   const phaseLabel = getPhaseLabel(campaign);
 
   return (
@@ -327,8 +394,27 @@ export default function FestivalGreeting() {
           </div>
         ) : (
           <div className="festivalVisual">
+            <div className="festivalTopOrnament">
+              <span>{motifs[0]}</span>
+              <i />
+              <span>{motifs[1]}</span>
+              <i />
+              <span>{motifs[2]}</span>
+            </div>
+
+            <div className="festivalHalo haloOuter" />
+            <div className="festivalHalo haloMiddle" />
+
             <div className="festivalIconRing">
               <div className="festivalIcon">{icon}</div>
+            </div>
+
+            <div className="festivalMotif motifLeft">{motifs[0]}</div>
+            <div className="festivalMotif motifRight">{motifs[2]}</div>
+
+            <div className="festivalVisualCaption">
+              <small>CELEBRATING</small>
+              <strong>{campaign.festival_name}</strong>
             </div>
 
             <div className="miniBrand">NCS</div>
@@ -533,6 +619,133 @@ export default function FestivalGreeting() {
               ),
               var(--festival-primary)
             );
+        }
+
+        .festivalTopOrnament {
+          position: absolute;
+          top: 28px;
+          left: 50%;
+          z-index: 6;
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          transform: translateX(-50%);
+          color: var(--festival-secondary);
+          font-size: 18px;
+          filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.18));
+        }
+
+        .festivalTopOrnament i {
+          width: 26px;
+          height: 1px;
+          background:
+            linear-gradient(
+              90deg,
+              transparent,
+              var(--festival-secondary),
+              transparent
+            );
+          opacity: 0.7;
+        }
+
+        .festivalHalo {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          pointer-events: none;
+          border-radius: 50%;
+          transform: translate(-50%, -50%);
+        }
+
+        .haloOuter {
+          width: 340px;
+          height: 340px;
+          border:
+            1px solid
+            color-mix(
+              in srgb,
+              var(--festival-secondary) 24%,
+              transparent
+            );
+          box-shadow:
+            0 0 55px
+            color-mix(
+              in srgb,
+              var(--festival-secondary) 8%,
+              transparent
+            );
+          animation: haloPulse 5.8s ease-in-out infinite;
+        }
+
+        .haloMiddle {
+          width: 260px;
+          height: 260px;
+          border:
+            1px dashed
+            color-mix(
+              in srgb,
+              var(--festival-secondary) 34%,
+              transparent
+            );
+          animation: haloSpin 15s linear infinite;
+        }
+
+        .festivalMotif {
+          position: absolute;
+          z-index: 4;
+          top: 50%;
+          font-size: 34px;
+          opacity: 0.82;
+          filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.22));
+          animation: motifFloat 4.8s ease-in-out infinite;
+        }
+
+        .motifLeft {
+          left: 12%;
+          transform: translateY(-50%) rotate(-8deg);
+        }
+
+        .motifRight {
+          right: 12%;
+          transform: translateY(-50%) rotate(8deg);
+          animation-delay: 0.9s;
+        }
+
+        .festivalVisualCaption {
+          position: absolute;
+          left: 50%;
+          bottom: 69px;
+          z-index: 6;
+          width: 78%;
+          text-align: center;
+          transform: translateX(-50%);
+        }
+
+        .festivalVisualCaption small,
+        .festivalVisualCaption strong {
+          display: block;
+        }
+
+        .festivalVisualCaption small {
+          color: rgba(255, 255, 255, 0.48);
+          font-size: 8px;
+          font-weight: 900;
+          letter-spacing: 2px;
+        }
+
+        .festivalVisualCaption strong {
+          margin-top: 6px;
+          color:
+            color-mix(
+              in srgb,
+              var(--festival-secondary) 88%,
+              white 12%
+            );
+          font-family: "Playfair Display", Georgia, serif;
+          font-size: 20px;
+          font-weight: 900;
+          line-height: 1.1;
+          text-wrap: balance;
         }
 
         .festivalVisual::before,
@@ -977,6 +1190,40 @@ export default function FestivalGreeting() {
           }
         }
 
+        @keyframes haloPulse {
+          0%,
+          100% {
+            opacity: 0.55;
+            transform: translate(-50%, -50%) scale(0.98);
+          }
+
+          50% {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1.04);
+          }
+        }
+
+        @keyframes haloSpin {
+          from {
+            transform: translate(-50%, -50%) rotate(0deg);
+          }
+
+          to {
+            transform: translate(-50%, -50%) rotate(360deg);
+          }
+        }
+
+        @keyframes motifFloat {
+          0%,
+          100% {
+            margin-top: 0;
+          }
+
+          50% {
+            margin-top: -12px;
+          }
+        }
+
         @keyframes imageZoom {
           from {
             transform: scale(1.07);
@@ -1015,6 +1262,34 @@ export default function FestivalGreeting() {
           .festivalImageWrap img {
             min-height: 205px;
             height: 205px;
+          }
+
+          .festivalHalo {
+            display: none;
+          }
+
+          .festivalTopOrnament {
+            top: 13px;
+          }
+
+          .festivalMotif {
+            font-size: 24px;
+          }
+
+          .motifLeft {
+            left: 10%;
+          }
+
+          .motifRight {
+            right: 10%;
+          }
+
+          .festivalVisualCaption {
+            bottom: 46px;
+          }
+
+          .festivalVisualCaption strong {
+            font-size: 16px;
           }
 
           .festivalIconRing {
@@ -1106,6 +1381,8 @@ export default function FestivalGreeting() {
           .festivalVisual::before,
           .festivalVisual::after,
           .festivalSpark,
+          .festivalHalo,
+          .festivalMotif,
           .festivalImageWrap img {
             animation: none !important;
           }
