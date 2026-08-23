@@ -869,53 +869,219 @@ export default function EditProductPage() {
     const files = Array.from(event.target.files || []);
     if (!files.length || !productId) return;
 
-    const selectedVariants = variantBarcodes.filter((variant) => selectedDesignVariantIds.includes(variant.id));
-    if (!selectedVariants.length) { alert("Select at least one size for these design photos first."); event.target.value = ""; return; }
+    const selectedVariants = variantBarcodes.filter((variant) =>
+      selectedDesignVariantIds.includes(variant.id)
+    );
+
+    if (!selectedVariants.length) {
+      alert("Select at least one size for these design photos first.");
+      event.target.value = "";
+      return;
+    }
 
     const validFiles = files.filter(validateImage);
-    if (!validFiles.length) { event.target.value = ""; return; }
+    if (!validFiles.length) {
+      event.target.value = "";
+      return;
+    }
 
     for (const variant of selectedVariants) {
-      const alreadyAssigned = designVariantLinks.filter((link) => link.variantId === variant.id && link.status === "available").length;
-      const remainingSlots = Math.max(0, Math.max(0, variant.stock) - alreadyAssigned);
+      const alreadyAssigned = designVariantLinks.filter(
+        (link) =>
+          link.variantId === variant.id &&
+          link.status === "available"
+      ).length;
+
+      const remainingSlots = Math.max(
+        0,
+        Math.max(0, variant.stock) - alreadyAssigned
+      );
+
       if (validFiles.length > remainingSlots) {
-        alert(`${variant.size || "Selected size"} can accept only ${remainingSlots} more design photo${remainingSlots === 1 ? "" : "s"}. Physical stock is ${variant.stock}.`);
-        event.target.value = ""; return;
+        alert(
+          `${variant.size || "Selected size"} can accept only ${remainingSlots} more design photo${remainingSlots === 1 ? "" : "s"}. Physical stock is ${variant.stock}.`
+        );
+        event.target.value = "";
+        return;
       }
     }
 
     setUploadingDesignUnits(true);
+    setDesignUnitStatus({
+      type: "idle",
+      message: "Uploading design photo...",
+    });
+
+    const insertedDesignIds: number[] = [];
+
     try {
-      const urls = await Promise.all(validFiles.map((file, index) => uploadFile(file, `design-units/multi-size/${Date.now()}-${index + 1}`)));
-      const nextSortBase = designUnits.reduce((max, unit) => Math.max(max, unit.sortOrder), 0) + 1;
+      // STEP 1: Upload media
+      setDesignUnitStatus({
+        type: "idle",
+        message: `Uploading ${validFiles.length} design photo${validFiles.length === 1 ? "" : "s"} to storage...`,
+      });
+
+      const urls = await Promise.all(
+        validFiles.map((file, index) =>
+          uploadFile(
+            file,
+            `design-units/multi-size/${Date.now()}-${index + 1}`
+          )
+        )
+      );
+
+      if (!urls.length || urls.some((url) => !url)) {
+        throw new Error("Storage upload returned an empty image URL.");
+      }
+
+      // STEP 2: Create design photo rows
+      setDesignUnitStatus({
+        type: "idle",
+        message: "Photo uploaded. Creating storefront design row...",
+      });
+
+      const nextSortBase =
+        designUnits.reduce(
+          (max, unit) => Math.max(max, unit.sortOrder),
+          0
+        ) + 1;
+
       const primaryVariant = selectedVariants[0];
+
       const rows = urls.map((url, index) => ({
-        product_id: Number(productId), parent_variant_id: primaryVariant.id, parent_barcode: primaryVariant.barcode || null,
-        design_name: `Design ${designUnits.length + index + 1}`, image_url: url, unit_quantity: 1, status: "available",
-        sort_order: nextSortBase + index, updated_at: new Date().toISOString(),
-      }));
-      const { data: insertedDesigns, error } = await supabase.from("product_design_units").insert(rows).select("id");
-      if (error) throw error;
-      const insertedIds = ((insertedDesigns || []) as Record<string, unknown>[]).map((row) => asNumber(row.id)).filter((id) => id > 0);
-      if (insertedIds.length !== rows.length) throw new Error("Uploaded design IDs could not be confirmed.");
-      const mappingRows = insertedIds.flatMap((designUnitId) => selectedVariants.map((variant) => ({
         product_id: Number(productId),
-        design_unit_id: designUnitId,
-        variant_id: variant.id,
+        parent_variant_id: primaryVariant.id,
+        parent_barcode: primaryVariant.barcode || null,
+        design_name: `Design ${designUnits.length + index + 1}`,
+        image_url: url,
+        unit_quantity: 1,
         status: "available",
-        mrp: getOptionalNumber(variant.mrp, getOptionalNumber(form.mrp, 0)) || null,
-        online_price: getOptionalNumber(variant.onlinePrice, Number(form.price || 0)) || null,
-        online_quantity: 1,
+        sort_order: nextSortBase + index,
         updated_at: new Date().toISOString(),
-      })));
-      const { error: mappingError } = await supabase.from("product_design_unit_variants").insert(mappingRows);
-      if (mappingError) throw mappingError;
+      }));
+
+      const {
+        data: insertedDesigns,
+        error: designInsertError,
+      } = await supabase
+        .from("product_design_units")
+        .insert(rows)
+        .select("id");
+
+      if (designInsertError) {
+        throw new Error(
+          `Design row creation failed: ${designInsertError.message}`
+        );
+      }
+
+      const createdIds = (
+        (insertedDesigns || []) as Record<string, unknown>[]
+      )
+        .map((row) => asNumber(row.id))
+        .filter((id) => id > 0);
+
+      if (createdIds.length !== rows.length) {
+        throw new Error(
+          "Design row creation did not return all new design IDs."
+        );
+      }
+
+      insertedDesignIds.push(...createdIds);
+
+      // STEP 3: Link each photo to selected physical sizes.
+      // Include independent price fields, but do not touch barcode or physical stock.
+      setDesignUnitStatus({
+        type: "idle",
+        message: "Design row created. Linking selected size...",
+      });
+
+      const mappingRows = createdIds.flatMap((designUnitId) =>
+        selectedVariants.map((variant) => ({
+          product_id: Number(productId),
+          design_unit_id: designUnitId,
+          variant_id: variant.id,
+          status: "available",
+          mrp:
+            getOptionalNumber(
+              variant.mrp,
+              getOptionalNumber(form.mrp, 0)
+            ) || null,
+          online_price:
+            getOptionalNumber(
+              variant.onlinePrice,
+              Number(form.price || 0)
+            ) || null,
+          online_quantity: 1,
+          updated_at: new Date().toISOString(),
+        }))
+      );
+
+      const { error: mappingError } = await supabase
+        .from("product_design_unit_variants")
+        .insert(mappingRows);
+
+      if (mappingError) {
+        throw new Error(
+          `Size link creation failed: ${mappingError.message}`
+        );
+      }
+
       await loadDesignUnits(Number(productId));
-      setDesignUnitStatus({ type: "success", message: `${validFiles.length} unique design photo${validFiles.length === 1 ? "" : "s"} uploaded once and linked to ${selectedVariants.map((v) => v.size || "Standard").join(", ")}. Barcodes and physical stock were not changed.` });
+
+      // Keep the owner on the size they just uploaded to.
+      if (selectedVariants.length === 1) {
+        setDesignSizeFilterId(selectedVariants[0].id);
+      }
+
+      setDesignUnitStatus({
+        type: "success",
+        message:
+          `${validFiles.length} design photo${validFiles.length === 1 ? "" : "s"} uploaded and linked to ` +
+          `${selectedVariants.map((v) => v.size || "Standard").join(", ")}. ` +
+          "Each design can now have its own MRP and online price.",
+      });
     } catch (error) {
-      setDesignUnitStatus({ type: "error", message: error instanceof Error ? `Design photo upload failed: ${error.message}` : "Design photo upload failed." });
-    } finally { setUploadingDesignUnits(false); event.target.value = ""; }
+      console.error("Design photo upload failed:", error);
+
+      // If the photo row was created but size-link creation failed,
+      // remove only those newly-created design rows so the page does not keep orphan cards.
+      if (insertedDesignIds.length > 0) {
+        try {
+          await supabase
+            .from("product_design_units")
+            .delete()
+            .in("id", insertedDesignIds)
+            .eq("product_id", Number(productId));
+        } catch (cleanupError) {
+          console.error(
+            "Unable to clean up incomplete design rows:",
+            cleanupError
+          );
+        }
+      }
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object" &&
+              error !== null &&
+              "message" in error
+            ? String(
+                (error as { message?: unknown }).message ||
+                  "Unknown Supabase error"
+              )
+            : String(error || "Unknown upload error");
+
+      setDesignUnitStatus({
+        type: "error",
+        message: `Design photo upload failed: ${message}`,
+      });
+    } finally {
+      setUploadingDesignUnits(false);
+      event.target.value = "";
+    }
   }
+
 
   function updateDesignUnitNameLocal(id: number, value: string) {
     setDesignUnits((current) =>
