@@ -287,6 +287,7 @@ export default function EditProductPage() {
   const [designUnits, setDesignUnits] = useState<DesignUnit[]>([]);
   const [designVariantLinks, setDesignVariantLinks] = useState<DesignVariantLink[]>([]);
   const [selectedDesignVariantIds, setSelectedDesignVariantIds] = useState<number[]>([]);
+  const [designSizeFilterId, setDesignSizeFilterId] = useState<number | "all">("all");
   const [loadingDesignUnits, setLoadingDesignUnits] = useState(false);
   const [uploadingDesignUnits, setUploadingDesignUnits] = useState(false);
   const [generatingDesignNames, setGeneratingDesignNames] = useState(false);
@@ -450,6 +451,19 @@ export default function EditProductPage() {
       }));
 
       setVariantBarcodes(cleanVariants);
+
+      // Keep the design grid clean on large merged products.
+      // Default to the first physical size instead of rendering every design at once.
+      setDesignSizeFilterId((current) => {
+        if (
+          current !== "all" &&
+          cleanVariants.some((variant) => variant.id === current)
+        ) {
+          return current;
+        }
+        return cleanVariants[0]?.id || "all";
+      });
+
       await loadDesignUnits(Number(productId));
 
       const primaryVariant = cleanVariants[0] || null;
@@ -959,6 +973,18 @@ export default function EditProductPage() {
   function getAvailableDesignLinks(designUnitId: number) {
     return designVariantLinks.filter((link) => link.designUnitId === designUnitId && link.status === "available");
   }
+
+  const filteredDesignUnits =
+    designSizeFilterId === "all"
+      ? designUnits
+      : designUnits.filter((unit) =>
+          designVariantLinks.some(
+            (link) =>
+              link.designUnitId === unit.id &&
+              link.variantId === designSizeFilterId &&
+              link.status !== "hidden"
+          )
+        );
 
   function toggleUploadVariant(variantId: number) {
     setSelectedDesignVariantIds((current) => current.includes(variantId) ? current.filter((id) => id !== variantId) : [...current, variantId]);
@@ -3175,6 +3201,92 @@ export default function EditProductPage() {
                     </div>
                   )}
 
+                    {variantBarcodes.length > 1 && (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                          marginTop: 10,
+                          marginBottom: 12,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 850,
+                            color: "#0A2E73",
+                            marginRight: 2,
+                          }}
+                        >
+                          Show designs:
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => setDesignSizeFilterId("all")}
+                          style={{
+                            minHeight: 34,
+                            padding: "0 12px",
+                            borderRadius: 10,
+                            border:
+                              designSizeFilterId === "all"
+                                ? "2px solid #0A2E73"
+                                : "1px solid #d0d5dd",
+                            background:
+                              designSizeFilterId === "all"
+                                ? "#eef4ff"
+                                : "#fff",
+                            color: "#0A2E73",
+                            fontWeight: 800,
+                            cursor: "pointer",
+                          }}
+                        >
+                          All
+                        </button>
+
+                        {variantBarcodes.map((variant) => (
+                          <button
+                            key={`design-size-filter-${variant.id}`}
+                            type="button"
+                            onClick={() => setDesignSizeFilterId(variant.id)}
+                            style={{
+                              minHeight: 34,
+                              padding: "0 12px",
+                              borderRadius: 10,
+                              border:
+                                designSizeFilterId === variant.id
+                                  ? "2px solid #0A2E73"
+                                  : "1px solid #d0d5dd",
+                              background:
+                                designSizeFilterId === variant.id
+                                  ? "#eef4ff"
+                                  : "#fff",
+                              color: "#0A2E73",
+                              fontWeight: 800,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {variant.size || "Standard"} ({variant.stock})
+                          </button>
+                        ))}
+
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: "#667085",
+                            marginLeft: 2,
+                          }}
+                        >
+                          {designSizeFilterId === "all"
+                            ? `${designUnits.length} designs`
+                            : `${filteredDesignUnits.length} designs`}
+                        </span>
+                      </div>
+                    )}
+
+
                   {designUnits.length > 0 && (
                     <div
                       style={{
@@ -3184,7 +3296,7 @@ export default function EditProductPage() {
                         marginTop: 14,
                       }}
                     >
-                      {designUnits.map((unit, index) => (
+                      {filteredDesignUnits.map((unit, index) => (
                         <div
                           key={unit.id}
                           style={{
