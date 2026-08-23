@@ -402,7 +402,15 @@ export default function FestivalGreeting() {
 
         <div className="festivalConfetti" aria-hidden="true">
           {Array.from({ length: 22 }).map((_, index) => (
-            <span key={index} style={{ "--i": index } as React.CSSProperties}>
+            <span
+              key={index}
+              style={{
+                left: `${(index * 43) % 100}%`,
+                fontSize: `${8 + (index % 5) * 2}px`,
+                animationDuration: `${5 + (index % 6) * 0.55}s`,
+                animationDelay: `${-(index % 8) * 0.47}s`,
+              }}
+            >
               {index % 3 === 0 ? "✦" : index % 3 === 1 ? "●" : "◆"}
             </span>
           ))}
@@ -548,6 +556,7 @@ export default function FestivalGreeting() {
 
         .festivalCard {
           position: relative;
+          isolation: isolate;
           width: min(980px, 100%);
           max-height: min(760px, calc(100dvh - 30px));
           display: grid;
@@ -573,7 +582,33 @@ export default function FestivalGreeting() {
           animation: cardIn 0.45s cubic-bezier(0.2, 0.85, 0.2, 1) both;
         }
 
-        .festivalColorFlow { position:absolute; inset:-30%; z-index:0; pointer-events:none; background:conic-gradient(from 0deg, transparent 0 9%, color-mix(in srgb,var(--festival-accent-1) 20%,transparent) 14%, transparent 22% 35%, color-mix(in srgb,var(--festival-accent-2) 18%,transparent) 42%, transparent 52% 67%, color-mix(in srgb,var(--festival-accent-3) 17%,transparent) 74%, transparent 82% 100%); filter:blur(38px); opacity:.9; animation:colorFlow 14s linear infinite; }\n\n        .festivalConfetti { position:absolute; inset:0; z-index:3; overflow:hidden; pointer-events:none; }\n        .festivalConfetti span { position:absolute; top:-10%; left:calc((var(--i) * 43) % 100 * 1%); color:var(--festival-accent-4); font-size:calc(8px + (var(--i) % 5) * 2px); opacity:0; animation:confettiFall calc(5s + (var(--i) % 6) * .55s) linear infinite; animation-delay:calc((var(--i) % 8) * -.47s); text-shadow:0 0 12px currentColor; }\n        .festivalConfetti span:nth-child(3n+1){color:var(--festival-accent-1)}\n        .festivalConfetti span:nth-child(3n+2){color:var(--festival-accent-2)}\n        .festivalConfetti span:nth-child(4n){color:var(--festival-accent-3)}\n\n        .festivalFirework { position:absolute; z-index:2; width:120px; height:120px; pointer-events:none; opacity:0; animation:fireworkFlash 4.8s ease-out infinite; }\n        .fireworkOne{top:7%;left:8%}.fireworkTwo{top:10%;right:8%;animation-delay:1.5s}.fireworkThree{right:24%;bottom:8%;animation-delay:3s}\n        .festivalFirework i{position:absolute;left:50%;top:50%;width:3px;height:48px;border-radius:99px;transform-origin:50% 0;background:linear-gradient(to bottom,var(--festival-accent-4),transparent);box-shadow:0 0 12px color-mix(in srgb,var(--festival-accent-4) 70%,transparent)}\n        .festivalFirework i:nth-child(1){transform:rotate(0deg)}.festivalFirework i:nth-child(2){transform:rotate(45deg)}.festivalFirework i:nth-child(3){transform:rotate(90deg)}.festivalFirework i:nth-child(4){transform:rotate(135deg)}.festivalFirework i:nth-child(5){transform:rotate(180deg)}.festivalFirework i:nth-child(6){transform:rotate(225deg)}.festivalFirework i:nth-child(7){transform:rotate(270deg)}.festivalFirework i:nth-child(8){transform:rotate(315deg)}\n\n        .festivalOrbit{position:absolute;left:50%;top:50%;z-index:5;width:290px;height:290px;pointer-events:none;transform:translate(-50%,-50%);animation:orbitSpin 11s linear infinite}.festivalOrbit span{position:absolute;left:50%;top:-8px;font-size:26px;filter:drop-shadow(0 8px 16px rgba(0,0,0,.22));transform:translateX(-50%)}.orbitTwo{width:230px;height:230px;animation-duration:8s;animation-direction:reverse}.orbitThree{width:340px;height:340px;animation-duration:15s}.iconPulse{position:absolute;inset:16px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--festival-accent-4) 42%,transparent),transparent 68%);animation:iconPulse 2.4s ease-in-out infinite}\n\n        .premiumRibbon{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:8px;margin-bottom:14px;padding:8px 14px;border:1px solid color-mix(in srgb,var(--festival-accent-4) 48%,transparent);border-radius:999px;background:linear-gradient(90deg,color-mix(in srgb,var(--festival-accent-1) 18%,transparent),color-mix(in srgb,var(--festival-accent-2) 18%,transparent),color-mix(in srgb,var(--festival-accent-3) 18%,transparent));color:white;font-size:8px;font-weight:950;letter-spacing:1.5px;box-shadow:0 8px 24px rgba(0,0,0,.14),inset 0 0 18px rgba(255,255,255,.04)}.premiumRibbon::after{position:absolute;inset:-120% auto -120% -35%;width:26%;content:"";background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);transform:rotate(18deg);animation:ribbonShine 3s ease-in-out infinite}\n\n        .closeButton {
+        .festivalColorFlow { position:absolute; inset:-30%; z-index:0; pointer-events:none; background:conic-gradient(from 0deg, transparent 0 9%, color-mix(in srgb,var(--festival-accent-1) 20%,transparent) 14%, transparent 22% 35%, color-mix(in srgb,var(--festival-accent-2) 18%,transparent) 42%, transparent 52% 67%, color-mix(in srgb,var(--festival-accent-3) 17%,transparent) 74%, transparent 82% 100%); filter:blur(38px); opacity:.9; animation:colorFlow 14s linear infinite; }
+
+        .festivalConfetti { position:absolute; inset:0; z-index:3; overflow:hidden; pointer-events:none; }
+        .festivalConfetti span {
+          position: absolute;
+          top: -10%;
+          color: var(--festival-accent-4);
+          opacity: 0;
+          animation-name: confettiFall;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+          text-shadow: 0 0 12px currentColor;
+        }
+        .festivalConfetti span:nth-child(3n+1){color:var(--festival-accent-1)}
+        .festivalConfetti span:nth-child(3n+2){color:var(--festival-accent-2)}
+        .festivalConfetti span:nth-child(4n){color:var(--festival-accent-3)}
+
+        .festivalFirework { position:absolute; z-index:2; width:120px; height:120px; pointer-events:none; opacity:0; animation:fireworkFlash 4.8s ease-out infinite; }
+        .fireworkOne{top:7%;left:8%}.fireworkTwo{top:10%;right:8%;animation-delay:1.5s}.fireworkThree{right:24%;bottom:8%;animation-delay:3s}
+        .festivalFirework i{position:absolute;left:50%;top:50%;width:3px;height:48px;border-radius:99px;transform-origin:50% 0;background:linear-gradient(to bottom,var(--festival-accent-4),transparent);box-shadow:0 0 12px color-mix(in srgb,var(--festival-accent-4) 70%,transparent)}
+        .festivalFirework i:nth-child(1){transform:rotate(0deg)}.festivalFirework i:nth-child(2){transform:rotate(45deg)}.festivalFirework i:nth-child(3){transform:rotate(90deg)}.festivalFirework i:nth-child(4){transform:rotate(135deg)}.festivalFirework i:nth-child(5){transform:rotate(180deg)}.festivalFirework i:nth-child(6){transform:rotate(225deg)}.festivalFirework i:nth-child(7){transform:rotate(270deg)}.festivalFirework i:nth-child(8){transform:rotate(315deg)}
+
+        .festivalOrbit{position:absolute;left:50%;top:50%;z-index:5;width:290px;height:290px;pointer-events:none;transform:translate(-50%,-50%);animation:orbitSpin 11s linear infinite}.festivalOrbit span{position:absolute;left:50%;top:-8px;font-size:26px;filter:drop-shadow(0 8px 16px rgba(0,0,0,.22));transform:translateX(-50%)}.orbitTwo{width:230px;height:230px;animation-duration:8s;animation-direction:reverse}.orbitThree{width:340px;height:340px;animation-duration:15s}.iconPulse{position:absolute;inset:16px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--festival-accent-4) 42%,transparent),transparent 68%);animation:iconPulse 2.4s ease-in-out infinite}
+
+        .premiumRibbon{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:8px;margin-bottom:14px;padding:8px 14px;border:1px solid color-mix(in srgb,var(--festival-accent-4) 48%,transparent);border-radius:999px;background:linear-gradient(90deg,color-mix(in srgb,var(--festival-accent-1) 18%,transparent),color-mix(in srgb,var(--festival-accent-2) 18%,transparent),color-mix(in srgb,var(--festival-accent-3) 18%,transparent));color:white;font-size:8px;font-weight:950;letter-spacing:1.5px;box-shadow:0 8px 24px rgba(0,0,0,.14),inset 0 0 18px rgba(255,255,255,.04)}.premiumRibbon::after{position:absolute;inset:-120% auto -120% -35%;width:26%;content:"";background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);transform:rotate(18deg);animation:ribbonShine 3s ease-in-out infinite}
+
+        .closeButton {
           position: absolute;
           z-index: 20;
           top: 15px;
@@ -604,6 +639,7 @@ export default function FestivalGreeting() {
         .festivalVisual,
         .festivalImageWrap {
           position: relative;
+          z-index: 4;
           min-height: 540px;
           overflow: hidden;
           border-right:
@@ -888,7 +924,7 @@ export default function FestivalGreeting() {
 
         .festivalContent {
           position: relative;
-          z-index: 5;
+          z-index: 6;
           display: flex;
           align-items: center;
           flex-direction: column;
@@ -1163,7 +1199,15 @@ export default function FestivalGreeting() {
           animation-delay: 1.4s;
         }
 
-        @keyframes colorFlow{from{transform:rotate(0deg) scale(1)}50%{transform:rotate(180deg) scale(1.08)}to{transform:rotate(360deg) scale(1)}}\n        @keyframes confettiFall{0%{opacity:0;transform:translate3d(0,-12px,0) rotate(0deg)}10%{opacity:.95}90%{opacity:.85}100%{opacity:0;transform:translate3d(20px,820px,0) rotate(560deg)}}\n        @keyframes fireworkFlash{0%,68%{opacity:0;transform:scale(.35)}76%{opacity:1;transform:scale(1)}88%{opacity:.55;transform:scale(1.25)}100%{opacity:0;transform:scale(1.4)}}\n        @keyframes orbitSpin{from{transform:translate(-50%,-50%) rotate(0deg)}to{transform:translate(-50%,-50%) rotate(360deg)}}\n        @keyframes iconPulse{0%,100%{opacity:.5;transform:scale(.9)}50%{opacity:1;transform:scale(1.15)}}\n        @keyframes ribbonShine{0%{left:-35%}55%,100%{left:120%}}\n        @keyframes titleShimmer{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}\n\n        @keyframes overlayIn {
+        @keyframes colorFlow{from{transform:rotate(0deg) scale(1)}50%{transform:rotate(180deg) scale(1.08)}to{transform:rotate(360deg) scale(1)}}
+        @keyframes confettiFall{0%{opacity:0;transform:translate3d(0,-12px,0) rotate(0deg)}10%{opacity:.95}90%{opacity:.85}100%{opacity:0;transform:translate3d(20px,820px,0) rotate(560deg)}}
+        @keyframes fireworkFlash{0%,68%{opacity:0;transform:scale(.35)}76%{opacity:1;transform:scale(1)}88%{opacity:.55;transform:scale(1.25)}100%{opacity:0;transform:scale(1.4)}}
+        @keyframes orbitSpin{from{transform:translate(-50%,-50%) rotate(0deg)}to{transform:translate(-50%,-50%) rotate(360deg)}}
+        @keyframes iconPulse{0%,100%{opacity:.5;transform:scale(.9)}50%{opacity:1;transform:scale(1.15)}}
+        @keyframes ribbonShine{0%{left:-35%}55%,100%{left:120%}}
+        @keyframes titleShimmer{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+
+        @keyframes overlayIn {
           from {
             opacity: 0;
           }
