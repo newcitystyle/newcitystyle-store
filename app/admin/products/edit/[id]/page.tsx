@@ -1257,6 +1257,19 @@ export default function EditProductPage() {
     return persisted;
   }
 
+  async function saveCompleteDesignEditorRow(
+    unit: DesignUnit,
+    link: DesignVariantLink
+  ) {
+    await saveDesignUnitName(unit);
+    await saveDesignVariantCommercials(link);
+
+    setDesignUnitStatus({
+      type: "success",
+      message: `${unit.designName || "Design"} saved. Name, MRP, online price and online quantity are updated.`,
+    });
+  }
+
   async function saveDesignVariantCommercials(link: DesignVariantLink) {
     const variant = variantBarcodes.find((item) => item.id === link.variantId);
     if (!variant) return;
@@ -4583,7 +4596,7 @@ export default function EditProductPage() {
                     {editorVariant.size || "Standard"} • Stock {editorVariant.stock}
                   </strong>
                   <div style={{ marginTop: 3, fontSize: 11, opacity: 0.85 }}>
-                    {editorVariant.barcode || "No barcode"} • {editorRows.length} linked design{editorRows.length === 1 ? "" : "s"}
+                    {editorVariant.barcode || "No barcode"} • {editorRows.length} linked design{editorRows.length === 1 ? "" : "s"} • storefront prices
                   </div>
                 </div>
 
@@ -4772,12 +4785,30 @@ export default function EditProductPage() {
                                   ),
                                 })
                               }
-                              onBlur={() =>
-                                void saveDesignVariantCommercials(link)
-                              }
                               style={inputStyle}
                             />
                           </Field>
+
+                          {link.status !== "sold_out" && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void saveCompleteDesignEditorRow(unit, link)
+                              }
+                              style={{
+                                minHeight: 44,
+                                borderRadius: 12,
+                                border: "1px solid #d4af37",
+                                background: "#0A2E73",
+                                color: "#fff",
+                                fontWeight: 900,
+                                cursor: "pointer",
+                                marginTop: 2,
+                              }}
+                            >
+                              Save This Design
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
