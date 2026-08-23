@@ -975,11 +975,111 @@ export default function EditProductPage() {
     );
   }
 
-  async function saveDesignVariantCommercials(link: DesignVariantLink) {
-    if (link.id <= 0) return;
+  async function ensurePersistedDesignVariantLink(link: DesignVariantLink) {
+    if (link.id > 0) return link;
+
+    const existingRealLink = designVariantLinks.find(
+      (item) =>
+        item.id > 0 &&
+        item.designUnitId === link.designUnitId &&
+        item.variantId === link.variantId &&
+        item.status !== "hidden"
+    );
+
+    if (existingRealLink) return existingRealLink;
 
     const variant = variantBarcodes.find((item) => item.id === link.variantId);
+    if (!variant) {
+      throw new Error("Linked physical size could not be found.");
+    }
+
+    const { data, error } = await supabase
+      .from("product_design_unit_variants")
+      .insert({
+        product_id: Number(productId),
+        design_unit_id: link.designUnitId,
+        variant_id: link.variantId,
+        status: link.status === "sold_out" ? "sold_out" : "available",
+        mrp:
+          getOptionalNumber(
+            link.mrp,
+            getOptionalNumber(variant.mrp, getOptionalNumber(form.mrp, 0))
+          ) || null,
+        online_price:
+          getOptionalNumber(
+            link.onlinePrice,
+            getOptionalNumber(variant.onlinePrice, Number(form.price || 0))
+          ) || null,
+        online_quantity:
+          link.status === "available"
+            ? Math.max(
+                0,
+                Math.min(
+                  1,
+                  link.onlineQuantity === null
+                    ? 1
+                    : Number(link.onlineQuantity || 0)
+                )
+              )
+            : 0,
+        updated_at: new Date().toISOString(),
+      })
+      .select("id,product_id,design_unit_id,variant_id,status,mrp,online_price,online_quantity")
+      .single();
+
+    if (error) throw error;
+
+    const persisted: DesignVariantLink = {
+      id: asNumber(data.id),
+      productId: asNumber(data.product_id),
+      designUnitId: asNumber(data.design_unit_id),
+      variantId: asNumber(data.variant_id),
+      status:
+        data.status === "sold_out" || data.status === "hidden"
+          ? data.status
+          : "available",
+      mrp: asNumber(data.mrp) > 0 ? String(asNumber(data.mrp)) : "",
+      onlinePrice:
+        asNumber(data.online_price) > 0
+          ? String(asNumber(data.online_price))
+          : "",
+      onlineQuantity:
+        data.online_quantity === null || data.online_quantity === undefined
+          ? null
+          : Math.max(0, asNumber(data.online_quantity)),
+    };
+
+    setDesignVariantLinks((current) => [
+      ...current.filter(
+        (item) =>
+          !(
+            item.designUnitId === link.designUnitId &&
+            item.variantId === link.variantId &&
+            item.id <= 0
+          )
+      ),
+      persisted,
+    ]);
+
+    return persisted;
+  }
+
+  async function saveDesignVariantCommercials(link: DesignVariantLink) {
+    const variant = variantBarcodes.find((item) => item.id === link.variantId);
     if (!variant) return;
+
+    let persistedLink = link;
+
+    try {
+      persistedLink = await ensurePersistedDesignVariantLink(link);
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? `Unable to prepare design price row: ${error.message}`
+          : "Unable to prepare design price row."
+      );
+      return;
+    }
 
     const mrp = getOptionalNumber(
       link.mrp,
@@ -997,7 +1097,7 @@ export default function EditProductPage() {
       return;
     }
 
-    const maxQty = link.status === "available" ? 1 : 0;
+    const maxQty = persistedLink.status === "available" ? 1 : 0;
     const requestedQty =
       link.onlineQuantity === null
         ? maxQty
@@ -1011,24 +1111,34 @@ export default function EditProductPage() {
         online_quantity: requestedQty,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", link.id);
+      .eq("id", persistedLink.id);
 
     if (error) {
       alert(`Unable to save design price: ${error.message}`);
       return;
     }
 
-    updateDesignVariantLinkLocal(link.id, {
-      mrp: mrp > 0 ? String(mrp) : "",
-      onlinePrice: onlinePrice > 0 ? String(onlinePrice) : "",
-      onlineQuantity: requestedQty,
-    });
+    setDesignVariantLinks((current) =>
+      current.map((item) =>
+        item.id === persistedLink.id ||
+        (item.designUnitId === link.designUnitId &&
+          item.variantId === link.variantId)
+          ? {
+              ...item,
+              id: persistedLink.id,
+              mrp: mrp > 0 ? String(mrp) : "",
+              onlinePrice: onlinePrice > 0 ? String(onlinePrice) : "",
+              onlineQuantity: requestedQty,
+            }
+          : item
+      )
+    );
 
     setDesignUnitStatus({
       type: "success",
       message:
         `${variant.size || "Size"} design price saved separately. ` +
-        "The old size-level price remains untouched as a fallback.",
+        "Other designs with the same size were not changed.",
     });
   }
 
@@ -3187,7 +3297,7 @@ export default function EditProductPage() {
                                             min="0"
                                             value={link.mrp}
                                             placeholder={variant.mrp || form.mrp || "MRP"}
-                                            disabled={link.status === "sold_out" || link.id <= 0}
+                                            disabled={link.status === "sold_out"}
                                             onChange={(event) =>
                                               updateDesignVariantLinkLocal(link.id, { mrp: event.target.value })
                                             }
@@ -3203,7 +3313,7 @@ export default function EditProductPage() {
                                             min="0"
                                             value={link.onlinePrice}
                                             placeholder={variant.onlinePrice || form.price || "Price"}
-                                            disabled={link.status === "sold_out" || link.id <= 0}
+                                            disabled={link.status === "sold_out"}
                                             onChange={(event) =>
                                               updateDesignVariantLinkLocal(link.id, { onlinePrice: event.target.value })
                                             }
@@ -3219,7 +3329,7 @@ export default function EditProductPage() {
                                             min="0"
                                             max="1"
                                             value={link.onlineQuantity === null ? (link.status === "available" ? 1 : 0) : link.onlineQuantity}
-                                            disabled={link.status === "sold_out" || link.id <= 0}
+                                            disabled={link.status === "sold_out"}
                                             onChange={(event) =>
                                               updateDesignVariantLinkLocal(link.id, {
                                                 onlineQuantity: Math.max(0, Math.min(1, Number(event.target.value || 0))),
@@ -3231,11 +3341,6 @@ export default function EditProductPage() {
                                         </label>
                                       </div>
 
-                                      {link.id <= 0 && (
-                                        <div style={{ marginTop: 6, color: "#9a6700", fontSize: 9, lineHeight: 1.4 }}>
-                                          Legacy link: after SQL migration, untick and tick this size once to create its editable design-price row.
-                                        </div>
-                                      )}
                                     </div>
                                   );
                                 })}
