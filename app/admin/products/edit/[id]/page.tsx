@@ -74,6 +74,12 @@ type DesignVariantLink = {
   designUnitId: number;
   variantId: number;
   status: "available" | "sold_out" | "hidden";
+
+  // Optional design+size commercial overrides.
+  // Blank values keep the old variant/product fallback behaviour.
+  mrp: string;
+  onlinePrice: string;
+  onlineQuantity: number | null;
 };
 
 type ProductForm = {
@@ -786,7 +792,7 @@ export default function EditProductPage() {
           .eq("product_id", targetProductId)
           .order("sort_order", { ascending: true }).order("id", { ascending: true }),
         supabase.from("product_design_unit_variants")
-          .select("id,product_id,design_unit_id,variant_id,status")
+          .select("id,product_id,design_unit_id,variant_id,status,mrp,online_price,online_quantity")
           .eq("product_id", targetProductId).order("id", { ascending: true }),
       ]);
 
@@ -809,11 +815,20 @@ export default function EditProductPage() {
         ? rows.filter((row) => row.parentVariantId).map((row, index) => ({
             id: -(index + 1), productId: row.productId, designUnitId: row.id, variantId: Number(row.parentVariantId),
             status: row.status === "sold_out" ? "sold_out" : row.status === "hidden" ? "hidden" : "available",
+            mrp: "",
+            onlinePrice: "",
+            onlineQuantity: null,
           }))
         : ((linkData || []) as Record<string, unknown>[]).map((row) => ({
             id: asNumber(row.id), productId: asNumber(row.product_id), designUnitId: asNumber(row.design_unit_id),
             variantId: asNumber(row.variant_id),
             status: row.status === "sold_out" || row.status === "hidden" ? row.status : "available",
+            mrp: asNumber(row.mrp) > 0 ? String(asNumber(row.mrp)) : "",
+            onlinePrice: asNumber(row.online_price) > 0 ? String(asNumber(row.online_price)) : "",
+            onlineQuantity:
+              row.online_quantity === null || row.online_quantity === undefined
+                ? null
+                : Math.max(0, asNumber(row.online_quantity)),
           })) as DesignVariantLink[];
 
       setDesignUnits(rows); setDesignVariantLinks(links);
@@ -870,7 +885,14 @@ export default function EditProductPage() {
       const insertedIds = ((insertedDesigns || []) as Record<string, unknown>[]).map((row) => asNumber(row.id)).filter((id) => id > 0);
       if (insertedIds.length !== rows.length) throw new Error("Uploaded design IDs could not be confirmed.");
       const mappingRows = insertedIds.flatMap((designUnitId) => selectedVariants.map((variant) => ({
-        product_id: Number(productId), design_unit_id: designUnitId, variant_id: variant.id, status: "available", updated_at: new Date().toISOString(),
+        product_id: Number(productId),
+        design_unit_id: designUnitId,
+        variant_id: variant.id,
+        status: "available",
+        mrp: getOptionalNumber(variant.mrp, getOptionalNumber(form.mrp, 0)) || null,
+        online_price: getOptionalNumber(variant.onlinePrice, Number(form.price || 0)) || null,
+        online_quantity: 1,
+        updated_at: new Date().toISOString(),
       })));
       const { error: mappingError } = await supabase.from("product_design_unit_variants").insert(mappingRows);
       if (mappingError) throw mappingError;
@@ -942,6 +964,74 @@ export default function EditProductPage() {
     setSelectedDesignVariantIds((current) => current.includes(variantId) ? current.filter((id) => id !== variantId) : [...current, variantId]);
   }
 
+  function updateDesignVariantLinkLocal(
+    linkId: number,
+    patch: Partial<Pick<DesignVariantLink, "mrp" | "onlinePrice" | "onlineQuantity">>
+  ) {
+    setDesignVariantLinks((current) =>
+      current.map((link) =>
+        link.id === linkId ? { ...link, ...patch } : link
+      )
+    );
+  }
+
+  async function saveDesignVariantCommercials(link: DesignVariantLink) {
+    if (link.id <= 0) return;
+
+    const variant = variantBarcodes.find((item) => item.id === link.variantId);
+    if (!variant) return;
+
+    const mrp = getOptionalNumber(
+      link.mrp,
+      getOptionalNumber(variant.mrp, getOptionalNumber(form.mrp, 0))
+    );
+    const onlinePrice = getOptionalNumber(
+      link.onlinePrice,
+      getOptionalNumber(variant.onlinePrice, Number(form.price || 0))
+    );
+
+    if (onlinePrice > 0 && mrp > 0 && onlinePrice > mrp) {
+      alert(
+        `${variant.size || "This size"}: design online price cannot be greater than design MRP.`
+      );
+      return;
+    }
+
+    const maxQty = link.status === "available" ? 1 : 0;
+    const requestedQty =
+      link.onlineQuantity === null
+        ? maxQty
+        : Math.max(0, Math.min(maxQty, Number(link.onlineQuantity || 0)));
+
+    const { error } = await supabase
+      .from("product_design_unit_variants")
+      .update({
+        mrp: mrp > 0 ? mrp : null,
+        online_price: onlinePrice > 0 ? onlinePrice : null,
+        online_quantity: requestedQty,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", link.id);
+
+    if (error) {
+      alert(`Unable to save design price: ${error.message}`);
+      return;
+    }
+
+    updateDesignVariantLinkLocal(link.id, {
+      mrp: mrp > 0 ? String(mrp) : "",
+      onlinePrice: onlinePrice > 0 ? String(onlinePrice) : "",
+      onlineQuantity: requestedQty,
+    });
+
+    setDesignUnitStatus({
+      type: "success",
+      message:
+        `${variant.size || "Size"} design price saved separately. ` +
+        "The old size-level price remains untouched as a fallback.",
+    });
+  }
+
   async function setDesignVariantLink(unit: DesignUnit, variantId: number, enabled: boolean) {
     const variant = variantBarcodes.find((item) => item.id === variantId); if (!variant) return;
     const existing = designVariantLinks.find((link) => link.designUnitId === unit.id && link.variantId === variantId && link.status !== "hidden");
@@ -951,7 +1041,16 @@ export default function EditProductPage() {
       if (used >= Math.max(0, variant.stock)) { alert(`${variant.size || "This size"} already has ${used} linked designs, equal to physical stock ${variant.stock}.`); return; }
       const response = existing
         ? await supabase.from("product_design_unit_variants").update({ status: "available", updated_at: new Date().toISOString() }).eq("id", existing.id)
-        : await supabase.from("product_design_unit_variants").insert({ product_id: Number(productId), design_unit_id: unit.id, variant_id: variantId, status: "available", updated_at: new Date().toISOString() });
+        : await supabase.from("product_design_unit_variants").insert({
+            product_id: Number(productId),
+            design_unit_id: unit.id,
+            variant_id: variantId,
+            status: "available",
+            mrp: getOptionalNumber(variant.mrp, getOptionalNumber(form.mrp, 0)) || null,
+            online_price: getOptionalNumber(variant.onlinePrice, Number(form.price || 0)) || null,
+            online_quantity: 1,
+            updated_at: new Date().toISOString(),
+          });
       if (response.error) { alert(response.error.message); return; }
     } else {
       if (!existing) return;
@@ -975,12 +1074,30 @@ export default function EditProductPage() {
 
     setUploadingDesignUnits(true);
     try {
-      const rows: Array<{product_id:number;design_unit_id:number;variant_id:number;status:string;updated_at:string}> = [];
+      const rows: Array<{
+        product_id: number;
+        design_unit_id: number;
+        variant_id: number;
+        status: string;
+        mrp: number | null;
+        online_price: number | null;
+        online_quantity: number;
+        updated_at: string;
+      }> = [];
       for (const unit of designUnits) {
         if (unit.status === "hidden") continue;
         for (const variant of selectedVariants) {
           const exists = designVariantLinks.some((link) => link.designUnitId === unit.id && link.variantId === variant.id && link.status !== "hidden");
-          if (!exists) rows.push({ product_id: Number(productId), design_unit_id: unit.id, variant_id: variant.id, status: "available", updated_at: new Date().toISOString() });
+          if (!exists) rows.push({
+            product_id: Number(productId),
+            design_unit_id: unit.id,
+            variant_id: variant.id,
+            status: "available",
+            mrp: getOptionalNumber(variant.mrp, getOptionalNumber(form.mrp, 0)) || null,
+            online_price: getOptionalNumber(variant.onlinePrice, Number(form.price || 0)) || null,
+            online_quantity: 1,
+            updated_at: new Date().toISOString(),
+          });
         }
       }
       if (rows.length) { const { error } = await supabase.from("product_design_unit_variants").insert(rows); if (error) throw error; }
@@ -2649,9 +2766,9 @@ export default function EditProductPage() {
 
                 {variantBarcodes.length > 0 && (
                   <div className="variant-reference-card">
-                    <strong>Variant / Design Online Details</strong>
+                    <strong>Variant / Design Online Details — Legacy / Size Fallback</strong>
                     <p style={{ margin: "6px 0 12px", color: "#667085", fontSize: 12 }}>
-                      Leave a variant photo/price blank to use the main product photo/price. This keeps existing same-photo different-size products working exactly as before.
+                      These existing size-level values are preserved exactly as before. When one size has many different designs/MRPs, use the Design Photo cards above and set Design MRP + Online Price for each linked size there. Blank design prices continue to fall back to these old size values.
                     </p>
                     <div style={{ display: "grid", gap: 12 }}>
                       {variantBarcodes.map((variant, index) => {
@@ -3016,6 +3133,114 @@ export default function EditProductPage() {
                             <div style={{ fontSize: 11, color: "#475467", lineHeight: 1.5 }}>
                               Sizes: {getDesignLinks(unit.id).length ? getDesignLinks(unit.id).map((link) => { const variant = variantBarcodes.find((item) => item.id === link.variantId); return `${variant?.size || "Standard"} (${variant?.barcode || "No barcode"})`; }).join(" • ") : "No size linked"}
                             </div>
+
+                            {getDesignLinks(unit.id).length > 0 && (
+                              <div style={{ display: "grid", gap: 8, marginTop: 4 }}>
+                                {getDesignLinks(unit.id).map((link) => {
+                                  const variant = variantBarcodes.find(
+                                    (item) => item.id === link.variantId
+                                  );
+                                  if (!variant) return null;
+
+                                  return (
+                                    <div
+                                      key={`design-commercial-${unit.id}-${link.variantId}`}
+                                      style={{
+                                        padding: 9,
+                                        border: "1px solid #e4e7ec",
+                                        borderRadius: 10,
+                                        background:
+                                          link.status === "sold_out"
+                                            ? "#fff8f7"
+                                            : "#f9fbff",
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          justifyContent: "space-between",
+                                          gap: 8,
+                                          alignItems: "center",
+                                          marginBottom: 7,
+                                          flexWrap: "wrap",
+                                        }}
+                                      >
+                                        <strong style={{ color: "#0A2E73", fontSize: 11 }}>
+                                          {variant.size || "Standard"} • {variant.barcode || "No barcode"}
+                                        </strong>
+                                        <span style={{ fontSize: 9, fontWeight: 850, color: link.status === "sold_out" ? "#b42318" : "#067647" }}>
+                                          {link.status === "sold_out" ? "SOLD" : "DESIGN PRICE"}
+                                        </span>
+                                      </div>
+
+                                      <div
+                                        style={{
+                                          display: "grid",
+                                          gridTemplateColumns: "repeat(auto-fit, minmax(105px, 1fr))",
+                                          gap: 7,
+                                        }}
+                                      >
+                                        <label style={{ display: "grid", gap: 4, fontSize: 9, fontWeight: 800, color: "#475467" }}>
+                                          Design MRP
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            value={link.mrp}
+                                            placeholder={variant.mrp || form.mrp || "MRP"}
+                                            disabled={link.status === "sold_out" || link.id <= 0}
+                                            onChange={(event) =>
+                                              updateDesignVariantLinkLocal(link.id, { mrp: event.target.value })
+                                            }
+                                            onBlur={() => void saveDesignVariantCommercials(link)}
+                                            style={{ ...inputStyle, minHeight: 34, padding: "6px 8px", fontSize: 11 }}
+                                          />
+                                        </label>
+
+                                        <label style={{ display: "grid", gap: 4, fontSize: 9, fontWeight: 800, color: "#475467" }}>
+                                          Online Price
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            value={link.onlinePrice}
+                                            placeholder={variant.onlinePrice || form.price || "Price"}
+                                            disabled={link.status === "sold_out" || link.id <= 0}
+                                            onChange={(event) =>
+                                              updateDesignVariantLinkLocal(link.id, { onlinePrice: event.target.value })
+                                            }
+                                            onBlur={() => void saveDesignVariantCommercials(link)}
+                                            style={{ ...inputStyle, minHeight: 34, padding: "6px 8px", fontSize: 11 }}
+                                          />
+                                        </label>
+
+                                        <label style={{ display: "grid", gap: 4, fontSize: 9, fontWeight: 800, color: "#475467" }}>
+                                          Online Qty
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            max="1"
+                                            value={link.onlineQuantity === null ? (link.status === "available" ? 1 : 0) : link.onlineQuantity}
+                                            disabled={link.status === "sold_out" || link.id <= 0}
+                                            onChange={(event) =>
+                                              updateDesignVariantLinkLocal(link.id, {
+                                                onlineQuantity: Math.max(0, Math.min(1, Number(event.target.value || 0))),
+                                              })
+                                            }
+                                            onBlur={() => void saveDesignVariantCommercials(link)}
+                                            style={{ ...inputStyle, minHeight: 34, padding: "6px 8px", fontSize: 11 }}
+                                          />
+                                        </label>
+                                      </div>
+
+                                      {link.id <= 0 && (
+                                        <div style={{ marginTop: 6, color: "#9a6700", fontSize: 9, lineHeight: 1.4 }}>
+                                          Legacy link: after SQL migration, untick and tick this size once to create its editable design-price row.
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
 
                             <div
                               style={{
