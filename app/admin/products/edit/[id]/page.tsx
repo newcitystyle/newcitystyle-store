@@ -457,17 +457,10 @@ export default function EditProductPage() {
 
       setVariantBarcodes(cleanVariants);
 
-      // Keep the design grid clean on large merged products.
-      // Default to the first physical size instead of rendering every design at once.
-      setDesignSizeFilterId((current) => {
-        if (
-          current !== "all" &&
-          cleanVariants.some((variant) => variant.id === current)
-        ) {
-          return current;
-        }
-        return cleanVariants[0]?.id || "all";
-      });
+      // Safety-first: always show ALL designs after opening Edit Product.
+      // This prevents L / XL / XXL designs from being hidden behind the first-size filter.
+      // The owner can still click a size only when intentionally narrowing the list.
+      setDesignSizeFilterId("all");
 
       await loadDesignUnits(Number(productId));
 
@@ -3430,7 +3423,7 @@ export default function EditProductPage() {
                             cursor: "pointer",
                           }}
                         >
-                          All
+                          All — Recommended
                         </button>
 
                         {variantBarcodes.map((variant) => (
@@ -3470,6 +3463,32 @@ export default function EditProductPage() {
                             ? `${designUnits.length} designs`
                             : `${filteredDesignUnits.length} designs`}
                         </span>
+                      </div>
+                    )}
+
+                    {variantBarcodes.length > 1 && (
+                      <div
+                        style={{
+                          marginTop: -4,
+                          marginBottom: 12,
+                          padding: "9px 11px",
+                          borderRadius: 10,
+                          background:
+                            designSizeFilterId === "all"
+                              ? "#ecfdf3"
+                              : "#fff7ed",
+                          color:
+                            designSizeFilterId === "all"
+                              ? "#067647"
+                              : "#9a3412",
+                          fontSize: 11,
+                          fontWeight: 750,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {designSizeFilterId === "all"
+                          ? "✓ All designs are visible. Use this mode when correcting a wrong size, MRP or online price."
+                          : "⚠ Size filter is active. Only this size is visible. Click “All — Recommended” before correcting a wrong size."}
                       </div>
                     )}
 
