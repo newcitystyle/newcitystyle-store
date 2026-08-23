@@ -154,6 +154,23 @@ function festivalMotifs(name: string, key: string) {
   return ["✦", "◇", "✦"];
 }
 
+function festivalPalette(name: string, key: string) {
+  const text = `${name} ${key}`.toLowerCase();
+
+  if (text.includes("diwali")) return { accent1: "#FF7A00", accent2: "#FF2D95", accent3: "#7C3AED", accent4: "#FFD166" };
+  if (text.includes("sankranti")) return { accent1: "#FF7A00", accent2: "#00A7E1", accent3: "#7CB342", accent4: "#FFD54F" };
+  if (text.includes("ugadi")) return { accent1: "#3FA34D", accent2: "#F4B400", accent3: "#FF7A59", accent4: "#A7D46F" };
+  if (text.includes("holi")) return { accent1: "#FF2D95", accent2: "#00B8D9", accent3: "#7C4DFF", accent4: "#FFD600" };
+  if (text.includes("eid")) return { accent1: "#0FAF87", accent2: "#5E60CE", accent3: "#F2C14E", accent4: "#79E0C7" };
+  if (text.includes("christmas")) return { accent1: "#D62828", accent2: "#1B7F3A", accent3: "#F4C95D", accent4: "#FFFFFF" };
+  if (text.includes("republic") || text.includes("independence")) return { accent1: "#FF9933", accent2: "#FFFFFF", accent3: "#138808", accent4: "#2A5CAA" };
+  if (text.includes("vinayaka") || text.includes("ganesh")) return { accent1: "#F97316", accent2: "#E11D48", accent3: "#FACC15", accent4: "#22C55E" };
+  if (text.includes("janmashtami") || text.includes("krishna")) return { accent1: "#1D4ED8", accent2: "#14B8A6", accent3: "#FACC15", accent4: "#8B5CF6" };
+  if (text.includes("dussehra") || text.includes("dashami")) return { accent1: "#D97706", accent2: "#B91C1C", accent3: "#FACC15", accent4: "#7C3AED" };
+  if (text.includes("shivaratri")) return { accent1: "#6D5DFB", accent2: "#2DD4BF", accent3: "#C4B5FD", accent4: "#E2E8F0" };
+  return { accent1: "#FF7A00", accent2: "#FF2D95", accent3: "#6D5DFB", accent4: "#FFD166" };
+}
+
 function getPhaseLabel(item: ActiveFestival) {
   if (item.isFestivalDay) return "TODAY • CELEBRATION";
 
@@ -348,6 +365,11 @@ export default function FestivalGreeting() {
     campaign.festival_key
   );
 
+  const palette = festivalPalette(
+    campaign.festival_name,
+    campaign.festival_key
+  );
+
   const phaseLabel = getPhaseLabel(campaign);
 
   return (
@@ -360,6 +382,10 @@ export default function FestivalGreeting() {
         {
           "--festival-primary": primary,
           "--festival-secondary": secondary,
+          "--festival-accent-1": palette.accent1,
+          "--festival-accent-2": palette.accent2,
+          "--festival-accent-3": palette.accent3,
+          "--festival-accent-4": palette.accent4,
         } as React.CSSProperties
       }
       onMouseDown={(event) => {
@@ -369,6 +395,19 @@ export default function FestivalGreeting() {
       }}
     >
       <section className="festivalCard">
+        <div className="festivalColorFlow" />
+        <div className="festivalFirework fireworkOne"><i /><i /><i /><i /><i /><i /><i /><i /></div>
+        <div className="festivalFirework fireworkTwo"><i /><i /><i /><i /><i /><i /><i /><i /></div>
+        <div className="festivalFirework fireworkThree"><i /><i /><i /><i /><i /><i /><i /><i /></div>
+
+        <div className="festivalConfetti" aria-hidden="true">
+          {Array.from({ length: 22 }).map((_, index) => (
+            <span key={index} style={{ "--i": index } as React.CSSProperties}>
+              {index % 3 === 0 ? "✦" : index % 3 === 1 ? "●" : "◆"}
+            </span>
+          ))}
+        </div>
+
         <div className="festivalAura auraOne" />
         <div className="festivalAura auraTwo" />
         <div className="festivalSpark sparkOne">✦</div>
@@ -405,7 +444,12 @@ export default function FestivalGreeting() {
             <div className="festivalHalo haloOuter" />
             <div className="festivalHalo haloMiddle" />
 
+            <div className="festivalOrbit orbitOne"><span>{motifs[0]}</span></div>
+            <div className="festivalOrbit orbitTwo"><span>{motifs[1]}</span></div>
+            <div className="festivalOrbit orbitThree"><span>{motifs[2]}</span></div>
+
             <div className="festivalIconRing">
+              <div className="iconPulse" />
               <div className="festivalIcon">{icon}</div>
             </div>
 
@@ -422,6 +466,7 @@ export default function FestivalGreeting() {
         )}
 
         <div className="festivalContent">
+          <div className="premiumRibbon"><span>✦</span> FESTIVE CELEBRATION <span>✦</span></div>
           <div className="phasePill">
             <span />
             {phaseLabel}
@@ -517,28 +562,10 @@ export default function FestivalGreeting() {
             );
           border-radius: 32px;
           background:
-            radial-gradient(
-              circle at 15% 15%,
-              color-mix(
-                in srgb,
-                var(--festival-secondary) 16%,
-                transparent
-              ),
-              transparent 31%
-            ),
-            linear-gradient(
-              135deg,
-              color-mix(
-                in srgb,
-                var(--festival-primary) 96%,
-                black 4%
-              ),
-              color-mix(
-                in srgb,
-                var(--festival-primary) 78%,
-                black 22%
-              )
-            );
+            radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--festival-accent-1) 24%, transparent), transparent 32%),
+            radial-gradient(circle at 88% 14%, color-mix(in srgb, var(--festival-accent-2) 20%, transparent), transparent 30%),
+            radial-gradient(circle at 80% 85%, color-mix(in srgb, var(--festival-accent-3) 18%, transparent), transparent 35%),
+            linear-gradient(135deg, color-mix(in srgb, var(--festival-primary) 88%, var(--festival-accent-3) 12%), color-mix(in srgb, var(--festival-primary) 68%, black 32%));
           color: white;
           box-shadow:
             0 40px 100px rgba(0, 0, 0, 0.42),
@@ -546,7 +573,7 @@ export default function FestivalGreeting() {
           animation: cardIn 0.45s cubic-bezier(0.2, 0.85, 0.2, 1) both;
         }
 
-        .closeButton {
+        .festivalColorFlow { position:absolute; inset:-30%; z-index:0; pointer-events:none; background:conic-gradient(from 0deg, transparent 0 9%, color-mix(in srgb,var(--festival-accent-1) 20%,transparent) 14%, transparent 22% 35%, color-mix(in srgb,var(--festival-accent-2) 18%,transparent) 42%, transparent 52% 67%, color-mix(in srgb,var(--festival-accent-3) 17%,transparent) 74%, transparent 82% 100%); filter:blur(38px); opacity:.9; animation:colorFlow 14s linear infinite; }\n\n        .festivalConfetti { position:absolute; inset:0; z-index:3; overflow:hidden; pointer-events:none; }\n        .festivalConfetti span { position:absolute; top:-10%; left:calc((var(--i) * 43) % 100 * 1%); color:var(--festival-accent-4); font-size:calc(8px + (var(--i) % 5) * 2px); opacity:0; animation:confettiFall calc(5s + (var(--i) % 6) * .55s) linear infinite; animation-delay:calc((var(--i) % 8) * -.47s); text-shadow:0 0 12px currentColor; }\n        .festivalConfetti span:nth-child(3n+1){color:var(--festival-accent-1)}\n        .festivalConfetti span:nth-child(3n+2){color:var(--festival-accent-2)}\n        .festivalConfetti span:nth-child(4n){color:var(--festival-accent-3)}\n\n        .festivalFirework { position:absolute; z-index:2; width:120px; height:120px; pointer-events:none; opacity:0; animation:fireworkFlash 4.8s ease-out infinite; }\n        .fireworkOne{top:7%;left:8%}.fireworkTwo{top:10%;right:8%;animation-delay:1.5s}.fireworkThree{right:24%;bottom:8%;animation-delay:3s}\n        .festivalFirework i{position:absolute;left:50%;top:50%;width:3px;height:48px;border-radius:99px;transform-origin:50% 0;background:linear-gradient(to bottom,var(--festival-accent-4),transparent);box-shadow:0 0 12px color-mix(in srgb,var(--festival-accent-4) 70%,transparent)}\n        .festivalFirework i:nth-child(1){transform:rotate(0deg)}.festivalFirework i:nth-child(2){transform:rotate(45deg)}.festivalFirework i:nth-child(3){transform:rotate(90deg)}.festivalFirework i:nth-child(4){transform:rotate(135deg)}.festivalFirework i:nth-child(5){transform:rotate(180deg)}.festivalFirework i:nth-child(6){transform:rotate(225deg)}.festivalFirework i:nth-child(7){transform:rotate(270deg)}.festivalFirework i:nth-child(8){transform:rotate(315deg)}\n\n        .festivalOrbit{position:absolute;left:50%;top:50%;z-index:5;width:290px;height:290px;pointer-events:none;transform:translate(-50%,-50%);animation:orbitSpin 11s linear infinite}.festivalOrbit span{position:absolute;left:50%;top:-8px;font-size:26px;filter:drop-shadow(0 8px 16px rgba(0,0,0,.22));transform:translateX(-50%)}.orbitTwo{width:230px;height:230px;animation-duration:8s;animation-direction:reverse}.orbitThree{width:340px;height:340px;animation-duration:15s}.iconPulse{position:absolute;inset:16px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--festival-accent-4) 42%,transparent),transparent 68%);animation:iconPulse 2.4s ease-in-out infinite}\n\n        .premiumRibbon{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:8px;margin-bottom:14px;padding:8px 14px;border:1px solid color-mix(in srgb,var(--festival-accent-4) 48%,transparent);border-radius:999px;background:linear-gradient(90deg,color-mix(in srgb,var(--festival-accent-1) 18%,transparent),color-mix(in srgb,var(--festival-accent-2) 18%,transparent),color-mix(in srgb,var(--festival-accent-3) 18%,transparent));color:white;font-size:8px;font-weight:950;letter-spacing:1.5px;box-shadow:0 8px 24px rgba(0,0,0,.14),inset 0 0 18px rgba(255,255,255,.04)}.premiumRibbon::after{position:absolute;inset:-120% auto -120% -35%;width:26%;content:"";background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);transform:rotate(18deg);animation:ribbonShine 3s ease-in-out infinite}\n\n        .closeButton {
           position: absolute;
           z-index: 20;
           top: 15px;
@@ -905,7 +932,13 @@ export default function FestivalGreeting() {
           max-width: 600px;
           margin: 12px 0 0;
           color: var(--festival-secondary);
+          background: linear-gradient(100deg,var(--festival-secondary),var(--festival-accent-4),color-mix(in srgb,var(--festival-accent-1) 58%,var(--festival-secondary) 42%),var(--festival-secondary));
+          background-size:220% 100%;
+          -webkit-background-clip:text;
+          background-clip:text;
+          -webkit-text-fill-color:transparent;
           font-family: "Playfair Display", Georgia, serif;
+          animation:titleShimmer 5s ease-in-out infinite;
           font-size: clamp(42px, 5vw, 70px);
           font-weight: 900;
           line-height: 0.98;
@@ -1130,7 +1163,7 @@ export default function FestivalGreeting() {
           animation-delay: 1.4s;
         }
 
-        @keyframes overlayIn {
+        @keyframes colorFlow{from{transform:rotate(0deg) scale(1)}50%{transform:rotate(180deg) scale(1.08)}to{transform:rotate(360deg) scale(1)}}\n        @keyframes confettiFall{0%{opacity:0;transform:translate3d(0,-12px,0) rotate(0deg)}10%{opacity:.95}90%{opacity:.85}100%{opacity:0;transform:translate3d(20px,820px,0) rotate(560deg)}}\n        @keyframes fireworkFlash{0%,68%{opacity:0;transform:scale(.35)}76%{opacity:1;transform:scale(1)}88%{opacity:.55;transform:scale(1.25)}100%{opacity:0;transform:scale(1.4)}}\n        @keyframes orbitSpin{from{transform:translate(-50%,-50%) rotate(0deg)}to{transform:translate(-50%,-50%) rotate(360deg)}}\n        @keyframes iconPulse{0%,100%{opacity:.5;transform:scale(.9)}50%{opacity:1;transform:scale(1.15)}}\n        @keyframes ribbonShine{0%{left:-35%}55%,100%{left:120%}}\n        @keyframes titleShimmer{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}\n\n        @keyframes overlayIn {
           from {
             opacity: 0;
           }
