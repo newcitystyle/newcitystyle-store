@@ -395,6 +395,18 @@ export default function FestivalGreeting() {
       }}
     >
       <section className="festivalCard">
+        <div className="festivalStageGlow stageGlowOne" />
+        <div className="festivalStageGlow stageGlowTwo" />
+        <div className="festivalStageGlow stageGlowThree" />
+
+        <div className="festivalLightBeams" aria-hidden="true">
+          <span /><span /><span /><span /><span />
+        </div>
+
+        <div className="festivalMarquee" aria-hidden="true">
+          <span>✦</span><i /><span>✧</span><i /><span>✦</span><i /><span>✧</span><i /><span>✦</span>
+        </div>
+
         <div className="festivalColorFlow" />
         <div className="festivalFirework fireworkOne"><i /><i /><i /><i /><i /><i /><i /><i /></div>
         <div className="festivalFirework fireworkTwo"><i /><i /><i /><i /><i /><i /><i /><i /></div>
@@ -449,6 +461,15 @@ export default function FestivalGreeting() {
               <span>{motifs[2]}</span>
             </div>
 
+            <div className="festivalMandala" aria-hidden="true">
+              <span className="mandalaRing ringA" />
+              <span className="mandalaRing ringB" />
+              <span className="mandalaRing ringC" />
+              <span className="mandalaPetals">
+                <i /><i /><i /><i /><i /><i /><i /><i />
+              </span>
+            </div>
+
             <div className="festivalHalo haloOuter" />
             <div className="festivalHalo haloMiddle" />
 
@@ -469,6 +490,14 @@ export default function FestivalGreeting() {
               <strong>{campaign.festival_name}</strong>
             </div>
 
+            <div className="festivalLampRow" aria-hidden="true">
+              <span>{motifs[0]}</span>
+              <i />
+              <span>{motifs[1]}</span>
+              <i />
+              <span>{motifs[2]}</span>
+            </div>
+
             <div className="miniBrand">NCS</div>
           </div>
         )}
@@ -482,6 +511,12 @@ export default function FestivalGreeting() {
           </div>
 
           <p className="brandLine">NEW CITY STYLE</p>
+
+          <div className="festivalLuxuryDivider" aria-hidden="true">
+            <span />
+            <b>◆</b>
+            <span />
+          </div>
 
           <h2 id="festivalGreetingTitle">
             {campaign.greeting_title}
@@ -607,6 +642,108 @@ export default function FestivalGreeting() {
         .festivalOrbit{position:absolute;left:50%;top:50%;z-index:5;width:290px;height:290px;pointer-events:none;transform:translate(-50%,-50%);animation:orbitSpin 11s linear infinite}.festivalOrbit span{position:absolute;left:50%;top:-8px;font-size:26px;filter:drop-shadow(0 8px 16px rgba(0,0,0,.22));transform:translateX(-50%)}.orbitTwo{width:230px;height:230px;animation-duration:8s;animation-direction:reverse}.orbitThree{width:340px;height:340px;animation-duration:15s}.iconPulse{position:absolute;inset:16px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--festival-accent-4) 42%,transparent),transparent 68%);animation:iconPulse 2.4s ease-in-out infinite}
 
         .premiumRibbon{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:8px;margin-bottom:14px;padding:8px 14px;border:1px solid color-mix(in srgb,var(--festival-accent-4) 48%,transparent);border-radius:999px;background:linear-gradient(90deg,color-mix(in srgb,var(--festival-accent-1) 18%,transparent),color-mix(in srgb,var(--festival-accent-2) 18%,transparent),color-mix(in srgb,var(--festival-accent-3) 18%,transparent));color:white;font-size:8px;font-weight:950;letter-spacing:1.5px;box-shadow:0 8px 24px rgba(0,0,0,.14),inset 0 0 18px rgba(255,255,255,.04)}.premiumRibbon::after{position:absolute;inset:-120% auto -120% -35%;width:26%;content:"";background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);transform:rotate(18deg);animation:ribbonShine 3s ease-in-out infinite}
+
+
+        .festivalStageGlow {
+          position: absolute;
+          z-index: 0;
+          width: 380px;
+          height: 380px;
+          border-radius: 50%;
+          pointer-events: none;
+          filter: blur(42px);
+          opacity: 0.4;
+          animation: stageGlow 7s ease-in-out infinite;
+        }
+        .stageGlowOne { left:-120px; top:-100px; background:var(--festival-accent-1); }
+        .stageGlowTwo { right:-130px; top:4%; background:var(--festival-accent-2); animation-delay:-2.2s; }
+        .stageGlowThree { right:22%; bottom:-190px; background:var(--festival-accent-3); animation-delay:-4.4s; }
+
+        .festivalLightBeams {
+          position:absolute; inset:0; z-index:1; overflow:hidden;
+          pointer-events:none; mix-blend-mode:screen;
+        }
+        .festivalLightBeams span {
+          position:absolute; top:-28%; width:12%; height:155%;
+          border-radius:50%;
+          background:linear-gradient(180deg,transparent 0%,color-mix(in srgb,var(--festival-accent-4) 24%,transparent) 46%,transparent 82%);
+          filter:blur(20px); opacity:.28; transform:rotate(16deg);
+          animation:beamSweep 8s ease-in-out infinite;
+        }
+        .festivalLightBeams span:nth-child(1){left:2%;animation-delay:-1s}
+        .festivalLightBeams span:nth-child(2){left:23%;animation-delay:-3s}
+        .festivalLightBeams span:nth-child(3){left:45%;animation-delay:-5s}
+        .festivalLightBeams span:nth-child(4){left:66%;animation-delay:-2s}
+        .festivalLightBeams span:nth-child(5){left:86%;animation-delay:-6s}
+
+        .festivalMarquee {
+          position:absolute; top:12px; left:50%; z-index:7;
+          display:flex; align-items:center; gap:8px;
+          color:color-mix(in srgb,var(--festival-accent-4) 85%,white 15%);
+          transform:translateX(-50%); font-size:10px; letter-spacing:4px;
+          opacity:.88; pointer-events:none;
+        }
+        .festivalMarquee i { width:12px; height:1px; background:currentColor; opacity:.48; }
+
+        .festivalMandala {
+          position:absolute; left:50%; top:50%; z-index:1;
+          width:410px; height:410px; pointer-events:none;
+          transform:translate(-50%,-50%);
+        }
+        .mandalaRing {
+          position:absolute; inset:0; border-radius:50%;
+          border:1px solid color-mix(in srgb,var(--festival-accent-4) 28%,transparent);
+        }
+        .ringB {
+          inset:34px; border-style:dashed;
+          border-color:color-mix(in srgb,var(--festival-accent-1) 34%,transparent);
+          animation:mandalaSpin 18s linear infinite;
+        }
+        .ringC {
+          inset:72px; border:2px dotted color-mix(in srgb,var(--festival-accent-2) 32%,transparent);
+          animation:mandalaSpinReverse 13s linear infinite;
+        }
+        .mandalaPetals { position:absolute; inset:0; animation:mandalaSpin 24s linear infinite; }
+        .mandalaPetals i {
+          position:absolute; left:50%; top:50%; width:24px; height:78px;
+          border-radius:50% 50% 42% 42%; transform-origin:50% 205px;
+          background:linear-gradient(180deg,color-mix(in srgb,var(--festival-accent-1) 18%,transparent),color-mix(in srgb,var(--festival-accent-4) 6%,transparent));
+          border:1px solid color-mix(in srgb,var(--festival-accent-4) 18%,transparent);
+        }
+        .mandalaPetals i:nth-child(1){transform:translate(-50%,-205px) rotate(0deg)}
+        .mandalaPetals i:nth-child(2){transform:translate(-50%,-205px) rotate(45deg)}
+        .mandalaPetals i:nth-child(3){transform:translate(-50%,-205px) rotate(90deg)}
+        .mandalaPetals i:nth-child(4){transform:translate(-50%,-205px) rotate(135deg)}
+        .mandalaPetals i:nth-child(5){transform:translate(-50%,-205px) rotate(180deg)}
+        .mandalaPetals i:nth-child(6){transform:translate(-50%,-205px) rotate(225deg)}
+        .mandalaPetals i:nth-child(7){transform:translate(-50%,-205px) rotate(270deg)}
+        .mandalaPetals i:nth-child(8){transform:translate(-50%,-205px) rotate(315deg)}
+
+        .festivalLampRow {
+          position:absolute; left:50%; bottom:44px; z-index:6;
+          display:flex; align-items:center; gap:9px; transform:translateX(-50%);
+          font-size:16px; opacity:.84;
+        }
+        .festivalLampRow i {
+          width:28px; height:1px;
+          background:linear-gradient(90deg,transparent,var(--festival-accent-4),transparent);
+        }
+
+        .festivalLuxuryDivider {
+          display:flex; align-items:center; justify-content:center; gap:8px;
+          width:min(260px,72%); margin:10px auto 3px;
+          color:var(--festival-accent-4); opacity:.78;
+        }
+        .festivalLuxuryDivider span {
+          flex:1; height:1px;
+          background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--festival-accent-4) 70%,transparent));
+        }
+        .festivalLuxuryDivider span:last-child {
+          background:linear-gradient(90deg,color-mix(in srgb,var(--festival-accent-4) 70%,transparent),transparent);
+        }
+        .festivalLuxuryDivider b {
+          font-size:8px; animation:jewelPulse 2.5s ease-in-out infinite;
+        }
 
         .closeButton {
           position: absolute;
@@ -975,7 +1112,7 @@ export default function FestivalGreeting() {
           -webkit-text-fill-color:transparent;
           font-family: "Playfair Display", Georgia, serif;
           animation:titleShimmer 5s ease-in-out infinite;
-          font-size: clamp(42px, 5vw, 70px);
+          font-size: clamp(40px, 4.6vw, 66px);
           font-weight: 900;
           line-height: 0.98;
           letter-spacing: -1.8px;
@@ -1207,6 +1344,28 @@ export default function FestivalGreeting() {
         @keyframes ribbonShine{0%{left:-35%}55%,100%{left:120%}}
         @keyframes titleShimmer{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
 
+
+        @keyframes stageGlow {
+          0%,100% { opacity:.28; transform:scale(.92); }
+          50% { opacity:.48; transform:scale(1.08); }
+        }
+        @keyframes beamSweep {
+          0%,100% { opacity:.12; transform:translateX(-35px) rotate(16deg) scaleX(.85); }
+          50% { opacity:.36; transform:translateX(36px) rotate(16deg) scaleX(1.1); }
+        }
+        @keyframes mandalaSpin {
+          from { transform:rotate(0deg); }
+          to { transform:rotate(360deg); }
+        }
+        @keyframes mandalaSpinReverse {
+          from { transform:rotate(360deg); }
+          to { transform:rotate(0deg); }
+        }
+        @keyframes jewelPulse {
+          0%,100% { opacity:.45; transform:scale(.8) rotate(0deg); }
+          50% { opacity:1; transform:scale(1.18) rotate(45deg); }
+        }
+
         @keyframes overlayIn {
           from {
             opacity: 0;
@@ -1315,6 +1474,23 @@ export default function FestivalGreeting() {
           .festivalOverlay {
             padding: 10px;
           }
+
+          .festivalMarquee { top:7px; gap:5px; font-size:8px; letter-spacing:2px; }
+          .festivalStageGlow { width:230px; height:230px; }
+          .festivalLightBeams span { width:20%; opacity:.18; }
+          .festivalMandala { width:245px; height:245px; }
+          .ringB { inset:22px; }
+          .ringC { inset:44px; }
+          .mandalaPetals i { width:15px; height:46px; transform-origin:50% 122px; }
+          .mandalaPetals i:nth-child(1){transform:translate(-50%,-122px) rotate(0deg)}
+          .mandalaPetals i:nth-child(2){transform:translate(-50%,-122px) rotate(45deg)}
+          .mandalaPetals i:nth-child(3){transform:translate(-50%,-122px) rotate(90deg)}
+          .mandalaPetals i:nth-child(4){transform:translate(-50%,-122px) rotate(135deg)}
+          .mandalaPetals i:nth-child(5){transform:translate(-50%,-122px) rotate(180deg)}
+          .mandalaPetals i:nth-child(6){transform:translate(-50%,-122px) rotate(225deg)}
+          .mandalaPetals i:nth-child(7){transform:translate(-50%,-122px) rotate(270deg)}
+          .mandalaPetals i:nth-child(8){transform:translate(-50%,-122px) rotate(315deg)}
+          .festivalLampRow { bottom:36px; font-size:13px; }
 
           .festivalCard {
             max-height: calc(100dvh - 20px);
@@ -1460,6 +1636,12 @@ export default function FestivalGreeting() {
           .festivalSpark,
           .festivalHalo,
           .festivalMotif,
+          .festivalStageGlow,
+          .festivalLightBeams span,
+          .ringB,
+          .ringC,
+          .mandalaPetals,
+          .festivalLuxuryDivider b,
           .festivalImageWrap img {
             animation: none !important;
           }
