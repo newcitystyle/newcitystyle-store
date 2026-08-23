@@ -36,6 +36,9 @@ type DesignLink = {
   design_unit_id: number;
   variant_id: number;
   status?: string | null;
+  mrp?: number | string | null;
+  online_price?: number | string | null;
+  online_quantity?: number | string | null;
 };
 
 type ProductVariant = {
@@ -80,6 +83,9 @@ function parentOnlineQuantity(product: Product) {
 function variantAvailableQuantity(variant: ProductVariant) {
   const stock = Math.max(0, numberValue(variant.stock));
   if (stock <= 0) return 0;
+
+  // Explicitly disabled variants must never be shown online.
+  if (variant.sell_online === false) return 0;
 
   const onlineLimit = Math.max(0, numberValue(variant.online_stock_limit));
 
@@ -210,7 +216,10 @@ export default function FeaturedProducts() {
               product_id,
               design_unit_id,
               variant_id,
-              status
+              status,
+              mrp,
+              online_price,
+              online_quantity
             `
           )
           .in("product_id", productIds)
@@ -286,11 +295,28 @@ export default function FeaturedProducts() {
           });
 
         const availableDesigns = productDesigns.filter((design) =>
-          designLinks.some(
-            (link) =>
-              Number(link.design_unit_id) === Number(design.id) &&
-              link.status === "available"
-          )
+          designLinks.some((link) => {
+            if (
+              Number(link.design_unit_id) !== Number(design.id) ||
+              link.status !== "available" ||
+              !(
+                link.online_quantity === null ||
+                link.online_quantity === undefined ||
+                numberValue(link.online_quantity) > 0
+              )
+            ) {
+              return false;
+            }
+
+            const linkedVariant = productVariants.find(
+              (variant) => Number(variant.id) === Number(link.variant_id)
+            );
+
+            return Boolean(
+              linkedVariant &&
+                variantAvailableQuantity(linkedVariant) > 0
+            );
+          })
         );
 
         /*
@@ -304,13 +330,32 @@ export default function FeaturedProducts() {
         const linkedVariantIdsForDesigns = new Set<number>();
 
         availableDesigns.forEach((design, index) => {
-          const linkedVariantIds = designLinks
-            .filter(
-              (link) =>
-                Number(link.design_unit_id) === Number(design.id) &&
-                link.status === "available"
-            )
-            .map((link) => Number(link.variant_id));
+          const availableLinksForDesign = designLinks.filter((link) => {
+            if (
+              Number(link.design_unit_id) !== Number(design.id) ||
+              link.status !== "available" ||
+              !(
+                link.online_quantity === null ||
+                link.online_quantity === undefined ||
+                numberValue(link.online_quantity) > 0
+              )
+            ) {
+              return false;
+            }
+
+            const linkedVariant = productVariants.find(
+              (variant) => Number(variant.id) === Number(link.variant_id)
+            );
+
+            return Boolean(
+              linkedVariant &&
+                variantAvailableQuantity(linkedVariant) > 0
+            );
+          });
+
+          const linkedVariantIds = availableLinksForDesign.map(
+            (link) => Number(link.variant_id)
+          );
 
           linkedVariantIds.forEach((id) => linkedVariantIdsForDesigns.add(id));
 
@@ -321,6 +366,28 @@ export default function FeaturedProducts() {
             .map((variant) => cleanSize(variant.size))
             .filter(Boolean);
 
+          if (sizes.length === 0) {
+            return;
+          }
+
+          const designOnlinePrices = availableLinksForDesign
+            .map((link) => numberValue(link.online_price))
+            .filter((value) => value > 0);
+
+          const designMrps = availableLinksForDesign
+            .map((link) => numberValue(link.mrp))
+            .filter((value) => value > 0);
+
+          const cardPrice =
+            designOnlinePrices.length > 0
+              ? Math.min(...designOnlinePrices)
+              : price;
+
+          const cardMrp =
+            designMrps.length > 0
+              ? Math.max(cardPrice, Math.min(...designMrps))
+              : Math.max(cardPrice, mrp);
+
           finalCards.push({
             key: `product-${productId}-design-${design.id}`,
             productId: product.id,
@@ -329,8 +396,8 @@ export default function FeaturedProducts() {
             name: productName,
             designName:
               design.design_name?.trim() || `Design ${index + 1}`,
-            price,
-            mrp,
+            price: cardPrice,
+            mrp: cardMrp,
             image: design.image_url?.trim() || parentImage,
             quantity: 1,
             isDesign: true,

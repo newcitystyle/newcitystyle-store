@@ -289,6 +289,10 @@ export default function EditProductPage() {
   const [selectedDesignVariantIds, setSelectedDesignVariantIds] = useState<number[]>([]);
   const [designSizeFilterId, setDesignSizeFilterId] = useState<number | "all">("all");
   const [sizeEditorVariantId, setSizeEditorVariantId] = useState<number | null>(null);
+
+  // Session-only list: AI naming should run only for photos uploaded NOW,
+  // never re-scan yesterday's / older design photos.
+  const [newlyUploadedDesignUnitIds, setNewlyUploadedDesignUnitIds] = useState<number[]>([]);
   const [loadingDesignUnits, setLoadingDesignUnits] = useState(false);
   const [uploadingDesignUnits, setUploadingDesignUnits] = useState(false);
   const [generatingDesignNames, setGeneratingDesignNames] = useState(false);
@@ -989,6 +993,12 @@ export default function EditProductPage() {
 
       insertedDesignIds.push(...createdIds);
 
+      // Remember only THIS upload batch for AI naming.
+      // Older design photos are intentionally excluded to save AI quota/time.
+      setNewlyUploadedDesignUnitIds((current) =>
+        Array.from(new Set([...current, ...createdIds]))
+      );
+
       // STEP 3: Link each photo to selected physical sizes.
       // Include independent price fields, but do not touch barcode or physical stock.
       setDesignUnitStatus({
@@ -1435,18 +1445,30 @@ export default function EditProductPage() {
   }
 
   async function generateAllDesignNamesWithAi() {
+    const newIdSet = new Set(newlyUploadedDesignUnitIds);
+
     const availableUnits = designUnits.filter(
       (unit) =>
+        newIdSet.has(unit.id) &&
         unit.imageUrl &&
         unit.status !== "hidden" &&
         isDefaultDesignName(unit.designName)
     );
 
+    if (!newlyUploadedDesignUnitIds.length) {
+      setDesignUnitStatus({
+        type: "success",
+        message:
+          "No new photos are waiting for AI naming. Upload new design photos first. Older photos will not be scanned again.",
+      });
+      return;
+    }
+
     if (!availableUnits.length) {
       setDesignUnitStatus({
         type: "success",
         message:
-          "Every uploaded design already has a name. Existing AI/manual names were kept and no extra AI requests were sent.",
+          "All photos from the latest upload batch already have names. Older designs were skipped and no extra AI requests were sent.",
       });
       return;
     }
@@ -1455,13 +1477,14 @@ export default function EditProductPage() {
     setDesignUnitStatus({
       type: "idle",
       message:
-        `AI is naming ${availableUnits.length} unnamed design photo${availableUnits.length === 1 ? "" : "s"} one by one. ` +
-        "Already named designs will be skipped.",
+        `AI is naming only ${availableUnits.length} NEW photo${availableUnits.length === 1 ? "" : "s"} from this session. ` +
+        "Yesterday's / older photos are skipped.",
     });
 
     let successCount = 0;
     let failedCount = 0;
     const updatedUnits = [...designUnits];
+    const successfullyNamedIds: number[] = [];
 
     try {
       for (let position = 0; position < availableUnits.length; position += 1) {
@@ -1512,6 +1535,7 @@ export default function EditProductPage() {
                 setDesignUnits([...updatedUnits]);
               }
 
+              successfullyNamedIds.push(unit.id);
               successCount += 1;
             }
           }
@@ -1522,42 +1546,36 @@ export default function EditProductPage() {
         setDesignUnitStatus({
           type: successCount > 0 ? "success" : "idle",
           message:
-            `AI progress: ${position + 1}/${availableUnits.length} checked • ` +
+            `New-photo AI progress: ${position + 1}/${availableUnits.length} checked • ` +
             `${successCount} named • ${failedCount} waiting for retry.`,
         });
 
-        // Pace requests so 5/10/12 photos do not hit Gemini in a burst.
         if (position < availableUnits.length - 1) {
-          await waitForDesignAi(2200);
+          await waitForDesignAi(700);
         }
       }
 
-      if (successCount > 0 && failedCount === 0) {
-        setDesignUnitStatus({
-          type: "success",
-          message:
-            `AI named all ${successCount} remaining design photo${successCount === 1 ? "" : "s"} successfully. ` +
-            "Existing names, barcodes and physical stock were not changed.",
-        });
-      } else if (successCount > 0) {
-        setDesignUnitStatus({
-          type: "success",
-          message:
-            `${successCount} design${successCount === 1 ? "" : "s"} named successfully. ` +
-            `${failedCount} still need a retry. Click the AI button later; already named designs will be skipped automatically.`,
-        });
-      } else {
-        setDesignUnitStatus({
-          type: "error",
-          message:
-            "Gemini is still rate-limited right now. Your photos and barcodes are safe. " +
-            "Wait a little and click again; only the still-unnamed designs will be retried.",
-        });
+      // Successful photos leave the retry queue.
+      // Failed new photos stay in the queue, so pressing the button again retries ONLY them.
+      if (successfullyNamedIds.length > 0) {
+        const successSet = new Set(successfullyNamedIds);
+        setNewlyUploadedDesignUnitIds((current) =>
+          current.filter((id) => !successSet.has(id))
+        );
       }
+
+      setDesignUnitStatus({
+        type: failedCount > 0 ? "idle" : "success",
+        message:
+          failedCount > 0
+            ? `${successCount} new photo${successCount === 1 ? "" : "s"} named. ${failedCount} new photo${failedCount === 1 ? "" : "s"} can be retried. Older photos were not touched.`
+            : `${successCount} new photo${successCount === 1 ? "" : "s"} named successfully. Older photos were skipped — no AI quota wasted.`,
+      });
     } finally {
       setGeneratingDesignNames(false);
     }
   }
+
 
   async function uploadMainImage(
     event: ChangeEvent<HTMLInputElement>
@@ -3273,7 +3291,7 @@ export default function EditProductPage() {
                       disabled={
                         generatingDesignNames ||
                         uploadingDesignUnits ||
-                        designUnits.length === 0
+                        newlyUploadedDesignUnitIds.length === 0
                       }
                       style={{
                         minHeight: 42,
@@ -3286,20 +3304,20 @@ export default function EditProductPage() {
                         cursor:
                           generatingDesignNames ||
                           uploadingDesignUnits ||
-                          designUnits.length === 0
+                          newlyUploadedDesignUnitIds.length === 0
                             ? "not-allowed"
                             : "pointer",
                         opacity:
                           generatingDesignNames ||
                           uploadingDesignUnits ||
-                          designUnits.length === 0
+                          newlyUploadedDesignUnitIds.length === 0
                             ? 0.55
                             : 1,
                       }}
                     >
                       {generatingDesignNames
-                        ? "AI Naming Designs..."
-                        : "✨ Generate Different AI Name for Every Photo"}
+                        ? "AI Naming New Photos..."
+                        : `✨ AI Name New Photos Only${newlyUploadedDesignUnitIds.length ? ` (${newlyUploadedDesignUnitIds.length})` : ""}`}
                     </button>
 
                     <button

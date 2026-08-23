@@ -69,6 +69,9 @@ type ProductVariantRef = {
   id: number;
   size: string;
   barcode: string;
+  stock: number;
+  onlineStockLimit: number | null;
+  sellOnline: boolean | null;
 };
 
 type ProductDesignVariantLink = {
@@ -663,7 +666,7 @@ export default function ProductPage() {
         { data: designData, error: designError },
         { data: designLinkData, error: designLinkError },
       ] = await Promise.all([
-        supabase.from("product_variants").select("id,size,barcode").eq("product_id", params.id).order("id", { ascending: true }),
+        supabase.from("product_variants").select("id,size,barcode,stock,online_stock_limit,sell_online").eq("product_id", params.id).order("id", { ascending: true }),
         supabase.from("product_design_units").select("id,product_id,parent_variant_id,parent_barcode,design_name,image_url,status,sort_order").eq("product_id", params.id).neq("status", "hidden").order("sort_order", { ascending: true }).order("id", { ascending: true }),
         supabase.from("product_design_unit_variants").select("id,design_unit_id,variant_id,status,mrp,online_price,online_quantity").eq("product_id", params.id).neq("status", "hidden").order("id", { ascending: true }),
       ]);
@@ -685,6 +688,15 @@ export default function ProductPage() {
           id: Number(row.id || 0),
           size: typeof row.size === "string" ? row.size.trim() : "",
           barcode: typeof row.barcode === "string" ? row.barcode.trim() : "",
+          stock: Math.max(0, Number(row.stock || 0)),
+          onlineStockLimit:
+            row.online_stock_limit === null || row.online_stock_limit === undefined
+              ? null
+              : Math.max(0, Number(row.online_stock_limit || 0)),
+          sellOnline:
+            typeof row.sell_online === "boolean"
+              ? row.sell_online
+              : null,
         })
       );
 
@@ -898,12 +910,33 @@ export default function ProductPage() {
   const designMode = designUnits.length > 0;
   const availableDesignVariantLinks = useMemo(
     () =>
-      designVariantLinks.filter(
-        (link) =>
-          link.status === "available" &&
-          (link.onlineQuantity === null || link.onlineQuantity > 0)
-      ),
-    [designVariantLinks]
+      designVariantLinks.filter((link) => {
+        if (
+          link.status !== "available" ||
+          !(link.onlineQuantity === null || link.onlineQuantity > 0)
+        ) {
+          return false;
+        }
+
+        const variant = variantRefs.find(
+          (item) => item.id === link.variantId
+        );
+
+        if (!variant || variant.stock <= 0) return false;
+        if (variant.sellOnline === false) return false;
+
+        // If a per-variant online limit exists and reaches zero, hide that
+        // exact size/design online. Null keeps backward compatibility.
+        if (
+          variant.onlineStockLimit !== null &&
+          variant.onlineStockLimit <= 0
+        ) {
+          return false;
+        }
+
+        return true;
+      }),
+    [designVariantLinks, variantRefs]
   );
   const designIdsWithAvailableSize = useMemo(() => new Set(availableDesignVariantLinks.map((link) => link.designUnitId)), [availableDesignVariantLinks]);
   const availableDesignUnits = useMemo(() => designUnits.filter((unit) => unit.status !== "hidden" && designIdsWithAvailableSize.has(unit.id)), [designUnits, designIdsWithAvailableSize]);
