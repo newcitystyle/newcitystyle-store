@@ -614,6 +614,7 @@ export default function ProductPage() {
   const [variantRefs, setVariantRefs] = useState<ProductVariantRef[]>([]);
   const [designVariantLinks, setDesignVariantLinks] = useState<ProductDesignVariantLink[]>([]);
   const [selectedDesignId, setSelectedDesignId] = useState<number | null>(null);
+  const [openedDesignId, setOpenedDesignId] = useState<number | null>(null);
 
   const [zoomVisible, setZoomVisible] = useState(false);
   const [zoomPosition, setZoomPosition] = useState({ x: 50, y: 50 });
@@ -792,6 +793,10 @@ export default function ProductPage() {
               ) || null
             : null;
 
+        // When the customer opens an exact design card (?design=ID),
+        // keep this page focused on that one available design only.
+        setOpenedDesignId(requestedDesign?.id || null);
+
         const initialDesign = requestedDesign || availableDesignUnits[0];
 
         const firstAvailableLink = cleanDesignVariantLinks.find(
@@ -811,6 +816,7 @@ export default function ProductPage() {
         setSelectedImage(parentImages[0] || "");
         setSelectedDesignId(null);
         setSelectedSize("");
+        setOpenedDesignId(null);
       }
 
       setQuantity(1);
@@ -878,6 +884,7 @@ export default function ProductPage() {
       setDesignUnits([]);
       setDesignVariantLinks([]);
       setSelectedDesignId(null);
+      setOpenedDesignId(null);
     } finally {
       setLoading(false);
     }
@@ -901,7 +908,28 @@ export default function ProductPage() {
   const designIdsWithAvailableSize = useMemo(() => new Set(availableDesignVariantLinks.map((link) => link.designUnitId)), [availableDesignVariantLinks]);
   const availableDesignUnits = useMemo(() => designUnits.filter((unit) => unit.status !== "hidden" && designIdsWithAvailableSize.has(unit.id)), [designUnits, designIdsWithAvailableSize]);
 
-  const images = useMemo(() => designMode ? designUnits.filter((unit) => unit.status !== "hidden").map((unit) => unit.imageUrl) : parentImages, [designMode, designUnits, parentImages]);
+  const storefrontDesignUnits = useMemo(() => {
+    if (!designMode) return [];
+
+    const available = availableDesignUnits.filter(
+      (unit) => unit.status === "available"
+    );
+
+    if (openedDesignId) {
+      const exact = available.find((unit) => unit.id === openedDesignId);
+      return exact ? [exact] : available;
+    }
+
+    return available;
+  }, [designMode, availableDesignUnits, openedDesignId]);
+
+  const images = useMemo(
+    () =>
+      designMode
+        ? storefrontDesignUnits.map((unit) => unit.imageUrl)
+        : parentImages,
+    [designMode, storefrontDesignUnits, parentImages]
+  );
   const legacySizes = useMemo(() => { if (!product) return []; const directSizes = parseListField(product.sizes); return directSizes.length > 0 ? directSizes : parseVariationValues(product, "Size", []); }, [product]);
   const selectedDesign = useMemo(() => designUnits.find((unit) => unit.id === selectedDesignId) || null, [designUnits, selectedDesignId]);
   const selectedDesignLinks = useMemo(() => selectedDesignId ? designVariantLinks.filter((link) => link.designUnitId === selectedDesignId && link.status !== "hidden") : [], [designVariantLinks, selectedDesignId]);
@@ -921,7 +949,7 @@ export default function ProductPage() {
     if (selectedSize && !sizes.includes(selectedSize)) setSelectedSize("");
   }, [designMode, sizes, selectedSize]);
 
-  const visibleDesignUnits = useMemo(() => designMode ? designUnits.filter((unit) => unit.status !== "hidden") : [], [designMode, designUnits]);
+  const visibleDesignUnits = storefrontDesignUnits;
   const availableStock = useMemo(() => !designMode ? Number(product?.stock ?? 0) : availableDesignUnits.length, [designMode, product?.stock, availableDesignUnits]);
 
   function designHasAvailableSize(designUnitId: number) { return availableDesignVariantLinks.some((link) => link.designUnitId === designUnitId); }
@@ -1528,22 +1556,14 @@ export default function ProductPage() {
                         key={`design-${unit.id}`}
                         className={`thumbnailButton designThumb ${
                           selectedDesignId === unit.id ? "thumbnailActive" : ""
-                        } ${unit.status === "sold_out" ? "thumbnailSoldOut" : ""}`}
+                        }`}
                         onClick={() => selectDesign(unit.id)}
-                        disabled={unit.status !== "available"}
-                        title={
-                          unit.status === "sold_out"
-                            ? `${unit.designName} — Sold Out`
-                            : unit.designName
-                        }
+                        title={unit.designName}
                       >
                         <img
                           src={unit.imageUrl}
                           alt={unit.designName || `${productName} design ${index + 1}`}
                         />
-                        {unit.status === "sold_out" && (
-                          <span className="soldOutThumbLabel">Sold Out</span>
-                        )}
                       </button>
                     ))
                   ) : (
@@ -1679,7 +1699,7 @@ export default function ProductPage() {
               </div>
             )}
 
-            {designMode && (
+            {designMode && visibleDesignUnits.length > 1 && (
               <div className="designSection">
                 <div className="choiceHeader">
                   <div>
@@ -1702,13 +1722,11 @@ export default function ProductPage() {
                       key={`design-card-${unit.id}`}
                       className={`designChoice ${
                         selectedDesignId === unit.id ? "designChoiceActive" : ""
-                      } ${!designHasAvailableSize(unit.id) ? "designChoiceSoldOut" : ""}`}
+                      }`}
                       onClick={() => selectDesign(unit.id)}
-                      disabled={!designHasAvailableSize(unit.id)}
                     >
                       <img src={unit.imageUrl} alt={unit.designName} />
                       <span>{unit.designName}</span>
-                      {!designHasAvailableSize(unit.id) && <b>Sold Out</b>}
                     </button>
                   ))}
                 </div>

@@ -1268,6 +1268,9 @@ export default function EditProductPage() {
       type: "success",
       message: `${unit.designName || "Design"} saved. Name, MRP, online price and online quantity are updated.`,
     });
+
+    // Close the size editor after a successful explicit save.
+    setSizeEditorVariantId(null);
   }
 
   async function saveDesignVariantCommercials(link: DesignVariantLink) {
