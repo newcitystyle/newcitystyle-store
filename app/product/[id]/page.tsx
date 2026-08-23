@@ -774,8 +774,34 @@ export default function ProductPage() {
             })
           );
 
-      const designIdsWithAvailableSize = new Set(cleanDesignVariantLinks.filter((link) => link.status === "available").map((link) => link.designUnitId));
-      const availableDesignUnits = cleanDesignUnits.filter((unit) => unit.status !== "hidden" && designIdsWithAvailableSize.has(unit.id));
+      const loadTimeAvailableLinks = cleanDesignVariantLinks.filter((link) => {
+        if (
+          link.status !== "available" ||
+          !(link.onlineQuantity === null || link.onlineQuantity > 0)
+        ) {
+          return false;
+        }
+
+        const variant = cleanVariantRefs.find(
+          (item) => item.id === link.variantId
+        );
+
+        // NEW CITY STYLE legacy-safe rule:
+        // physical stock > 0 keeps the size/design eligible.
+        // Old variant sell_online=false and online_stock_limit=0 values are
+        // not treated as sold-out because many older products use them.
+        return Boolean(variant && variant.stock > 0);
+      });
+
+      const designIdsWithAvailableSize = new Set(
+        loadTimeAvailableLinks.map((link) => link.designUnitId)
+      );
+
+      const availableDesignUnits = cleanDesignUnits.filter(
+        (unit) =>
+          unit.status !== "hidden" &&
+          designIdsWithAvailableSize.has(unit.id)
+      );
 
       setProduct(loadedProduct);
       setVariantRefs(cleanVariantRefs);
@@ -811,10 +837,8 @@ export default function ProductPage() {
 
         const initialDesign = requestedDesign || availableDesignUnits[0];
 
-        const firstAvailableLink = cleanDesignVariantLinks.find(
-          (link) =>
-            link.designUnitId === initialDesign.id &&
-            link.status === "available"
+        const firstAvailableLink = loadTimeAvailableLinks.find(
+          (link) => link.designUnitId === initialDesign.id
         );
 
         const firstVariant = cleanVariantRefs.find(
@@ -922,19 +946,13 @@ export default function ProductPage() {
           (item) => item.id === link.variantId
         );
 
-        if (!variant || variant.stock <= 0) return false;
-        if (variant.sellOnline === false) return false;
-
-        // If a per-variant online limit exists and reaches zero, hide that
-        // exact size/design online. Null keeps backward compatibility.
-        if (
-          variant.onlineStockLimit !== null &&
-          variant.onlineStockLimit <= 0
-        ) {
-          return false;
-        }
-
-        return true;
+        // IMPORTANT LEGACY-SAFE RULE:
+        // A size disappears only when its real physical stock reaches 0,
+        // or when this exact design+size link itself is sold_out / qty 0.
+        // Do NOT hide old variants merely because variant.sell_online=false
+        // or variant.online_stock_limit=0; older NCS rows legitimately have
+        // those values while the parent product is still selling online.
+        return Boolean(variant && variant.stock > 0);
       }),
     [designVariantLinks, variantRefs]
   );
@@ -966,11 +984,37 @@ export default function ProductPage() {
   const legacySizes = useMemo(() => { if (!product) return []; const directSizes = parseListField(product.sizes); return directSizes.length > 0 ? directSizes : parseVariationValues(product, "Size", []); }, [product]);
   const selectedDesign = useMemo(() => designUnits.find((unit) => unit.id === selectedDesignId) || null, [designUnits, selectedDesignId]);
   const selectedDesignLinks = useMemo(() => selectedDesignId ? designVariantLinks.filter((link) => link.designUnitId === selectedDesignId && link.status !== "hidden") : [], [designVariantLinks, selectedDesignId]);
-  const selectedDesignAvailableLinks = useMemo(() => selectedDesignLinks.filter((link) => link.status === "available"), [selectedDesignLinks]);
+  const selectedDesignAvailableLinks = useMemo(
+    () =>
+      selectedDesignId
+        ? availableDesignVariantLinks.filter(
+            (link) => link.designUnitId === selectedDesignId
+          )
+        : [],
+    [availableDesignVariantLinks, selectedDesignId]
+  );
+
   const sizes = useMemo(() => {
     if (!designMode) return legacySizes;
-    return Array.from(new Set(selectedDesignAvailableLinks.map((link) => variantRefs.find((variant) => variant.id === link.variantId)?.size || "").filter(Boolean)));
-  }, [designMode, legacySizes, selectedDesignAvailableLinks, variantRefs]);
+
+    return Array.from(
+      new Set(
+        selectedDesignAvailableLinks
+          .map(
+            (link) =>
+              variantRefs.find(
+                (variant) => variant.id === link.variantId
+              )?.size || ""
+          )
+          .filter(Boolean)
+      )
+    );
+  }, [
+    designMode,
+    legacySizes,
+    selectedDesignAvailableLinks,
+    variantRefs,
+  ]);
   const tags = useMemo(() => (product ? parseListField(product.tags) : []), [product]);
 
   useEffect(() => {

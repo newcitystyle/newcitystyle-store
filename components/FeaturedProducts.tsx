@@ -84,14 +84,17 @@ function variantAvailableQuantity(variant: ProductVariant) {
   const stock = Math.max(0, numberValue(variant.stock));
   if (stock <= 0) return 0;
 
-  // Explicitly disabled variants must never be shown online.
-  if (variant.sell_online === false) return 0;
+  const onlineLimit = Math.max(
+    0,
+    numberValue(variant.online_stock_limit)
+  );
 
-  const onlineLimit = Math.max(0, numberValue(variant.online_stock_limit));
-
-  // Legacy rows may not yet have their own online quantity.
-  // In that case use physical variant stock, while the parent product
-  // remains the online visibility gate.
+  // NEW CITY STYLE legacy-safe rule:
+  // Many older variants have sell_online=false / online_stock_limit=0 even
+  // though the parent product is online and physical stock is available.
+  // Therefore physical variant stock is the authoritative size gate.
+  // A specific uploaded design is still controlled separately by its
+  // product_design_unit_variants status + online_quantity.
   if (onlineLimit <= 0) return stock;
 
   return Math.min(stock, onlineLimit);
