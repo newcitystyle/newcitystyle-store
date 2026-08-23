@@ -288,6 +288,7 @@ export default function EditProductPage() {
   const [designVariantLinks, setDesignVariantLinks] = useState<DesignVariantLink[]>([]);
   const [selectedDesignVariantIds, setSelectedDesignVariantIds] = useState<number[]>([]);
   const [designSizeFilterId, setDesignSizeFilterId] = useState<number | "all">("all");
+  const [sizeEditorVariantId, setSizeEditorVariantId] = useState<number | null>(null);
   const [loadingDesignUnits, setLoadingDesignUnits] = useState(false);
   const [uploadingDesignUnits, setUploadingDesignUnits] = useState(false);
   const [generatingDesignNames, setGeneratingDesignNames] = useState(false);
@@ -3068,116 +3069,102 @@ export default function EditProductPage() {
 
                 {variantBarcodes.length > 0 && (
                   <div className="variant-reference-card">
-                    <strong>Variant / Design Online Details — Legacy / Size Fallback</strong>
-                    <p style={{ margin: "6px 0 12px", color: "#667085", fontSize: 12 }}>
-                      These existing size-level values are preserved exactly as before. When one size has many different designs/MRPs, use the Design Photo cards above and set Design MRP + Online Price for each linked size there. Blank design prices continue to fall back to these old size values.
+                    <strong>Size-wise Design Price Editor</strong>
+                    <p style={{ margin: "6px 0 12px", color: "#667085", fontSize: 12, lineHeight: 1.55 }}>
+                      Click only the size you want to edit. A popup opens with that size's linked shirt photos.
+                      Edit Design Name, MRP, Online Price and Online Qty there, then close it.
+                      Barcode and physical stock are not changed.
                     </p>
-                    <div style={{ display: "grid", gap: 12 }}>
-                      {variantBarcodes.map((variant, index) => {
-                        const effectiveImage = variant.mainImage || form.mainImage;
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                        gap: 10,
+                      }}
+                    >
+                      {variantBarcodes.map((variant) => {
+                        const links = designVariantLinks.filter(
+                          (link) =>
+                            link.variantId === variant.id &&
+                            link.status !== "hidden"
+                        );
+                        const availableLinks = links.filter(
+                          (link) => link.status === "available"
+                        );
+
                         return (
-                          <div key={variant.id} style={{ padding: 14, border: "1px solid #e4e7ec", borderRadius: 14, background: "#fff" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-                              <div>
-                                <strong style={{ color: "#0A2E73" }}>{variant.variantName || `Variant ${index + 1}`}</strong>
-                                <div style={{ marginTop: 4, fontSize: 12, color: "#475467" }}>
-                                  {[variant.size || "Standard", variant.color].filter(Boolean).join(" • ")} • Stock {variant.stock}
-                                </div>
-                                <code style={{ display: "inline-block", marginTop: 5 }}>{variant.barcode || "No barcode"}</code>
-                              </div>
-                              <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 750 }}>
-                                <input
-                                  type="checkbox"
-                                  checked={variant.sellOnline}
-                                  disabled={!form.sellOnline}
-                                  onChange={(event) => updateVariantField(variant.id, "sellOnline", event.target.checked)}
-                                />
-                                Sell this variant online
-                              </label>
+                          <button
+                            key={`open-size-editor-${variant.id}`}
+                            type="button"
+                            onClick={() => setSizeEditorVariantId(variant.id)}
+                            style={{
+                              minHeight: 78,
+                              padding: "12px 14px",
+                              borderRadius: 14,
+                              border: "1px solid #d0d5dd",
+                              background: "#fff",
+                              textAlign: "left",
+                              cursor: "pointer",
+                              boxShadow: "0 6px 18px rgba(10,46,115,0.06)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                gap: 8,
+                                alignItems: "center",
+                              }}
+                            >
+                              <strong style={{ color: "#0A2E73", fontSize: 17 }}>
+                                {variant.size || "Standard"}
+                              </strong>
+                              <span
+                                style={{
+                                  padding: "4px 7px",
+                                  borderRadius: 999,
+                                  background: "#eef4ff",
+                                  color: "#0A2E73",
+                                  fontSize: 10,
+                                  fontWeight: 900,
+                                }}
+                              >
+                                EDIT
+                              </span>
                             </div>
 
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginTop: 12 }}>
-                              <Field label="Design / Variant Name">
-                                <input
-                                  value={variant.variantName}
-                                  onChange={(event) => updateVariantField(variant.id, "variantName", event.target.value)}
-                                  placeholder={`Design ${index + 1}`}
-                                  style={inputStyle}
-                                />
-                              </Field>
-                              <Field label="Variant MRP">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={variant.mrp}
-                                  onChange={(event) => updateVariantField(variant.id, "mrp", event.target.value)}
-                                  placeholder={form.mrp || "Use parent MRP"}
-                                  style={inputStyle}
-                                />
-                              </Field>
-                              <Field label="Online Price">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={variant.onlinePrice}
-                                  onChange={(event) => updateVariantField(variant.id, "onlinePrice", event.target.value)}
-                                  placeholder={form.price || "Use parent price"}
-                                  style={inputStyle}
-                                />
-                              </Field>
-                              <Field label="Online Quantity">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max={variant.stock}
-                                  disabled={!form.sellOnline || !variant.sellOnline}
-                                  value={variant.sellOnline ? variant.onlineStockLimit : 0}
-                                  onChange={(event) => updateVariantField(variant.id, "onlineStockLimit", Math.min(variant.stock, Math.max(0, Number(event.target.value || 0))))}
-                                  style={inputStyle}
-                                />
-                              </Field>
+                            <div
+                              style={{
+                                marginTop: 6,
+                                color: "#475467",
+                                fontSize: 11,
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              Physical stock {variant.stock}
+                              <br />
+                              Linked designs {links.length} • Online designs {availableLinks.length}
                             </div>
-
-                            <div style={{ display: "grid", gridTemplateColumns: "minmax(120px, 160px) 1fr", gap: 12, marginTop: 10, alignItems: "center" }}>
-                              <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 12, overflow: "hidden", border: "1px solid #e4e7ec", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                {effectiveImage ? (
-                                  <img src={effectiveImage} alt={variant.variantName || `Variant ${index + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                ) : (
-                                  <span style={{ color: "#98a2b3", fontSize: 12 }}>No image</span>
-                                )}
-                              </div>
-                              <div style={{ display: "grid", gap: 8 }}>
-                                <label style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: 40, padding: "0 12px", borderRadius: 10, border: "1px solid #d4af37", background: "#fffaf0", color: "#0A2E73", fontWeight: 800, cursor: "pointer" }}>
-                                  {uploadingVariantId === variant.id ? "Uploading..." : "Upload Separate Variant Photo"}
-                                  <input
-                                    type="file"
-                                    accept="image/jpeg,image/png,image/webp"
-                                    hidden
-                                    disabled={uploadingVariantId === variant.id}
-                                    onChange={(event) => uploadVariantMainImage(variant.id, event)}
-                                  />
-                                </label>
-                                <label style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: 38, padding: "0 12px", borderRadius: 10, border: "1px solid #d0d5dd", background: "#fff", color: "#344054", fontWeight: 750, cursor: "pointer" }}>
-                                  Add Variant Gallery ({variant.galleryImages.length}/8)
-                                  <input
-                                    type="file"
-                                    accept="image/jpeg,image/png,image/webp"
-                                    multiple
-                                    hidden
-                                    disabled={uploadingVariantId === variant.id}
-                                    onChange={(event) => uploadVariantGalleryImages(variant.id, event)}
-                                  />
-                                </label>
-                                {variant.mainImage && (
-                                  <button type="button" onClick={() => updateVariantField(variant.id, "mainImage", "")} style={{ minHeight: 34, border: 0, background: "transparent", color: "#b42318", fontWeight: 750, cursor: "pointer" }}>
-                                    Use Parent Photo Instead
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
+                          </button>
                         );
                       })}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: 10,
+                        borderRadius: 10,
+                        background: "#fffbeb",
+                        color: "#92400e",
+                        fontSize: 11,
+                        lineHeight: 1.55,
+                      }}
+                    >
+                      Important: when individual design photos exist, the old size-level Online Quantity is aggregate data.
+                      It can be recalculated from linked designs during Save. So do not use the old L/M quantity field for individual shirts.
+                      In the popup, every actual design photo has its own Online Qty (normally 1).
                     </div>
                   </div>
                 )}
@@ -4516,6 +4503,291 @@ export default function EditProductPage() {
           </div>
         </form>
       </div>
+
+      {sizeEditorVariantId !== null && (() => {
+        const editorVariant = variantBarcodes.find(
+          (variant) => variant.id === sizeEditorVariantId
+        );
+
+        if (!editorVariant) return null;
+
+        const editorRows = designVariantLinks
+          .filter(
+            (link) =>
+              link.variantId === editorVariant.id &&
+              link.status !== "hidden"
+          )
+          .map((link) => ({
+            link,
+            unit:
+              designUnits.find(
+                (unit) => unit.id === link.designUnitId
+              ) || null,
+          }))
+          .filter((row) => row.unit !== null) as Array<{
+            link: DesignVariantLink;
+            unit: DesignUnit;
+          }>;
+
+        return (
+          <div
+            role="dialog"
+            aria-modal="true"
+            onMouseDown={(event) => {
+              if (event.currentTarget === event.target) {
+                setSizeEditorVariantId(null);
+              }
+            }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 10000,
+              background: "rgba(15,23,42,0.66)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 18,
+            }}
+          >
+            <div
+              style={{
+                width: "min(1160px, 97vw)",
+                maxHeight: "92vh",
+                overflowY: "auto",
+                borderRadius: 20,
+                background: "#f8f4ec",
+                border: "1px solid #d4af37",
+                boxShadow: "0 28px 90px rgba(0,0,0,0.32)",
+              }}
+            >
+              <div
+                style={{
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 3,
+                  padding: "14px 18px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                  background: "#0A2E73",
+                  color: "#fff",
+                  borderRadius: "20px 20px 0 0",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 11, opacity: 0.8 }}>
+                    SIZE-WISE DESIGN EDITOR
+                  </div>
+                  <strong style={{ fontSize: 21 }}>
+                    {editorVariant.size || "Standard"} • Stock {editorVariant.stock}
+                  </strong>
+                  <div style={{ marginTop: 3, fontSize: 11, opacity: 0.85 }}>
+                    {editorVariant.barcode || "No barcode"} • {editorRows.length} linked design{editorRows.length === 1 ? "" : "s"}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSizeEditorVariantId(null)}
+                  aria-label="Close size editor"
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.3)",
+                    background: "rgba(255,255,255,0.12)",
+                    color: "#fff",
+                    fontSize: 24,
+                    cursor: "pointer",
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div style={{ padding: 16 }}>
+                {editorRows.length === 0 ? (
+                  <div
+                    style={{
+                      padding: 28,
+                      borderRadius: 14,
+                      background: "#fff",
+                      textAlign: "center",
+                      color: "#667085",
+                    }}
+                  >
+                    No individual design photos are linked to this size yet.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                      gap: 14,
+                    }}
+                  >
+                    {editorRows.map(({ link, unit }) => (
+                      <div
+                        key={`size-editor-${unit.id}-${link.variantId}`}
+                        style={{
+                          overflow: "hidden",
+                          borderRadius: 16,
+                          border:
+                            link.status === "sold_out"
+                              ? "1px solid #f5b7b1"
+                              : "1px solid #dce4f2",
+                          background: "#fff",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "100%",
+                            aspectRatio: "4 / 3",
+                            background: "#eef2f6",
+                          }}
+                        >
+                          <img
+                            src={unit.imageUrl}
+                            alt={unit.designName || "Design"}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                            }}
+                          />
+                        </div>
+
+                        <div style={{ padding: 12, display: "grid", gap: 10 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
+                            <strong style={{ color: "#0A2E73" }}>
+                              {editorVariant.size || "Standard"}
+                            </strong>
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 900,
+                                color:
+                                  link.status === "sold_out"
+                                    ? "#b42318"
+                                    : "#067647",
+                              }}
+                            >
+                              {link.status === "sold_out" ? "SOLD" : "AVAILABLE"}
+                            </span>
+                          </div>
+
+                          <Field label="Design Name">
+                            <input
+                              value={unit.designName}
+                              disabled={link.status === "sold_out"}
+                              onChange={(event) =>
+                                updateDesignUnitNameLocal(
+                                  unit.id,
+                                  event.target.value
+                                )
+                              }
+                              onBlur={() => {
+                                const latestUnit = designUnits.find(
+                                  (item) => item.id === unit.id
+                                );
+                                if (latestUnit) {
+                                  void saveDesignUnitName(latestUnit);
+                                }
+                              }}
+                              style={inputStyle}
+                            />
+                          </Field>
+
+                          <Field label="Design MRP">
+                            <input
+                              type="number"
+                              min="0"
+                              value={link.mrp}
+                              placeholder={editorVariant.mrp || form.mrp || "MRP"}
+                              disabled={link.status === "sold_out"}
+                              onChange={(event) =>
+                                updateDesignVariantLinkLocal(link.id, {
+                                  mrp: event.target.value,
+                                })
+                              }
+                              onBlur={() =>
+                                void saveDesignVariantCommercials(link)
+                              }
+                              style={inputStyle}
+                            />
+                          </Field>
+
+                          <Field label="Online Price">
+                            <input
+                              type="number"
+                              min="0"
+                              value={link.onlinePrice}
+                              placeholder={
+                                editorVariant.onlinePrice ||
+                                form.price ||
+                                "Price"
+                              }
+                              disabled={link.status === "sold_out"}
+                              onChange={(event) =>
+                                updateDesignVariantLinkLocal(link.id, {
+                                  onlinePrice: event.target.value,
+                                })
+                              }
+                              onBlur={() =>
+                                void saveDesignVariantCommercials(link)
+                              }
+                              style={inputStyle}
+                            />
+                          </Field>
+
+                          <Field label="Online Qty">
+                            <input
+                              type="number"
+                              min="0"
+                              max="1"
+                              value={
+                                link.onlineQuantity === null
+                                  ? link.status === "available"
+                                    ? 1
+                                    : 0
+                                  : link.onlineQuantity
+                              }
+                              disabled={link.status === "sold_out"}
+                              onChange={(event) =>
+                                updateDesignVariantLinkLocal(link.id, {
+                                  onlineQuantity: Math.max(
+                                    0,
+                                    Math.min(
+                                      1,
+                                      Number(event.target.value || 0)
+                                    )
+                                  ),
+                                })
+                              }
+                              onBlur={() =>
+                                void saveDesignVariantCommercials(link)
+                              }
+                              style={inputStyle}
+                            />
+                          </Field>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <style jsx global>{`
         .product-admin-layout {
