@@ -289,6 +289,7 @@ export default function EditProductPage() {
   const [selectedDesignVariantIds, setSelectedDesignVariantIds] = useState<number[]>([]);
   const [designSizeFilterId, setDesignSizeFilterId] = useState<number | "all">("all");
   const [sizeEditorVariantId, setSizeEditorVariantId] = useState<number | null>(null);
+  const [showUnlinkedDesigns, setShowUnlinkedDesigns] = useState(false);
 
   // Session-only list: AI naming should run only for photos uploaded NOW,
   // never re-scan yesterday's / older design photos.
@@ -1144,9 +1145,28 @@ export default function EditProductPage() {
     return designVariantLinks.filter((link) => link.designUnitId === designUnitId && link.status === "available");
   }
 
+  const linkedDesignUnits = designUnits.filter((unit) =>
+    designVariantLinks.some(
+      (link) =>
+        link.designUnitId === unit.id &&
+        link.status !== "hidden"
+    )
+  );
+
+  const unlinkedDesignUnits = designUnits.filter(
+    (unit) =>
+      !designVariantLinks.some(
+        (link) =>
+          link.designUnitId === unit.id &&
+          link.status !== "hidden"
+      )
+  );
+
   const filteredDesignUnits =
     designSizeFilterId === "all"
-      ? designUnits
+      ? (showUnlinkedDesigns
+          ? designUnits
+          : linkedDesignUnits)
       : designUnits.filter((unit) =>
           designVariantLinks.some(
             (link) =>
@@ -3459,9 +3479,7 @@ export default function EditProductPage() {
                             marginLeft: 2,
                           }}
                         >
-                          {designSizeFilterId === "all"
-                            ? `${designUnits.length} designs`
-                            : `${filteredDesignUnits.length} designs`}
+                          {`${filteredDesignUnits.length} designs`}
                         </span>
                       </div>
                     )}
@@ -3471,7 +3489,7 @@ export default function EditProductPage() {
                         style={{
                           marginTop: -4,
                           marginBottom: 12,
-                          padding: "9px 11px",
+                          padding: "10px 11px",
                           borderRadius: 10,
                           background:
                             designSizeFilterId === "all"
@@ -3486,9 +3504,36 @@ export default function EditProductPage() {
                           lineHeight: 1.5,
                         }}
                       >
-                        {designSizeFilterId === "all"
-                          ? "✓ All designs are visible. Use this mode when correcting a wrong size, MRP or online price."
-                          : "⚠ Size filter is active. Only this size is visible. Click “All — Recommended” before correcting a wrong size."}
+                        <div>
+                          {designSizeFilterId === "all"
+                            ? "✓ All LINKED designs are visible. Wrong-size designs still remain visible so you can correct L → XL safely."
+                            : "⚠ Size filter is active. Only this size is visible. Click “All — Recommended” before correcting a wrong size."}
+                        </div>
+
+                        {designSizeFilterId === "all" && unlinkedDesignUnits.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowUnlinkedDesigns((current) => !current)
+                            }
+                            style={{
+                              marginTop: 8,
+                              minHeight: 34,
+                              padding: "6px 10px",
+                              borderRadius: 9,
+                              border: "1px solid #d0d5dd",
+                              background: "#fff",
+                              color: "#344054",
+                              fontSize: 11,
+                              fontWeight: 800,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {showUnlinkedDesigns
+                              ? `Hide ${unlinkedDesignUnits.length} Unlinked / Old Photos`
+                              : `Show ${unlinkedDesignUnits.length} Unlinked / Old Photos`}
+                          </button>
+                        )}
                       </div>
                     )}
 
