@@ -3816,21 +3816,27 @@ if (!variantsError) {
       addProductDirectlyToCart(product);
       return;
     }
-    const choices = designChoicesByVariant[String(product.variantId)] || [];
-    const unusedChoices = choices.filter((choice) => !cartItems.some((item) => item.variantId === product.variantId && item.designUnitId === choice.designUnitId));
+
+    const choices =
+      designChoicesByVariant[String(product.variantId)] || [];
+
     if (choices.length === 0) {
       addProductDirectlyToCart(product);
       return;
     }
-    if (unusedChoices.length === 1) {
-      const choice = unusedChoices[0];
-      addProductDirectlyToCart({ ...product, key: `${product.key}-design-${choice.designUnitId}`, imageUrl: choice.imageUrl || product.imageUrl, designUnitId: choice.designUnitId, designName: choice.designName, designImageUrl: choice.imageUrl });
-      return;
-    }
-    if (unusedChoices.length === 0) {
-      showNotice("All available designs for this size are already in the current bill.", "info");
-      return;
-    }
+
+    /*
+     * A common barcode may represent physical stock that is NOT one of the
+     * photographed / online-listed design units. Therefore, whenever this
+     * variant has online design choices, always open the picker — even if
+     * only one photographed design remains.
+     *
+     * The picker now also contains "OTHER / OFFLINE PIECE". Choosing that
+     * option adds the normal product + variant to the bill WITHOUT a
+     * designUnitId. complete_pos_sale will still reduce physical stock, while
+     * ncs_mark_pos_designs_sold_v1 will ignore it, so no online design card is
+     * hidden by mistake.
+     */
     setDesignPickerProduct(product);
   }
 
@@ -3838,7 +3844,51 @@ if (!variantsError) {
     const product = designPickerProduct;
     if (!product) return;
     setDesignPickerProduct(null);
-    addProductDirectlyToCart({ ...product, key: `${product.key}-design-${choice.designUnitId}`, imageUrl: choice.imageUrl || product.imageUrl, designUnitId: choice.designUnitId, designName: choice.designName, designImageUrl: choice.imageUrl });
+    addProductDirectlyToCart({
+      ...product,
+      key: `${product.key}-design-${choice.designUnitId}`,
+      imageUrl: choice.imageUrl || product.imageUrl,
+      designUnitId: choice.designUnitId,
+      designName: choice.designName,
+      designImageUrl: choice.imageUrl,
+    });
+  }
+
+  function selectPosOfflinePiece() {
+    const product = designPickerProduct;
+    if (!product) return;
+
+    const currentVariantQuantity = cartItems.reduce(
+      (sum, item) =>
+        item.productId === product.productId &&
+        item.variantId === product.variantId
+          ? sum + item.quantity
+          : sum,
+      0,
+    );
+
+    if (currentVariantQuantity >= getAvailableStock(product)) {
+      showNotice(
+        `Only ${product.stock} item(s) available for this size / variant.`,
+        "error",
+      );
+      return;
+    }
+
+    setDesignPickerProduct(null);
+
+    addProductDirectlyToCart({
+      ...product,
+      key: product.key,
+      designUnitId: null,
+      designName: undefined,
+      designImageUrl: undefined,
+    });
+
+    showNotice(
+      "Offline / other piece added. Physical stock will reduce; online photos will stay visible.",
+      "success",
+    );
   }
 
   function getTopPosAiMatches(command: PosAiCommand) {
@@ -7172,7 +7222,65 @@ if (!variantsError) {
                 </section>
               ))}
             </div>
-            <footer><span>Only the tapped design + this size will be hidden online after the bill completes.</span></footer>
+
+            <div
+              style={{
+                margin: "14px 16px 4px",
+                padding: "14px",
+                borderRadius: "16px",
+                border: "1px solid rgba(10,46,115,0.16)",
+                background:
+                  "linear-gradient(135deg, rgba(248,244,236,0.98), rgba(255,255,255,0.98))",
+              }}
+            >
+              <button
+                type="button"
+                onClick={selectPosOfflinePiece}
+                style={{
+                  width: "100%",
+                  border: "1px solid rgba(212,175,55,0.78)",
+                  borderRadius: "14px",
+                  padding: "14px 16px",
+                  cursor: "pointer",
+                  background:
+                    "linear-gradient(135deg, #03153F 0%, #0A2E73 68%, #164CA8 100%)",
+                  color: "#FFFFFF",
+                  textAlign: "left",
+                  boxShadow: "0 8px 20px rgba(10,46,115,0.18)",
+                }}
+              >
+                <strong
+                  style={{
+                    display: "block",
+                    color: "#D4AF37",
+                    fontSize: "14px",
+                    fontWeight: 900,
+                    letterSpacing: "0.4px",
+                  }}
+                >
+                  OTHER / OFFLINE PIECE
+                </strong>
+                <small
+                  style={{
+                    display: "block",
+                    marginTop: "5px",
+                    color: "rgba(255,255,255,0.82)",
+                    fontSize: "11px",
+                    lineHeight: 1.45,
+                  }}
+                >
+                  Customer bought a different physical piece. Reduce normal
+                  stock only — do not hide any online photo.
+                </small>
+              </button>
+            </div>
+
+            <footer>
+              <span>
+                Tap a photo only when that exact photographed design is being
+                sold. Otherwise use OTHER / OFFLINE PIECE.
+              </span>
+            </footer>
           </section>
         </div>,
         document.body,
