@@ -48,10 +48,16 @@ const defaultSeoSettings: SeoSettings = {
   sitemap_enabled: true,
 };
 
+const NCS_TRACKING_FALLBACK = {
+  googleAnalyticsId: "G-M1TEYE2W61",
+  googleTagManagerId: "GTM-MCFHKMN8",
+  metaPixelId: "1383736710043933",
+} as const;
+
 const defaultAnalyticsSettings: AnalyticsSettings = {
-  google_analytics_id: "",
-  google_tag_manager_id: "",
-  meta_pixel_id: "",
+  google_analytics_id: NCS_TRACKING_FALLBACK.googleAnalyticsId,
+  google_tag_manager_id: NCS_TRACKING_FALLBACK.googleTagManagerId,
+  meta_pixel_id: NCS_TRACKING_FALLBACK.metaPixelId,
   google_ads_id: "",
   tracking_enabled: false,
   analytics_enabled: false,
@@ -348,23 +354,38 @@ export default async function RootLayout({
   const masterTrackingEnabled =
     analytics.tracking_enabled === true;
 
-  const googleAnalyticsId =
+  const savedGoogleAnalyticsId =
     analytics.google_analytics_id
       .trim()
       .toUpperCase();
 
-  const googleTagManagerId =
+  const savedGoogleTagManagerId =
     analytics.google_tag_manager_id
       .trim()
       .toUpperCase();
+
+  const savedMetaPixelId =
+    analytics.meta_pixel_id.trim();
+
+  const googleAnalyticsId =
+    isValidGoogleAnalyticsId(savedGoogleAnalyticsId)
+      ? savedGoogleAnalyticsId
+      : NCS_TRACKING_FALLBACK.googleAnalyticsId;
+
+  const googleTagManagerId =
+    isValidGoogleTagManagerId(savedGoogleTagManagerId)
+      ? savedGoogleTagManagerId
+      : NCS_TRACKING_FALLBACK.googleTagManagerId;
+
+  const metaPixelId =
+    isValidMetaPixelId(savedMetaPixelId)
+      ? savedMetaPixelId
+      : NCS_TRACKING_FALLBACK.metaPixelId;
 
   const googleAdsId =
     analytics.google_ads_id
       .trim()
       .toUpperCase();
-
-  const metaPixelId =
-    analytics.meta_pixel_id.trim();
 
   const enableGoogleAnalytics =
     masterTrackingEnabled &&
