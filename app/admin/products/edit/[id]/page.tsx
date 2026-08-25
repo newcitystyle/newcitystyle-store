@@ -645,40 +645,25 @@ export default function EditProductPage() {
   }
 
   async function uploadFile(file: File, folder: string) {
-    const extension =
-      file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const body = new FormData();
+    body.append("file", file);
+    body.append("folder", `products/${folder}`);
 
-    const safeName = file.name
-      .replace(/\.[^/.]+$/, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
+    const response = await fetch("/api/r2/upload", {
+      method: "POST",
+      body,
+    });
 
-    const filePath = `products/${folder}/${safeName}-${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2, 7)}.${extension}`;
+    const result = (await response.json().catch(() => ({}))) as {
+      url?: string;
+      error?: string;
+    };
 
-    const { error } = await supabase.storage
-      .from("store-assets")
-      .upload(filePath, file, {
-        contentType: file.type,
-        cacheControl: "3600",
-        upsert: false,
-      });
-
-    if (error) {
-      throw error;
+    if (!response.ok || !result.url) {
+      throw new Error(result.error || "R2 image upload failed.");
     }
 
-    const { data } = supabase.storage
-      .from("store-assets")
-      .getPublicUrl(filePath);
-
-    if (!data.publicUrl) {
-      throw new Error("Unable to generate image URL.");
-    }
-
-    return data.publicUrl;
+    return result.url;
   }
 
   function updateVariantField(
