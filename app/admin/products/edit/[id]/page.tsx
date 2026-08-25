@@ -97,6 +97,7 @@ type ProductForm = {
   description: string;
 
   mrp: string;
+  onlineMrp: string;
   price: string;
   discountPercent: string;
   taxPercent: string;
@@ -165,6 +166,7 @@ const initialForm: ProductForm = {
   description: "",
 
   mrp: "",
+  onlineMrp: "",
   price: "",
   discountPercent: "0",
   taxPercent: "",
@@ -275,6 +277,7 @@ export default function EditProductPage() {
     reservedStock: number;
     variantName: string;
     mrp: string;
+    onlineMrp: string;
     onlinePrice: string;
     mainImage: string;
     galleryImages: string[];
@@ -329,7 +332,7 @@ export default function EditProductPage() {
   }, [productId]);
 
   useEffect(() => {
-    const mrp = Number(form.mrp || 0);
+    const mrp = Number(form.onlineMrp || 0);
     const price = Number(form.price || 0);
 
     if (mrp > 0 && price >= 0 && price <= mrp) {
@@ -340,7 +343,7 @@ export default function EditProductPage() {
         discountPercent: String(discount),
       }));
     }
-  }, [form.mrp, form.price]);
+  }, [form.onlineMrp, form.price]);
 
   async function loadCollections() {
     const { data, error } = await supabase
@@ -431,7 +434,7 @@ export default function EditProductPage() {
 
       const { data: variants, error: variantsError } = await supabase
         .from("product_variants")
-        .select("id,size,color,sku,barcode,stock,reserved_stock,online_stock_limit,sell_online,variant_name,mrp,online_price,main_image,gallery_images")
+        .select("id,size,color,sku,barcode,stock,reserved_stock,online_stock_limit,sell_online,variant_name,mrp,online_mrp,online_price,main_image,gallery_images")
         .eq("product_id", productId)
         .order("id", { ascending: true });
 
@@ -449,6 +452,10 @@ export default function EditProductPage() {
         reservedStock: Math.max(0, asNumber(variant.reserved_stock)),
         variantName: asString(variant.variant_name),
         mrp: asNumber(variant.mrp) > 0 ? String(asNumber(variant.mrp)) : "",
+        onlineMrp:
+          asNumber(variant.online_mrp) > 0
+            ? String(asNumber(variant.online_mrp))
+            : String(Math.max(asNumber(variant.mrp), asNumber(variant.online_price), 0) || ""),
         onlinePrice: asNumber(variant.online_price) > 0 ? String(asNumber(variant.online_price)) : "",
         mainImage: asString(variant.main_image),
         galleryImages: asStringArray(variant.gallery_images),
@@ -511,6 +518,10 @@ export default function EditProductPage() {
         shortDescription: asString(row.short_description),
         description: asString(row.description),
         mrp: asNumber(row.mrp) > 0 ? String(asNumber(row.mrp)) : "",
+        onlineMrp:
+          asNumber(row.online_mrp) > 0
+            ? String(asNumber(row.online_mrp))
+            : String(Math.max(asNumber(row.mrp), asNumber(row.price), 0) || ""),
         price: effectiveSellOnline && asNumber(row.price) > 0 ? String(asNumber(row.price)) : "",
         discountPercent: String(asNumber(row.discount_percent)),
         taxPercent: asNumber(row.tax_percent) > 0 ? String(asNumber(row.tax_percent)) : "",
@@ -671,7 +682,7 @@ export default function EditProductPage() {
 
   function updateVariantField(
     variantId: number,
-    field: "variantName" | "mrp" | "onlinePrice" | "mainImage" | "galleryImages" | "sellOnline" | "onlineStockLimit",
+    field: "variantName" | "mrp" | "onlineMrp" | "onlinePrice" | "mainImage" | "galleryImages" | "sellOnline" | "onlineStockLimit",
     value: string | string[] | boolean | number,
   ) {
     setVariantBarcodes((current) =>
@@ -1947,6 +1958,7 @@ export default function EditProductPage() {
 
         // Locked/commercial fields are explicitly preserved.
         mrp: current.mrp,
+        onlineMrp: current.onlineMrp,
         price: current.price,
         discountPercent:
           current.discountPercent,
@@ -1964,7 +1976,7 @@ export default function EditProductPage() {
       setAiStatus({
         type: "success",
         message:
-          "Common product details generated successfully from the design photos. Review the text, then set/verify online price and quantity. Existing barcode, SKU, physical stock, MRP and online pricing were not changed.",
+          "Common product details generated successfully from the design photos. Review the text, then set/verify online price and quantity. Existing barcode, SKU, physical stock, offline MRP and online pricing were not changed.",
       });
     } catch (error) {
       setAiStatus({
@@ -2353,13 +2365,18 @@ export default function EditProductPage() {
         return false;
       }
 
+      if (Number(form.onlineMrp) <= 0) {
+        alert("Please enter the Online MRP.");
+        return false;
+      }
+
       if (Number(form.price) <= 0) {
         alert("Please enter the online selling price.");
         return false;
       }
 
-      if (Number(form.mrp) > 0 && Number(form.price) > Number(form.mrp)) {
-        alert("Online selling price cannot be greater than MRP.");
+      if (Number(form.price) > Number(form.onlineMrp)) {
+        alert("Online selling price cannot be greater than Online MRP.");
         return false;
       }
 
@@ -2401,7 +2418,8 @@ export default function EditProductPage() {
       brand: normalizeBrandName(form.brand) || null,
       gender: form.gender || null,
       age_group: form.ageGroup || null,
-      mrp: getOptionalNumber(form.mrp, 0),
+      // Offline/barcode MRP is intentionally NOT updated from this online editor.
+      online_mrp: form.sellOnline ? Number(form.onlineMrp) : null,
       ...(form.sellOnline ? { price: Number(form.price) } : {}),
       discount_percent: form.sellOnline ? Number(form.discountPercent || 0) : 0,
       tax_percent: getOptionalNumber(form.taxPercent, 0),
@@ -2496,9 +2514,10 @@ export default function EditProductPage() {
             form.sellOnline &&
             (linkedDesignCount > 0 || variant.sellOnline);
 
-          const variantMrp = getOptionalNumber(
-            variant.mrp,
-            getOptionalNumber(form.mrp, 0)
+          // Physical/barcode MRP is read-only here and remains owned by Purchase Stock / POS.
+          const variantOnlineMrp = getOptionalNumber(
+            variant.onlineMrp,
+            Number(form.onlineMrp || 0)
           );
 
           const variantOnlinePrice = getOptionalNumber(
@@ -2518,11 +2537,11 @@ export default function EditProductPage() {
           if (
             effectiveVariantSellOnline &&
             variantOnlinePrice > 0 &&
-            variantMrp > 0 &&
-            variantOnlinePrice > variantMrp
+            variantOnlineMrp > 0 &&
+            variantOnlinePrice > variantOnlineMrp
           ) {
             throw new Error(
-              `${variant.variantName || variant.size || "Variant"}: online price cannot be greater than MRP.`
+              `${variant.variantName || variant.size || "Variant"}: online price cannot be greater than Online MRP.`
             );
           }
 
@@ -2535,7 +2554,11 @@ export default function EditProductPage() {
             .from("product_variants")
             .update({
               variant_name: variant.variantName.trim() || null,
-              mrp: variantMrp,
+              // Never update `mrp` here: POS/barcode must keep the physical tag MRP.
+              online_mrp:
+                effectiveVariantSellOnline && variantOnlineMrp > 0
+                  ? variantOnlineMrp
+                  : null,
               online_price: safeVariantOnlinePrice,
               main_image: variant.mainImage || null,
               gallery_images: variant.galleryImages,
@@ -2614,11 +2637,11 @@ export default function EditProductPage() {
   }
 
   const discountAmount = useMemo(() => {
-    const mrp = Number(form.mrp || 0);
+    const mrp = Number(form.onlineMrp || 0);
     const price = Number(form.price || 0);
 
     return Math.max(mrp - price, 0);
-  }, [form.mrp, form.price]);
+  }, [form.onlineMrp, form.price]);
 
   const uploading =
     uploadingMain ||
@@ -2888,16 +2911,32 @@ export default function EditProductPage() {
 
               <Panel
                 title="Pricing"
-                subtitle="Configure MRP, selling price, discount and GST."
+                subtitle="Offline barcode MRP stays locked. Online MRP and Online Selling Price can be edited independently."
               >
                 <FormGrid>
-                  <Field label="MRP">
-                    <MoneyInput
+                  <Field label="Offline / Barcode MRP (Locked)">
+                    <input
+                      type="number"
                       value={form.mrp}
+                      readOnly
+                      aria-readonly="true"
+                      placeholder="Physical tag MRP"
+                      style={{
+                        ...inputStyle,
+                        background: "#F3F4F6",
+                        color: "#475467",
+                        cursor: "not-allowed",
+                      }}
+                    />
+                  </Field>
+
+                  <Field label="Online MRP" required={form.sellOnline}>
+                    <MoneyInput
+                      value={form.onlineMrp}
                       onChange={(value) =>
-                        setField("mrp", value)
+                        setField("onlineMrp", value)
                       }
-                      placeholder="1499"
+                      placeholder={form.sellOnline ? "Enter website/app MRP" : "Enable Sell Online to set MRP"}
                     />
                   </Field>
 
@@ -3773,7 +3812,7 @@ export default function EditProductPage() {
 
               <Panel
                 title="AI Product Detail Generator"
-                subtitle="Gemini analyses the uploaded product photo and fills all editable product details. Barcode, SKU, physical stock, MRP, online price, online quantity and tax are never changed by AI."
+                subtitle="Gemini analyses the uploaded product photo and fills all editable product details. Barcode, SKU, physical stock, offline MRP, online MRP, online price, online quantity and tax are never changed by AI."
               >
                 <div style={aiGeneratorCardStyle}>
                   <div>
