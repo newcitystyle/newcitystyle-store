@@ -148,6 +148,7 @@ type PosDesignChoice = {
   purchaseId: string;
   purchaseNumber: string;
   purchaseDate: string;
+  mrp: number;
 };
 
 type PosDesignUnitRow = {
@@ -166,6 +167,7 @@ type PosDesignVariantRow = {
   design_unit_id: number;
   variant_id: number;
   status?: string | null;
+  mrp?: number | string | null;
 };
 
 type PosDesignPurchaseRow = {
@@ -2355,7 +2357,7 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
           .order("sort_order", { ascending: true }),
         supabase
           .from("product_design_unit_variants")
-          .select("id,product_id,design_unit_id,variant_id,status")
+          .select("id,product_id,design_unit_id,variant_id,status,mrp")
           .eq("status", "available"),
       ]);
 
@@ -2422,6 +2424,7 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
             purchase?.purchase_number?.trim() || "",
           purchaseDate:
             purchase?.purchase_date?.trim() || "",
+          mrp: Math.max(0, toNumber(mapping.mrp)),
         };
         next[key] = [...(next[key] || []), choice];
       });
@@ -3843,11 +3846,19 @@ if (!variantsError) {
   function selectPosDesign(choice: PosDesignChoice) {
     const product = designPickerProduct;
     if (!product) return;
+
+    // Exact photographed piece: use its own OFFLINE / TAG MRP.
+    // Online MRP / online price must never affect the local POS bill.
+    const designOfflineMrp =
+      Math.max(0, toNumber(choice.mrp)) || Math.max(0, toNumber(product.mrp));
+
     setDesignPickerProduct(null);
     addProductDirectlyToCart({
       ...product,
       key: `${product.key}-design-${choice.designUnitId}`,
       imageUrl: choice.imageUrl || product.imageUrl,
+      price: designOfflineMrp,
+      mrp: designOfflineMrp,
       designUnitId: choice.designUnitId,
       designName: choice.designName,
       designImageUrl: choice.imageUrl,
@@ -3875,18 +3886,36 @@ if (!variantsError) {
       return;
     }
 
+    // OTHER / OFFLINE PIECE has no photographed design row, and pieces under
+    // one common barcode can have different tag MRPs. Ask the cashier for the
+    // exact MRP printed on the physical piece instead of guessing from online data.
+    const enteredMrp = window.prompt(
+      "Enter the MRP printed on this OFFLINE / OTHER piece",
+      product.mrp > 0 ? String(product.mrp) : "",
+    );
+
+    if (enteredMrp === null) return;
+
+    const offlineMrp = Math.max(0, toNumber(enteredMrp));
+    if (offlineMrp <= 0) {
+      showNotice("Please enter a valid offline/tag MRP.", "error");
+      return;
+    }
+
     setDesignPickerProduct(null);
 
     addProductDirectlyToCart({
       ...product,
       key: product.key,
+      price: offlineMrp,
+      mrp: offlineMrp,
       designUnitId: null,
       designName: undefined,
       designImageUrl: undefined,
     });
 
     showNotice(
-      "Offline / other piece added. Physical stock will reduce; online photos will stay visible.",
+      `Offline / other piece added at MRP ₹${offlineMrp}. Physical stock will reduce; online photos will stay visible.`,
       "success",
     );
   }
@@ -7213,6 +7242,11 @@ if (!variantsError) {
                           <b>{index + 1}</b>
                         </div>
                         <strong>{choice.designName}</strong>
+                        <small>
+                          {choice.mrp > 0
+                            ? `Offline MRP ₹${choice.mrp.toLocaleString("en-IN")}`
+                            : "Offline MRP uses base variant MRP"}
+                        </small>
                         <small>
                           Tap this photo if this is the item at the counter
                         </small>
