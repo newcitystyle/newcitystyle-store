@@ -78,6 +78,7 @@ type DesignVariantLink = {
   // Optional design+size commercial overrides.
   // Blank values keep the old variant/product fallback behaviour.
   mrp: string;
+  onlineMrp: string;
   onlinePrice: string;
   onlineQuantity: number | null;
 };
@@ -816,7 +817,7 @@ export default function EditProductPage() {
           .eq("product_id", targetProductId)
           .order("sort_order", { ascending: true }).order("id", { ascending: true }),
         supabase.from("product_design_unit_variants")
-          .select("id,product_id,design_unit_id,variant_id,status,mrp,online_price,online_quantity")
+          .select("id,product_id,design_unit_id,variant_id,status,mrp,online_mrp,online_price,online_quantity")
           .eq("product_id", targetProductId).order("id", { ascending: true }),
       ]);
 
@@ -840,6 +841,7 @@ export default function EditProductPage() {
             id: -(index + 1), productId: row.productId, designUnitId: row.id, variantId: Number(row.parentVariantId),
             status: row.status === "sold_out" ? "sold_out" : row.status === "hidden" ? "hidden" : "available",
             mrp: "",
+            onlineMrp: "",
             onlinePrice: "",
             onlineQuantity: null,
           }))
@@ -848,6 +850,7 @@ export default function EditProductPage() {
             variantId: asNumber(row.variant_id),
             status: row.status === "sold_out" || row.status === "hidden" ? row.status : "available",
             mrp: asNumber(row.mrp) > 0 ? String(asNumber(row.mrp)) : "",
+            onlineMrp: asNumber(row.online_mrp) > 0 ? String(asNumber(row.online_mrp)) : "",
             onlinePrice: asNumber(row.online_price) > 0 ? String(asNumber(row.online_price)) : "",
             onlineQuantity:
               row.online_quantity === null || row.online_quantity === undefined
@@ -1022,6 +1025,11 @@ export default function EditProductPage() {
               variant.mrp,
               getOptionalNumber(form.mrp, 0)
             ) || null,
+          online_mrp:
+            getOptionalNumber(
+              variant.onlineMrp,
+              Number(form.onlineMrp || 0)
+            ) || null,
           online_price:
             getOptionalNumber(
               variant.onlinePrice,
@@ -1054,7 +1062,7 @@ export default function EditProductPage() {
         message:
           `${validFiles.length} design photo${validFiles.length === 1 ? "" : "s"} uploaded and linked to ` +
           `${selectedVariants.map((v) => v.size || "Standard").join(", ")}. ` +
-          "Each design can now have its own MRP and online price.",
+          "Each design can now have its own Offline MRP, Online MRP and online price.",
       });
     } catch (error) {
       console.error("Design photo upload failed:", error);
@@ -1193,7 +1201,7 @@ export default function EditProductPage() {
 
   function updateDesignVariantLinkLocal(
     linkId: number,
-    patch: Partial<Pick<DesignVariantLink, "mrp" | "onlinePrice" | "onlineQuantity">>
+    patch: Partial<Pick<DesignVariantLink, "mrp" | "onlineMrp" | "onlinePrice" | "onlineQuantity">>
   ) {
     setDesignVariantLinks((current) =>
       current.map((link) =>
@@ -1232,6 +1240,11 @@ export default function EditProductPage() {
             link.mrp,
             getOptionalNumber(variant.mrp, getOptionalNumber(form.mrp, 0))
           ) || null,
+        online_mrp:
+          getOptionalNumber(
+            link.onlineMrp,
+            getOptionalNumber(variant.onlineMrp, Number(form.onlineMrp || 0))
+          ) || null,
         online_price:
           getOptionalNumber(
             link.onlinePrice,
@@ -1251,7 +1264,7 @@ export default function EditProductPage() {
             : 0,
         updated_at: new Date().toISOString(),
       })
-      .select("id,product_id,design_unit_id,variant_id,status,mrp,online_price,online_quantity")
+      .select("id,product_id,design_unit_id,variant_id,status,mrp,online_mrp,online_price,online_quantity")
       .single();
 
     if (error) throw error;
@@ -1266,6 +1279,10 @@ export default function EditProductPage() {
           ? data.status
           : "available",
       mrp: asNumber(data.mrp) > 0 ? String(asNumber(data.mrp)) : "",
+      onlineMrp:
+        asNumber(data.online_mrp) > 0
+          ? String(asNumber(data.online_mrp))
+          : "",
       onlinePrice:
         asNumber(data.online_price) > 0
           ? String(asNumber(data.online_price))
@@ -1300,7 +1317,7 @@ export default function EditProductPage() {
 
     setDesignUnitStatus({
       type: "success",
-      message: `${unit.designName || "Design"} saved. Name, MRP, online price and online quantity are updated.`,
+      message: `${unit.designName || "Design"} saved. Offline MRP, Online MRP, online price and online quantity are updated.`,
     });
 
     // Close the size editor after a successful explicit save.
@@ -1328,14 +1345,18 @@ export default function EditProductPage() {
       link.mrp,
       getOptionalNumber(variant.mrp, getOptionalNumber(form.mrp, 0))
     );
+    const onlineMrp = getOptionalNumber(
+      link.onlineMrp,
+      getOptionalNumber(variant.onlineMrp, Number(form.onlineMrp || 0))
+    );
     const onlinePrice = getOptionalNumber(
       link.onlinePrice,
       getOptionalNumber(variant.onlinePrice, Number(form.price || 0))
     );
 
-    if (onlinePrice > 0 && mrp > 0 && onlinePrice > mrp) {
+    if (onlinePrice > 0 && onlineMrp > 0 && onlinePrice > onlineMrp) {
       alert(
-        `${variant.size || "This size"}: design online price cannot be greater than design MRP.`
+        `${variant.size || "This size"}: design online price cannot be greater than design Online MRP.`
       );
       return;
     }
@@ -1350,6 +1371,7 @@ export default function EditProductPage() {
       .from("product_design_unit_variants")
       .update({
         mrp: mrp > 0 ? mrp : null,
+        online_mrp: onlineMrp > 0 ? onlineMrp : null,
         online_price: onlinePrice > 0 ? onlinePrice : null,
         online_quantity: requestedQty,
         updated_at: new Date().toISOString(),
@@ -1370,6 +1392,7 @@ export default function EditProductPage() {
               ...item,
               id: persistedLink.id,
               mrp: mrp > 0 ? String(mrp) : "",
+              onlineMrp: onlineMrp > 0 ? String(onlineMrp) : "",
               onlinePrice: onlinePrice > 0 ? String(onlinePrice) : "",
               onlineQuantity: requestedQty,
             }
@@ -1400,6 +1423,7 @@ export default function EditProductPage() {
             variant_id: variantId,
             status: "available",
             mrp: getOptionalNumber(variant.mrp, getOptionalNumber(form.mrp, 0)) || null,
+            online_mrp: getOptionalNumber(variant.onlineMrp, Number(form.onlineMrp || 0)) || null,
             online_price: getOptionalNumber(variant.onlinePrice, Number(form.price || 0)) || null,
             online_quantity: 1,
             updated_at: new Date().toISOString(),
@@ -1433,6 +1457,7 @@ export default function EditProductPage() {
         variant_id: number;
         status: string;
         mrp: number | null;
+        online_mrp: number | null;
         online_price: number | null;
         online_quantity: number;
         updated_at: string;
@@ -1447,6 +1472,7 @@ export default function EditProductPage() {
             variant_id: variant.id,
             status: "available",
             mrp: getOptionalNumber(variant.mrp, getOptionalNumber(form.mrp, 0)) || null,
+            online_mrp: getOptionalNumber(variant.onlineMrp, Number(form.onlineMrp || 0)) || null,
             online_price: getOptionalNumber(variant.onlinePrice, Number(form.price || 0)) || null,
             online_quantity: 1,
             updated_at: new Date().toISOString(),
@@ -3158,7 +3184,7 @@ export default function EditProductPage() {
                     <strong>Size-wise Design Price Editor</strong>
                     <p style={{ margin: "6px 0 12px", color: "#667085", fontSize: 12, lineHeight: 1.55 }}>
                       Click only the size you want to edit. A popup opens with that size's linked shirt photos.
-                      Edit Design Name, MRP, Online Price and Online Qty there, then close it.
+                      Edit Design Name, Offline MRP, Online MRP, Online Price and Online Qty there, then close it.
                       Barcode and physical stock are not changed.
                     </p>
 
@@ -3693,7 +3719,7 @@ export default function EditProductPage() {
                                         }}
                                       >
                                         <label style={{ display: "grid", gap: 4, fontSize: 9, fontWeight: 800, color: "#475467" }}>
-                                          Design MRP
+                                          Offline MRP
                                           <input
                                             type="number"
                                             min="0"
@@ -3702,6 +3728,22 @@ export default function EditProductPage() {
                                             disabled={link.status === "sold_out"}
                                             onChange={(event) =>
                                               updateDesignVariantLinkLocal(link.id, { mrp: event.target.value })
+                                            }
+                                            onBlur={() => void saveDesignVariantCommercials(link)}
+                                            style={{ ...inputStyle, minHeight: 34, padding: "6px 8px", fontSize: 11 }}
+                                          />
+                                        </label>
+
+                                        <label style={{ display: "grid", gap: 4, fontSize: 9, fontWeight: 800, color: "#475467" }}>
+                                          Online MRP
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            value={link.onlineMrp}
+                                            placeholder={variant.onlineMrp || form.onlineMrp || "Online MRP"}
+                                            disabled={link.status === "sold_out"}
+                                            onChange={(event) =>
+                                              updateDesignVariantLinkLocal(link.id, { onlineMrp: event.target.value })
                                             }
                                             onBlur={() => void saveDesignVariantCommercials(link)}
                                             style={{ ...inputStyle, minHeight: 34, padding: "6px 8px", fontSize: 11 }}
@@ -4843,7 +4885,7 @@ export default function EditProductPage() {
                             />
                           </Field>
 
-                          <Field label="Design MRP">
+                          <Field label="Offline MRP">
                             <input
                               type="number"
                               min="0"
@@ -4853,6 +4895,29 @@ export default function EditProductPage() {
                               onChange={(event) =>
                                 updateDesignVariantLinkLocal(link.id, {
                                   mrp: event.target.value,
+                                })
+                              }
+                              onBlur={() =>
+                                void saveDesignVariantCommercials(link)
+                              }
+                              style={inputStyle}
+                            />
+                          </Field>
+
+                          <Field label="Online MRP">
+                            <input
+                              type="number"
+                              min="0"
+                              value={link.onlineMrp}
+                              placeholder={
+                                editorVariant.onlineMrp ||
+                                form.onlineMrp ||
+                                "Online MRP"
+                              }
+                              disabled={link.status === "sold_out"}
+                              onChange={(event) =>
+                                updateDesignVariantLinkLocal(link.id, {
+                                  onlineMrp: event.target.value,
                                 })
                               }
                               onBlur={() =>
