@@ -5058,6 +5058,93 @@ if (!variantsError) {
     );
   }
 
+  function addBarcodeScannedProduct(product: PosProduct) {
+    if (getAvailableStock(product) <= 0) {
+      showNotice(`${product.name} is out of stock.`, "error");
+      return;
+    }
+
+    // Keep the existing photographed-design flow exactly as it is.
+    // Shirts / products that have online design choices still open the picker,
+    // where the cashier can choose an exact photo or OTHER / OFFLINE PIECE.
+    if (product.variantId && !product.isQuickItem) {
+      const choices =
+        designChoicesByVariant[String(product.variantId)] || [];
+
+      if (choices.length > 0) {
+        setDesignPickerProduct(product);
+        return;
+      }
+    }
+
+    // Quick Items are not physical barcode catalogue items and keep their
+    // existing behaviour.
+    if (product.isQuickItem) {
+      addProductDirectlyToCart(product);
+      return;
+    }
+
+    // A physical barcode may be shared by pieces with different printed MRPs
+    // (for example the same pants size can have ₹649 / ₹699 / ₹799 tags).
+    // On EVERY normal barcode scan, ask for the MRP printed on the exact piece.
+    const enteredMrp = window.prompt(
+      "Enter the MRP printed on this item",
+      product.mrp > 0 ? String(product.mrp) : "",
+    );
+
+    if (enteredMrp === null) {
+      setSearchQuery("");
+      window.setTimeout(() => searchInputRef.current?.focus(), 50);
+      return;
+    }
+
+    const tagMrp = Math.max(0, toNumber(enteredMrp));
+
+    if (tagMrp <= 0) {
+      showNotice("Please enter a valid tag MRP.", "error");
+      window.setTimeout(() => searchInputRef.current?.focus(), 50);
+      return;
+    }
+
+    // Enforce stock across ALL MRP rows of the same product / exact variant.
+    const currentVariantQuantity = cartItems.reduce(
+      (sum, item) =>
+        item.productId === product.productId &&
+        item.variantId === product.variantId
+          ? sum + item.quantity
+          : sum,
+      0,
+    );
+
+    if (currentVariantQuantity >= getAvailableStock(product)) {
+      showNotice(
+        `Only ${product.stock} item(s) available for this product / variant.`,
+        "error",
+      );
+      window.setTimeout(() => searchInputRef.current?.focus(), 50);
+      return;
+    }
+
+    // MRP is part of the client key so the same barcode/size can keep separate
+    // cart rows when physical pieces have different printed MRPs.
+    const mrpKey = `${product.key}-tag-mrp-${tagMrp}`;
+
+    addProductDirectlyToCart({
+      ...product,
+      key: mrpKey,
+      price: tagMrp,
+      mrp: tagMrp,
+      designUnitId: null,
+      designName: undefined,
+      designImageUrl: undefined,
+    });
+
+    showNotice(
+      `${product.name} added with tag MRP ₹${tagMrp}.`,
+      "success",
+    );
+  }
+
   function handleSearchSubmit(
     event: FormEvent<HTMLFormElement>
   ) {
@@ -5082,7 +5169,7 @@ if (!variantsError) {
     );
 
     if (exactProduct) {
-      addProductToCart(exactProduct);
+      addBarcodeScannedProduct(exactProduct);
       return;
     }
 
