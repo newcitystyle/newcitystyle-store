@@ -255,7 +255,8 @@ export default function SuppliersPage() {
       );
 
       const supplierPayments = payments.filter(
-        (payment) => payment.supplier_id === supplier.id,
+        (payment) =>
+          Number(payment.supplier_id) === Number(supplier.id),
       );
 
       const totalPurchase = supplierPurchases.reduce(
@@ -363,7 +364,7 @@ export default function SuppliersPage() {
     () =>
       supplierSummaries.find(
         (summary) =>
-          summary.supplier.id === selectedSupplierId,
+          Number(summary.supplier.id) === Number(selectedSupplierId),
       ) || null,
     [selectedSupplierId, supplierSummaries],
   );
