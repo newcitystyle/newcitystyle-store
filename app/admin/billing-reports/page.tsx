@@ -170,7 +170,17 @@ function endOfDay(value: Date) {
 
 function safeDate(value?: string | null) {
   if (!value) return null;
-  const date = new Date(value);
+
+  const trimmed = value.trim();
+
+  // PostgreSQL DATE values such as 2026-08-27 must be interpreted as a
+  // local business date, not UTC midnight. This prevents India-time
+  // purchase/sales records from falling into the wrong report day.
+  const dateOnlyMatch = /^\d{4}-\d{2}-\d{2}$/.test(trimmed);
+  const date = new Date(
+    dateOnlyMatch ? `${trimmed}T12:00:00` : trimmed,
+  );
+
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -401,16 +411,25 @@ export default function BillingReportsPage() {
     [dateRange, sales],
   );
 
+  const validPurchases = useMemo(
+    () =>
+      purchases.filter(
+        (purchase) =>
+          normalize(purchase.purchase_status) !== "cancelled",
+      ),
+    [purchases],
+  );
+
   const filteredPurchases = useMemo(
     () =>
-      purchases.filter((purchase) =>
+      validPurchases.filter((purchase) =>
         isBetween(
           purchase.purchase_date || purchase.created_at,
           dateRange.from,
           dateRange.to,
         ),
       ),
-    [dateRange, purchases],
+    [dateRange, validPurchases],
   );
 
   const filteredReturns = useMemo(
@@ -535,15 +554,30 @@ export default function BillingReportsPage() {
       (sum, sale) => sum + numberValue(sale.due_amount),
       0,
     );
-    const purchaseValue = filteredPurchases.reduce(
+    const periodPurchaseValue = filteredPurchases.reduce(
       (sum, purchase) => sum + numberValue(purchase.total_amount),
       0,
     );
-    const purchasePaid = filteredPurchases.reduce(
+
+    const periodPurchasePaid = filteredPurchases.reduce(
       (sum, purchase) => sum + numberValue(purchase.paid_amount),
       0,
     );
-    const supplierDue = purchases.reduce(
+
+    // Purchase Value is a cumulative business asset/liability figure, like
+    // Supplier Due and Stock Value. It should not become ₹0 merely because
+    // the selected report period is Today and no new purchase was entered today.
+    const purchaseValue = validPurchases.reduce(
+      (sum, purchase) => sum + numberValue(purchase.total_amount),
+      0,
+    );
+
+    const rowRecordedPurchasePaid = validPurchases.reduce(
+      (sum, purchase) => sum + numberValue(purchase.paid_amount),
+      0,
+    );
+
+    const supplierDue = validPurchases.reduce(
       (sum, purchase) => sum + numberValue(purchase.due_amount),
       0,
     );
@@ -643,6 +677,19 @@ export default function BillingReportsPage() {
         0,
       );
 
+    // Supplier payments can be recorded after a purchase, so purchase rows may
+    // still contain their original paid_amount. Use the supplier ledger balance
+    // as an additional source so Total Paid does not incorrectly stay at ₹0.
+    const balanceDerivedPurchasePaid = Math.max(
+      0,
+      purchaseValue - currentSupplierDue,
+    );
+
+    const purchasePaid = Math.max(
+      rowRecordedPurchasePaid,
+      balanceDerivedPurchasePaid,
+    );
+
     const cashFlow = filteredCashBankTransactions.reduce(
       (summary, transaction) => {
         const amount = numberValue(transaction.amount);
@@ -692,6 +739,8 @@ export default function BillingReportsPage() {
       salesDue,
       purchaseValue,
       purchasePaid,
+      periodPurchaseValue,
+      periodPurchasePaid,
       supplierDue,
       customerDue,
       returnValue,
@@ -726,6 +775,7 @@ export default function BillingReportsPage() {
     products,
     purchases,
     suppliers,
+    validPurchases,
     variants,
   ]);
 
@@ -789,19 +839,28 @@ export default function BillingReportsPage() {
       days.push({ date, label: formatShortDate(date), value: 0 });
     }
 
-    filteredSales.forEach((sale) => {
-      const saleDate = safeDate(sale.created_at);
-      if (!saleDate) return;
+    // "Last 7 Days Sales" must always be a rolling 7-day trend.
+    // It must NOT collapse to only today's sales when the main period is Today.
+    sales
+      .filter(
+        (sale) => normalize(sale.sale_status) !== "cancelled",
+      )
+      .forEach((sale) => {
+        const saleDate = safeDate(sale.created_at);
+        if (!saleDate) return;
 
-      const row = days.find(
-        (day) => day.date.toDateString() === saleDate.toDateString(),
-      );
+        const row = days.find(
+          (day) =>
+            day.date.toDateString() === saleDate.toDateString(),
+        );
 
-      if (row) row.value += numberValue(sale.total_amount);
-    });
+        if (row) {
+          row.value += numberValue(sale.total_amount);
+        }
+      });
 
     return days;
-  }, [filteredSales]);
+  }, [sales]);
 
   const maxDailyValue = Math.max(
     1,
@@ -818,7 +877,10 @@ export default function BillingReportsPage() {
       ["Sales Value", report.salesValue],
       ["Sales Paid", report.salesPaid],
       ["Sales Due", report.salesDue],
-      ["Purchase Value", report.purchaseValue],
+      ["Purchase Value (All Time)", report.purchaseValue],
+      ["Purchase Paid (All Time)", report.purchasePaid],
+      ["Purchase Value (Selected Period)", report.periodPurchaseValue],
+      ["Purchase Paid (Selected Period)", report.periodPurchasePaid],
       ["Supplier Due", report.supplierDue],
       ["Customer Due", report.customerDue],
       ["Refunds", report.refundValue],
@@ -1046,7 +1108,9 @@ export default function BillingReportsPage() {
         <ReportCard
           label="Purchase Value"
           value={money(report.purchaseValue)}
-          note={`Paid ${money(report.purchasePaid)}`}
+          note={`Paid ${money(report.purchasePaid)} • ${dateRange.label} ${money(
+            report.periodPurchaseValue,
+          )}`}
           icon="📥"
         />
         <ReportCard
