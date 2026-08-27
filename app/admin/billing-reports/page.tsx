@@ -37,6 +37,7 @@ type PurchaseRow = {
   purchase_status?: string | null;
   purchase_date?: string | null;
   created_at?: string | null;
+  deleted_at?: string | null;
 };
 
 type PurchaseItemRow = {
@@ -415,6 +416,7 @@ export default function BillingReportsPage() {
     () =>
       purchases.filter(
         (purchase) =>
+          !purchase.deleted_at &&
           normalize(purchase.purchase_status) !== "cancelled",
       ),
     [purchases],
@@ -1108,7 +1110,7 @@ export default function BillingReportsPage() {
         <ReportCard
           label="Purchase Value"
           value={money(report.purchaseValue)}
-          note={`Paid ${money(report.purchasePaid)} • ${dateRange.label} ${money(
+          note={`Active purchases • Paid ${money(report.purchasePaid)} • ${dateRange.label} ${money(
             report.periodPurchaseValue,
           )}`}
           icon="📥"

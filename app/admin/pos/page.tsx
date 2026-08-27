@@ -6984,39 +6984,41 @@ if (!variantsError) {
         const saleId = String(result.sale_id);
         const now = new Date().toISOString();
 
-        const { error: posSaleAmountsError } =
-          await supabase
-            .from("pos_sales")
-            .update({
-              paid_amount: safeCreditPaidNow,
-              due_amount: creditDueAmount,
-              updated_at: now,
-            })
-            .eq("id", saleId);
+        /*
+         * IMPORTANT:
+         * pos_sales is protected by RLS. A browser-side UPDATE can be silently
+         * filtered to zero rows even when Supabase returns no SQL error.
+         * Use the tiny SECURITY DEFINER helper below so ONLY paid/due/status
+         * for this already-created sale are corrected. Stock, items, rewards,
+         * customer credit creation, WhatsApp, printing and all other POS
+         * behaviour remain untouched.
+         */
+        const { data: creditAmountResult, error: creditAmountError } =
+          await supabase.rpc(
+            "ncs_set_pos_sale_credit_amounts_v1",
+            {
+              p_sale_id: saleId,
+              p_paid_amount: safeCreditPaidNow,
+              p_due_amount: creditDueAmount,
+            },
+          );
 
-        if (posSaleAmountsError) {
+        if (creditAmountError) {
           throw new Error(
-            `Credit paid/due could not be saved: ${posSaleAmountsError.message}`,
+            `Credit paid/due could not be saved: ${creditAmountError.message}`,
           );
         }
 
-        /*
-         * Keep the legacy sales mirror aligned when the row exists.
-         * A missing mirror row must not block POS billing.
-         */
-        const { error: legacySaleAmountsError } =
-          await supabase
-            .from("sales")
-            .update({
-              paid_amount: safeCreditPaidNow,
-              due_amount: creditDueAmount,
-            })
-            .eq("id", saleId);
+        const creditAmountPayload =
+          (creditAmountResult || {}) as {
+            success?: boolean;
+            message?: string;
+          };
 
-        if (legacySaleAmountsError) {
-          console.info(
-            "Legacy sales paid/due mirror was not updated:",
-            legacySaleAmountsError.message,
+        if (creditAmountPayload.success === false) {
+          throw new Error(
+            creditAmountPayload.message ||
+              "Credit paid/due could not be saved.",
           );
         }
 
