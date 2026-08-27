@@ -65,6 +65,7 @@ type SupplierSummary = {
   purchasePaid: number;
   purchaseDue: number;
   recordedPayments: number;
+  totalPaid: number;
   currentBalance: number;
   lastPurchaseAt: string | null;
 };
@@ -144,6 +145,7 @@ export default function SuppliersPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
+  const [paymentHistoryWarning, setPaymentHistoryWarning] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [dueFilter, setDueFilter] = useState<DueFilter>("all");
@@ -220,7 +222,11 @@ export default function SuppliersPage() {
           paymentResponse.error.message,
         );
         setPayments([]);
+        setPaymentHistoryWarning(
+          `Supplier payment history could not be loaded: ${paymentResponse.error.message}`,
+        );
       } else {
+        setPaymentHistoryWarning("");
         setPayments(
           (paymentResponse.data || []) as unknown as SupplierPaymentRow[],
         );
@@ -276,13 +282,34 @@ export default function SuppliersPage() {
         0,
       );
 
+      const hasStoredBalance =
+        supplier.current_balance !== null &&
+        supplier.current_balance !== undefined &&
+        String(supplier.current_balance).trim() !== "";
+
       const storedBalance = Math.max(
         0,
         toNumber(supplier.current_balance),
       );
 
+      // IMPORTANT:
+      // If current_balance exists, even a ZERO balance is authoritative.
+      // Do not fall back to stale purchase due rows after a supplier is fully paid.
       const currentBalance =
-        storedBalance > 0 ? storedBalance : purchaseDue;
+        hasStoredBalance ? storedBalance : purchaseDue;
+
+      // This is the real paid total for the supplier account.
+      // It stays correct even when older payment-history rows were not recorded.
+      const balanceDerivedPaid = Math.max(
+        0,
+        Math.min(totalPurchase, totalPurchase - currentBalance),
+      );
+
+      const totalPaid = Math.max(
+        purchasePaid,
+        recordedPayments,
+        balanceDerivedPaid,
+      );
 
       const lastPurchaseAt =
         supplierPurchases[0]?.purchase_date ||
@@ -297,6 +324,7 @@ export default function SuppliersPage() {
         purchasePaid,
         purchaseDue,
         recordedPayments,
+        totalPaid,
         currentBalance,
         lastPurchaseAt,
       };
@@ -347,7 +375,7 @@ export default function SuppliersPage() {
     );
 
     const totalPaid = supplierSummaries.reduce(
-      (sum, summary) => sum + summary.purchasePaid,
+      (sum, summary) => sum + summary.totalPaid,
       0,
     );
 
@@ -476,7 +504,7 @@ export default function SuppliersPage() {
             taxAmount: 0,
             roundOff: 0,
             billAmount: summary.totalPurchase,
-            paidAmount: summary.purchasePaid,
+            paidAmount: summary.totalPaid,
             dueAmount: summary.currentBalance,
             items: purchaseItems,
           }),
@@ -550,15 +578,20 @@ export default function SuppliersPage() {
     setSavingPayment(true);
 
     try {
+      const supplierId = selectedSummary.supplier.id;
+      const normalizedPaymentDate = paymentDate || new Date().toISOString().slice(0, 10);
+
+      // First keep the existing trusted RPC as the source of truth for
+      // supplier balance / due reduction.
       const { data, error } = await supabase.rpc(
         "ncs_record_supplier_payment_v2",
         {
-          p_supplier_id: selectedSummary.supplier.id,
+          p_supplier_id: supplierId,
           p_amount: amount,
           p_payment_method: paymentMethod,
           p_payment_reference:
             paymentReference.trim() || null,
-          p_payment_date: paymentDate,
+          p_payment_date: normalizedPaymentDate,
           p_notes: paymentNotes.trim() || null,
           p_purchase_id: null,
         },
@@ -570,6 +603,93 @@ export default function SuppliersPage() {
         message?: string;
       };
 
+      // Older versions of the RPC reduced the supplier balance but did not
+      // always create a supplier_payments history row. Verify that a matching
+      // row now exists; if not, save a history-only row without changing the
+      // balance a second time.
+      const { data: latestPayments, error: latestPaymentsError } =
+        await supabase
+          .from("supplier_payments")
+          .select("*")
+          .eq("supplier_id", supplierId)
+          .order("created_at", { ascending: false })
+          .limit(25);
+
+      let historySaved = false;
+
+      if (!latestPaymentsError) {
+        const rows =
+          (latestPayments || []) as unknown as SupplierPaymentRow[];
+
+        historySaved = rows.some((row) => {
+          const rowAmount = getPaymentAmount(row);
+          const rowDate = (
+            row.payment_date ||
+            row.created_at ||
+            ""
+          ).slice(0, 10);
+
+          return (
+            Math.abs(rowAmount - amount) < 0.01 &&
+            rowDate === normalizedPaymentDate
+          );
+        });
+      }
+
+      if (!historySaved) {
+        // Try the column names used by the current page first.
+        const primaryPayload = {
+          supplier_id: supplierId,
+          purchase_id: null,
+          amount,
+          payment_method: paymentMethod,
+          payment_reference:
+            paymentReference.trim() || null,
+          payment_date: normalizedPaymentDate,
+          notes: paymentNotes.trim() || null,
+        };
+
+        let historyInsert = await supabase
+          .from("supplier_payments")
+          .insert(primaryPayload)
+          .select()
+          .maybeSingle();
+
+        // Compatibility fallback for older supplier_payments schemas.
+        if (historyInsert.error) {
+          const legacyPayload = {
+            supplier_id: supplierId,
+            purchase_id: null,
+            amount,
+            method: paymentMethod,
+            reference:
+              paymentReference.trim() || null,
+            payment_date: normalizedPaymentDate,
+            notes: paymentNotes.trim() || null,
+          };
+
+          historyInsert = await supabase
+            .from("supplier_payments")
+            .insert(legacyPayload)
+            .select()
+            .maybeSingle();
+        }
+
+        if (historyInsert.error) {
+          console.warn(
+            "Supplier balance was updated, but payment history row could not be saved:",
+            historyInsert.error.message,
+          );
+
+          setPaymentHistoryWarning(
+            `Payment applied, but history row could not be saved: ${historyInsert.error.message}`,
+          );
+        } else {
+          setPaymentHistoryWarning("");
+          historySaved = true;
+        }
+      }
+
       setShowPaymentModal(false);
       setPaymentAmount(0);
       setPaymentReference("");
@@ -577,8 +697,10 @@ export default function SuppliersPage() {
       setLedgerTab("payments");
 
       showNotice(
-        result.message ||
-          "Supplier payment saved successfully.",
+        historySaved
+          ? result.message ||
+              "Supplier payment saved and added to payment history."
+          : "Supplier payment applied. Please check the payment-history warning.",
       );
 
       await loadData(true);
@@ -598,6 +720,9 @@ export default function SuppliersPage() {
     <main className="suppliersPage">
       {notice && <div className="notice">{notice}</div>}
       {loadError && <div className="error">{loadError}</div>}
+      {paymentHistoryWarning && (
+        <div className="historyWarning">{paymentHistoryWarning}</div>
+      )}
 
       <section className="pageHero">
         <div>
@@ -755,7 +880,7 @@ export default function SuppliersPage() {
                       <span>Total Paid</span>
                       <strong>
                         {formatCurrency(
-                          summary.purchasePaid,
+                          summary.totalPaid,
                         )}
                       </strong>
                     </div>
@@ -869,7 +994,7 @@ export default function SuppliersPage() {
                 <span>Total Paid</span>
                 <strong>
                   {formatCurrency(
-                    selectedSummary.purchasePaid,
+                    selectedSummary.totalPaid,
                   )}
                 </strong>
               </div>
@@ -997,9 +1122,8 @@ export default function SuppliersPage() {
               <div className="ledgerList">
                 {selectedSummary.payments.length === 0 ? (
                   <div className="emptyLedger">
-                    No separate supplier payment rows found.
-                    Purchase payments and balances are still
-                    available above.
+                    No supplier payment history rows found yet.
+                    New Pay Supplier entries will be saved here.
                   </div>
                 ) : (
                   selectedSummary.payments.map(
@@ -1313,6 +1437,22 @@ export default function SuppliersPage() {
           border: 1px solid #fecdca;
           background: #fef3f2;
           color: ${RED};
+        }
+
+        .historyWarning {
+          position: fixed;
+          z-index: 1100;
+          top: 76px;
+          right: 18px;
+          width: min(480px, calc(100vw - 36px));
+          padding: 13px 15px;
+          border: 1px solid #f7d070;
+          border-radius: 12px;
+          background: #fff9e8;
+          color: #7a5300;
+          box-shadow: 0 18px 38px rgba(3, 21, 63, 0.16);
+          font-size: 11px;
+          font-weight: 800;
         }
 
         .statsGrid {
