@@ -140,9 +140,47 @@ export default function ExpensesPage() {
       const categoryRows =
         (categoryResponse.data || []) as unknown as ExpenseCategory[];
 
+      const expenseRows =
+        (expenseResponse.data || []) as unknown as ExpenseRow[];
+
+      /*
+       * Keep the existing expense-summary RPC for total/count/top-category,
+       * but calculate Cash and Digital directly from the exact expense rows
+       * already loaded for this date range. This avoids any mismatch in the
+       * RPC's payment-method grouping while leaving expense saving, history,
+       * filters, delete and all other behaviour unchanged.
+       */
+      const cashExpenses = expenseRows.reduce((total, expense) => {
+        const method = String(expense.payment_method || "")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, "_");
+
+        return method === "cash"
+          ? total + toNumber(expense.amount)
+          : total;
+      }, 0);
+
+      const digitalExpenses = expenseRows.reduce((total, expense) => {
+        const method = String(expense.payment_method || "")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, "_");
+
+        return ["upi", "card", "bank", "bank_transfer", "banktransfer"].includes(
+          method,
+        )
+          ? total + toNumber(expense.amount)
+          : total;
+      }, 0);
+
       setCategories(categoryRows);
-      setExpenses((expenseResponse.data || []) as unknown as ExpenseRow[]);
-      setSummary((summaryResponse.data || {}) as ExpenseSummary);
+      setExpenses(expenseRows);
+      setSummary({
+        ...((summaryResponse.data || {}) as ExpenseSummary),
+        cash_expenses: cashExpenses,
+        digital_expenses: digitalExpenses,
+      });
 
       if (!categoryId && categoryRows.length > 0) {
         setCategoryId(categoryRows[0].id);
