@@ -425,6 +425,8 @@ const IVORY = "#F8F4EC";
 const CHARCOAL = "#2C2C2C";
 
 const HELD_BILLS_STORAGE_KEY = "ncs_pos_held_bills_v1";
+const HELD_BILLS_BACKUP_STORAGE_KEY = "ncs_pos_held_bills_backup_v1";
+const POS_ACTIVE_BILL_STORAGE_KEY = "ncs_pos_active_bill_v1";
 const POS_RECENT_PRODUCTS_KEY = "ncs_pos_recent_products_v1";
 const POS_POPULAR_PRODUCTS_KEY = "ncs_pos_popular_products_v1";
 const POS_OVERVIEW_CACHE_KEY = "ncs_pos_overview_cache_v1";
@@ -1434,7 +1436,10 @@ type PosOfferCorner = (typeof POS_OFFER_CORNERS)[number];
 export default function PosPage() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const quickItemNameInputRef = useRef<HTMLInputElement | null>(null);
+  const customerNameInputRef = useRef<HTMLInputElement | null>(null);
+  const customerPhoneInputRef = useRef<HTMLInputElement | null>(null);
   const saleSubmissionLockRef = useRef(false);
+  const activeBillRecoveryLoadedRef = useRef(false);
 
   const [products, setProducts] = useState<PosProduct[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
@@ -1516,6 +1521,10 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
 
   const [heldBills, setHeldBills] = useState<HeldBill[]>([]);
   const [showHeldBills, setShowHeldBills] = useState(false);
+  const [activeHeldBillId, setActiveHeldBillId] = useState<string | null>(null);
+  const [lastAddedItemKey, setLastAddedItemKey] = useState<string | null>(null);
+  const [currentCustomerDue, setCurrentCustomerDue] = useState(0);
+  const [customerDueLoading, setCustomerDueLoading] = useState(false);
 
   const [ownerCostInfo, setOwnerCostInfo] =
     useState<PosOwnerCostInfo | null>(null);
@@ -2275,33 +2284,187 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
     void loadPosOverview();
   }, [loadPosOverview]);
 
-  const loadHeldBills = useCallback(() => {
-    try {
-      const savedValue = window.localStorage.getItem(
-        HELD_BILLS_STORAGE_KEY
-      );
-
-      if (!savedValue) {
-        setHeldBills([]);
-        return;
+  const readHeldBillsSnapshot = useCallback((): HeldBill[] => {
+    const readKey = (key: string): HeldBill[] => {
+      try {
+        const raw = window.localStorage.getItem(key);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw) as HeldBill[];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
       }
+    };
 
-      const parsedValue = JSON.parse(savedValue) as HeldBill[];
+    const primary = readKey(HELD_BILLS_STORAGE_KEY);
+    const backup = readKey(HELD_BILLS_BACKUP_STORAGE_KEY);
+    const merged = [...primary, ...backup];
+    const seen = new Set<string>();
 
-      setHeldBills(
-        Array.isArray(parsedValue)
-          ? parsedValue
-          : []
-      );
-    } catch (error) {
-      console.error("Unable to load held bills:", error);
-      setHeldBills([]);
-    }
+    return merged.filter((bill) => {
+      if (!bill?.id || seen.has(bill.id)) return false;
+      seen.add(bill.id);
+      return true;
+    });
   }, []);
+
+  const loadHeldBills = useCallback(() => {
+    const savedBills = readHeldBillsSnapshot();
+    setHeldBills(savedBills);
+
+    if (savedBills.length > 0) {
+      window.localStorage.setItem(
+        HELD_BILLS_STORAGE_KEY,
+        JSON.stringify(savedBills)
+      );
+      window.localStorage.setItem(
+        HELD_BILLS_BACKUP_STORAGE_KEY,
+        JSON.stringify(savedBills)
+      );
+    }
+  }, [readHeldBillsSnapshot]);
 
   useEffect(() => {
     loadHeldBills();
   }, [loadHeldBills]);
+
+  // Recover an unfinished counter bill after refresh / browser crash / accidental close.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(POS_ACTIVE_BILL_STORAGE_KEY);
+      if (!raw) return;
+
+      const draft = JSON.parse(raw) as Partial<HeldBill> & {
+        customerWhatsAppOptIn?: boolean;
+      };
+
+      if (Array.isArray(draft.items) && draft.items.length > 0) {
+        setCartItems(draft.items);
+        setCustomerName(draft.customerName || "");
+        setCustomerPhone(draft.customerPhone || "");
+        setCustomerWhatsAppOptIn(draft.customerWhatsAppOptIn === true);
+        setBillDiscountPercent(
+          Math.min(100, Math.max(0, toNumber(draft.billDiscountPercent)))
+        );
+        setRoundOffAmount(Math.max(0, toNumber(draft.roundOffAmount)));
+        setPaymentMethod(
+          draft.paymentMethod === "upi" ||
+          draft.paymentMethod === "card" ||
+          draft.paymentMethod === "credit"
+            ? draft.paymentMethod
+            : "cash"
+        );
+        setCreditPaidNow(Math.max(0, toNumber(draft.creditPaidNow)));
+        setCreditDueDate(
+          draft.creditDueDate || getDefaultCreditDueDate()
+        );
+        showNotice("Recovered the unfinished counter bill.", "success");
+      }
+    } catch (error) {
+      console.info("Active bill recovery was skipped:", error);
+    } finally {
+      activeBillRecoveryLoadedRef.current = true;
+    }
+  }, [showNotice]);
+
+  useEffect(() => {
+    if (!activeBillRecoveryLoadedRef.current) return;
+
+    const hasDraft =
+      cartItems.length > 0 ||
+      Boolean(customerName.trim()) ||
+      Boolean(customerPhone.trim());
+
+    if (!hasDraft) {
+      window.localStorage.removeItem(POS_ACTIVE_BILL_STORAGE_KEY);
+      return;
+    }
+
+    const draft = {
+      id: "ACTIVE",
+      holdNumber: "ACTIVE",
+      customerName: customerName.trim(),
+      customerPhone: customerPhone.trim(),
+      customerWhatsAppOptIn,
+      items: cartItems,
+      billDiscountPercent: Math.min(
+        100,
+        Math.max(0, billDiscountPercent)
+      ),
+      roundOffAmount: Math.max(0, roundOffAmount),
+      paymentMethod,
+      creditPaidNow:
+        paymentMethod === "credit"
+          ? Math.max(0, creditPaidNow)
+          : 0,
+      creditDueDate:
+        paymentMethod === "credit" ? creditDueDate : undefined,
+      createdAt: new Date().toISOString(),
+    };
+
+    window.localStorage.setItem(
+      POS_ACTIVE_BILL_STORAGE_KEY,
+      JSON.stringify(draft)
+    );
+  }, [
+    cartItems,
+    customerName,
+    customerPhone,
+    customerWhatsAppOptIn,
+    billDiscountPercent,
+    roundOffAmount,
+    paymentMethod,
+    creditPaidNow,
+    creditDueDate,
+  ]);
+
+  // Customer due intelligence: show an immediate warning when a known credit
+  // customer is entered. This is read-only and never blocks normal billing.
+  useEffect(() => {
+    const phone = customerPhone.replace(/\D/g, "").slice(-10);
+
+    if (phone.length !== 10 || !isBrowserOnline()) {
+      setCurrentCustomerDue(0);
+      setCustomerDueLoading(false);
+      return;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setCustomerDueLoading(true);
+
+        const { data, error } = await supabase
+          .from("customer_credit_accounts")
+          .select("current_balance,customer_phone")
+          .in("customer_phone", [phone, `91${phone}`, `+91${phone}`])
+          .limit(5);
+
+        if (!active) return;
+
+        if (error) {
+          console.info("Customer due lookup skipped:", error.message);
+          setCurrentCustomerDue(0);
+        } else {
+          setCurrentCustomerDue(
+            Math.max(
+              0,
+              ...(data || []).map((row) =>
+                toNumber(row.current_balance)
+              )
+            )
+          );
+        }
+
+        setCustomerDueLoading(false);
+      })();
+    }, 320);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [customerPhone]);
 
   useEffect(() => {
     try {
@@ -3805,6 +3968,12 @@ if (!variantsError) {
 
     rememberSelectedProduct(product);
     setBillFocusCollapsed(false);
+    setLastAddedItemKey(product.key);
+    window.setTimeout(() => {
+      setLastAddedItemKey((current) =>
+        current === product.key ? null : current
+      );
+    }, 1600);
     showNotice(product.designUnitId ? `${product.designName || "Selected design"} added to bill.` : `${product.name} added to bill.`, "success");
     setSearchQuery("");
     searchInputRef.current?.focus();
@@ -4900,11 +5069,31 @@ if (!variantsError) {
   }
 
   function saveHeldBills(nextHeldBills: HeldBill[]) {
-    setHeldBills(nextHeldBills);
+    const seen = new Set<string>();
+    const safeBills = nextHeldBills.filter((bill) => {
+      if (!bill?.id || seen.has(bill.id)) return false;
+      seen.add(bill.id);
+      return true;
+    });
 
+    setHeldBills(safeBills);
+
+    // Primary + backup copy. A completed bill must never accidentally wipe
+    // another customer's waiting bill.
     window.localStorage.setItem(
       HELD_BILLS_STORAGE_KEY,
-      JSON.stringify(nextHeldBills)
+      JSON.stringify(safeBills)
+    );
+    window.localStorage.setItem(
+      HELD_BILLS_BACKUP_STORAGE_KEY,
+      JSON.stringify(safeBills)
+    );
+  }
+
+  function removeHeldBillById(heldBillId: string) {
+    const latest = readHeldBillsSnapshot();
+    saveHeldBills(
+      latest.filter((bill) => bill.id !== heldBillId)
     );
   }
 
@@ -4917,12 +5106,18 @@ if (!variantsError) {
       return;
     }
 
+    const latestBills = readHeldBillsSnapshot();
+    const existingActive = activeHeldBillId
+      ? latestBills.find((bill) => bill.id === activeHeldBillId) || null
+      : null;
+
     const heldBill: HeldBill = {
-      id: crypto.randomUUID(),
-      holdNumber: createHoldNumber(),
+      id: activeHeldBillId || crypto.randomUUID(),
+      holdNumber:
+        existingActive?.holdNumber || createHoldNumber(),
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim(),
-      items: cartItems,
+      items: cartItems.map((item) => ({ ...item })),
       billDiscountPercent: safeBillDiscountPercent,
       roundOffAmount: safeRoundOffAmount,
       paymentMethod,
@@ -4934,10 +5129,15 @@ if (!variantsError) {
         paymentMethod === "credit"
           ? creditDueDate
           : undefined,
-      createdAt: new Date().toISOString(),
+      createdAt:
+        existingActive?.createdAt || new Date().toISOString(),
     };
 
-    saveHeldBills([heldBill, ...heldBills]);
+    saveHeldBills([
+      heldBill,
+      ...latestBills.filter((bill) => bill.id !== heldBill.id),
+    ]);
+    setActiveHeldBillId(null);
 
     setCartItems([]);
     setBillDiscountPercent(0);
@@ -4954,7 +5154,9 @@ if (!variantsError) {
     setCreditDueDate(getDefaultCreditDueDate());
 
     showNotice(
-      `${heldBill.holdNumber} saved successfully.`,
+      existingActive
+        ? `${heldBill.holdNumber} updated safely in Customer Queue.`
+        : `${heldBill.holdNumber} saved safely in Customer Queue.`,
       "success"
     );
   }
@@ -5027,11 +5229,9 @@ if (!variantsError) {
         getDefaultCreditDueDate()
     );
 
-    saveHeldBills(
-      heldBills.filter(
-        (item) => item.id !== heldBill.id
-      )
-    );
+    // Keep the queue copy until this resumed bill is actually completed.
+    // If the cashier switches customers again, Hold updates this same queue row.
+    setActiveHeldBillId(heldBill.id);
 
     setShowHeldBills(false);
     setMobileCartOpen(true);
@@ -5051,12 +5251,80 @@ if (!variantsError) {
       return;
     }
 
-    saveHeldBills(
-      heldBills.filter(
-        (item) => item.id !== heldBillId
-      )
-    );
+    removeHeldBillById(heldBillId);
+    if (activeHeldBillId === heldBillId) {
+      setActiveHeldBillId(null);
+    }
   }
+
+  useEffect(() => {
+    const handleCounterShortcut = (event: globalThis.KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+      if (event.key === "F2") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
+
+      if (event.key === "F4") {
+        event.preventDefault();
+        openQuickItem();
+        return;
+      }
+
+      if (event.key === "F6") {
+        event.preventDefault();
+        customerNameInputRef.current?.focus();
+        customerNameInputRef.current?.select();
+        return;
+      }
+
+      if (event.key === "F7") {
+        event.preventDefault();
+        customerPhoneInputRef.current?.focus();
+        customerPhoneInputRef.current?.select();
+        return;
+      }
+
+      if (event.key === "F8") {
+        event.preventDefault();
+        setShowHeldBills(true);
+        return;
+      }
+
+      if (event.key === "F9") {
+        event.preventDefault();
+        if (cartItems.length > 0) {
+          holdCurrentBill();
+        } else {
+          showNotice("Current bill is empty.", "info");
+        }
+        return;
+      }
+
+      if (event.key === "F10") {
+        event.preventDefault();
+        if (cartItems.length > 0 && !isCompletingSale) {
+          void handleCompleteSale();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleCounterShortcut);
+    return () =>
+      window.removeEventListener("keydown", handleCounterShortcut);
+  }, [
+    cartItems.length,
+    isCompletingSale,
+    customerName,
+    customerPhone,
+    paymentMethod,
+    billDiscountPercent,
+    roundOffAmount,
+    activeHeldBillId,
+  ]);
 
   function addPhysicalPieceWithTagMrp(product: PosProduct) {
     if (getAvailableStock(product) <= 0) {
@@ -6627,6 +6895,24 @@ if (!variantsError) {
       return;
     }
 
+    const lossSaleAlerts = ownerProfitAlerts.filter(
+      (alert) => alert.level === "LOSS_SALE"
+    );
+
+    if (lossSaleAlerts.length > 0) {
+      const confirmed = window.confirm(
+        `${lossSaleAlerts.length} item(s) are below purchase cost after discounts / rewards / round-off.\n\nContinue this sale anyway?`
+      );
+
+      if (!confirmed) {
+        showNotice(
+          "Sale paused by Owner Guard. Review selling price / discount.",
+          "info"
+        );
+        return;
+      }
+    }
+
     saleSubmissionLockRef.current = true;
     setIsCompletingSale(true);
 
@@ -6718,6 +7004,12 @@ if (!variantsError) {
         };
 
         setCompletedSale(offlineSaleSnapshot);
+
+        if (activeHeldBillId) {
+          removeHeldBillById(activeHeldBillId);
+          setActiveHeldBillId(null);
+        }
+
         setProducts((current) =>
           current.map((product) => {
             const soldItem = cartItems.find(
@@ -7158,6 +7450,11 @@ if (!variantsError) {
       };
 
       setCompletedSale(saleSnapshot);
+
+      if (activeHeldBillId) {
+        removeHeldBillById(activeHeldBillId);
+        setActiveHeldBillId(null);
+      }
 
       // Owner-only post-bill profit summary.
       // MRP is never used and Quick Items are excluded.
@@ -8426,6 +8723,7 @@ if (!variantsError) {
               </div>
 
               <input
+                ref={customerNameInputRef}
                 className="ncsPosCustomerCompactName"
                 value={customerName}
                 onChange={(event) =>
@@ -8435,6 +8733,7 @@ if (!variantsError) {
               />
 
               <input
+                ref={customerPhoneInputRef}
                 className="ncsPosCustomerCompactPhone"
                 value={customerPhone}
                 onChange={(event) =>
@@ -8457,6 +8756,28 @@ if (!variantsError) {
                 <span>WhatsApp Offers</span>
               </label>
             </div>
+
+            {(customerDueLoading || currentCustomerDue > 0) && (
+              <div
+                className={`ncsPosCustomerDueAlert ${
+                  currentCustomerDue > 0 ? "due" : "checking"
+                }`}
+              >
+                <span>{customerDueLoading ? "…" : "₹"}</span>
+                <div>
+                  <strong>
+                    {customerDueLoading
+                      ? "Checking customer due..."
+                      : `Existing Due ${formatCurrency(currentCustomerDue)}`}
+                  </strong>
+                  {!customerDueLoading && currentCustomerDue > 0 && (
+                    <small>
+                      Previous balance is still pending. New billing can continue.
+                    </small>
+                  )}
+                </div>
+              </div>
+            )}
 
             {(rewardLookupLoading || rewardCustomerFound) && (
               <div className="ncsPosRewardLookup ncsPosRewardLookupCompact">
@@ -8527,7 +8848,9 @@ if (!variantsError) {
               cartItems.map((item, itemIndex) => (
                 <article
                   key={item.key}
-                  className="ncsPosCartItem ncsPosCartItemTableRow"
+                  className={`ncsPosCartItem ncsPosCartItemTableRow ${
+                    lastAddedItemKey === item.key ? "ncsPosLastAddedItem" : ""
+                  }`}
                 >
                   <div className="ncsPosCartProductCell">
                     <div className="ncsPosCartThumbnail">
@@ -8570,6 +8893,15 @@ if (!variantsError) {
                           <em>Stock {item.stock}</em>
                         )}
                       </p>
+
+                      {!item.isQuickItem &&
+                        Math.max(0, item.stock - item.quantity) <= 2 && (
+                          <span className="ncsPosLowStockBadge">
+                            {Math.max(0, item.stock - item.quantity) === 0
+                              ? "LAST PIECE IN BILL"
+                              : `${Math.max(0, item.stock - item.quantity)} LEFT AFTER BILL`}
+                          </span>
+                        )}
                     </div>
                   </div>
 
@@ -8836,6 +9168,53 @@ if (!variantsError) {
               </div>
             )}
 
+          </div>
+
+          <div className="ncsPosCounterIntelligence">
+            <div className="ncsPosShortcutStrip">
+              <span><b>F2</b> Search</span>
+              <span><b>F4</b> Quick Item</span>
+              <span><b>F6</b> Customer</span>
+              <span><b>F7</b> Phone</span>
+              <span><b>F8</b> Queue</span>
+              <span><b>F9</b> Hold</span>
+              <span><b>F10</b> Complete</span>
+            </div>
+
+            {ownerProfitAlerts.length > 0 && (
+              <div
+                className={`ncsPosOwnerGuardStrip ${
+                  ownerProfitAlerts.some((alert) => alert.level === "LOSS_SALE")
+                    ? "danger"
+                    : "warning"
+                }`}
+              >
+                <span>🛡</span>
+                <div>
+                  <strong>
+                    Owner Guard • {ownerProfitAlerts.length} price alert
+                    {ownerProfitAlerts.length === 1 ? "" : "s"}
+                  </strong>
+                  <small>
+                    {ownerProfitAlerts.some((alert) => alert.level === "LOSS_SALE")
+                      ? "At least one item is below purchase cost after all discounts."
+                      : `Margin below ${ownerBusinessSettings.minimum_profit_margin_percent}% target.`}
+                  </small>
+                </div>
+              </div>
+            )}
+
+            {activeHeldBillId && (
+              <div className="ncsPosActiveQueueNotice">
+                <span>👥</span>
+                <div>
+                  <strong>Resumed Queue Customer</strong>
+                  <small>
+                    This customer remains protected in Queue until the sale completes.
+                  </small>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="ncsPosPaymentSection">
@@ -9524,9 +9903,19 @@ if (!variantsError) {
                             "Walk-in customer"}
                         </span>
 
+                        {heldBill.customerPhone && (
+                          <span>📱 {heldBill.customerPhone}</span>
+                        )}
+
                         <span>
                           {heldBill.paymentMethod.toUpperCase()}
                         </span>
+
+                        {activeHeldBillId === heldBill.id && (
+                          <span className="ncsPosHeldActiveBadge">
+                            ACTIVE • PROTECTED
+                          </span>
+                        )}
                       </div>
 
                       <div className="ncsPosHeldActions">
@@ -18236,7 +18625,155 @@ if (!variantsError) {
           .ncsPosCatalogue { border-radius:18px !important; }
         }
 
-      `}</style>
+        /* =========================================================
+           NCS COUNTER SAFETY + SPEED FINISH
+           ========================================================= */
+        .ncsPosCustomerDueAlert {
+          display:flex;
+          align-items:center;
+          gap:9px;
+          margin-top:8px;
+          padding:8px 11px;
+          border:1px solid rgba(223,141,32,.2);
+          border-radius:12px;
+          background:linear-gradient(135deg,#fffaf0,#fff4dc);
+          color:#855812;
+        }
+        .ncsPosCustomerDueAlert > span {
+          width:28px;height:28px;display:grid;place-items:center;
+          border-radius:9px;background:#fff;color:#b77712;
+          font-weight:1000;box-shadow:0 4px 10px rgba(145,96,20,.1);
+        }
+        .ncsPosCustomerDueAlert strong,
+        .ncsPosCustomerDueAlert small { display:block; }
+        .ncsPosCustomerDueAlert strong { font-size:10px;font-weight:950; }
+        .ncsPosCustomerDueAlert small { margin-top:2px;font-size:8px;font-weight:700;opacity:.8; }
+
+        .ncsPosLowStockBadge {
+          display:inline-flex;
+          width:max-content;
+          margin-top:5px;
+          padding:4px 7px;
+          border:1px solid rgba(230,147,32,.24);
+          border-radius:999px;
+          background:#fff6e6;
+          color:#a9650e;
+          font-size:7px;
+          font-weight:950;
+          letter-spacing:.04em;
+        }
+
+        .ncsPosLastAddedItem {
+          position:relative;
+          animation:ncsLastAddedFlash 1.55s ease-out both;
+        }
+        .ncsPosLastAddedItem::after {
+          content:"JUST ADDED";
+          position:absolute;
+          top:5px;
+          right:7px;
+          padding:3px 7px;
+          border-radius:999px;
+          background:linear-gradient(135deg,#00a67a,#16b8d4);
+          color:#fff;
+          font-size:6px;
+          font-weight:1000;
+          letter-spacing:.08em;
+          box-shadow:0 5px 13px rgba(0,166,122,.18);
+          pointer-events:none;
+        }
+        @keyframes ncsLastAddedFlash {
+          0% { box-shadow:0 0 0 3px rgba(0,166,122,.35),0 10px 25px rgba(0,166,122,.16); background:#edfff9; }
+          100% { box-shadow:none; }
+        }
+
+        .ncsPosCounterIntelligence {
+          display:grid;
+          gap:7px;
+          margin-top:7px;
+        }
+        .ncsPosShortcutStrip {
+          display:flex;
+          flex-wrap:wrap;
+          gap:5px;
+          padding:6px 8px;
+          border:1px solid rgba(10,46,115,.08);
+          border-radius:12px;
+          background:linear-gradient(135deg,#fbfdff,#f5f9ff);
+        }
+        .ncsPosShortcutStrip span {
+          display:inline-flex;align-items:center;gap:4px;
+          color:#657083;font-size:7px;font-weight:800;
+        }
+        .ncsPosShortcutStrip b {
+          padding:2px 5px;border-radius:5px;
+          background:#0a2e73;color:#fff;font-size:6px;font-weight:1000;
+        }
+
+        .ncsPosOwnerGuardStrip,
+        .ncsPosActiveQueueNotice {
+          display:flex;
+          align-items:center;
+          gap:9px;
+          padding:8px 10px;
+          border-radius:12px;
+        }
+        .ncsPosOwnerGuardStrip > span,
+        .ncsPosActiveQueueNotice > span {
+          width:29px;height:29px;display:grid;place-items:center;
+          border-radius:9px;background:#fff;font-size:15px;
+        }
+        .ncsPosOwnerGuardStrip strong,
+        .ncsPosOwnerGuardStrip small,
+        .ncsPosActiveQueueNotice strong,
+        .ncsPosActiveQueueNotice small { display:block; }
+        .ncsPosOwnerGuardStrip strong,
+        .ncsPosActiveQueueNotice strong { font-size:9px;font-weight:950; }
+        .ncsPosOwnerGuardStrip small,
+        .ncsPosActiveQueueNotice small { margin-top:2px;font-size:7px;font-weight:700;opacity:.82; }
+
+        .ncsPosOwnerGuardStrip.warning {
+          border:1px solid rgba(218,157,39,.22);
+          background:linear-gradient(135deg,#fffaf0,#fff4d8);
+          color:#8d6618;
+        }
+        .ncsPosOwnerGuardStrip.danger {
+          border:1px solid rgba(220,68,68,.2);
+          background:linear-gradient(135deg,#fff5f5,#ffecec);
+          color:#a23434;
+        }
+        .ncsPosActiveQueueNotice {
+          border:1px solid rgba(70,83,210,.18);
+          background:linear-gradient(135deg,#f7f6ff,#eef7ff);
+          color:#433aa3;
+        }
+
+        .ncsPosHeldActiveBadge {
+          border:1px solid rgba(0,166,122,.22) !important;
+          background:#eafff7 !important;
+          color:#087b5e !important;
+          font-weight:1000 !important;
+        }
+
+        /* Keep total + Complete Sale visible while the bill panel scrolls. */
+        .ncsPosTotalLine {
+          position:sticky !important;
+          bottom:0 !important;
+          z-index:65 !important;
+          border:1px solid rgba(10,46,115,.10) !important;
+          box-shadow:0 -8px 24px rgba(20,42,85,.10),0 10px 25px rgba(20,42,85,.08) !important;
+          backdrop-filter:blur(10px);
+        }
+
+        @media(max-width:760px) {
+          .ncsPosShortcutStrip { display:none; }
+          .ncsPosCounterIntelligence { margin-top:5px; }
+          .ncsPosLastAddedItem::after { display:none; }
+        }
+
+      `}
+
+</style>
     </main>
   );
 }
