@@ -175,6 +175,7 @@ export default function BarcodesPage() {
   const [labelSize, setLabelSize] = useState("tsc-te244-2up");
   const [showMrp, setShowMrp] = useState(true);
   const [copies, setCopies] = useState(1);
+  const [discountByKey, setDiscountByKey] = useState<Record<string, number>>({});
 
   const loadItems = useCallback(async (showRefresh = false) => {
     if (showRefresh) {
@@ -772,6 +773,35 @@ export default function BarcodesPage() {
     return svg.outerHTML;
   }
 
+  function getManualDiscount(item: BarcodeItem) {
+    return Math.max(
+      0,
+      Math.min(100, toNumber(discountByKey[item.key], 0)),
+    );
+  }
+
+  function setManualDiscount(itemKey: string, value: number) {
+    const safeValue = Math.max(0, Math.min(100, toNumber(value, 0)));
+
+    setDiscountByKey((current) => ({
+      ...current,
+      [itemKey]: safeValue,
+    }));
+  }
+
+  function getOfferPrice(item: BarcodeItem) {
+    const discountPercent = getManualDiscount(item);
+
+    if (discountPercent <= 0 || item.mrp <= 0) {
+      return item.mrp;
+    }
+
+    return Math.max(
+      0,
+      Math.round((item.mrp * (1 - discountPercent / 100)) * 100) / 100,
+    );
+  }
+
   function printItems(selectedItems: BarcodeItem[], copyCount: number) {
     const printableItems = selectedItems.filter((item) => item.barcode.trim());
 
@@ -855,6 +885,8 @@ export default function BarcodesPage() {
           .join(" • ");
 
         const svg = buildBarcodeSvg(item.barcode);
+        const discountPercent = getManualDiscount(item);
+        const offerPrice = getOfferPrice(item);
 
         physicalLabels.push(`
           <div class="label">
@@ -870,6 +902,13 @@ export default function BarcodesPage() {
               ${
                 showMrp && item.mrp > 0
                   ? `<span>MRP ₹${item.mrp.toFixed(2)}</span>`
+                  : ""
+              }
+              ${
+                discountPercent > 0 && item.mrp > 0
+                  ? `<span class="discount">${discountPercent.toFixed(
+                      discountPercent % 1 === 0 ? 0 : 1,
+                    )}% OFF</span><span class="offer">₹${offerPrice.toFixed(2)}</span>`
                   : ""
               }
             </div>
@@ -1055,14 +1094,27 @@ export default function BarcodesPage() {
               display: flex;
               align-items: center;
               justify-content: center;
+              gap: 1.25mm;
               flex: 0 0 auto;
               min-height: 3.2mm;
               margin-top: 0.15mm;
-              padding: 0.25mm 0 0.45mm;
+              padding: 0.2mm 0 0.35mm;
+              font-size: 7.7px;
+              font-weight: 950;
+              line-height: 1;
+              white-space: nowrap;
+            }
+
+            .priceRow .discount {
+              padding: 0.25mm 0.55mm;
+              border: 0.7px solid #000;
+              border-radius: 0.7mm;
+              font-size: 7.3px;
+            }
+
+            .priceRow .offer {
               font-size: 9px;
               font-weight: 950;
-              line-height: 1.05;
-              white-space: nowrap;
             }
 
             @media screen {
@@ -1528,6 +1580,30 @@ export default function BarcodesPage() {
                         <span>MRP</span>
                         <strong>{formatCurrency(item.mrp)}</strong>
                       </p>
+
+                      <p className="discountInputRow">
+                        <span>Discount %</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={getManualDiscount(item)}
+                          onChange={(event) =>
+                            setManualDiscount(
+                              item.key,
+                              toNumber(event.target.value),
+                            )
+                          }
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label={`Discount percentage for ${item.name}`}
+                        />
+                        {getManualDiscount(item) > 0 && item.mrp > 0 && (
+                          <small>
+                            Offer {formatCurrency(getOfferPrice(item))}
+                          </small>
+                        )}
+                      </p>
                     </div>
 
                     <div className="batchActions">
@@ -1614,6 +1690,29 @@ export default function BarcodesPage() {
             </div>
 
             <strong>{previewItem.barcode}</strong>
+
+            <label className="previewCopies">
+              <span>Discount % (print only)</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={getManualDiscount(previewItem)}
+                onChange={(event) =>
+                  setManualDiscount(
+                    previewItem.key,
+                    toNumber(event.target.value),
+                  )
+                }
+              />
+              {getManualDiscount(previewItem) > 0 && previewItem.mrp > 0 && (
+                <small>
+                  MRP {formatCurrency(previewItem.mrp)} → Offer{" "}
+                  {formatCurrency(getOfferPrice(previewItem))}
+                </small>
+              )}
+            </label>
 
             <label className="previewCopies">
               <span>Labels to print</span>
@@ -2224,6 +2323,35 @@ export default function BarcodesPage() {
           margin-top: 3px;
           color: ${ROYAL_BLUE};
           font-size: 10px;
+        }
+
+        .discountInputRow input {
+          width: 76px;
+          min-height: 30px;
+          margin-top: 4px;
+          padding: 4px 7px;
+          border: 1px solid rgba(10,46,115,.18);
+          border-radius: 8px;
+          background: #ffffff;
+          color: ${ROYAL_BLUE};
+          font: inherit;
+          font-size: 10px;
+          font-weight: 900;
+          text-align: center;
+          outline: none;
+        }
+
+        .discountInputRow input:focus {
+          border-color: ${GOLD};
+          box-shadow: 0 0 0 3px rgba(212,175,55,.14);
+        }
+
+        .discountInputRow small {
+          display: block;
+          margin-top: 3px;
+          color: #067647;
+          font-size: 8px;
+          font-weight: 900;
         }
 
         .batchActions {
