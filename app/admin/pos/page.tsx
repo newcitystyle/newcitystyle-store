@@ -6853,6 +6853,7 @@ if (!variantsError) {
       const soldDesignItems = cartItems
         .filter((item) => !item.isQuickItem && Boolean(item.designUnitId) && Boolean(item.variantId))
         .map((item) => ({
+          sale_id: result.sale_id ? String(result.sale_id) : null,
           product_id: item.productId,
           variant_id: item.variantId,
           design_unit_id: item.designUnitId,
