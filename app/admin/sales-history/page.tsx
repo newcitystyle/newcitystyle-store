@@ -88,6 +88,8 @@ type SaleDetails = Sale & { items: SaleItem[] };
 
 type ExchangeSettlementSummary = {
   id: string;
+  return_id?: string | null;
+  sale_id?: string | null;
   difference_amount?: number | string | null;
   settlement_direction?: string | null;
   settlement_method?: string | null;
@@ -200,6 +202,7 @@ export default function SalesHistoryPage() {
   const [quickExchangeName, setQuickExchangeName] = useState("");
   const [quickExchangePrice, setQuickExchangePrice] = useState("");
   const [quickExchangeQuantity, setQuickExchangeQuantity] = useState("1");
+  const [exchangeRoundOff, setExchangeRoundOff] = useState("0");
 
   const loadExchangeInventory = useCallback(async () => {
     setExchangeInventoryLoading(true);
@@ -317,12 +320,12 @@ export default function SalesHistoryPage() {
       supabase
         .from("pos_exchange_settlements")
         .select(
-          "id,difference_amount,settlement_direction,settlement_method,settlement_status,created_at"
+          "id,return_id,sale_id,difference_amount,settlement_direction,settlement_method,settlement_status,created_at"
         )
         .order("created_at", { ascending: false }),
       supabase
         .from("pos_refunds")
-        .select("sale_id,amount,refund_status")
+        .select("sale_id,return_id,amount,refund_status")
         .eq("refund_status", "completed"),
     ]);
 
@@ -335,16 +338,39 @@ export default function SalesHistoryPage() {
     } else {
       const refundBySale = new Map<string, number>();
 
+      const exchangeReturnIds = new Set(
+        ((exchangeResult.data || []) as Array<{
+          return_id?: string | null;
+          settlement_status?: string | null;
+        }>)
+          .filter(
+            (row) =>
+              norm(row.settlement_status) !== "cancelled" &&
+              String(row.return_id || "").trim()
+          )
+          .map((row) => String(row.return_id || "").trim())
+      );
+
       if (!refundsResult.error) {
         (
           (refundsResult.data || []) as Array<{
             sale_id?: string | null;
+            return_id?: string | null;
             amount?: number | string | null;
             refund_status?: string | null;
           }>
         ).forEach((refund) => {
           const saleId = String(refund.sale_id || "").trim();
           if (!saleId) return;
+
+          const returnId = String(refund.return_id || "").trim();
+
+          // Exchange refund differences are already included via
+          // pos_exchange_settlements. Excluding them here prevents
+          // the same exchange difference from reducing sales twice.
+          if (returnId && exchangeReturnIds.has(returnId)) {
+            return;
+          }
 
           refundBySale.set(
             saleId,
@@ -572,6 +598,54 @@ export default function SalesHistoryPage() {
     period,
   ]);
 
+  function getSaleExchangeAdjustment(saleId?: string | null) {
+    const safeSaleId = String(saleId || "").trim();
+    if (!safeSaleId) return 0;
+
+    return exchangeSettlements.reduce((sum, row) => {
+      if (
+        String(row.sale_id || "").trim() !== safeSaleId ||
+        norm(row.settlement_status) === "cancelled"
+      ) {
+        return sum;
+      }
+
+      const difference = Math.max(0, num(row.difference_amount));
+      const direction = norm(row.settlement_direction);
+
+      if (direction === "collect") return sum + difference;
+      if (direction === "refund") return sum - difference;
+      return sum;
+    }, 0);
+  }
+
+  function getSaleAdjustedValue(sale: Sale) {
+    const ordinaryRefunds = Math.max(0, num(sale.refunded_amount));
+    const originalNet = Math.max(
+      0,
+      num(sale.total_amount) - ordinaryRefunds
+    );
+    const exchangeAdjustment = getSaleExchangeAdjustment(sale.id);
+
+    return {
+      ordinaryRefunds,
+      exchangeAdjustment,
+      netSale: Math.max(
+        0,
+        Number((originalNet + exchangeAdjustment).toFixed(2))
+      ),
+      paid: Math.max(
+        0,
+        Number(
+          (
+            Math.max(0, num(sale.paid_amount) - ordinaryRefunds) +
+            exchangeAdjustment
+          ).toFixed(2)
+        )
+      ),
+    };
+  }
+
   async function showDetails(sale: Sale) {
     setDetailsLoading(true);
 
@@ -687,6 +761,7 @@ export default function SalesHistoryPage() {
     setQuickExchangeName("");
     setQuickExchangePrice("");
     setQuickExchangeQuantity("1");
+    setExchangeRoundOff("0");
     setReturnModalOpen(true);
   }
 
@@ -743,7 +818,7 @@ export default function SalesHistoryPage() {
     );
   }, [exchangeInventory, exchangeSearch]);
 
-  const exchangeTotal = useMemo(
+  const exchangeSubtotal = useMemo(
     () =>
       exchangeItems.reduce(
         (total, item) =>
@@ -751,6 +826,15 @@ export default function SalesHistoryPage() {
         0
       ),
     [exchangeItems]
+  );
+
+  const safeExchangeRoundOff = Number.isFinite(Number(exchangeRoundOff))
+    ? Number(exchangeRoundOff)
+    : 0;
+
+  const exchangeTotal = Math.max(
+    0,
+    Number((exchangeSubtotal + safeExchangeRoundOff).toFixed(2))
   );
 
   const exchangeDifference = exchangeTotal - selectedReturnTotal;
@@ -992,13 +1076,10 @@ export default function SalesHistoryPage() {
                     result.settlement_method ||
                       exchangeSettlementMethod
                   ),
-            subtotal: num(
-              result.exchange_value ||
-                exchangeTotal
-            ),
+            subtotal: exchangeSubtotal,
             discountAmount: 0,
             taxAmount: 0,
-            roundOff: 0,
+            roundOff: safeExchangeRoundOff,
             billAmount: num(
               result.exchange_value ||
                 exchangeTotal
@@ -1094,7 +1175,7 @@ export default function SalesHistoryPage() {
           ? await supabase.rpc("process_pos_exchange", {
               p_sale_id: selected.id,
               p_return_items: rpcItems,
-              p_exchange_items: exchangeItems.map((item) => ({
+              p_exchange_items: exchangeItems.map((item, index) => ({
                 product_id: item.productId,
                 variant_id: item.variantId,
                 quantity: item.quantity,
@@ -1104,6 +1185,7 @@ export default function SalesHistoryPage() {
                 barcode: item.barcode || null,
                 size: item.size || null,
                 color: item.color || null,
+                round_off: index === 0 ? safeExchangeRoundOff : 0,
               })),
               p_settlement_method:
                 exchangeDirection === "even"
@@ -2071,11 +2153,12 @@ export default function SalesHistoryPage() {
           {pagedSales.map((sale) => {
             const due = num(sale.due_amount);
             const cancelled = norm(sale.sale_status) === "cancelled";
-            const refunded = Math.max(0, num(sale.refunded_amount));
-            const netSale = Math.max(
-              0,
-              num(sale.total_amount) - refunded
-            );
+            const {
+              ordinaryRefunds: refunded,
+              exchangeAdjustment,
+              netSale,
+              paid: adjustedPaid,
+            } = getSaleAdjustedValue(sale);
 
             return (
               <article className="saleCard" key={sale.id}>
@@ -2106,11 +2189,36 @@ export default function SalesHistoryPage() {
                       <strong>- {money(refunded)}</strong>
                     </div>
                   )}
-                  <div className={refunded > 0 ? "netSale" : ""}>
+                  {Math.abs(exchangeAdjustment) > 0.009 && (
+                    <div
+                      className={
+                        exchangeAdjustment > 0
+                          ? "exchangeCollectAmount"
+                          : "exchangeRefundAmount"
+                      }
+                    >
+                      <span>
+                        {exchangeAdjustment > 0
+                          ? "Exchange Extra"
+                          : "Exchange Refund"}
+                      </span>
+                      <strong>
+                        {exchangeAdjustment > 0 ? "+ " : "- "}
+                        {money(Math.abs(exchangeAdjustment))}
+                      </strong>
+                    </div>
+                  )}
+                  <div
+                    className={
+                      refunded > 0 || Math.abs(exchangeAdjustment) > 0.009
+                        ? "netSale"
+                        : ""
+                    }
+                  >
                     <span>Net Sale</span>
                     <strong>{money(netSale)}</strong>
                   </div>
-                  <div><span>Paid</span><strong>{money(sale.paid_amount)}</strong></div>
+                  <div><span>Paid</span><strong>{money(adjustedPaid)}</strong></div>
                   <div className={due > 0 ? "due" : ""}><span>Due</span><strong>{money(due)}</strong></div>
                 </div>
 
@@ -2261,27 +2369,53 @@ export default function SalesHistoryPage() {
               <p><span>Tax</span><strong>{money(selected.tax_amount)}</strong></p>
               <p><span>Round Off</span><strong>- {money(selected.round_off)}</strong></p>
               <p className="grand"><span>Original Total</span><strong>{money(selected.total_amount)}</strong></p>
-              {num(selected.refunded_amount) > 0 && (
-                <>
-                  <p className="refundLine">
-                    <span>Refunded</span>
-                    <strong>- {money(selected.refunded_amount)}</strong>
-                  </p>
-                  <p className="netLine">
-                    <span>Net Sale</span>
-                    <strong>
-                      {money(
-                        Math.max(
-                          0,
-                          num(selected.total_amount) -
-                            num(selected.refunded_amount)
-                        )
-                      )}
-                    </strong>
-                  </p>
-                </>
-              )}
-              <p><span>Paid</span><strong>{money(selected.paid_amount)}</strong></p>
+              {(() => {
+                const adjusted = getSaleAdjustedValue(selected);
+
+                return (
+                  <>
+                    {adjusted.ordinaryRefunds > 0 && (
+                      <p className="refundLine">
+                        <span>Refunded</span>
+                        <strong>- {money(adjusted.ordinaryRefunds)}</strong>
+                      </p>
+                    )}
+
+                    {Math.abs(adjusted.exchangeAdjustment) > 0.009 && (
+                      <p
+                        className={
+                          adjusted.exchangeAdjustment > 0
+                            ? "exchangeCollectLine"
+                            : "exchangeRefundLine"
+                        }
+                      >
+                        <span>
+                          {adjusted.exchangeAdjustment > 0
+                            ? "Exchange Extra"
+                            : "Exchange Refund"}
+                        </span>
+                        <strong>
+                          {adjusted.exchangeAdjustment > 0 ? "+ " : "- "}
+                          {money(Math.abs(adjusted.exchangeAdjustment))}
+                        </strong>
+                      </p>
+                    )}
+
+                    {(adjusted.ordinaryRefunds > 0 ||
+                      Math.abs(adjusted.exchangeAdjustment) > 0.009) && (
+                      <p className="netLine">
+                        <span>Net Sale</span>
+                        <strong>{money(adjusted.netSale)}</strong>
+                      </p>
+                    )}
+
+                    <p>
+                      <span>Paid</span>
+                      <strong>{money(adjusted.paid)}</strong>
+                    </p>
+                  </>
+                );
+              })()}
               <p className={num(selected.due_amount) > 0 ? "due" : ""}>
                 <span>Due</span><strong>{money(selected.due_amount)}</strong>
               </p>
@@ -3055,13 +3189,45 @@ export default function SalesHistoryPage() {
                   </div>
                 )}
 
+                <div className="exchangeRoundOffRow">
+                  <div>
+                    <span>ROUND OFF</span>
+                    <small>
+                      Use minus to reduce, plus to increase the final replacement value.
+                    </small>
+                  </div>
+
+                  <label>
+                    <span>Amount</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={exchangeRoundOff}
+                      onChange={(event) =>
+                        setExchangeRoundOff(event.target.value)
+                      }
+                      placeholder="0.00"
+                    />
+                  </label>
+
+                  <div className="exchangeRoundOffPreview">
+                    <span>Before Round Off</span>
+                    <strong>{money(exchangeSubtotal)}</strong>
+                  </div>
+
+                  <div className="exchangeRoundOffPreview">
+                    <span>After Round Off</span>
+                    <strong>{money(exchangeTotal)}</strong>
+                  </div>
+                </div>
+
                 <div className="exchangeSettlement">
                   <div>
                     <span>Returned Value</span>
                     <strong>{money(selectedReturnTotal)}</strong>
                   </div>
                   <div>
-                    <span>Replacement Value</span>
+                    <span>Replacement Value • Final</span>
                     <strong>{money(exchangeTotal)}</strong>
                   </div>
                   <div className={`exchangeDifference ${exchangeDirection}`}>
@@ -3283,6 +3449,15 @@ export default function SalesHistoryPage() {
         .exchangeSearchMeta{margin-top:8px;font-size:10px;color:#596579;display:flex;gap:4px;align-items:center;flex-wrap:wrap}.exchangeSearchMeta strong{color:${DEEP};font-size:11px}.exchangeSearchMeta span{color:#758197}
         .exchangeProductGrid{max-height:235px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px;overflow:auto}.exchangeProductCard{display:flex;flex-direction:column;align-items:flex-start;min-width:0;padding:12px;border:1px solid #e3e8f0;border-radius:13px;background:#fff;text-align:left;cursor:pointer;transition:.18s ease}.exchangeProductCard:hover{transform:translateY(-2px);border-color:${GOLD};box-shadow:0 10px 22px rgba(3,21,63,.09)}.exchangeProductCard>span{padding:4px 7px;border-radius:20px;background:#eaf7ef;color:#167842;font-size:7px;font-weight:900}.exchangeProductCard strong{max-width:100%;margin-top:7px;overflow:hidden;color:${DEEP};font-size:11px;text-overflow:ellipsis;white-space:nowrap}.exchangeProductCard small{max-width:100%;margin-top:3px;overflow:hidden;color:#858d9b;font-size:8px;text-overflow:ellipsis;white-space:nowrap}.exchangeProductCard b{margin-top:7px;color:${BLUE};font-size:12px}.exchangeProductCard em{margin-top:5px;color:${GOLD};font-size:8px;font-style:normal;font-weight:900}
         .exchangeEmpty{margin-top:10px;padding:20px;border:1px dashed #cfd6e2;border-radius:13px;color:#7f8795;font-size:10px;text-align:center}.exchangeSelectedList{display:grid;gap:8px;margin-top:11px}.exchangeSelectedList article{display:grid;grid-template-columns:minmax(0,1fr) 78px 130px auto 34px;gap:9px;align-items:end;padding:11px;border:1px solid #e3e8f0;border-radius:13px;background:#fff}.exchangeSelectedInfo{min-width:0}.exchangeSelectedInfo strong,.exchangeSelectedInfo small,.exchangeSelectedInfo span{display:block}.exchangeSelectedInfo strong{overflow:hidden;color:${DEEP};font-size:11px;text-overflow:ellipsis;white-space:nowrap}.exchangeSelectedInfo small{margin-top:3px;color:#818997;font-size:8px}.exchangeSelectedInfo span{margin-top:4px;color:#167842;font-size:7px;font-weight:850}.exchangeSelectedList label>span{display:block;margin-bottom:4px;color:#7c8492;font-size:7px;font-weight:850;text-transform:uppercase}.exchangeSelectedList input{width:100%;height:36px;border:1px solid #dfe4ed;border-radius:9px;padding:0 8px;font:inherit;font-size:10px}.exchangeLineTotal{align-self:center;color:${BLUE};font-size:11px;white-space:nowrap}.exchangeRemove{width:32px;height:32px;border:0;border-radius:9px;background:#ffe9e9;color:#b43232;font-size:18px;font-weight:900;cursor:pointer}
+        .exchangeRoundOffRow{display:grid;grid-template-columns:minmax(0,1.4fr) 170px 170px 170px;gap:10px;align-items:end;margin-top:12px;padding:12px;border:1px solid rgba(212,175,55,.42);border-radius:14px;background:linear-gradient(135deg,#fffaf0,#ffffff)}
+        .exchangeRoundOffRow>div:first-child{display:grid;gap:4px;align-self:center}.exchangeRoundOffRow>div:first-child>span{color:#9a6b08;font-size:9px;font-weight:950;letter-spacing:.8px}.exchangeRoundOffRow>div:first-child>small{color:#667085;font-size:9px;line-height:1.35}
+        .exchangeRoundOffRow label{display:grid;gap:5px}.exchangeRoundOffRow label>span,.exchangeRoundOffPreview>span{color:#667085;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.35px}
+        .exchangeRoundOffRow input{width:100%;height:40px;border:1px solid #d9dfeb;border-radius:9px;padding:0 10px;outline:0;background:#fff;color:#1f2937;font:inherit;font-size:12px;font-weight:850}
+        .exchangeRoundOffRow input:focus{border-color:${GOLD};box-shadow:0 0 0 3px rgba(212,175,55,.12)}
+        .exchangeRoundOffPreview{display:grid;gap:5px;padding:8px 10px;border:1px solid #e4e8ef;border-radius:10px;background:#fff}.exchangeRoundOffPreview strong{color:${DEEP};font-size:13px}
+        @media(max-width:950px){.exchangeRoundOffRow{grid-template-columns:1fr 1fr}.exchangeRoundOffRow>div:first-child{grid-column:1/-1}}
+        @media(max-width:620px){.exchangeRoundOffRow{grid-template-columns:1fr}}
+
         .exchangeSettlement{display:grid;grid-template-columns:1fr 1fr 1.25fr;gap:8px;margin-top:12px}.exchangeSettlement>div{padding:11px;border-radius:12px;background:#fff}.exchangeSettlement span{display:block;color:#8a91a0;font-size:7px;font-weight:850;text-transform:uppercase}.exchangeSettlement strong{display:block;margin-top:4px;color:${DEEP};font-size:12px}.exchangeDifference{background:linear-gradient(135deg,${DEEP},${BLUE})!important}.exchangeDifference span{color:rgba(255,255,255,.65)}.exchangeDifference strong{color:${GOLD};font-size:17px}.exchangeDifference.refund strong{color:#8ff0b4}.exchangeSettlementMethod{display:block;margin-top:11px}.exchangeSettlementMethod>span{display:block;margin-bottom:5px;color:#707887;font-size:8px;font-weight:850;text-transform:uppercase}.exchangeSettlementMethod select{width:100%;height:42px;border:1px solid #dfe4ed;border-radius:11px;background:#fff;padding:0 11px;font:inherit;font-size:10px}
         .returnFormGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 20px 18px}.returnFormGrid label{display:block}.returnFormGrid label>span{display:block;margin-bottom:6px;color:#707887;font-size:9px;font-weight:850;text-transform:uppercase}.returnFormGrid input,.returnFormGrid select,.returnFormGrid textarea{width:100%;border:1px solid #dfe4ed;border-radius:12px;background:#fff;padding:12px;font:inherit;font-size:11px;outline:none}.returnFormGrid input:focus,.returnFormGrid select:focus,.returnFormGrid textarea:focus{border-color:${BLUE};box-shadow:0 0 0 3px rgba(10,46,115,.08)}.returnFormGrid .fullWidth{grid-column:1/-1}
         .returnSummary{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:10px;margin:0 20px 18px;padding:14px;border-radius:16px;background:#f6f8fc}.returnSummary>div{padding:10px;border-radius:12px;background:#fff}.returnSummary span{display:block;color:#8a91a0;font-size:8px;font-weight:850;text-transform:uppercase}.returnSummary strong{display:block;margin-top:4px;color:${DEEP};font-size:13px}.returnSummary .returnTotal{background:linear-gradient(135deg,${DEEP},${BLUE})}.returnSummary .returnTotal span{color:rgba(255,255,255,.66)}.returnSummary .returnTotal strong{color:${GOLD};font-size:19px}
