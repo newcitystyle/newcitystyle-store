@@ -539,7 +539,7 @@ export default function AdminDashboardPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [visitorError, setVisitorError] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
-  const [salesRange, setSalesRange] = useState<7 | 14 | 30>(7);
+  const [salesRange, setSalesRange] = useState<7 | 14 | 30>(30);
   const [googleBusiness, setGoogleBusiness] =
     useState<GoogleBusinessStatus>({
       connected: false,
@@ -1900,6 +1900,12 @@ export default function AdminDashboardPage() {
             }
           }
   
+        @media (max-width: 1380px) {
+          .quickActionGrid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+          }
+        }
+
         @media (max-width: 1200px) {
           .todayProfitGrid {
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2508,31 +2514,53 @@ export default function AdminDashboardPage() {
             >
               <option value={7}>Last 7 days</option>
               <option value={14}>Last 14 days</option>
-              <option value={30}>Last 30 days</option>
+              <option value={30}>Month view • 30 days</option>
             </select>
           </div>
 
-          <div className="trendChart">
+          <div
+            className={`trendChart ${
+              salesRange === 30 ? "trendChartMonth" : ""
+            }`}
+          >
             {salesTrend.map((point) => {
               const height = Math.max(
                 3,
                 (point.amount / trendMax) * 100,
               );
+              const isToday = point.key === dateKey(todayStart);
+              const dayNumber = point.label.split(" ")[0];
 
               return (
-                <div className="trendColumn" key={point.key}>
-                  <div className="trendValue">
-                    {point.amount > 0
+                <div
+                  className={`trendColumn ${isToday ? "today" : ""}`}
+                  key={point.key}
+                  title={`${point.label} • ${
+                    point.amount > 0
                       ? formatCurrency(point.amount)
-                      : "₹0"}
-                  </div>
+                      : "₹0"
+                  }`}
+                >
+                  {salesRange !== 30 && (
+                    <div className="trendValue">
+                      {point.amount > 0
+                        ? formatCurrency(point.amount)
+                        : "₹0"}
+                    </div>
+                  )}
+
                   <div className="trendTrack">
                     <div
                       className="trendBar"
                       style={{ height: `${height}%` }}
                     />
                   </div>
-                  <span>{point.label}</span>
+
+                  <span className="trendDay">
+                    {salesRange === 30 ? dayNumber : point.label}
+                  </span>
+
+                  {isToday && <small className="trendTodayDot" />}
                 </div>
               );
             })}
@@ -3281,7 +3309,7 @@ export default function AdminDashboardPage() {
         .secondaryKpis,
         .catalogueKpis {
           display: grid;
-          grid-template-columns: repeat(6, minmax(0, 1fr));
+          grid-template-columns: repeat(7, minmax(0, 1fr));
           gap: 9px;
           margin-top: 10px;
         }
@@ -3752,6 +3780,75 @@ export default function AdminDashboardPage() {
           gap: 9px;
         }
 
+        .quickActionGrid :global(.quickAction):nth-child(1) {
+          background: linear-gradient(135deg, #175f9e, #183d74) !important;
+        }
+
+        .quickActionGrid :global(.quickAction):nth-child(2) {
+          background: linear-gradient(135deg, #168f87, #14665f) !important;
+        }
+
+        .quickActionGrid :global(.quickAction):nth-child(3) {
+          background: linear-gradient(135deg, #d8872f, #a6523d) !important;
+        }
+
+        .quickActionGrid :global(.quickAction):nth-child(4) {
+          background: linear-gradient(135deg, #6750c7, #44318f) !important;
+        }
+
+        .quickActionGrid :global(.quickAction):nth-child(5) {
+          background: linear-gradient(135deg, #c96867, #95404f) !important;
+        }
+
+        .quickActionGrid :global(.quickAction):nth-child(6) {
+          background: linear-gradient(135deg, #2d7f95, #315f80) !important;
+        }
+
+        .quickActionGrid :global(.quickAction):nth-child(7) {
+          background: linear-gradient(135deg, #ad8530, #66511f) !important;
+        }
+
+        .quickActionsPanel,
+        .panel {
+          border: 1px solid rgba(31, 58, 105, 0.08);
+          box-shadow:
+            0 12px 30px rgba(31, 58, 105, 0.07),
+            inset 0 1px 0 rgba(255, 255, 255, 0.72);
+        }
+
+        .quickActionsPanel {
+          background: linear-gradient(135deg, #fffefa 0%, #f7fbff 100%);
+        }
+
+        .detailGrid .panel:nth-child(1) {
+          background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        }
+
+        .detailGrid .panel:nth-child(2) {
+          background: linear-gradient(180deg, #fffefa 0%, #fffaf0 100%);
+        }
+
+        .detailGrid .panel:nth-child(3) {
+          background: linear-gradient(180deg, #ffffff 0%, #f5fbf9 100%);
+        }
+
+        .alertPanel {
+          background: linear-gradient(180deg, #fffdf9 0%, #fff7f4 100%) !important;
+        }
+
+        .compactRow {
+          transition:
+            transform 0.18s ease,
+            box-shadow 0.18s ease,
+            border-color 0.18s ease;
+        }
+
+        .compactRow:hover {
+          transform: translateY(-1px);
+          border-color: rgba(91, 63, 194, 0.18);
+          box-shadow: 0 7px 16px rgba(31, 58, 105, 0.07);
+        }
+
         .analyticsGrid {
           display: grid;
           grid-template-columns: minmax(0, 1.65fr) minmax(270px, 0.75fr);
@@ -3775,36 +3872,48 @@ export default function AdminDashboardPage() {
         }
 
         .trendChart {
-          height: 285px;
+          height: 245px;
           display: flex;
           align-items: stretch;
-          gap: 7px;
-          padding: 20px 17px 15px;
-          overflow-x: auto;
+          gap: 5px;
+          padding: 18px 14px 12px;
+          overflow: hidden;
           background:
             linear-gradient(
               to bottom,
-              rgba(10, 46, 115, 0.05) 1px,
+              rgba(91, 63, 194, 0.06) 1px,
               transparent 1px
-            );
-          background-size: 100% 25%;
+            ),
+            linear-gradient(180deg, #fffefa 0%, #f8fbff 100%);
+          background-size: 100% 25%, 100% 100%;
+        }
+
+        .trendChartMonth {
+          gap: 3px;
+          padding-left: 10px;
+          padding-right: 10px;
         }
 
         .trendColumn {
-          min-width: 35px;
-          flex: 1;
+          min-width: 0;
+          flex: 1 1 0;
+          position: relative;
           display: grid;
-          grid-template-rows: 28px minmax(0, 1fr) 20px;
+          grid-template-rows: 25px minmax(0, 1fr) 18px;
           align-items: end;
-          gap: 5px;
+          gap: 4px;
           text-align: center;
+        }
+
+        .trendChartMonth .trendColumn {
+          grid-template-rows: minmax(0, 1fr) 17px;
         }
 
         .trendValue {
           overflow: hidden;
-          color: ${ROYAL_BLUE};
-          font-size: 6.5px;
-          font-weight: 850;
+          color: #5b3fc2;
+          font-size: 6.2px;
+          font-weight: 900;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
@@ -3816,28 +3925,68 @@ export default function AdminDashboardPage() {
           display: flex;
           align-items: flex-end;
           overflow: hidden;
-          border-radius: 8px 8px 3px 3px;
-          background: rgba(10, 46, 115, 0.05);
+          border-radius: 6px 6px 2px 2px;
+          background: rgba(91, 63, 194, 0.045);
+          box-shadow: inset 0 0 0 1px rgba(91, 63, 194, 0.035);
         }
 
         .trendBar {
           width: 100%;
           min-height: 3px;
-          border-radius: 8px 8px 3px 3px;
+          border-radius: 6px 6px 2px 2px;
           background: linear-gradient(
             180deg,
-            #f0d36d,
-            ${GOLD} 40%,
-            ${ROYAL_BLUE}
+            #6fd0d2 0%,
+            #6d66d9 45%,
+            #5b3fc2 100%
           );
-          animation: chartRise 0.7s ease both;
+          box-shadow: 0 3px 8px rgba(91, 63, 194, 0.14);
+          animation: chartRise 0.65s ease both;
         }
 
-        .trendColumn > span {
+        .trendColumn.today .trendTrack {
+          background: rgba(212, 175, 55, 0.12);
+          box-shadow:
+            inset 0 0 0 1px rgba(212, 175, 55, 0.26),
+            0 0 0 2px rgba(212, 175, 55, 0.07);
+        }
+
+        .trendColumn.today .trendBar {
+          background: linear-gradient(
+            180deg,
+            #ffe995 0%,
+            #d4af37 55%,
+            #9b7412 100%
+          );
+          box-shadow: 0 4px 11px rgba(212, 175, 55, 0.24);
+        }
+
+        .trendDay {
           color: #7b8491;
-          font-size: 6.5px;
-          font-weight: 750;
+          font-size: 6.4px;
+          font-weight: 800;
           white-space: nowrap;
+        }
+
+        .trendChartMonth .trendDay {
+          font-size: 6px;
+        }
+
+        .trendColumn.today .trendDay {
+          color: #9a7516;
+          font-weight: 950;
+        }
+
+        .trendTodayDot {
+          position: absolute;
+          left: 50%;
+          bottom: 1px;
+          width: 4px;
+          height: 4px;
+          transform: translateX(-50%);
+          border-radius: 50%;
+          background: #d4af37;
+          box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.16);
         }
 
         .alertList,
