@@ -42,7 +42,7 @@ type SaleItem = {
 
 type ExchangeInventoryItem = {
   key: string;
-  productId: number;
+  productId: number | null;
   variantId: number | null;
   name: string;
   barcode: string;
@@ -52,6 +52,7 @@ type ExchangeInventoryItem = {
   stock: number;
   price: number;
   mrp: number;
+  isQuickItem?: boolean;
 };
 
 type ExchangeSelectedItem = ExchangeInventoryItem & {
@@ -196,6 +197,9 @@ export default function SalesHistoryPage() {
   >([]);
   const [exchangeSettlementMethod, setExchangeSettlementMethod] =
     useState<ExchangeSettlementMethod>("cash");
+  const [quickExchangeName, setQuickExchangeName] = useState("");
+  const [quickExchangePrice, setQuickExchangePrice] = useState("");
+  const [quickExchangeQuantity, setQuickExchangeQuantity] = useState("1");
 
   const loadExchangeInventory = useCallback(async () => {
     setExchangeInventoryLoading(true);
@@ -680,6 +684,9 @@ export default function SalesHistoryPage() {
     setExchangeSearch("");
     setExchangeItems([]);
     setExchangeSettlementMethod("cash");
+    setQuickExchangeName("");
+    setQuickExchangePrice("");
+    setQuickExchangeQuantity("1");
     setReturnModalOpen(true);
   }
 
@@ -781,6 +788,49 @@ export default function SalesHistoryPage() {
     setExchangeSearch("");
   }
 
+  function addQuickExchangeItem() {
+    const name = quickExchangeName.trim();
+    const price = Math.max(0, num(quickExchangePrice));
+    const quantity = Math.max(
+      1,
+      Math.min(999, Math.floor(num(quickExchangeQuantity) || 1))
+    );
+
+    if (!name) {
+      setNotice("Enter a Quick Item name.");
+      return;
+    }
+
+    if (price <= 0) {
+      setNotice("Enter a valid Quick Item price.");
+      return;
+    }
+
+    const quickItem: ExchangeSelectedItem = {
+      key: `quick-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      productId: null,
+      variantId: null,
+      name,
+      barcode: "",
+      sku: "",
+      size: "",
+      color: "",
+      stock: 999,
+      price,
+      mrp: price,
+      isQuickItem: true,
+      quantity,
+      exchangePrice: price,
+    };
+
+    setExchangeItems((current) => [...current, quickItem]);
+    setQuickExchangeName("");
+    setQuickExchangePrice("");
+    setQuickExchangeQuantity("1");
+    setNotice(`${name} added as Quick Item replacement.`);
+    window.setTimeout(() => setNotice(""), 2500);
+  }
+
   function handleExchangeSearchEnter() {
     const query = norm(exchangeSearch);
     if (!query) return;
@@ -825,10 +875,12 @@ export default function SalesHistoryPage() {
               ...item,
               [field]:
                 field === "quantity"
-                  ? Math.max(
-                      1,
-                      Math.min(item.stock, Math.floor(value))
-                    )
+                  ? item.isQuickItem
+                    ? Math.max(1, Math.min(999, Math.floor(value || 1)))
+                    : Math.max(
+                        1,
+                        Math.min(item.stock, Math.floor(value))
+                      )
                   : Math.max(0, value),
             }
           : item
@@ -1047,6 +1099,11 @@ export default function SalesHistoryPage() {
                 variant_id: item.variantId,
                 quantity: item.quantity,
                 unit_price: item.exchangePrice,
+                is_quick_item: item.isQuickItem === true,
+                product_name: item.name,
+                barcode: item.barcode || null,
+                size: item.size || null,
+                color: item.color || null,
               })),
               p_settlement_method:
                 exchangeDirection === "even"
@@ -2762,6 +2819,64 @@ export default function SalesHistoryPage() {
                   <strong>{money(exchangeTotal)}</strong>
                 </div>
 
+                <div className="exchangeQuickItem">
+                  <div className="exchangeQuickItemHead">
+                    <div>
+                      <span>QUICK ITEM</span>
+                      <strong>Add replacement without stock/product master</strong>
+                    </div>
+                    <small>No stock will be reduced for Quick Items.</small>
+                  </div>
+
+                  <div className="exchangeQuickItemGrid">
+                    <label>
+                      <span>Item Name</span>
+                      <input
+                        value={quickExchangeName}
+                        onChange={(event) =>
+                          setQuickExchangeName(event.target.value)
+                        }
+                        placeholder="Example: CHILD DRESS"
+                      />
+                    </label>
+
+                    <label>
+                      <span>Price</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={quickExchangePrice}
+                        onChange={(event) =>
+                          setQuickExchangePrice(event.target.value)
+                        }
+                        placeholder="₹0.00"
+                      />
+                    </label>
+
+                    <label>
+                      <span>Qty</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="999"
+                        step="1"
+                        value={quickExchangeQuantity}
+                        onChange={(event) =>
+                          setQuickExchangeQuantity(event.target.value)
+                        }
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={addQuickExchangeItem}
+                    >
+                      + Add Quick Item
+                    </button>
+                  </div>
+                </div>
+
                 <div className="exchangeSearchBox">
                   <span>⌕</span>
                   <input
@@ -2842,7 +2957,11 @@ export default function SalesHistoryPage() {
                               item.barcode ||
                               "Standard product"}
                           </small>
-                          <span>Available stock: {item.stock}</span>
+                          <span>
+                            {item.isQuickItem
+                              ? "Quick Item • No stock tracking"
+                              : `Available stock: ${item.stock}`}
+                          </span>
                         </div>
 
                         <label>
@@ -2850,7 +2969,7 @@ export default function SalesHistoryPage() {
                           <input
                             type="number"
                             min="1"
-                            max={item.stock}
+                            max={item.isQuickItem ? 999 : item.stock}
                             value={item.quantity}
                             onChange={(event) =>
                               updateExchangeItem(
@@ -3151,6 +3270,15 @@ export default function SalesHistoryPage() {
         .restockToggle{display:flex;align-items:center;gap:7px;color:#5f6878;font-size:9px;font-weight:850}.restockToggle input{display:none}.restockToggle>span{position:relative;width:36px;height:20px;border-radius:30px;background:#d9dee8;transition:.2s ease}.restockToggle>span:after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.2);transition:.2s ease}.restockToggle input:checked+span{background:#1f9d55}.restockToggle input:checked+span:after{transform:translateX(16px)}
         .exchangeMrpField{min-width:110px}.exchangeMrpField>strong{min-height:42px;display:flex;align-items:center;padding:0 12px;border:1px solid rgba(10,46,115,.12);border-radius:10px;background:#f8fafc;color:${BLUE};font-size:13px;font-weight:900}.exchangeLineValue{min-width:120px;display:flex;flex-direction:column;gap:5px}.exchangeLineValue>span{color:#6b7280;font-size:8px;font-weight:850;text-transform:uppercase}.exchangeLineValue>strong{color:${BLUE};font-size:14px;font-weight:950}.exchangeDifference small{display:block;margin-top:3px;font-size:8px;font-weight:750;opacity:.8}
         .exchangeDesk{margin:0 20px 18px;padding:16px;border:1px solid rgba(212,175,55,.26);border-radius:18px;background:linear-gradient(180deg,#fbfcff,#f5f8fd)}
+        .exchangeQuickItem{margin:0 0 12px;padding:13px;border:1px solid rgba(212,175,55,.48);border-radius:14px;background:linear-gradient(135deg,#fffaf0,#ffffff);box-shadow:0 7px 18px rgba(10,46,115,.05)}
+        .exchangeQuickItemHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+        .exchangeQuickItemHead>div{display:grid;gap:3px}.exchangeQuickItemHead span{color:#9a6b08;font-size:9px;font-weight:950;letter-spacing:.8px}.exchangeQuickItemHead strong{color:${DEEP};font-size:12px}.exchangeQuickItemHead small{color:#6b7280;font-size:9px;line-height:1.4;text-align:right}
+        .exchangeQuickItemGrid{display:grid;grid-template-columns:minmax(0,1.6fr) 130px 80px auto;gap:8px;align-items:end}
+        .exchangeQuickItemGrid label{display:grid;gap:5px}.exchangeQuickItemGrid label>span{color:#667085;font-size:8px;font-weight:850}.exchangeQuickItemGrid input{width:100%;height:39px;border:1px solid #d9dfeb;border-radius:9px;padding:0 9px;outline:0;background:#fff;color:#1f2937;font:inherit;font-size:10px;font-weight:750}
+        .exchangeQuickItemGrid input:focus{border-color:${GOLD};box-shadow:0 0 0 3px rgba(212,175,55,.12)}
+        .exchangeQuickItemGrid button{height:39px;border:1px solid rgba(212,175,55,.85);border-radius:9px;padding:0 14px;background:linear-gradient(135deg,${DEEP},${BLUE});color:#fff;font-size:9px;font-weight:950;cursor:pointer;white-space:nowrap}
+        @media(max-width:850px){.exchangeQuickItemGrid{grid-template-columns:1fr 1fr}.exchangeQuickItemGrid button{grid-column:1/-1}.exchangeQuickItemHead{flex-direction:column}.exchangeQuickItemHead small{text-align:left}}
+
         .exchangeSearchBox{display:flex;align-items:center;gap:9px;padding:0 11px;border:1px solid #dfe4ed;border-radius:12px;background:#fff}.exchangeSearchBox>span{color:${BLUE};font-size:21px}.exchangeSearchBox input{width:100%;height:44px;border:0;outline:0;font:inherit;font-size:11px}.exchangeSearchBox button{width:34px;height:34px;border:1px solid rgba(212,175,55,.5);border-radius:9px;background:${GOLD};color:${DEEP};font-weight:950;cursor:pointer}
         .exchangeSearchMeta{margin-top:8px;font-size:10px;color:#596579;display:flex;gap:4px;align-items:center;flex-wrap:wrap}.exchangeSearchMeta strong{color:${DEEP};font-size:11px}.exchangeSearchMeta span{color:#758197}
         .exchangeProductGrid{max-height:235px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px;overflow:auto}.exchangeProductCard{display:flex;flex-direction:column;align-items:flex-start;min-width:0;padding:12px;border:1px solid #e3e8f0;border-radius:13px;background:#fff;text-align:left;cursor:pointer;transition:.18s ease}.exchangeProductCard:hover{transform:translateY(-2px);border-color:${GOLD};box-shadow:0 10px 22px rgba(3,21,63,.09)}.exchangeProductCard>span{padding:4px 7px;border-radius:20px;background:#eaf7ef;color:#167842;font-size:7px;font-weight:900}.exchangeProductCard strong{max-width:100%;margin-top:7px;overflow:hidden;color:${DEEP};font-size:11px;text-overflow:ellipsis;white-space:nowrap}.exchangeProductCard small{max-width:100%;margin-top:3px;overflow:hidden;color:#858d9b;font-size:8px;text-overflow:ellipsis;white-space:nowrap}.exchangeProductCard b{margin-top:7px;color:${BLUE};font-size:12px}.exchangeProductCard em{margin-top:5px;color:${GOLD};font-size:8px;font-style:normal;font-weight:900}
