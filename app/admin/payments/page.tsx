@@ -159,16 +159,6 @@ export default function PaymentSettingsPage() {
     }
 
     if (
-      form.razorpayEnabled &&
-      !form.razorpayKeyId.trim()
-    ) {
-      alert(
-        "Please enter the Razorpay Key ID before enabling online payments."
-      );
-      return false;
-    }
-
-    if (
       form.upiId.trim() &&
       !/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/.test(
         form.upiId.trim()
@@ -206,8 +196,6 @@ export default function PaymentSettingsPage() {
     const settingsData = {
       razorpay_enabled: form.razorpayEnabled,
       cod_enabled: form.codEnabled,
-      razorpay_key_id:
-        form.razorpayKeyId.trim() || null,
       upi_id: form.upiId.trim() || null,
       qr_image: form.qrImage.trim() || null,
       currency: form.currency.trim(),
@@ -544,22 +532,8 @@ export default function PaymentSettingsPage() {
 
             <SettingsPanel
               title="Razorpay Configuration"
-              subtitle="Add your public Razorpay Key ID."
+              subtitle="Checkout credentials are managed securely on the server."
             >
-              <FormField label="Razorpay Key ID">
-                <input
-                  value={form.razorpayKeyId}
-                  placeholder="Example: rzp_live_xxxxxxxxxx"
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      razorpayKeyId: event.target.value.trim(),
-                    }))
-                  }
-                  style={inputStyle}
-                />
-              </FormField>
-
               <div style={securityNoticeStyle}>
                 <div style={{ fontSize: "25px" }}>🔐</div>
 
@@ -569,7 +543,7 @@ export default function PaymentSettingsPage() {
                       color: "#0A2E73",
                     }}
                   >
-                    Secure Razorpay Secret
+                    Razorpay is managed securely on the server
                   </strong>
 
                   <p
@@ -580,10 +554,10 @@ export default function PaymentSettingsPage() {
                       fontSize: "14px",
                     }}
                   >
-                    The Razorpay Key Secret must not be stored in this
-                    browser form. It will be added securely to
-                    <strong> .env.local</strong> when Razorpay checkout
-                    integration is completed.
+                    This admin page does not store or change Razorpay API keys.
+                    Keep the existing Vercel / server environment configuration.
+                    Use the Razorpay toggle above only to control whether Online
+                    Payment is offered at checkout.
                   </p>
                 </div>
               </div>
@@ -965,13 +939,38 @@ export default function PaymentSettingsPage() {
                 configured={form.codEnabled}
               />
 
-              <ConfigurationRow
-                label="Razorpay"
-                configured={
-                  form.razorpayEnabled &&
-                  Boolean(form.razorpayKeyId.trim())
-                }
-              />
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "12px",
+                  padding: "12px 0",
+                  borderBottom: "1px solid #E5E7EB",
+                }}
+              >
+                <span
+                  style={{
+                    color: "#555",
+                    fontWeight: 700,
+                  }}
+                >
+                  Razorpay
+                </span>
+
+                <span
+                  style={{
+                    background: form.razorpayEnabled ? "#DBEAFE" : "#F3F4F6",
+                    color: form.razorpayEnabled ? "#1D4ED8" : "#6B7280",
+                    padding: "6px 9px",
+                    borderRadius: "999px",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                  }}
+                >
+                  {form.razorpayEnabled ? "Server Managed" : "Disabled"}
+                </span>
+              </div>
 
               <ConfigurationRow
                 label="UPI ID"
