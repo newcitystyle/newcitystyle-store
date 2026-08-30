@@ -921,7 +921,7 @@ export default function BarcodesPage() {
                 </div>
                 ${
                   discountPercent > 0 && item.mrp > 0
-                    ? `<div class="offerBlock"><span>OFFER PRICE</span><strong>Rs.${formatLabelPrice(offerPrice)}</strong></div>`
+                    ? `<div class="offerBlock"><span>FINAL PRICE</span><strong>Rs.${formatLabelPrice(offerPrice)}</strong></div>`
                     : ""
                 }
               </section>
@@ -1128,7 +1128,7 @@ export default function BarcodesPage() {
               border-radius: 1mm;
               background: #000;
               color: #fff;
-              font-size: 5.25pt;
+              font-size: 6.2pt;
               font-weight: 900;
               line-height: 1;
               white-space: nowrap;
@@ -1180,12 +1180,12 @@ export default function BarcodesPage() {
 
             .offerBlock span {
               margin-bottom: 0.45mm;
-              font-size: 4.8pt;
+              font-size: 4.9pt;
               font-weight: 950;
             }
 
             .offerBlock strong {
-              font-size: 10.5pt;
+              font-size: 8.4pt;
               font-weight: 950;
               line-height: 0.9;
             }
