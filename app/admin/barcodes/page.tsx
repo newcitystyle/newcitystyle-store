@@ -152,6 +152,13 @@ function escapeHtml(value: string) {
   );
 }
 
+function formatLabelPrice(value: number) {
+  const safeValue = Math.max(0, toNumber(value, 0));
+  return Number.isInteger(safeValue)
+    ? safeValue.toFixed(0)
+    : safeValue.toFixed(2);
+}
+
 export default function BarcodesPage() {
   const router = useRouter();
   const previewSvgRef = useRef<SVGSVGElement | null>(null);
@@ -890,28 +897,38 @@ export default function BarcodesPage() {
 
         physicalLabels.push(`
           <div class="label">
-            <p class="store">NEW CITY STYLE</p>
-            <p class="product">${escapeHtml(item.name)}</p>
-            ${
-              variantText
-                ? `<p class="variant">${escapeHtml(variantText)}</p>`
-                : ""
-            }
-            <div class="barcode">${svg}</div>
-            <div class="priceRow">
-              ${
-                showMrp && item.mrp > 0
-                  ? `<span>MRP ₹${item.mrp.toFixed(2)}</span>`
-                  : ""
-              }
-              ${
-                discountPercent > 0 && item.mrp > 0
-                  ? `<span class="discount">${discountPercent.toFixed(
-                      discountPercent % 1 === 0 ? 0 : 1,
-                    )}% OFF</span><span class="offer">₹${offerPrice.toFixed(2)}</span>`
-                  : ""
-              }
-            </div>
+            <aside class="brandRail">
+              <div class="brandLetters"><b>N</b><b>C</b><b>S</b></div>
+              <div class="hanger"><i></i></div>
+            </aside>
+            <main class="labelBody">
+              <header class="labelHeader">
+                <p class="store">NEW CITY STYLE</p>
+                ${
+                  showMrp && item.mrp > 0
+                    ? `<strong class="mrpBadge">MRP: Rs.${formatLabelPrice(item.mrp)}</strong>`
+                    : ""
+                }
+              </header>
+              <section class="productPriceRow">
+                <div class="productInfo">
+                  <p class="product">${escapeHtml(item.name)}</p>
+                  ${
+                    variantText
+                      ? `<p class="variant">${escapeHtml(variantText)}</p>`
+                      : ""
+                  }
+                </div>
+                ${
+                  discountPercent > 0 && item.mrp > 0
+                    ? `<div class="offerBlock"><span>OFFER PRICE</span><strong>Rs.${formatLabelPrice(offerPrice)}</strong></div>`
+                    : ""
+                }
+              </section>
+              <div class="barcodeFrame">
+                <div class="barcode">${svg}</div>
+              </div>
+            </main>
           </div>
         `);
       }
@@ -1010,14 +1027,12 @@ export default function BarcodesPage() {
               max-width: ${selectedSize.labelWidth}mm;
               min-height: ${selectedSize.pageHeight}mm;
               max-height: ${selectedSize.pageHeight}mm;
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              justify-content: center;
+              display: grid;
+              grid-template-columns: 7.2mm minmax(0, 1fr);
+              column-gap: 1mm;
               margin: 0;
-              padding: 0.7mm 1.4mm 1.0mm;
+              padding: 1.05mm 1.05mm 1.05mm 1.25mm;
               overflow: hidden;
-              text-align: center;
               break-inside: avoid;
               page-break-inside: avoid;
               -webkit-print-color-adjust: exact;
@@ -1028,51 +1043,179 @@ export default function BarcodesPage() {
               visibility: hidden;
             }
 
-            .store {
-              margin: 0 0 0.1mm;
-              font-size: 5.6px;
-              font-weight: 900;
-              letter-spacing: 0.65px;
+            .brandRail {
+              height: 100%;
+              min-width: 0;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: space-between;
+              padding: 1.2mm 0 1mm;
+              border-radius: 1.3mm;
+              background: #000;
+              color: #fff;
+              overflow: hidden;
+            }
+
+            .brandLetters {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 0.55mm;
+              font-size: 8.8pt;
+              font-weight: 950;
               line-height: 1;
+            }
+
+            .hanger {
+              position: relative;
+              width: 4.8mm;
+              height: 4.9mm;
+              border-top: 0.45mm solid #fff;
+            }
+
+            .hanger::before {
+              content: "";
+              position: absolute;
+              left: 2mm;
+              top: 0.6mm;
+              width: 0.9mm;
+              height: 0.9mm;
+              border: 0.35mm solid #fff;
+              border-radius: 50%;
+            }
+
+            .hanger i {
+              position: absolute;
+              left: 0.65mm;
+              bottom: 0.1mm;
+              width: 3.5mm;
+              height: 2.2mm;
+              border-right: 0.4mm solid #fff;
+              border-bottom: 0.4mm solid #fff;
+              transform: rotate(45deg);
+            }
+
+            .labelBody {
+              min-width: 0;
+              height: 100%;
+              display: grid;
+              grid-template-rows: 4.9mm 6.6mm minmax(0, 1fr);
+              row-gap: 0.45mm;
+            }
+
+            .labelHeader {
+              min-width: 0;
+              display: grid;
+              grid-template-columns: minmax(0, 1fr) auto;
+              align-items: center;
+              gap: 0.7mm;
+            }
+
+            .store {
+              margin: 0;
+              overflow: hidden;
+              font-size: 7.1pt;
+              font-weight: 950;
+              line-height: 1;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .mrpBadge {
+              display: block;
+              padding: 1.05mm 1mm;
+              border-radius: 1mm;
+              background: #000;
+              color: #fff;
+              font-size: 5.25pt;
+              font-weight: 900;
+              line-height: 1;
+              white-space: nowrap;
+            }
+
+            .productPriceRow {
+              min-width: 0;
+              display: grid;
+              grid-template-columns: minmax(0, 1fr) auto;
+              align-items: center;
+              gap: 0.65mm;
+            }
+
+            .productInfo {
+              min-width: 0;
+              overflow: hidden;
             }
 
             .product {
               width: 100%;
               margin: 0;
               overflow: hidden;
-              font-size: 6.3px;
-              font-weight: 800;
+              font-size: 6.2pt;
+              font-weight: 950;
               line-height: 1.05;
               text-overflow: ellipsis;
               white-space: nowrap;
             }
 
             .variant {
-              margin: 0.15mm 0 0.1mm;
-              padding: 0.12mm 0.55mm;
-              border: 0.7px solid #000;
-              border-radius: 0.8mm;
-              font-size: 6.2px;
+              width: 100%;
+              margin: 0.8mm 0 0;
+              overflow: hidden;
+              font-size: 5.5pt;
               font-weight: 900;
               line-height: 1;
+              text-overflow: ellipsis;
+              white-space: nowrap;
             }
 
-            .barcode {
+            .offerBlock {
+              display: flex;
+              flex-direction: column;
+              align-items: flex-end;
+              justify-content: center;
+              line-height: 1;
+              white-space: nowrap;
+            }
+
+            .offerBlock span {
+              margin-bottom: 0.45mm;
+              font-size: 4.8pt;
+              font-weight: 950;
+            }
+
+            .offerBlock strong {
+              font-size: 10.5pt;
+              font-weight: 950;
+              line-height: 0.9;
+            }
+
+            .barcodeFrame {
               width: 100%;
-              flex: 1 1 auto;
               min-height: 0;
               display: flex;
               align-items: center;
               justify-content: center;
-              margin: 0.15mm 0 0;
-              padding: 0 2.2mm;
+              padding: 0.45mm 1mm 0.2mm;
+              border: 0.32mm solid #000;
+              border-radius: 1.2mm;
+              overflow: hidden;
+            }
+
+            .barcode {
+              width: 100%;
+              height: 100%;
+              min-height: 0;
+              display: flex;
+              align-items: center;
+              justify-content: center;
               overflow: hidden;
             }
 
             .barcode svg {
               width: 100%;
-              max-width: 42mm;
-              height: ${selectedSize.pageHeight <= 25.5 ? 11.7 : 14.5}mm;
+              max-width: 34mm;
+              height: ${selectedSize.pageHeight <= 25.5 ? 9.2 : 12.5}mm;
               display: block;
               overflow: visible;
               shape-rendering: crispEdges;
@@ -1083,38 +1226,10 @@ export default function BarcodesPage() {
             .barcode svg text {
               fill: #000000 !important;
               font-family: Arial, Helvetica, sans-serif !important;
-              font-size: 8.5px !important;
+              font-size: 9.5px !important;
               font-weight: 900 !important;
-              letter-spacing: 0.15px;
+              letter-spacing: 0.1px;
               opacity: 1 !important;
-            }
-
-            .priceRow {
-              width: 100%;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              gap: 1.25mm;
-              flex: 0 0 auto;
-              min-height: 3.2mm;
-              margin-top: 0.15mm;
-              padding: 0.2mm 0 0.35mm;
-              font-size: 7.7px;
-              font-weight: 950;
-              line-height: 1;
-              white-space: nowrap;
-            }
-
-            .priceRow .discount {
-              padding: 0.25mm 0.55mm;
-              border: 0.7px solid #000;
-              border-radius: 0.7mm;
-              font-size: 7.3px;
-            }
-
-            .priceRow .offer {
-              font-size: 9px;
-              font-weight: 950;
             }
 
             @media screen {
