@@ -760,18 +760,18 @@ export default function BarcodesPage() {
     // keep enough quiet space around the code and leave a dedicated bottom
     // area for the barcode number + MRP so nothing is clipped.
     const moduleWidth =
-      cleanBarcode.length <= 10 ? 1.65 : cleanBarcode.length <= 16 ? 1.4 : 1.2;
+      cleanBarcode.length <= 10 ? 1.8 : cleanBarcode.length <= 16 ? 1.6 : 1.4;
 
     JsBarcode(svg, cleanBarcode, {
       format: "CODE128",
       width: moduleWidth,
-      height: 52,
+      height: 58,
       displayValue: true,
       font: "Arial",
       fontOptions: "bold",
       fontSize: 9,
       textMargin: 1,
-      margin: 0,
+      margin: 10,
       background: "#FFFFFF",
       lineColor: "#000000",
     });
@@ -921,7 +921,7 @@ export default function BarcodesPage() {
                 </div>
                 ${
                   discountPercent > 0 && item.mrp > 0
-                    ? `<div class="offerBlock"><span>FINAL PRICE</span><strong>Rs.${formatLabelPrice(offerPrice)}</strong></div>`
+                    ? `<div class="offerBlock"><span>OFFER PRICE</span><strong>Rs.${formatLabelPrice(offerPrice)}</strong></div>`
                     : ""
                 }
               </section>
@@ -1196,7 +1196,7 @@ export default function BarcodesPage() {
               display: flex;
               align-items: center;
               justify-content: center;
-              padding: 0.45mm 1mm 0.2mm;
+              padding: 0.35mm 0.6mm 0.2mm;
               border: 0.32mm solid #000;
               border-radius: 1.2mm;
               overflow: hidden;
@@ -1214,8 +1214,8 @@ export default function BarcodesPage() {
 
             .barcode svg {
               width: 100%;
-              max-width: 34mm;
-              height: ${selectedSize.pageHeight <= 25.5 ? 9.2 : 12.5}mm;
+              max-width: 38mm;
+              height: ${selectedSize.pageHeight <= 25.5 ? 10.5 : 13}mm;
               display: block;
               overflow: visible;
               shape-rendering: crispEdges;
