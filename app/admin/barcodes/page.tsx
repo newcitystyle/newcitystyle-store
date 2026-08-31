@@ -759,19 +759,19 @@ export default function BarcodesPage() {
     // Compact 2 x 1 inch thermal-label rendering:
     // keep enough quiet space around the code and leave a dedicated bottom
     // area for the barcode number + MRP so nothing is clipped.
-    const moduleWidth =
-      cleanBarcode.length <= 10 ? 1.8 : cleanBarcode.length <= 16 ? 1.6 : 1.4;
-
     JsBarcode(svg, cleanBarcode, {
       format: "CODE128",
-      width: moduleWidth,
-      height: 58,
+      width: 2,
+      height: 64,
       displayValue: true,
       font: "Arial",
       fontOptions: "bold",
-      fontSize: 9,
-      textMargin: 1,
-      margin: 10,
+      fontSize: 12,
+      textMargin: 2,
+      marginTop: 0,
+      marginBottom: 0,
+      marginLeft: 20,
+      marginRight: 20,
       background: "#FFFFFF",
       lineColor: "#000000",
     });
@@ -1213,9 +1213,9 @@ export default function BarcodesPage() {
             }
 
             .barcode svg {
-              width: 100%;
+              width: 38mm;
               max-width: 38mm;
-              height: ${selectedSize.pageHeight <= 25.5 ? 10.5 : 13}mm;
+              height: ${selectedSize.pageHeight <= 25.5 ? 11 : 13}mm;
               display: block;
               overflow: visible;
               shape-rendering: crispEdges;
@@ -1226,7 +1226,7 @@ export default function BarcodesPage() {
             .barcode svg text {
               fill: #000000 !important;
               font-family: Arial, Helvetica, sans-serif !important;
-              font-size: 9.5px !important;
+              font-size: 11px !important;
               font-weight: 900 !important;
               letter-spacing: 0.1px;
               opacity: 1 !important;
