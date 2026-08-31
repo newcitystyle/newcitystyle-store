@@ -762,8 +762,8 @@ export default function BarcodesPage() {
     JsBarcode(svg, cleanBarcode, {
       format: "CODE128",
       width: 2,
-      height: 64,
-      displayValue: true,
+      height: 60,
+      displayValue: false,
       font: "Arial",
       fontOptions: "bold",
       fontSize: 12,
@@ -927,6 +927,7 @@ export default function BarcodesPage() {
               </section>
               <div class="barcodeFrame">
                 <div class="barcode">${svg}</div>
+                <div class="barcodeNo">${escapeHtml(item.barcode)}</div>
               </div>
             </main>
           </div>
@@ -1100,7 +1101,7 @@ export default function BarcodesPage() {
               min-width: 0;
               height: 100%;
               display: grid;
-              grid-template-rows: 4.9mm 6.6mm minmax(0, 1fr);
+              grid-template-rows: 4.5mm 5.9mm minmax(0, 1fr);
               row-gap: 0.45mm;
             }
 
@@ -1193,10 +1194,10 @@ export default function BarcodesPage() {
             .barcodeFrame {
               width: 100%;
               min-height: 0;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              padding: 0.35mm 0.6mm 0.2mm;
+              display: grid;
+              grid-template-rows: minmax(0, 1fr) 3.3mm;
+              align-items: stretch;
+              padding: 0.3mm 0.6mm 0.15mm;
               border: 0.32mm solid #000;
               border-radius: 1.2mm;
               overflow: hidden;
@@ -1215,7 +1216,7 @@ export default function BarcodesPage() {
             .barcode svg {
               width: 38mm;
               max-width: 38mm;
-              height: ${selectedSize.pageHeight <= 25.5 ? 11 : 13}mm;
+              height: ${selectedSize.pageHeight <= 25.5 ? 8.2 : 10}mm;
               display: block;
               overflow: visible;
               shape-rendering: crispEdges;
@@ -1230,6 +1231,24 @@ export default function BarcodesPage() {
               font-weight: 900 !important;
               letter-spacing: 0.1px;
               opacity: 1 !important;
+            }
+
+            .barcodeNo {
+              width: calc(100% - 1.6mm);
+              height: 3mm;
+              margin: 0 auto;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              border-radius: 0.65mm;
+              background: #eeeeee;
+              color: #000000;
+              font-family: Arial, Helvetica, sans-serif;
+              font-size: 7pt;
+              font-weight: 950;
+              line-height: 1;
+              letter-spacing: 0.35mm;
+              white-space: nowrap;
             }
 
             @media screen {
