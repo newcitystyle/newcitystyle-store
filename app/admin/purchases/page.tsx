@@ -3387,6 +3387,25 @@ export default function PurchasesPage() {
                 New Purchase
               </button>
 
+              {!successPurchase.purchase_number?.startsWith("OFF-PUR-") ? (
+                <a
+                  className="ncsSuccessBarcodeButton"
+                  href="/admin/barcodes"
+                  title="Open the barcode page to print labels for this completed purchase"
+                >
+                  ▦ Print Barcodes
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  className="ncsSuccessBarcodeButton isDisabled"
+                  disabled
+                  title="Sync this offline purchase first, then print its barcodes"
+                >
+                  ▦ Print After Sync
+                </button>
+              )}
+
               <a href="/admin/purchase-history">
                 View Purchase History
               </a>
@@ -4602,7 +4621,7 @@ export default function PurchasesPage() {
 
         .ncsSuccessActions {
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 9px;
           margin-top: 17px;
         }
@@ -4626,6 +4645,20 @@ export default function PurchasesPage() {
         .ncsSuccessActions a {
           background: white;
           color: ${ROYAL_BLUE};
+        }
+
+        .ncsSuccessActions .ncsSuccessBarcodeButton {
+          border-color: ${GOLD};
+          background:
+            linear-gradient(135deg, #f4d862, ${GOLD});
+          color: ${DEEP_BLUE};
+          box-shadow: 0 8px 18px rgba(212, 175, 55, 0.2);
+        }
+
+        .ncsSuccessActions .ncsSuccessBarcodeButton.isDisabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+          box-shadow: none;
         }
 
 
