@@ -4075,7 +4075,11 @@ if (!variantsError) {
 
     addProductDirectlyToCart({
       ...product,
-      key: product.key,
+      // Same common barcode can have different physical pieces with different
+      // printed MRPs. Keep each entered MRP as a separate bill row.
+      // Example: ₹749 + ₹639 => two rows.
+      // Scanning ₹749 again => quantity increases only on the ₹749 row.
+      key: `${product.key}-offline-mrp-${offlineMrp.toFixed(2)}`,
       price: offlineMrp,
       mrp: offlineMrp,
       designUnitId: null,
