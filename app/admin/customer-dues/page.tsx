@@ -538,7 +538,7 @@ export default function CustomerDuesPage() {
         account.next_due_date
           ? `Due date: ${formatDate(account.next_due_date)}`
           : "",
-        "Template: new_city_style_due_reminder_telugu",
+        "Template: ncs_payment_reminder_v2",
       ]
         .filter(Boolean)
         .join(" • ");
