@@ -1214,8 +1214,8 @@ export default function BarcodesPage() {
             }
 
             .barcode svg {
-              width: 38mm;
-              max-width: 38mm;
+              width: 40.5mm;
+              max-width: 40.5mm;
               height: ${selectedSize.pageHeight <= 25.5 ? 8.2 : 10}mm;
               display: block;
               overflow: visible;
