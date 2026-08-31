@@ -435,6 +435,41 @@ export async function POST(
                 },
               ];
 
+    const dueReminderQrImageUrl =
+      process.env
+        .WHATSAPP_CUSTOMER_DUE_QR_IMAGE_URL
+        ?.trim() ||
+      new URL(
+        "/ncs-upi-qr.png",
+        request.url,
+      ).toString();
+
+    const messageComponents =
+      messageType === "DUE_REMINDER"
+        ? [
+            {
+              type: "header",
+              parameters: [
+                {
+                  type: "image",
+                  image: {
+                    link: dueReminderQrImageUrl,
+                  },
+                },
+              ],
+            },
+            {
+              type: "body",
+              parameters,
+            },
+          ]
+        : [
+            {
+              type: "body",
+              parameters,
+            },
+          ];
+
     const messagePayload = {
       messaging_product:
         "whatsapp",
@@ -447,12 +482,8 @@ export async function POST(
         language: {
           code: templateLanguage,
         },
-        components: [
-          {
-            type: "body",
-            parameters,
-          },
-        ],
+        components:
+          messageComponents,
       },
     };
 
@@ -468,6 +499,9 @@ export async function POST(
           templateLanguage,
           parameterCount:
             parameters.length,
+          hasImageHeader:
+            messageType ===
+            "DUE_REMINDER",
         },
         null,
         2,
