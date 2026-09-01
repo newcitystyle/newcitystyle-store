@@ -2566,35 +2566,37 @@ export default function AdminDashboardPage() {
             </select>
           </div>
 
-          <div className="advancedSalesChart">
-            <svg viewBox="0 0 1000 250" preserveAspectRatio="none" role="img" aria-label="Sales trend">
-              {[45, 85, 125, 165, 205].map((y) => (
-                <line key={y} x1="42" y1={y} x2="970" y2={y} className="chartGridLine" />
-              ))}
-              <polyline
-                className="advancedSalesLine"
-                points={salesTrend.map((point, index) => {
-                  const x = salesTrend.length <= 1 ? 500 : 45 + (index / (salesTrend.length - 1)) * 920;
-                  const y = 205 - (point.amount / Math.max(trendMax, 1)) * 160;
-                  return `${x},${y}`;
-                }).join(" ")}
-              />
+          <div className="salesCandleStage" role="img" aria-label="Animated monthly sales candles">
+            <div className="candleGrid" aria-hidden="true" />
+            <div className="salesCandles">
               {salesTrend.map((point, index) => {
-                const x = salesTrend.length <= 1 ? 500 : 45 + (index / (salesTrend.length - 1)) * 920;
-                const y = 205 - (point.amount / Math.max(trendMax, 1)) * 160;
+                const previousAmount = index > 0 ? salesTrend[index - 1].amount : point.amount;
+                const isToday = point.key === dateKey(todayStart);
+                const tone = isToday ? "gold" : point.amount >= previousAmount ? "green" : "red";
+                const height = Math.max(12, (point.amount / Math.max(trendMax, 1)) * 82);
+                const wickHeight = Math.min(96, height + 10 + ((index * 7) % 13));
+
                 return (
-                  <circle key={point.key} cx={x} cy={y} r="5" className="advancedSalesDot">
-                    <title>{`${point.label} • ${formatCurrency(point.amount)}`}</title>
-                  </circle>
+                  <div
+                    className={`salesCandle ${tone}`}
+                    key={point.key}
+                    style={{ animationDelay: `${index * 45}ms` }}
+                    title={`${point.label} • ${formatCurrency(point.amount)}`}
+                  >
+                    <strong>{point.amount > 0 ? formatCurrency(point.amount) : "₹0"}</strong>
+                    <div className="candlePlot">
+                      <i className="candleWick" style={{ height: `${wickHeight}%` }} />
+                      <i className="candleBody" style={{ height: `${height}%` }} />
+                    </div>
+                    <span>{point.label.split(" ")[0]}</span>
+                  </div>
                 );
               })}
-            </svg>
-            <div className="advancedChartLabels">
-              {salesTrend.map((point, index) => (
-                <span key={point.key} className={index % Math.max(1, Math.ceil(salesTrend.length / 7)) === 0 ? "visible" : ""}>
-                  {point.label.split(" ")[0]}
-                </span>
-              ))}
+            </div>
+            <div className="candleLegend">
+              <span><i className="green" /> Sales Up</span>
+              <span><i className="red" /> Sales Down</span>
+              <span><i className="gold" /> Today</span>
             </div>
           </div>
         </article>
@@ -6299,49 +6301,154 @@ export default function AdminDashboardPage() {
           border-radius: 22px;
         }
 
-        .ncsAdvancedDashboard .advancedSalesChart {
-          height: 245px;
-          padding: 8px 4px 0;
+        .ncsAdvancedDashboard .salesTrendPanel {
+          overflow: hidden;
+          background:
+            radial-gradient(circle at 88% 12%, rgba(218, 170, 51, 0.15), transparent 25%),
+            linear-gradient(145deg, #17102d 0%, #241250 52%, #132541 100%) !important;
+          border-color: rgba(229, 191, 83, 0.3) !important;
         }
 
-        .ncsAdvancedDashboard .advancedSalesChart svg {
-          display: block;
-          width: 100%;
-          height: 215px;
-          overflow: visible;
+        .ncsAdvancedDashboard .salesTrendPanel .sectionHeader span {
+          color: #e8be47 !important;
         }
 
-        .ncsAdvancedDashboard .chartGridLine {
-          stroke: rgba(94, 72, 175, 0.1);
-          stroke-width: 1;
+        .ncsAdvancedDashboard .salesTrendPanel .sectionHeader h2 {
+          color: #ffffff !important;
         }
 
-        .ncsAdvancedDashboard .advancedSalesLine {
-          fill: none;
-          stroke: #6443e8;
-          stroke-width: 5;
-          stroke-linecap: round;
-          stroke-linejoin: round;
-          filter: drop-shadow(0 7px 7px rgba(100, 67, 232, 0.22));
+        .ncsAdvancedDashboard .salesTrendPanel select {
+          color: #f6e6a7;
+          background: rgba(255, 255, 255, 0.08);
+          border-color: rgba(232, 190, 71, 0.35);
         }
 
-        .ncsAdvancedDashboard .advancedSalesDot {
-          fill: #ffffff;
-          stroke: #6443e8;
-          stroke-width: 4;
+        .ncsAdvancedDashboard .salesCandleStage {
+          position: relative;
+          height: 250px;
+          padding: 10px 10px 26px;
+          border-radius: 18px;
+          overflow: hidden;
+          background: rgba(6, 9, 26, 0.34);
         }
 
-        .ncsAdvancedDashboard .advancedChartLabels {
+        .ncsAdvancedDashboard .candleGrid {
+          position: absolute;
+          inset: 10px 10px 30px;
+          opacity: 0.22;
+          background-image:
+            linear-gradient(rgba(255,255,255,.18) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,.12) 1px, transparent 1px);
+          background-size: 100% 25%, 8.333% 100%;
+        }
+
+        .ncsAdvancedDashboard .salesCandles {
+          position: relative;
+          z-index: 1;
           display: flex;
-          justify-content: space-between;
-          padding: 0 3.5%;
-          color: #81799b;
-          font-size: 10px;
+          align-items: flex-end;
+          gap: clamp(3px, .55vw, 8px);
+          height: 205px;
+        }
+
+        .ncsAdvancedDashboard .salesCandle {
+          flex: 1 1 0;
+          min-width: 5px;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+          justify-content: flex-end;
+          align-items: center;
+          opacity: 0;
+          transform: translateY(24px) scaleY(.75);
+          animation: candleRise .65s cubic-bezier(.2,.8,.2,1) forwards, candleFloat 3.2s ease-in-out infinite 1s;
+        }
+
+        .ncsAdvancedDashboard .salesCandle strong {
+          display: none;
+          position: absolute;
+          bottom: calc(100% + 6px);
+          padding: 5px 7px;
+          border-radius: 8px;
+          background: #ffffff;
+          color: #251744;
+          font-size: 9px;
+          white-space: nowrap;
+          box-shadow: 0 8px 20px rgba(0,0,0,.3);
+        }
+
+        .ncsAdvancedDashboard .salesCandle:hover strong { display: block; }
+
+        .ncsAdvancedDashboard .candlePlot {
+          position: relative;
+          width: 100%;
+          max-width: 18px;
+          height: 165px;
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+        }
+
+        .ncsAdvancedDashboard .candleWick {
+          position: absolute;
+          bottom: 0;
+          width: 2px;
+          border-radius: 4px;
+          background: currentColor;
+          opacity: .85;
+        }
+
+        .ncsAdvancedDashboard .candleBody {
+          position: absolute;
+          bottom: 5%;
+          width: 72%;
+          min-height: 10px;
+          border: 1px solid rgba(255,255,255,.55);
+          border-radius: 4px;
+          background: currentColor;
+          box-shadow: 0 0 14px currentColor;
+        }
+
+        .ncsAdvancedDashboard .salesCandle.green { color: #25d89b; }
+        .ncsAdvancedDashboard .salesCandle.red { color: #ff5268; }
+        .ncsAdvancedDashboard .salesCandle.gold { color: #f5c84b; }
+
+        .ncsAdvancedDashboard .salesCandle span {
+          margin-top: 6px;
+          color: rgba(255,255,255,.66);
+          font-size: 8px;
           font-weight: 800;
         }
 
-        .ncsAdvancedDashboard .advancedChartLabels span:not(.visible) {
-          visibility: hidden;
+        .ncsAdvancedDashboard .candleLegend {
+          position: absolute;
+          z-index: 2;
+          right: 14px;
+          bottom: 6px;
+          display: flex;
+          gap: 12px;
+          color: rgba(255,255,255,.72);
+          font-size: 9px;
+          font-weight: 800;
+        }
+
+        .ncsAdvancedDashboard .candleLegend span { display: flex; align-items: center; gap: 4px; }
+        .ncsAdvancedDashboard .candleLegend i { width: 7px; height: 7px; border-radius: 50%; }
+        .ncsAdvancedDashboard .candleLegend i.green { background: #25d89b; box-shadow: 0 0 8px #25d89b; }
+        .ncsAdvancedDashboard .candleLegend i.red { background: #ff5268; box-shadow: 0 0 8px #ff5268; }
+        .ncsAdvancedDashboard .candleLegend i.gold { background: #f5c84b; box-shadow: 0 0 8px #f5c84b; }
+
+        @keyframes candleRise {
+          to { opacity: 1; transform: translateY(0) scaleY(1); }
+        }
+
+        @keyframes candleFloat {
+          0%, 100% { filter: brightness(1); }
+          50% { filter: brightness(1.22); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .ncsAdvancedDashboard .salesCandle { animation: none; opacity: 1; transform: none; }
         }
 
         .ncsAdvancedDashboard .alertList {
