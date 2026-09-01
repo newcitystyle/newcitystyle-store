@@ -86,6 +86,11 @@ type ReturnSelection = {
 
 type SaleDetails = Sale & { items: SaleItem[] };
 
+type CustomerCreditAccount = {
+  current_balance?: number | string | null;
+  is_active?: boolean | null;
+};
+
 type ExchangeSettlementSummary = {
   id: string;
   return_id?: string | null;
@@ -149,6 +154,7 @@ const today = (v?: string | null) => {
 
 export default function SalesHistoryPage() {
   const [sales, setSales] = useState<Sale[]>([]);
+  const [liveCustomerDue, setLiveCustomerDue] = useState(0);
   const [exchangeSettlements, setExchangeSettlements] = useState<
     ExchangeSettlementSummary[]
   >([]);
@@ -311,7 +317,7 @@ export default function SalesHistoryPage() {
     setLoading(true);
     setErrorText("");
 
-    const [salesResult, exchangeResult, refundsResult] = await Promise.all([
+    const [salesResult, exchangeResult, refundsResult, creditResult] = await Promise.all([
       supabase
         .from("pos_sales")
         .select("*")
@@ -327,7 +333,27 @@ export default function SalesHistoryPage() {
         .from("pos_refunds")
         .select("sale_id,return_id,amount,refund_status")
         .eq("refund_status", "completed"),
+      supabase
+        .from("customer_credit_accounts")
+        .select("current_balance,is_active"),
     ]);
+
+    if (creditResult.error) {
+      console.error("Unable to load live customer dues:", creditResult.error);
+      setLiveCustomerDue(0);
+    } else {
+      const currentDue = (
+        (creditResult.data || []) as CustomerCreditAccount[]
+      )
+        .filter((account) => account.is_active !== false)
+        .reduce(
+          (sum, account) =>
+            sum + Math.max(0, num(account.current_balance)),
+          0,
+        );
+
+      setLiveCustomerDue(currentDue);
+    }
 
     if (salesResult.error) {
       console.error(salesResult.error);
@@ -588,6 +614,7 @@ export default function SalesHistoryPage() {
 
     return {
       ...base,
+      due: liveCustomerDue,
       bills:
         base.bills +
         exchangeRowsForPeriod.length,
@@ -595,6 +622,7 @@ export default function SalesHistoryPage() {
   }, [
     exchangeSettlements,
     filtered,
+    liveCustomerDue,
     period,
   ]);
 
@@ -2095,7 +2123,7 @@ export default function SalesHistoryPage() {
         <article><span>Total Bills</span><strong>{stats.bills}</strong></article>
         <article><span>Sales Value</span><strong>{money(stats.value)}</strong></article>
         <article><span>Total Paid</span><strong>{money(stats.paid)}</strong></article>
-        <article><span>Total Due</span><strong>{money(stats.due)}</strong></article>
+        <article><span>Current Due</span><strong>{money(stats.due)}</strong></article>
         <article><span>Today Bills</span><strong>{stats.today}</strong></article>
       </section>
 
