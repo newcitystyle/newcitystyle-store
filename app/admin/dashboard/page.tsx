@@ -2570,9 +2570,7 @@ export default function AdminDashboardPage() {
             <div className="candleGrid" aria-hidden="true" />
             <div className="salesCandles">
               {salesTrend.map((point, index) => {
-                const previousAmount = index > 0 ? salesTrend[index - 1].amount : point.amount;
-                const isToday = point.key === dateKey(todayStart);
-                const tone = isToday ? "gold" : point.amount >= previousAmount ? "green" : "red";
+                const tone = point.amount < 5000 ? "red" : point.amount < 10000 ? "gold" : "green";
                 const height = Math.max(12, (point.amount / Math.max(trendMax, 1)) * 82);
                 const wickHeight = Math.min(96, height + 10 + ((index * 7) % 13));
 
@@ -2594,9 +2592,9 @@ export default function AdminDashboardPage() {
               })}
             </div>
             <div className="candleLegend">
-              <span><i className="green" /> Sales Up</span>
-              <span><i className="red" /> Sales Down</span>
-              <span><i className="gold" /> Today</span>
+              <span><i className="red" /> Below ₹5K</span>
+              <span><i className="gold" /> ₹5K–₹10K</span>
+              <span><i className="green" /> ₹10K+</span>
             </div>
           </div>
         </article>
