@@ -4632,6 +4632,60 @@ export default function AdminLayout({
           }
         }
 
+        /* Compact desktop shell for the advanced owner dashboard. */
+        @media(min-width:1101px){
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) {
+            width:248px !important;
+            padding-left:14px !important;
+            padding-right:14px !important;
+          }
+
+          .ncsAdminShell:not(.ncsAdminShellCollapsed) .ncsAdminContent {
+            margin-left:248px !important;
+          }
+
+          .ncsAdminShell .ncsBrandArea {
+            padding:13px !important;
+            border-radius:18px !important;
+          }
+
+          .ncsAdminShell .ncsBrandLogo {
+            width:50px !important;
+            height:50px !important;
+            border-radius:15px !important;
+          }
+
+          .ncsAdminShell .ncsBrandText strong {
+            font-size:15px !important;
+          }
+
+          .ncsAdminShell .ncsBrandText span {
+            font-size:9px !important;
+          }
+
+          .ncsAdminShell .ncsMenuGroupButton {
+            min-height:45px !important;
+          }
+
+          .ncsAdminShell .ncsMenuGroupIcon {
+            width:29px !important;
+            height:29px !important;
+          }
+
+          .ncsAdminShell .ncsMenuGroupLabel {
+            font-size:11px !important;
+          }
+
+          .ncsAdminShell .ncsMenuItem {
+            min-height:38px !important;
+          }
+
+          .ncsAdminShell .ncsAdminPageContent {
+            padding-left:0 !important;
+            padding-right:0 !important;
+          }
+        }
+
         `}</style>
     </div>
   );

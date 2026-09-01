@@ -540,6 +540,7 @@ export default function AdminDashboardPage() {
   const [visitorError, setVisitorError] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [salesRange, setSalesRange] = useState<7 | 14 | 30>(30);
+  const [showDashboardDetails, setShowDashboardDetails] = useState(false);
   const [googleBusiness, setGoogleBusiness] =
     useState<GoogleBusinessStatus>({
       connected: false,
@@ -1947,7 +1948,11 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <main className="dashboardPage">
+    <main
+      className={`dashboardPage ncsAdvancedDashboard ${
+        showDashboardDetails ? "showAdvancedDetails" : ""
+      }`}
+    >
       <section className="hero">
         <div className="heroMotion" aria-hidden="true">
           <span className="heroSweep" />
@@ -1983,7 +1988,7 @@ export default function AdminDashboardPage() {
 
         <div>
           <span>NEW CITY STYLE • BUSINESS COMMAND CENTRE</span>
-          <h1>Premium Business Dashboard</h1>
+          <h1>Good morning, Badri</h1>
           <p>
             Live retail sales, cash flow, receivables, payables,
             inventory, online orders and customer activity.
@@ -2010,6 +2015,14 @@ export default function AdminDashboardPage() {
           <Link href="/admin/pos" className="newBillButton">
             ＋ New Bill
           </Link>
+          <button
+            type="button"
+            className="detailsToggleButton"
+            onClick={() => setShowDashboardDetails((current) => !current)}
+            aria-expanded={showDashboardDetails}
+          >
+            {showDashboardDetails ? "Compact View" : "More Details"}
+          </button>
           <button type="button" onClick={handleLogout}>
             Logout
           </button>
@@ -2053,6 +2066,32 @@ export default function AdminDashboardPage() {
             )}
           </strong>
           <small>Cash + digital estimate</small>
+        </div>
+
+        <div className="executivePulseMetric receivable">
+          <span>CUSTOMER DUES</span>
+          <strong>{formatCurrency(business.totalReceivable)}</strong>
+          <small>
+            {creditAccounts.filter((account) =>
+              toNumber(account.current_balance) > 0,
+            ).length} customers pending
+          </small>
+        </div>
+
+        <div className="executivePulseMetric payable">
+          <span>SUPPLIER PAYABLE</span>
+          <strong>{formatCurrency(business.totalPayable)}</strong>
+          <small>
+            {suppliers.filter((supplier) =>
+              toNumber(supplier.current_balance) > 0,
+            ).length} suppliers pending
+          </small>
+        </div>
+
+        <div className="executivePulseMetric orders">
+          <span>ONLINE ORDERS</span>
+          <strong>{dashboardStats.pendingOrders}</strong>
+          <small>Pending fulfilment</small>
         </div>
 
         <div
@@ -2462,6 +2501,12 @@ export default function AdminDashboardPage() {
             icon="📥"
             title="Add Purchase"
             text="Receive supplier stock"
+          />
+          <QuickAction
+            href="/admin/barcodes"
+            icon="🏷️"
+            title="Print Barcode"
+            text="Open barcode label studio"
           />
           <QuickAction
             href="/admin/expenses"
@@ -6078,6 +6123,317 @@ export default function AdminDashboardPage() {
           .sourceMiniMetric.revenue,
           .sourceConversion {
             display: none;
+          }
+        }
+
+        /* ============================================================
+           NCS ADVANCED DASHBOARD — COMPACT OWNER COMMAND CENTRE
+           Existing data, links and calculations remain unchanged.
+           ============================================================ */
+
+        .ncsAdvancedDashboard {
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+          width: 100%;
+          max-width: 1680px;
+          margin: 0 auto;
+          padding: 16px 18px 30px;
+        }
+
+        .ncsAdvancedDashboard .hero {
+          order: 1;
+          min-height: 148px;
+          padding: 22px 28px;
+          border-radius: 24px;
+        }
+
+        .ncsAdvancedDashboard .hero h1 {
+          margin: 7px 0 5px;
+          font-size: clamp(30px, 3.2vw, 48px);
+          line-height: 1;
+        }
+
+        .ncsAdvancedDashboard .hero p {
+          max-width: 760px;
+          margin: 0 0 8px;
+        }
+
+        .ncsAdvancedDashboard .heroMotion {
+          opacity: 0.48;
+        }
+
+        .ncsAdvancedDashboard .heroActions {
+          gap: 8px;
+          padding: 8px;
+          border-radius: 18px;
+        }
+
+        .ncsAdvancedDashboard .heroActions button,
+        .ncsAdvancedDashboard .heroActions a {
+          min-height: 42px;
+          padding: 0 14px;
+          border-radius: 12px;
+          white-space: nowrap;
+        }
+
+        .ncsAdvancedDashboard .detailsToggleButton {
+          border: 1px solid rgba(255, 255, 255, 0.28);
+          background: rgba(255, 255, 255, 0.12);
+          color: #ffffff;
+          font-weight: 900;
+        }
+
+        .ncsAdvancedDashboard .executivePulseStrip {
+          order: 2;
+          display: grid;
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+          gap: 10px;
+          padding: 0;
+          border: 0;
+          background: transparent;
+          box-shadow: none;
+        }
+
+        .ncsAdvancedDashboard .executivePulseLead,
+        .ncsAdvancedDashboard .executivePulseMetric.attention {
+          display: none;
+        }
+
+        .ncsAdvancedDashboard .executivePulseMetric {
+          min-width: 0;
+          min-height: 104px;
+          padding: 14px;
+          border: 1px solid rgba(111, 83, 210, 0.14);
+          border-radius: 17px;
+          background: #ffffff;
+          box-shadow: 0 10px 26px rgba(50, 39, 95, 0.08);
+        }
+
+        .ncsAdvancedDashboard .executivePulseMetric strong {
+          margin-top: 7px;
+          font-size: clamp(19px, 1.6vw, 27px);
+        }
+
+        .ncsAdvancedDashboard .executivePulseMetric small {
+          margin-top: 5px;
+        }
+
+        .ncsAdvancedDashboard .quickActionsPanel {
+          order: 3;
+          padding: 16px 18px;
+          border-radius: 22px;
+        }
+
+        .ncsAdvancedDashboard .quickActionsPanel .sectionHeader {
+          margin-bottom: 12px;
+        }
+
+        .ncsAdvancedDashboard .quickActionGrid {
+          grid-template-columns: repeat(8, minmax(116px, 1fr));
+          gap: 9px;
+        }
+
+        .ncsAdvancedDashboard .quickAction {
+          min-height: 106px;
+          padding: 12px;
+          border-radius: 16px;
+        }
+
+        .ncsAdvancedDashboard .quickActionIcon {
+          width: 38px;
+          height: 38px;
+          margin-bottom: 9px;
+        }
+
+        .ncsAdvancedDashboard .quickAction p {
+          display: none;
+        }
+
+        .ncsAdvancedDashboard .analyticsGrid {
+          order: 4;
+          grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.65fr);
+          gap: 12px;
+        }
+
+        .ncsAdvancedDashboard .analyticsGrid .panel {
+          min-height: 338px;
+          border-radius: 22px;
+        }
+
+        .ncsAdvancedDashboard .trendChart {
+          min-height: 245px;
+          height: 245px;
+        }
+
+        .ncsAdvancedDashboard .alertList {
+          gap: 8px;
+        }
+
+        .ncsAdvancedDashboard .detailGrid {
+          order: 5;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 12px;
+        }
+
+        .ncsAdvancedDashboard .detailGrid > .panel {
+          min-height: 390px;
+          max-height: 440px;
+          overflow: hidden;
+          border-radius: 22px;
+        }
+
+        .ncsAdvancedDashboard .detailGrid .compactList {
+          max-height: 330px;
+          overflow-y: auto;
+          padding-right: 4px;
+        }
+
+        .ncsAdvancedDashboard .compactRow {
+          min-height: 68px;
+          padding: 10px 12px;
+        }
+
+        .ncsAdvancedDashboard .commerceGrid {
+          order: 6;
+          grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+          gap: 12px;
+        }
+
+        .ncsAdvancedDashboard .commerceGrid > .panel {
+          min-width: 0;
+          min-height: 188px;
+          border-radius: 22px;
+        }
+
+        .ncsAdvancedDashboard .recentOrdersPanel.emptyCompact .emptyState {
+          width: 100%;
+          min-height: 105px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+        }
+
+        .ncsAdvancedDashboard .visitorSummaryPanel {
+          grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.2fr) auto;
+        }
+
+        .ncsAdvancedDashboard .profitIntelligencePanel {
+          order: 7;
+          min-height: auto;
+          border-radius: 22px;
+        }
+
+        .ncsAdvancedDashboard .profitDashboardGrid {
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .ncsAdvancedDashboard .profitMetricCard {
+          min-height: 116px;
+          padding: 14px;
+        }
+
+        .ncsAdvancedDashboard .primaryKpis,
+        .ncsAdvancedDashboard .todayOwnerProfitPanel,
+        .ncsAdvancedDashboard .secondaryKpis,
+        .ncsAdvancedDashboard .googleBusinessPanel,
+        .ncsAdvancedDashboard .executiveSectionLabel,
+        .ncsAdvancedDashboard .catalogueKpis {
+          display: none;
+        }
+
+        .ncsAdvancedDashboard.showAdvancedDetails .primaryKpis,
+        .ncsAdvancedDashboard.showAdvancedDetails .todayOwnerProfitPanel,
+        .ncsAdvancedDashboard.showAdvancedDetails .secondaryKpis,
+        .ncsAdvancedDashboard.showAdvancedDetails .googleBusinessPanel,
+        .ncsAdvancedDashboard.showAdvancedDetails .executiveSectionLabel,
+        .ncsAdvancedDashboard.showAdvancedDetails .catalogueKpis {
+          display: grid;
+        }
+
+        .ncsAdvancedDashboard.showAdvancedDetails .executiveSectionLabel {
+          display: flex;
+        }
+
+        .ncsAdvancedDashboard.showAdvancedDetails .executivePulseLead,
+        .ncsAdvancedDashboard.showAdvancedDetails .executivePulseMetric.attention {
+          display: flex;
+        }
+
+        .ncsAdvancedDashboard.showAdvancedDetails .executivePulseStrip {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .ncsAdvancedDashboard.showAdvancedDetails .executivePulseLead {
+          grid-column: span 2;
+        }
+
+        .ncsAdvancedDashboard .primaryKpis { order: 8; }
+        .ncsAdvancedDashboard .todayOwnerProfitPanel { order: 9; }
+        .ncsAdvancedDashboard .secondaryKpis { order: 10; }
+        .ncsAdvancedDashboard .googleBusinessPanel { order: 11; }
+        .ncsAdvancedDashboard .executiveSectionLabel { order: 12; }
+        .ncsAdvancedDashboard .catalogueKpis { order: 13; }
+
+        @media (max-width: 1280px) {
+          .ncsAdvancedDashboard .executivePulseStrip {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+
+          .ncsAdvancedDashboard .quickActionGrid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+          }
+
+          .ncsAdvancedDashboard .profitDashboardGrid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 900px) {
+          .ncsAdvancedDashboard {
+            padding: 12px;
+          }
+
+          .ncsAdvancedDashboard .hero {
+            padding: 18px;
+          }
+
+          .ncsAdvancedDashboard .heroActions {
+            position: relative;
+            inset: auto;
+            margin-top: 14px;
+          }
+
+          .ncsAdvancedDashboard .executivePulseStrip,
+          .ncsAdvancedDashboard .detailGrid,
+          .ncsAdvancedDashboard .analyticsGrid,
+          .ncsAdvancedDashboard .commerceGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .ncsAdvancedDashboard .visitorSummaryPanel {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 620px) {
+          .ncsAdvancedDashboard .executivePulseStrip,
+          .ncsAdvancedDashboard .quickActionGrid,
+          .ncsAdvancedDashboard .profitDashboardGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .ncsAdvancedDashboard .heroActions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .ncsAdvancedDashboard .heroActions button,
+          .ncsAdvancedDashboard .heroActions a {
+            width: 100%;
           }
         }
       `}</style>
