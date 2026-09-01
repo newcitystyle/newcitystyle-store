@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  type FormEvent,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type ChequeStatus = "UPCOMING" | "CLEARED" | "CANCELLED";
@@ -60,11 +55,7 @@ function dateInputToMillis(value: string) {
 function startOfToday() {
   const now = new Date();
 
-  return new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate()
-  ).getTime();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 }
 
 function emptyForm(): ChequeFormState {
@@ -116,9 +107,7 @@ function getDisplayStatus(cheque: ChequeRow) {
     };
   }
 
-  const difference = Math.round(
-    (cheque.due_date - startOfToday()) / DAY_MS
-  );
+  const difference = Math.round((cheque.due_date - startOfToday()) / DAY_MS);
 
   if (difference < 0) {
     return {
@@ -166,11 +155,8 @@ export default function BankChequeRemindersPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [editingCheque, setEditingCheque] =
-    useState<ChequeRow | null>(null);
-  const [form, setForm] = useState<ChequeFormState>(
-    emptyForm()
-  );
+  const [editingCheque, setEditingCheque] = useState<ChequeRow | null>(null);
+  const [form, setForm] = useState<ChequeFormState>(emptyForm());
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<
     "ALL" | "UPCOMING" | "DUE_SOON" | "OVERDUE" | "CLEARED" | "CANCELLED"
@@ -211,7 +197,7 @@ export default function BankChequeRemindersPage() {
           schema: "public",
           table: "billing_cheques",
         },
-        () => void loadCheques()
+        () => void loadCheques(),
       )
       .subscribe();
 
@@ -221,35 +207,29 @@ export default function BankChequeRemindersPage() {
   }, []);
 
   const summary = useMemo(() => {
-    const upcoming = cheques.filter(
-      (item) => item.status === "UPCOMING"
-    );
+    const upcoming = cheques.filter((item) => item.status === "UPCOMING");
     const dueSoon = upcoming.filter((item) => {
-      const difference = Math.round(
-        (item.due_date - startOfToday()) / DAY_MS
-      );
+      const difference = Math.round((item.due_date - startOfToday()) / DAY_MS);
 
       return difference >= 0 && difference <= 2;
     });
-    const overdue = upcoming.filter(
-      (item) => item.due_date < startOfToday()
-    );
+    const overdue = upcoming.filter((item) => item.due_date < startOfToday());
 
     return {
       upcomingCount: upcoming.length,
       upcomingAmount: upcoming.reduce(
         (total, item) => total + Number(item.amount || 0),
-        0
+        0,
       ),
       dueSoonCount: dueSoon.length,
       dueSoonAmount: dueSoon.reduce(
         (total, item) => total + Number(item.amount || 0),
-        0
+        0,
       ),
       overdueCount: overdue.length,
       overdueAmount: overdue.reduce(
         (total, item) => total + Number(item.amount || 0),
-        0
+        0,
       ),
       nextDue:
         upcoming.length > 0
@@ -279,16 +259,11 @@ export default function BankChequeRemindersPage() {
       }
       if (filter === "DUE_SOON") {
         return (
-          cheque.status === "UPCOMING" &&
-          status.days >= 0 &&
-          status.days <= 2
+          cheque.status === "UPCOMING" && status.days >= 0 && status.days <= 2
         );
       }
       if (filter === "OVERDUE") {
-        return (
-          cheque.status === "UPCOMING" &&
-          status.days < 0
-        );
+        return cheque.status === "UPCOMING" && status.days < 0;
       }
 
       return cheque.status === filter;
@@ -345,9 +320,7 @@ export default function BankChequeRemindersPage() {
     }
 
     if (dueDate < givenDate) {
-      setErrorMessage(
-        "Cheque due date cannot be before the given date."
-      );
+      setErrorMessage("Cheque due date cannot be before the given date.");
       return;
     }
 
@@ -399,10 +372,7 @@ export default function BankChequeRemindersPage() {
     await loadCheques();
   }
 
-  async function updateStatus(
-    cheque: ChequeRow,
-    status: ChequeStatus
-  ) {
+  async function updateStatus(cheque: ChequeRow, status: ChequeStatus) {
     const now = new Date().toISOString();
 
     const { error } = await supabase
@@ -425,7 +395,7 @@ export default function BankChequeRemindersPage() {
 
   async function softDeleteCheque(cheque: ChequeRow) {
     const confirmed = window.confirm(
-      `Delete cheque ${cheque.cheque_number} for ${cheque.supplier_name}?`
+      `Delete cheque ${cheque.cheque_number} for ${cheque.supplier_name}?`,
     );
 
     if (!confirmed) return;
@@ -460,9 +430,8 @@ export default function BankChequeRemindersPage() {
           </span>
           <h1>BANK CHEQUE REMINDERS</h1>
           <p>
-            App and website cheque records stay synchronized through
-            Supabase. The top alert appears only from two days before
-            the due date.
+            App and website cheque records stay synchronized through Supabase.
+            The top alert appears only from two days before the due date.
           </p>
         </div>
 
@@ -520,11 +489,7 @@ export default function BankChequeRemindersPage() {
             <button
               key={value}
               className={filter === value ? "activeFilter" : ""}
-              onClick={() =>
-                setFilter(
-                  value as typeof filter
-                )
-              }
+              onClick={() => setFilter(value as typeof filter)}
             >
               {label}
             </button>
@@ -546,8 +511,8 @@ export default function BankChequeRemindersPage() {
           <span className="emptyIcon">📝</span>
           <h2>No bank cheques found</h2>
           <p>
-            Add the first cheque here or add it in the Android Billing
-            app. It will appear on both sides after sync.
+            Add the first cheque here or add it in the Android Billing app. It
+            will appear on both sides after sync.
           </p>
           <button className="primaryButton" onClick={openAddForm}>
             ADD FIRST CHEQUE
@@ -560,48 +525,75 @@ export default function BankChequeRemindersPage() {
 
             return (
               <article className="chequeCard" key={cheque.id}>
-                <div className="cardTop">
-                  <div className="rupeeBadge">₹</div>
+                <div className="chequePaper">
+                  <div className="chequeWatermark">NCS</div>
 
-                  <div className="supplierBlock">
-                    <h2>{cheque.supplier_name}</h2>
-                    <p>
-                      {cheque.bank_name} • {cheque.cheque_number}
-                    </p>
+                  <div className="bankLine">
+                    <div className="bankMark">₹</div>
+                    <div className="bankIdentity">
+                      <span>BANK CHEQUE REMINDER</span>
+                      <h2>{cheque.bank_name || "BANK NAME"}</h2>
+                      <p>NEW CITY STYLE • ACCOUNT PAYEE RECORD</p>
+                    </div>
+
+                    <div className="dateBlock">
+                      <small>DUE DATE • DD MM YYYY</small>
+                      <div className="dateBoxes">
+                        {chequeDateDigits(cheque.due_date).map(
+                          (digit, index) => (
+                            <b key={`${cheque.id}-date-${index}`}>{digit}</b>
+                          ),
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   <span className={`status status-${display.tone}`}>
                     {display.label}
                   </span>
-                </div>
 
-                <div className="amountRow">
-                  <div>
-                    <span>CHEQUE AMOUNT</span>
-                    <strong>{formatMoney(cheque.amount)}</strong>
+                  <div className="payLine">
+                    <span>PAY</span>
+                    <strong>{cheque.supplier_name}</strong>
                   </div>
 
-                  <div className="dateColumn">
-                    <span>DUE DATE</span>
-                    <strong>{formatDate(cheque.due_date)}</strong>
+                  <div className="wordsAndAmount">
+                    <div className="wordsLine">
+                      <span>RUPEES</span>
+                      <strong>{amountInWords(cheque.amount)}</strong>
+                    </div>
+                    <div className="amountBox">
+                      <span>₹</span>
+                      <strong>
+                        {formatMoney(cheque.amount).replace("₹", "").trim()}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="accountLine">
+                    <div>
+                      <span>A/C PAYEE ONLY</span>
+                      <strong>NEW CITY STYLE BUSINESS CHEQUE</strong>
+                    </div>
+                    <div className="signatureLine">
+                      <span>GIVEN {formatDate(cheque.given_date)}</span>
+                      <strong>AUTHORISED SIGNATORY</strong>
+                    </div>
+                  </div>
+
+                  {cheque.notes ? (
+                    <p className="notes">
+                      <b>NOTE:</b> {cheque.notes}
+                    </p>
+                  ) : null}
+
+                  <div className="micrLine">
+                    <strong>⑆ {cheque.cheque_number} ⑆</strong>
+                    <span>
+                      SYNC {new Date(cheque.updated_at).toLocaleString("en-IN")}
+                    </span>
                   </div>
                 </div>
-
-                <div className="metaRow">
-                  <span>
-                    GIVEN: {formatDate(cheque.given_date)}
-                  </span>
-                  <span>
-                    SYNC:{" "}
-                    {new Date(cheque.updated_at).toLocaleString(
-                      "en-IN"
-                    )}
-                  </span>
-                </div>
-
-                {cheque.notes ? (
-                  <p className="notes">{cheque.notes}</p>
-                ) : null}
 
                 <div className="actionRow">
                   <button
@@ -615,18 +607,14 @@ export default function BankChequeRemindersPage() {
                     <>
                       <button
                         className="clearButton"
-                        onClick={() =>
-                          void updateStatus(cheque, "CLEARED")
-                        }
+                        onClick={() => void updateStatus(cheque, "CLEARED")}
                       >
                         CLEARED
                       </button>
 
                       <button
                         className="cancelButton"
-                        onClick={() =>
-                          void updateStatus(cheque, "CANCELLED")
-                        }
+                        onClick={() => void updateStatus(cheque, "CANCELLED")}
                       >
                         CANCEL
                       </button>
@@ -634,9 +622,7 @@ export default function BankChequeRemindersPage() {
                   ) : (
                     <button
                       className="reopenButton"
-                      onClick={() =>
-                        void updateStatus(cheque, "UPCOMING")
-                      }
+                      onClick={() => void updateStatus(cheque, "UPCOMING")}
                     >
                       REOPEN
                     </button>
@@ -667,13 +653,9 @@ export default function BankChequeRemindersPage() {
           <form className="chequeModal" onSubmit={saveCheque}>
             <div className="modalHeader">
               <div>
-                <span>
-                  {editingCheque ? "UPDATE RECORD" : "NEW RECORD"}
-                </span>
+                <span>{editingCheque ? "UPDATE RECORD" : "NEW RECORD"}</span>
                 <h2>
-                  {editingCheque
-                    ? "EDIT BANK CHEQUE"
-                    : "ADD BANK CHEQUE"}
+                  {editingCheque ? "EDIT BANK CHEQUE" : "ADD BANK CHEQUE"}
                 </h2>
               </div>
 
@@ -801,11 +783,7 @@ export default function BankChequeRemindersPage() {
                 CANCEL
               </button>
 
-              <button
-                type="submit"
-                className="primaryButton"
-                disabled={saving}
-              >
+              <button type="submit" className="primaryButton" disabled={saving}>
                 {saving ? "SAVING..." : "SAVE CHEQUE"}
               </button>
             </div>
@@ -1030,152 +1008,268 @@ export default function BankChequeRemindersPage() {
         }
 
         .chequeCard {
-          padding: 17px;
+          padding: 10px;
           overflow: hidden;
-          border: 1px solid rgba(212, 175, 55, 0.25);
-          border-radius: 23px;
+          border: 1px solid #91b9c3;
+          border-radius: 18px;
+          background: #edf9f8;
+          box-shadow: 0 12px 27px rgba(4, 57, 68, 0.14);
+          color: #123e47;
+        }
+
+        .chequePaper {
+          position: relative;
+          overflow: hidden;
+          padding: 14px 16px 10px;
+          border: 1px solid rgba(33, 118, 133, 0.34);
+          border-radius: 12px;
           background:
-            radial-gradient(
-              circle at 100% 0%,
-              rgba(212, 175, 55, 0.17),
-              transparent 31%
+            repeating-linear-gradient(
+              0deg,
+              rgba(20, 119, 133, 0.035) 0 1px,
+              transparent 1px 5px
             ),
-            linear-gradient(145deg, #020b24, #061d4a, #0a2e73);
-          box-shadow: 0 13px 29px rgba(3, 21, 63, 0.16);
-          color: white;
+            linear-gradient(125deg, #effcf9, #d7f1f2 56%, #edf9f3);
         }
 
-        .cardTop {
+        .chequeWatermark {
+          position: absolute;
+          right: 7%;
+          bottom: 5%;
+          color: rgba(23, 115, 129, 0.07);
+          font-size: 86px;
+          font-weight: 950;
+          letter-spacing: -8px;
+          pointer-events: none;
+        }
+
+        .bankLine {
           display: flex;
-          align-items: center;
-          gap: 11px;
+          position: relative;
+          z-index: 1;
+          align-items: flex-start;
+          gap: 10px;
         }
 
-        .rupeeBadge {
-          width: 45px;
-          height: 45px;
+        .bankMark {
+          width: 40px;
+          height: 40px;
           display: grid;
           flex: 0 0 auto;
           place-items: center;
+          border: 2px solid #247c8a;
           border-radius: 50%;
-          background: #d4af37;
-          color: #061d4a;
-          font-size: 21px;
+          background: rgba(255, 255, 255, 0.58);
+          color: #176b78;
+          font-size: 20px;
           font-weight: 950;
         }
 
-        .supplierBlock {
+        .bankIdentity {
           min-width: 0;
           flex: 1;
         }
 
-        .supplierBlock h2 {
+        .bankIdentity span {
+          color: #297987;
+          font-size: 7px;
+          font-weight: 900;
+          letter-spacing: 0.7px;
+        }
+
+        .bankIdentity h2 {
           overflow: hidden;
-          margin: 0;
-          color: white;
-          font-size: 15px;
+          margin: 2px 0 0;
+          color: #124b56;
+          font-size: 16px;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
 
-        .supplierBlock p {
-          overflow: hidden;
-          margin: 4px 0 0;
-          color: rgba(255, 255, 255, 0.65);
+        .bankIdentity p {
+          margin: 2px 0 0;
+          color: #56858d;
+          font-size: 7px;
+          font-weight: 750;
+        }
+
+        .dateBlock {
+          flex: 0 0 auto;
+          text-align: right;
+        }
+        .dateBlock small {
+          color: #4c7f87;
+          font-size: 6px;
+          font-weight: 850;
+        }
+        .dateBoxes {
+          display: flex;
+          margin-top: 3px;
+        }
+        .dateBoxes b {
+          width: 17px;
+          height: 20px;
+          display: grid;
+          place-items: center;
+          border: 1px solid #6c9da5;
+          border-right: 0;
+          background: rgba(255, 255, 255, 0.72);
+          color: #123e47;
+          font-size: 10px;
+        }
+        .dateBoxes b:last-child {
+          border-right: 1px solid #6c9da5;
+        }
+
+        .payLine,
+        .wordsLine {
+          display: flex;
+          position: relative;
+          z-index: 1;
+          align-items: flex-end;
+          gap: 9px;
+          margin-top: 13px;
+        }
+
+        .payLine span,
+        .wordsLine span {
+          flex: 0 0 auto;
+          color: #477982;
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        .payLine strong,
+        .wordsLine strong {
+          min-height: 18px;
+          flex: 1;
+          padding: 0 5px 3px;
+          border-bottom: 1px solid #739ca3;
+          color: #0f3540;
+          font-size: 13px;
+          text-transform: uppercase;
+        }
+
+        .wordsAndAmount {
+          display: flex;
+          align-items: flex-end;
+          gap: 10px;
+        }
+        .wordsLine {
+          flex: 1;
+        }
+        .wordsLine strong {
           font-size: 9px;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+        }
+        .amountBox {
+          display: flex;
+          min-width: 130px;
+          align-items: center;
+          gap: 6px;
+          padding: 7px 9px;
+          border: 2px solid #276f7a;
+          background: rgba(255, 255, 255, 0.64);
+          color: #103f48;
+        }
+        .amountBox span {
+          font-size: 18px;
+          font-weight: 900;
+        }
+        .amountBox strong {
+          font-size: 16px;
+        }
+
+        .accountLine,
+        .micrLine {
+          display: flex;
+          position: relative;
+          z-index: 1;
+          justify-content: space-between;
+          gap: 10px;
+          margin-top: 13px;
+        }
+        .accountLine span {
+          display: block;
+          color: #4e7b84;
+          font-size: 7px;
+          font-weight: 800;
+        }
+        .accountLine strong {
+          color: #164b55;
+          font-size: 8px;
+        }
+        .signatureLine {
+          min-width: 145px;
+          padding-top: 10px;
+          border-top: 1px solid #638c94;
+          text-align: center;
+        }
+        .micrLine {
+          align-items: center;
+          padding-top: 8px;
+          border-top: 1px solid rgba(36, 105, 116, 0.25);
+        }
+        .micrLine strong {
+          color: #123e47;
+          font-family: "Courier New", monospace;
+          font-size: 13px;
+          letter-spacing: 2px;
+        }
+        .micrLine span {
+          color: #5b858c;
+          font-size: 6px;
+          font-weight: 750;
         }
 
         .status {
-          flex: 0 0 auto;
-          padding: 6px 9px;
-          border: 1px solid currentColor;
-          border-radius: 999px;
+          position: absolute;
+          z-index: 2;
+          right: 16px;
+          bottom: 49px;
+          transform: rotate(-7deg);
+          padding: 5px 8px;
+          border: 2px solid currentColor;
+          border-radius: 4px;
           font-size: 8px;
           font-weight: 950;
-          letter-spacing: 0.4px;
+          letter-spacing: 0.7px;
         }
 
         .status-upcoming,
         .status-soon {
-          color: #f0cc59;
-          background: rgba(212, 175, 55, 0.12);
+          color: #a66e00;
+          background: rgba(255, 246, 208, 0.82);
         }
 
         .status-today,
         .status-overdue {
-          color: #ff7770;
-          background: rgba(255, 69, 58, 0.12);
+          color: #bd2d27;
+          background: rgba(255, 236, 233, 0.82);
         }
 
         .status-cleared {
-          color: #69e5a1;
-          background: rgba(22, 131, 74, 0.13);
+          color: #147147;
+          background: rgba(231, 252, 239, 0.84);
         }
 
         .status-cancelled {
-          color: #c4c8d2;
-          background: rgba(255, 255, 255, 0.08);
-        }
-
-        .amountRow {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          margin-top: 20px;
-        }
-
-        .amountRow span {
-          color: rgba(255, 255, 255, 0.48);
-          font-size: 8px;
-          font-weight: 800;
-        }
-
-        .amountRow strong {
-          display: block;
-          margin-top: 5px;
-          color: #d4af37;
-          font-size: 21px;
-        }
-
-        .dateColumn {
-          text-align: right;
-        }
-
-        .dateColumn strong {
-          color: white;
-          font-size: 13px;
-        }
-
-        .metaRow {
-          display: flex;
-          flex-wrap: wrap;
-          justify-content: space-between;
-          gap: 8px;
-          margin-top: 14px;
-          padding-top: 11px;
-          border-top: 1px solid rgba(255, 255, 255, 0.1);
-          color: rgba(255, 255, 255, 0.48);
-          font-size: 8px;
-          font-weight: 750;
+          color: #6d747b;
+          background: rgba(245, 247, 248, 0.88);
         }
 
         .notes {
-          margin: 10px 0 0;
-          padding: 9px 11px;
-          border-radius: 11px;
-          background: rgba(255, 255, 255, 0.07);
-          color: rgba(255, 255, 255, 0.72);
-          font-size: 9px;
-          line-height: 1.55;
+          position: relative;
+          z-index: 1;
+          margin: 8px 0 0;
+          color: #4f737a;
+          font-size: 7px;
         }
 
         .actionRow {
           display: flex;
           flex-wrap: wrap;
           gap: 7px;
-          margin-top: 13px;
+          margin-top: 9px;
         }
 
         .actionRow button {
@@ -1189,9 +1283,9 @@ export default function BankChequeRemindersPage() {
         }
 
         .editButton {
-          border-color: rgba(255, 255, 255, 0.24) !important;
-          background: rgba(255, 255, 255, 0.08);
-          color: white;
+          border-color: #7ba4ab !important;
+          background: #ffffff;
+          color: #174c56;
         }
 
         .clearButton {
@@ -1200,8 +1294,8 @@ export default function BankChequeRemindersPage() {
         }
 
         .cancelButton {
-          background: rgba(255, 255, 255, 0.09);
-          color: #ff7770;
+          background: #fff0ee;
+          color: #b3261e;
         }
 
         .reopenButton {
@@ -1211,8 +1305,8 @@ export default function BankChequeRemindersPage() {
 
         .deleteButton {
           margin-left: auto;
-          background: rgba(179, 38, 30, 0.16);
-          color: #ff7770;
+          background: #ffe9e7;
+          color: #b3261e;
         }
 
         .emptyState {
@@ -1416,16 +1510,53 @@ export default function BankChequeRemindersPage() {
           }
 
           .chequeCard {
-            padding: 14px;
+            padding: 7px;
           }
 
-          .cardTop {
-            align-items: flex-start;
+          .chequePaper {
+            padding: 12px 11px 9px;
+          }
+
+          .bankLine {
             flex-wrap: wrap;
           }
 
+          .dateBlock {
+            width: 100%;
+            text-align: left;
+          }
+
+          .dateBoxes b {
+            width: 22px;
+          }
+
+          .wordsAndAmount {
+            align-items: stretch;
+            flex-direction: column;
+          }
+
+          .amountBox {
+            min-width: 0;
+          }
+
+          .accountLine {
+            flex-direction: column;
+          }
+
+          .signatureLine {
+            width: 150px;
+            margin-left: auto;
+          }
+
           .status {
-            margin-left: 56px;
+            right: 12px;
+            bottom: 47px;
+            margin-left: 0;
+          }
+
+          .micrLine {
+            align-items: flex-start;
+            flex-direction: column;
           }
 
           .formGrid {
@@ -1447,4 +1578,82 @@ export default function BankChequeRemindersPage() {
       `}</style>
     </main>
   );
+}
+
+function chequeDateDigits(value: number) {
+  const date = new Date(value);
+  return `${String(date.getDate()).padStart(2, "0")}${String(
+    date.getMonth() + 1,
+  ).padStart(2, "0")}${date.getFullYear()}`.split("");
+}
+
+function amountInWords(value: number) {
+  const ones = [
+    "",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+    "Eleven",
+    "Twelve",
+    "Thirteen",
+    "Fourteen",
+    "Fifteen",
+    "Sixteen",
+    "Seventeen",
+    "Eighteen",
+    "Nineteen",
+  ];
+  const tens = [
+    "",
+    "",
+    "Twenty",
+    "Thirty",
+    "Forty",
+    "Fifty",
+    "Sixty",
+    "Seventy",
+    "Eighty",
+    "Ninety",
+  ];
+
+  const belowThousand = (number: number) => {
+    const parts: string[] = [];
+    if (number >= 100) {
+      parts.push(`${ones[Math.floor(number / 100)]} Hundred`);
+      number %= 100;
+    }
+    if (number >= 20) {
+      parts.push(tens[Math.floor(number / 10)]);
+      number %= 10;
+    }
+    if (number > 0) parts.push(ones[number]);
+    return parts.join(" ");
+  };
+
+  let number = Math.max(0, Math.floor(value));
+  if (number === 0) return "Zero Rupees Only";
+
+  const parts: string[] = [];
+  const units = [
+    [10_000_000, "Crore"],
+    [100_000, "Lakh"],
+    [1_000, "Thousand"],
+  ] as const;
+
+  units.forEach(([divider, name]) => {
+    if (number >= divider) {
+      parts.push(`${belowThousand(Math.floor(number / divider))} ${name}`);
+      number %= divider;
+    }
+  });
+
+  if (number > 0) parts.push(belowThousand(number));
+  return `${parts.join(" ")} Rupees Only`;
 }
