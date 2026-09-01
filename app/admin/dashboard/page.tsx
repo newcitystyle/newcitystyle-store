@@ -541,6 +541,9 @@ export default function AdminDashboardPage() {
   const [adminEmail, setAdminEmail] = useState("");
   const [salesRange, setSalesRange] = useState<7 | 14 | 30>(30);
   const [showDashboardDetails, setShowDashboardDetails] = useState(false);
+  const [businessWatchTab, setBusinessWatchTab] = useState<
+    "dues" | "suppliers" | "stock"
+  >("dues");
   const [googleBusiness, setGoogleBusiness] =
     useState<GoogleBusinessStatus>({
       connected: false,
@@ -2563,52 +2566,36 @@ export default function AdminDashboardPage() {
             </select>
           </div>
 
-          <div
-            className={`trendChart ${
-              salesRange === 30 ? "trendChartMonth" : ""
-            }`}
-          >
-            {salesTrend.map((point) => {
-              const height = Math.max(
-                3,
-                (point.amount / trendMax) * 100,
-              );
-              const isToday = point.key === dateKey(todayStart);
-              const dayNumber = point.label.split(" ")[0];
-
-              return (
-                <div
-                  className={`trendColumn ${isToday ? "today" : ""}`}
-                  key={point.key}
-                  title={`${point.label} • ${
-                    point.amount > 0
-                      ? formatCurrency(point.amount)
-                      : "₹0"
-                  }`}
-                >
-                  {salesRange !== 30 && (
-                    <div className="trendValue">
-                      {point.amount > 0
-                        ? formatCurrency(point.amount)
-                        : "₹0"}
-                    </div>
-                  )}
-
-                  <div className="trendTrack">
-                    <div
-                      className="trendBar"
-                      style={{ height: `${height}%` }}
-                    />
-                  </div>
-
-                  <span className="trendDay">
-                    {salesRange === 30 ? dayNumber : point.label}
-                  </span>
-
-                  {isToday && <small className="trendTodayDot" />}
-                </div>
-              );
-            })}
+          <div className="advancedSalesChart">
+            <svg viewBox="0 0 1000 250" preserveAspectRatio="none" role="img" aria-label="Sales trend">
+              {[45, 85, 125, 165, 205].map((y) => (
+                <line key={y} x1="42" y1={y} x2="970" y2={y} className="chartGridLine" />
+              ))}
+              <polyline
+                className="advancedSalesLine"
+                points={salesTrend.map((point, index) => {
+                  const x = salesTrend.length <= 1 ? 500 : 45 + (index / (salesTrend.length - 1)) * 920;
+                  const y = 205 - (point.amount / Math.max(trendMax, 1)) * 160;
+                  return `${x},${y}`;
+                }).join(" ")}
+              />
+              {salesTrend.map((point, index) => {
+                const x = salesTrend.length <= 1 ? 500 : 45 + (index / (salesTrend.length - 1)) * 920;
+                const y = 205 - (point.amount / Math.max(trendMax, 1)) * 160;
+                return (
+                  <circle key={point.key} cx={x} cy={y} r="5" className="advancedSalesDot">
+                    <title>{`${point.label} • ${formatCurrency(point.amount)}`}</title>
+                  </circle>
+                );
+              })}
+            </svg>
+            <div className="advancedChartLabels">
+              {salesTrend.map((point, index) => (
+                <span key={point.key} className={index % Math.max(1, Math.ceil(salesTrend.length / 7)) === 0 ? "visible" : ""}>
+                  {point.label.split(" ")[0]}
+                </span>
+              ))}
+            </div>
           </div>
         </article>
 
@@ -2661,6 +2648,47 @@ export default function AdminDashboardPage() {
             />
           </div>
         </article>
+      </section>
+
+      <section className="panel businessWatchPanel">
+        <div className="sectionHeader businessWatchHeader">
+          <div>
+            <span>LIVE BUSINESS WATCH</span>
+            <h2>Priority Ledgers & Stock</h2>
+          </div>
+          <div className="businessWatchTabs" role="tablist" aria-label="Business watch">
+            <button type="button" className={businessWatchTab === "dues" ? "active" : ""} onClick={() => setBusinessWatchTab("dues")}>Customer Dues <b>{dueCustomers.length}</b></button>
+            <button type="button" className={businessWatchTab === "suppliers" ? "active" : ""} onClick={() => setBusinessWatchTab("suppliers")}>Suppliers <b>{dueSuppliers.length}</b></button>
+            <button type="button" className={businessWatchTab === "stock" ? "active" : ""} onClick={() => setBusinessWatchTab("stock")}>Low Stock <b>{lowStockProducts.length}</b></button>
+          </div>
+        </div>
+
+        <div className="businessWatchList">
+          {businessWatchTab === "dues" && (dueCustomers.length === 0 ? (
+            <EmptyState icon="✅" title="No Customer Dues" text="All customer balances are clear." />
+          ) : dueCustomers.map((account) => (
+            <div className="compactRow" key={account.id}>
+              <div className="rowIcon">👤</div><div className="rowMain"><strong>{account.customer_name || "Customer"}</strong><span>{account.customer_phone || "No mobile"}</span></div>
+              <div className="rowAmount danger">{formatCurrency(toNumber(account.current_balance))}<small>Due {account.next_due_date || "not set"}</small></div>
+            </div>
+          )))}
+          {businessWatchTab === "suppliers" && (dueSuppliers.length === 0 ? (
+            <EmptyState icon="✅" title="No Supplier Payables" text="All supplier balances are clear." />
+          ) : dueSuppliers.map((supplier) => (
+            <div className="compactRow" key={supplier.id}>
+              <div className="rowIcon">🚚</div><div className="rowMain"><strong>{supplier.supplier_name || "Supplier"}</strong><span>{supplier.phone || "No mobile"}</span></div>
+              <div className="rowAmount warning">{formatCurrency(toNumber(supplier.current_balance))}</div>
+            </div>
+          )))}
+          {businessWatchTab === "stock" && (lowStockProducts.length === 0 ? (
+            <EmptyState icon="✅" title="Stock Looks Good" text="No low-stock products found." />
+          ) : lowStockProducts.map((product) => (
+            <div className="compactRow" key={String(product.id)}>
+              <div className="rowIcon">🛍️</div><div className="rowMain"><strong>{getProductName(product)}</strong><span>{product.category || "Fashion Product"}</span></div>
+              <div className={product.computedStock === 0 ? "stockPill out" : "stockPill low"}>{product.computedStock === 0 ? "Out" : `${product.computedStock} left`}</div>
+            </div>
+          )))}
+        </div>
       </section>
 
       <section className="detailGrid">
@@ -6230,20 +6258,30 @@ export default function AdminDashboardPage() {
         }
 
         .ncsAdvancedDashboard .quickActionGrid {
-          grid-template-columns: repeat(8, minmax(116px, 1fr));
-          gap: 9px;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
         }
 
         .ncsAdvancedDashboard .quickAction {
-          min-height: 106px;
-          padding: 12px;
-          border-radius: 16px;
+          flex: 1 1 150px;
+          min-height: 54px;
+          padding: 9px 12px;
+          border: 1px solid rgba(91, 65, 190, 0.14) !important;
+          border-radius: 14px;
+          background: #ffffff !important;
+          color: #352568 !important;
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          box-shadow: none !important;
         }
 
         .ncsAdvancedDashboard .quickActionIcon {
-          width: 38px;
-          height: 38px;
-          margin-bottom: 9px;
+          width: 34px;
+          height: 34px;
+          margin: 0;
+          flex: 0 0 34px;
         }
 
         .ncsAdvancedDashboard .quickAction p {
@@ -6261,9 +6299,49 @@ export default function AdminDashboardPage() {
           border-radius: 22px;
         }
 
-        .ncsAdvancedDashboard .trendChart {
-          min-height: 245px;
+        .ncsAdvancedDashboard .advancedSalesChart {
           height: 245px;
+          padding: 8px 4px 0;
+        }
+
+        .ncsAdvancedDashboard .advancedSalesChart svg {
+          display: block;
+          width: 100%;
+          height: 215px;
+          overflow: visible;
+        }
+
+        .ncsAdvancedDashboard .chartGridLine {
+          stroke: rgba(94, 72, 175, 0.1);
+          stroke-width: 1;
+        }
+
+        .ncsAdvancedDashboard .advancedSalesLine {
+          fill: none;
+          stroke: #6443e8;
+          stroke-width: 5;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+          filter: drop-shadow(0 7px 7px rgba(100, 67, 232, 0.22));
+        }
+
+        .ncsAdvancedDashboard .advancedSalesDot {
+          fill: #ffffff;
+          stroke: #6443e8;
+          stroke-width: 4;
+        }
+
+        .ncsAdvancedDashboard .advancedChartLabels {
+          display: flex;
+          justify-content: space-between;
+          padding: 0 3.5%;
+          color: #81799b;
+          font-size: 10px;
+          font-weight: 800;
+        }
+
+        .ncsAdvancedDashboard .advancedChartLabels span:not(.visible) {
+          visibility: hidden;
         }
 
         .ncsAdvancedDashboard .alertList {
@@ -6272,8 +6350,65 @@ export default function AdminDashboardPage() {
 
         .ncsAdvancedDashboard .detailGrid {
           order: 5;
+          display: none;
           grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 12px;
+        }
+
+        .ncsAdvancedDashboard.showAdvancedDetails .detailGrid {
+          display: grid;
+        }
+
+        .ncsAdvancedDashboard .businessWatchPanel {
+          order: 5;
+          padding: 18px;
+          border-radius: 22px;
+          min-width: 0;
+        }
+
+        .ncsAdvancedDashboard .businessWatchHeader {
+          align-items: flex-end;
+          gap: 14px;
+        }
+
+        .ncsAdvancedDashboard .businessWatchTabs {
+          display: flex;
+          gap: 6px;
+          padding: 5px;
+          border-radius: 14px;
+          background: #f1eefb;
+        }
+
+        .ncsAdvancedDashboard .businessWatchTabs button {
+          border: 0;
+          border-radius: 10px;
+          padding: 9px 12px;
+          background: transparent;
+          color: #6f668a;
+          font: inherit;
+          font-size: 12px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .ncsAdvancedDashboard .businessWatchTabs button.active {
+          color: #ffffff;
+          background: #633fe4;
+          box-shadow: 0 7px 16px rgba(99, 63, 228, 0.24);
+        }
+
+        .ncsAdvancedDashboard .businessWatchTabs b {
+          margin-left: 5px;
+        }
+
+        .ncsAdvancedDashboard .businessWatchList {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+          max-height: 255px;
+          overflow-y: auto;
+          margin-top: 14px;
+          padding-right: 3px;
         }
 
         .ncsAdvancedDashboard .detailGrid > .panel {
@@ -6411,6 +6546,23 @@ export default function AdminDashboardPage() {
           .ncsAdvancedDashboard .detailGrid,
           .ncsAdvancedDashboard .analyticsGrid,
           .ncsAdvancedDashboard .commerceGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .ncsAdvancedDashboard .businessWatchHeader {
+            align-items: stretch;
+            flex-direction: column;
+          }
+
+          .ncsAdvancedDashboard .businessWatchTabs {
+            overflow-x: auto;
+          }
+
+          .ncsAdvancedDashboard .businessWatchTabs button {
+            flex: 1 0 auto;
+          }
+
+          .ncsAdvancedDashboard .businessWatchList {
             grid-template-columns: 1fr;
           }
 
