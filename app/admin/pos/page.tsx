@@ -134,7 +134,35 @@ type PosProductGroup = {
   variants: PosProduct[];
 };
 
-type ProductViewMode = "smart" | "brands" | "all";
+type ProductViewMode = "smart" | "brands" | "products" | "all";
+
+function getPosProductFamily(group: PosProductGroup) {
+  const text = `${group.name} ${group.subcategory}`.toUpperCase().replace(/[^A-Z0-9]+/g, " ");
+  if (/\b(T SHIRT|TSHIRT|TEE|DROP SHOULDER|ROUND NECK|POLO)\b/.test(text)) return "T-Shirts";
+  if (/\bSHIRT\b/.test(text)) return "Shirts";
+  if (/\b(JEAN|JEANS|DENIM)\b/.test(text)) return "Jeans";
+  if (/\b(PANT|TROUSER|CHINO|FORMAL PANT)\b/.test(text)) return "Pants";
+  if (/\b(TRACK|JOGGER)\b/.test(text)) return "Track Pants";
+  if (/\b(SAREE|SARI)\b/.test(text)) return "Sarees";
+  if (/\b(KURTI|KURTA|CHUDIDAR|DRESS|FROCK)\b/.test(text)) return "Women Wear";
+  if (/\b(INNER|BRIEF|TRUNK|VEST|BANIYAN)\b/.test(text)) return "Innerwear";
+  if (/\b(SHORT|SHORTS)\b/.test(text)) return "Shorts";
+  return group.subcategory?.trim() || "Other Products";
+}
+
+function getPosProductStyle(group: PosProductGroup) {
+  const text = `${group.name} ${group.subcategory}`.toUpperCase().replace(/[^A-Z0-9]+/g, " ");
+  if (/\bROUND NECK\b/.test(text)) return "Round Neck";
+  if (/\b(POLO|COLLAR)\b/.test(text)) return "Collar";
+  if (/\bFULL SLEEVE\b/.test(text)) return "Full Sleeve";
+  if (/\bHALF SLEEVE\b/.test(text)) return "Half Sleeve";
+  if (/\bOVERSIZE|OVERSIZED\b/.test(text)) return "Oversized";
+  if (/\bDROP SHOULDER\b/.test(text)) return "Drop Shoulder";
+  if (/\bCHECK|CHECKED\b/.test(text)) return "Checks";
+  if (/\bPRINT|PRINTED\b/.test(text)) return "Printed";
+  if (/\bPLAIN|SOLID\b/.test(text)) return "Plain";
+  return group.subcategory?.trim() || "Other Styles";
+}
 
 type PosDesignChoice = {
   mappingId: number;
@@ -1483,6 +1511,10 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
     useState<ProductViewMode>("brands");
   const [expandedBrand, setExpandedBrand] =
     useState<string | null>(null);
+  const [expandedProductFamily, setExpandedProductFamily] =
+    useState<string | null>(null);
+  const [selectedProductStyle, setSelectedProductStyle] =
+    useState("All Styles");
   const [expandedProductId, setExpandedProductId] =
     useState<number | null>(null);
   const [recentProductKeys, setRecentProductKeys] =
@@ -1660,12 +1692,13 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
   }, []);
 
   useEffect(() => {
-    if (!expandedBrand) return;
+    if (!expandedBrand && !expandedProductFamily) return;
 
     const handleBrandModalKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         setExpandedProductId(null);
         setExpandedBrand(null);
+        setExpandedProductFamily(null);
       }
     };
 
@@ -1674,7 +1707,7 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
     return () => {
       window.removeEventListener("keydown", handleBrandModalKeyDown);
     };
-  }, [expandedBrand]);
+  }, [expandedBrand, expandedProductFamily]);
 
   const showNotice = useCallback(
     (
@@ -3356,6 +3389,30 @@ if (!variantsError) {
         ),
       }))
       .sort((a, b) => a.brand.localeCompare(b.brand));
+  }, [groupedProducts]);
+
+  const productFamilyGroups = useMemo(() => {
+    const familyMap = new Map<string, PosProductGroup[]>();
+
+    groupedProducts.forEach((group) => {
+      const family = getPosProductFamily(group);
+      const current = familyMap.get(family) || [];
+      current.push(group);
+      familyMap.set(family, current);
+    });
+
+    return Array.from(familyMap.entries())
+      .map(([family, groups]) => ({
+        family,
+        groups: groups.sort((a, b) => a.name.localeCompare(b.name)),
+        totalStock: groups.reduce((sum, group) => sum + group.totalStock, 0),
+        totalVariants: groups.reduce((sum, group) => sum + group.variants.length, 0),
+        styles: [
+          "All Styles",
+          ...Array.from(new Set(groups.map(getPosProductStyle))).sort((a, b) => a.localeCompare(b)),
+        ],
+      }))
+      .sort((a, b) => a.family.localeCompare(b.family));
   }, [groupedProducts]);
 
   const recentProductGroups = useMemo(() => {
@@ -8245,6 +8302,7 @@ if (!variantsError) {
                   setSelectedCategory(category);
                   setProductViewMode("brands");
                   setExpandedBrand(null);
+                  setExpandedProductFamily(null);
                   setExpandedProductId(null);
                 }}
               >
@@ -8274,21 +8332,41 @@ if (!variantsError) {
             <button
               type="button"
               className={productViewMode === "smart" ? "active" : ""}
-              onClick={() => setProductViewMode("smart")}
+              onClick={() => {
+                setProductViewMode("smart");
+                setExpandedProductFamily(null);
+              }}
             >
               ✨ Quick View
             </button>
             <button
               type="button"
               className={productViewMode === "brands" ? "active" : ""}
-              onClick={() => setProductViewMode("brands")}
+              onClick={() => {
+                setProductViewMode("brands");
+                setExpandedProductFamily(null);
+              }}
             >
               🏷 Brands First
             </button>
             <button
               type="button"
+              className={productViewMode === "products" ? "active" : ""}
+              onClick={() => {
+                setProductViewMode("products");
+                setExpandedBrand(null);
+                setExpandedProductId(null);
+              }}
+            >
+              👕 Products First
+            </button>
+            <button
+              type="button"
               className={productViewMode === "all" ? "active" : ""}
-              onClick={() => setProductViewMode("all")}
+              onClick={() => {
+                setProductViewMode("all");
+                setExpandedProductFamily(null);
+              }}
             >
               ▦ All Items
             </button>
@@ -8574,6 +8652,135 @@ if (!variantsError) {
                               >
                                 Back to Brands
                               </button>
+                            </footer>
+                          </section>
+                        </div>,
+                        document.body,
+                      );
+                    })()}
+                </>
+              )}
+
+              {productViewMode === "products" && (
+                <>
+                  <div className="ncsPosBrandCompactGrid ncsPosProductFamilyGrid">
+                    {productFamilyGroups.map((familyGroup) => (
+                      <button
+                        key={familyGroup.family}
+                        type="button"
+                        className="ncsPosBrandCompactCard ncsPosProductFamilyCard"
+                        onClick={() => {
+                          setExpandedProductId(null);
+                          setSelectedProductStyle("All Styles");
+                          setExpandedProductFamily(familyGroup.family);
+                        }}
+                      >
+                        <span className="ncsPosBrandCompactMark">👕</span>
+                        <div>
+                          <strong>{familyGroup.family}</strong>
+                          <small>
+                            {familyGroup.groups.length} products • {familyGroup.totalVariants} variants • {familyGroup.totalStock} stock
+                          </small>
+                        </div>
+                        <b>›</b>
+                      </button>
+                    ))}
+                  </div>
+
+                  {expandedProductFamily &&
+                    typeof document !== "undefined" &&
+                    (() => {
+                      const selectedFamily = productFamilyGroups.find(
+                        (familyGroup) => familyGroup.family === expandedProductFamily
+                      );
+
+                      if (!selectedFamily) return null;
+
+                      const visibleFamilyProducts = selectedProductStyle === "All Styles"
+                        ? selectedFamily.groups
+                        : selectedFamily.groups.filter(
+                            (group) => getPosProductStyle(group) === selectedProductStyle
+                          );
+
+                      return createPortal(
+                        <div
+                          className="ncsPosBrandModalBackdrop"
+                          role="presentation"
+                          onMouseDown={(event) => {
+                            if (event.target === event.currentTarget) {
+                              setExpandedProductId(null);
+                              setExpandedProductFamily(null);
+                            }
+                          }}
+                        >
+                          <section
+                            className={`ncsPosBrandModal ${visibleFamilyProducts.length > 8 ? "ncsPosBrandModalDense" : ""}`}
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label={`${selectedFamily.family} products`}
+                          >
+                            <header className="ncsPosBrandModalHeader">
+                              <div className="ncsPosBrandModalTitle">
+                                <span className="ncsPosBrandCompactMark">👕</span>
+                                <div>
+                                  <small>SELECT STYLE / PRODUCT / SIZE / COLOUR</small>
+                                  <h3>{selectedFamily.family}</h3>
+                                  <p>{selectedFamily.groups.length} products • {selectedFamily.totalVariants} variants • {selectedFamily.totalStock} stock</p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                className="ncsPosBrandModalClose"
+                                onClick={() => {
+                                  setExpandedProductId(null);
+                                  setExpandedProductFamily(null);
+                                }}
+                                aria-label="Close product window"
+                              >×</button>
+                            </header>
+
+                            <div className="ncsPosProductStyleTabs">
+                              {selectedFamily.styles.map((style) => (
+                                <button
+                                  key={style}
+                                  type="button"
+                                  className={selectedProductStyle === style ? "active" : ""}
+                                  onClick={() => {
+                                    setSelectedProductStyle(style);
+                                    setExpandedProductId(null);
+                                  }}
+                                >
+                                  {style}
+                                </button>
+                              ))}
+                            </div>
+
+                            <div className="ncsPosBrandModalBody">
+                              {visibleFamilyProducts.map((group) => (
+                                <GroupedProductCard
+                                  key={group.groupKey}
+                                  group={group}
+                                  expanded={expandedProductId === group.productId}
+                                  onToggle={() => setExpandedProductId(
+                                    expandedProductId === group.productId ? null : group.productId
+                                  )}
+                                  onAddVariant={(product) => {
+                                    const accepted = addPhysicalPieceWithTagMrp(product);
+                                    if (accepted && !designChoicesByVariant[String(product.variantId)]?.length) {
+                                      setExpandedProductId(null);
+                                      setExpandedProductFamily(null);
+                                    }
+                                  }}
+                                />
+                              ))}
+                            </div>
+
+                            <footer className="ncsPosBrandModalFooter">
+                              <span>Product → exact size/colour → existing design/MRP flow → active bill.</span>
+                              <button type="button" onClick={() => {
+                                setExpandedProductId(null);
+                                setExpandedProductFamily(null);
+                              }}>Back to Products</button>
                             </footer>
                           </section>
                         </div>,
@@ -18767,6 +18974,40 @@ if (!variantsError) {
           border:1px solid rgba(10,46,115,.10) !important;
           box-shadow:0 -8px 24px rgba(20,42,85,.10),0 10px 25px rgba(20,42,85,.08) !important;
           backdrop-filter:blur(10px);
+        }
+
+        .ncsPosProductFamilyCard .ncsPosBrandCompactMark {
+          font-size:18px;
+        }
+
+        .ncsPosProductStyleTabs {
+          display:flex;
+          gap:8px;
+          padding:10px 14px;
+          overflow-x:auto;
+          border-bottom:1px solid rgba(11,45,105,.10);
+          background:linear-gradient(90deg,#fffdf5,#f5fbff);
+        }
+
+        .ncsPosProductStyleTabs button {
+          flex:0 0 auto;
+          border:1px solid rgba(70,60,180,.16);
+          border-radius:999px;
+          padding:8px 13px;
+          background:#fff;
+          color:#24376c;
+          font:inherit;
+          font-size:10px;
+          font-weight:900;
+          cursor:pointer;
+        }
+
+        .ncsPosProductStyleTabs button:hover,
+        .ncsPosProductStyleTabs button.active {
+          border-color:#6d4dff;
+          background:linear-gradient(135deg,#6d4dff,#168fd4);
+          color:#fff;
+          box-shadow:0 7px 18px rgba(88,65,220,.22);
         }
 
         @media(max-width:760px) {
