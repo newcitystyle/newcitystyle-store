@@ -766,6 +766,83 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
 
+  useEffect(() => {
+    const manifestLinks = Array.from(
+      document.querySelectorAll<HTMLLinkElement>('link[rel="manifest"]'),
+    );
+
+    manifestLinks.forEach((link) => {
+      if (!link.dataset.ncsPreviousManifestHref) {
+        link.dataset.ncsPreviousManifestHref =
+          link.getAttribute("href") || "";
+      }
+
+      link.setAttribute(
+        "href",
+        "/admin-manifest.webmanifest",
+      );
+    });
+
+    let adminManifestLink: HTMLLinkElement | null = null;
+
+    if (manifestLinks.length === 0) {
+      adminManifestLink = document.createElement("link");
+      adminManifestLink.rel = "manifest";
+      adminManifestLink.href = "/admin-manifest.webmanifest";
+      adminManifestLink.dataset.ncsAdminManifest = "true";
+      document.head.appendChild(adminManifestLink);
+    }
+
+    const themeMeta =
+      document.querySelector<HTMLMetaElement>(
+        'meta[name="theme-color"]',
+      );
+
+    const previousThemeColor =
+      themeMeta?.getAttribute("content") || "";
+
+    let createdThemeMeta: HTMLMetaElement | null = null;
+
+    if (themeMeta) {
+      themeMeta.setAttribute("content", "#0A2E73");
+    } else {
+      createdThemeMeta = document.createElement("meta");
+      createdThemeMeta.name = "theme-color";
+      createdThemeMeta.content = "#0A2E73";
+      document.head.appendChild(createdThemeMeta);
+    }
+
+    return () => {
+      manifestLinks.forEach((link) => {
+        const previousHref =
+          link.dataset.ncsPreviousManifestHref;
+
+        if (previousHref !== undefined) {
+          if (previousHref) {
+            link.setAttribute("href", previousHref);
+          } else {
+            link.removeAttribute("href");
+          }
+
+          delete link.dataset.ncsPreviousManifestHref;
+        }
+      });
+
+      adminManifestLink?.remove();
+
+      if (themeMeta) {
+        if (previousThemeColor) {
+          themeMeta.setAttribute(
+            "content",
+            previousThemeColor,
+          );
+        }
+      }
+
+      createdThemeMeta?.remove();
+    };
+  }, []);
+
   const [checkingAccess, setCheckingAccess] = useState(true);
   const [hasAdminAccess, setHasAdminAccess] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
