@@ -43,6 +43,8 @@ type CustomerForm = {
   marketingTags: string;
 };
 
+const CUSTOMER_FETCH_BATCH = 100;
+
 const emptyForm: CustomerForm = {
   fullName: "",
   email: "",
@@ -64,6 +66,8 @@ export default function CustomersPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [customerLoadStatus, setCustomerLoadStatus] =
+    useState("Waiting for complete cloud customer sync...");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -88,21 +92,95 @@ export default function CustomersPage() {
 
   async function loadCustomers() {
     setLoading(true);
+    setCustomerLoadStatus("Checking complete cloud customer directory...");
 
-    const { data, error } = await supabase
-      .from("customers")
-      .select("*")
-      .order("created_at", { ascending: false });
+    try {
+      let expectedCount: number | null = null;
 
-    if (error) {
-      console.error(error);
-      alert(`Unable to load customers: ${error.message}`);
+      const { count, error: countError } = await supabase
+        .from("customers")
+        .select("id", {
+          count: "exact",
+          head: true,
+        });
+
+      if (!countError && typeof count === "number") {
+        expectedCount = count;
+        setCustomerLoadStatus(
+          `Cloud reports ${count.toLocaleString("en-IN")} customer row(s) • loading...`
+        );
+      }
+
+      const loaded: Customer[] = [];
+      let from = 0;
+      let batchNumber = 0;
+
+      while (true) {
+        const to = from + CUSTOMER_FETCH_BATCH - 1;
+
+        const { data, error } = await supabase
+          .from("customers")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, to);
+
+        if (error) {
+          throw error;
+        }
+
+        const batch = (data as Customer[]) || [];
+
+        loaded.push(...batch);
+        batchNumber += 1;
+
+        const progressText =
+          expectedCount !== null
+            ? `${loaded.length.toLocaleString("en-IN")} / ${expectedCount.toLocaleString("en-IN")} customer row(s) loaded`
+            : `${loaded.length.toLocaleString("en-IN")} customer row(s) loaded`;
+
+        setCustomerLoadStatus(
+          `${progressText} • cloud batch ${batchNumber}`
+        );
+
+        if (batch.length < CUSTOMER_FETCH_BATCH) {
+          break;
+        }
+
+        from += CUSTOMER_FETCH_BATCH;
+      }
+
+      const uniqueCustomers = Array.from(
+        new Map(
+          loaded.map((customer) => [customer.id, customer])
+        ).values()
+      );
+
+      setCustomers(uniqueCustomers);
+
+      const completeness =
+        expectedCount === null
+          ? `${uniqueCustomers.length.toLocaleString("en-IN")} customer row(s) loaded`
+          : uniqueCustomers.length === expectedCount
+            ? `${uniqueCustomers.length.toLocaleString("en-IN")} / ${expectedCount.toLocaleString("en-IN")} loaded • COMPLETE`
+            : `${uniqueCustomers.length.toLocaleString("en-IN")} / ${expectedCount.toLocaleString("en-IN")} loaded • CHECK SYNC`;
+
+      setCustomerLoadStatus(
+        `${completeness} • ${batchNumber} cloud batch(es)`
+      );
+    } catch (error) {
+      console.error("Unable to load complete customer directory:", error);
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unknown customer loading error.";
+
+      setCustomerLoadStatus(`Cloud customer load failed • ${message}`);
+      alert(`Unable to load customers: ${message}`);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setCustomers((data as Customer[]) || []);
-    setLoading(false);
   }
 
   function resetForm() {
@@ -1193,6 +1271,22 @@ export default function CustomersPage() {
                   }}
                 >
                   {filteredCustomers.length} customers found
+                  <span
+                    style={{
+                      display: "block",
+                      marginTop: "4px",
+                      color: customerLoadStatus.includes("COMPLETE")
+                        ? "#166534"
+                        : customerLoadStatus.includes("failed") ||
+                            customerLoadStatus.includes("CHECK")
+                          ? "#B45309"
+                          : "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 800,
+                    }}
+                  >
+                    {customerLoadStatus}
+                  </span>
                 </p>
               </div>
 
