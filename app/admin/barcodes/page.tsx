@@ -159,6 +159,72 @@ function formatLabelPrice(value: number) {
     : safeValue.toFixed(2);
 }
 
+
+function getLabelProductType(item: Pick<BarcodeItem, "name" | "category">) {
+  const source = normalize(`${item.category} ${item.name}`);
+
+  if (/\b(t[\s-]?shirt|tee)\b/.test(source)) return "T-SHIRT";
+  if (/\b(saree|sari)\b/.test(source)) return "SAREE";
+  if (/\b(dhoti|dothi|panche|veshti|lungi)\b/.test(source)) return "DHOTI";
+  if (/\b(shirt)\b/.test(source)) return "SHIRT";
+  if (/\b(jeans?|denim)\b/.test(source)) return "JEANS";
+  if (/\b(pants?|trousers?)\b/.test(source)) return "PANT";
+  if (/\b(kurta|kurti)\b/.test(source)) return "KURTA";
+  if (/\b(frock|dress|gown)\b/.test(source)) return "DRESS";
+  if (/\b(top|tops)\b/.test(source)) return "TOP";
+  if (/\b(kids?|boys?|girls?|baby)\b/.test(source)) return "KIDS";
+
+  const cleanCategory = item.category?.trim();
+  if (cleanCategory && normalize(cleanCategory) !== "others") {
+    return cleanCategory.toUpperCase().slice(0, 18);
+  }
+
+  return item.name.trim().toUpperCase().slice(0, 18) || "NCS STYLE";
+}
+
+function getLabelSubtitle(productType: string) {
+  const subtitles: Record<string, string> = {
+    "T-SHIRT": "EVERYDAY COMFORT",
+    SAREE: "TIMELESS ELEGANCE",
+    DHOTI: "TRADITIONAL EDITION",
+    SHIRT: "PREMIUM COLLECTION",
+    JEANS: "MODERN DENIM",
+    PANT: "MODERN FIT",
+    KURTA: "HERITAGE EDIT",
+    DRESS: "STYLE EDIT",
+    TOP: "STYLE EDIT",
+    KIDS: "LITTLE STYLE",
+  };
+
+  return subtitles[productType] || "NEW CITY STYLE EDIT";
+}
+
+function buildLabelCategoryIcon(productType: string) {
+  const common = 'fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"';
+
+  if (productType === "SHIRT" || productType === "T-SHIRT") {
+    return `<svg viewBox="0 0 48 48" aria-hidden="true"><path ${common} d="M9 14 17 8l7 5 7-5 8 6-5 8-4-3v20H18V19l-4 3-5-8Z"/></svg>`;
+  }
+
+  if (productType === "SAREE") {
+    return `<svg viewBox="0 0 48 48" aria-hidden="true"><path ${common} d="M21 6h7l10 36H10L21 6Z"/><path ${common} d="m24 8 9 31M27 8 15 40"/></svg>`;
+  }
+
+  if (productType === "DHOTI") {
+    return `<svg viewBox="0 0 48 48" aria-hidden="true"><path ${common} d="M12 8h24l-4 33-8-12-8 12-4-33Z"/><path ${common} d="M14 17h20"/></svg>`;
+  }
+
+  if (productType === "JEANS" || productType === "PANT") {
+    return `<svg viewBox="0 0 48 48" aria-hidden="true"><path ${common} d="M15 7h18l2 35H27l-3-19-3 19h-8l2-35Z"/><path ${common} d="M15 14h18"/></svg>`;
+  }
+
+  if (productType === "DRESS" || productType === "TOP" || productType === "KURTA") {
+    return `<svg viewBox="0 0 48 48" aria-hidden="true"><path ${common} d="M18 7h12l3 9 7 5-5 7-4-3v17H17V25l-4 3-5-7 7-5 3-9Z"/></svg>`;
+  }
+
+  return `<svg viewBox="0 0 48 48" aria-hidden="true"><path ${common} d="M8 14h32v25H8z"/><path ${common} d="M17 14a7 7 0 0 1 14 0"/><path ${common} d="M17 24h14M17 30h10"/></svg>`;
+}
+
 export default function BarcodesPage() {
   const router = useRouter();
   const previewSvgRef = useRef<SVGSVGElement | null>(null);
@@ -179,10 +245,11 @@ export default function BarcodesPage() {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
 
   const [previewItem, setPreviewItem] = useState<BarcodeItem | null>(null);
-  const [labelSize, setLabelSize] = useState("tsc-te244-2up");
+  const [labelSize, setLabelSize] = useState("tsc-te244-2up-2x2");
   const [showMrp, setShowMrp] = useState(true);
   const [copies, setCopies] = useState(1);
   const [discountByKey, setDiscountByKey] = useState<Record<string, number>>({});
+  const [brandByKey, setBrandByKey] = useState<Record<string, string>>({});
 
   const loadItems = useCallback(async (showRefresh = false) => {
     if (showRefresh) {
@@ -796,6 +863,17 @@ export default function BarcodesPage() {
     }));
   }
 
+  function getPrintBrand(item: BarcodeItem) {
+    return brandByKey[item.key]?.trim() || "NCS SELECT";
+  }
+
+  function setPrintBrand(itemKey: string, value: string) {
+    setBrandByKey((current) => ({
+      ...current,
+      [itemKey]: value.slice(0, 28),
+    }));
+  }
+
   function getOfferPrice(item: BarcodeItem) {
     const discountPercent = getManualDiscount(item);
 
@@ -828,6 +906,15 @@ export default function BarcodesPage() {
         gap: number;
       }
     > = {
+      "tsc-te244-2up-2x2": {
+        // NEW premium roll: two exact 2 x 2 inch labels across.
+        // Each label = 50.8 x 50.8 mm; total row = 101.6 x 50.8 mm.
+        pageWidth: 101.6,
+        pageHeight: 50.8,
+        labelWidth: 50.8,
+        columns: 2,
+        gap: 0,
+      },
       "38x25": {
         pageWidth: 38,
         pageHeight: 25,
@@ -857,8 +944,7 @@ export default function BarcodesPage() {
         gap: 0,
       },
       "tsc-te244-2up": {
-        // Exact 2 inch × 1 inch labels, two labels across.
-        // 2 in = 50.8 mm, 1 in = 25.4 mm.
+        // OLD working roll preserved: two 2 x 1 inch labels across.
         pageWidth: 101.6,
         pageHeight: 25.4,
         labelWidth: 50.8,
@@ -868,21 +954,14 @@ export default function BarcodesPage() {
     };
 
     const selectedSize =
-      labelSizes[labelSize] || labelSizes["tsc-te244-2up"];
+      labelSizes[labelSize] || labelSizes["tsc-te244-2up-2x2"];
+    const isAdvanced2x2 = labelSize === "tsc-te244-2up-2x2";
 
     const safeCopies = Math.max(
       1,
       Math.min(500, Math.floor(copyCount || 1)),
     );
 
-    /*
-     * Build the exact physical label queue first.
-     * Example:
-     * 2 selected rows × 1 copy = 2 physical labels.
-     * 3 selected rows × 2 copies = 6 physical labels.
-     *
-     * Keeping a flat queue avoids browser/React selection-order surprises.
-     */
     const physicalLabels: string[] = [];
 
     printableItems.forEach((item) => {
@@ -895,8 +974,82 @@ export default function BarcodesPage() {
         const discountPercent = getManualDiscount(item);
         const offerPrice = getOfferPrice(item);
 
+        if (isAdvanced2x2) {
+          const productType = getLabelProductType(item);
+          const subtitle = getLabelSubtitle(productType);
+          const brand = getPrintBrand(item);
+          const color = item.color.trim() || "STANDARD";
+          const size = item.size.trim() || "FREE";
+          const discountLabel =
+            discountPercent > 0 ? `${formatLabelPrice(discountPercent)}% OFF` : "BEST PRICE";
+          const categoryIcon = buildLabelCategoryIcon(productType);
+
+          physicalLabels.push(`
+            <div class="label advancedLabel">
+              <header class="advHeader">
+                <div class="advNcs">NCS</div>
+                <div class="advHeaderDivider"></div>
+                <div class="advBrandTitle">
+                  <strong>NEW CITY STYLE</strong>
+                  <span>FASHION FOR A BETTER YOU</span>
+                </div>
+              </header>
+
+              <section class="advProductBlock">
+                <div class="advCategoryIcon">${categoryIcon}</div>
+                <div class="advProductCopy">
+                  <strong class="advProductType">${escapeHtml(productType)}</strong>
+                  <span class="advProductName" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span>
+                  <span class="advSubtitle">${escapeHtml(subtitle)}</span>
+                </div>
+              </section>
+
+              <section class="advIdentityRow">
+                <div class="advInfoPill">
+                  <span>BRAND</span>
+                  <strong>${escapeHtml(brand)}</strong>
+                </div>
+                <div class="advInfoPill">
+                  <span>COLOR</span>
+                  <strong>${escapeHtml(color)}</strong>
+                </div>
+              </section>
+
+              <section class="advMetricRow">
+                <div class="advMetric">
+                  <span>SIZE</span>
+                  <strong>${escapeHtml(size)}</strong>
+                </div>
+                <div class="advMetric">
+                  <span>MRP</span>
+                  <strong>${showMrp && item.mrp > 0 ? `Rs.${formatLabelPrice(item.mrp)}` : "—"}</strong>
+                </div>
+              </section>
+
+              <section class="advOfferBar">
+                <b class="advDiscount">${escapeHtml(discountLabel)}</b>
+                <span class="advOfferText">OFFER PRICE</span>
+                <i></i>
+                <strong class="advOfferPrice">Rs.${formatLabelPrice(offerPrice)}</strong>
+              </section>
+
+              <section class="advBarcodeWrap">
+                <div class="advBarcode">${svg}</div>
+                <strong class="advBarcodeNo">${escapeHtml(item.barcode)}</strong>
+              </section>
+
+              <footer class="advFooter">
+                <strong>SARUBUJJILI</strong>
+                <strong>newcitystyle.store</strong>
+              </footer>
+            </div>
+          `);
+          continue;
+        }
+
+        // Every legacy label profile keeps the previous compact working layout.
         physicalLabels.push(`
-          <div class="label">
+          <div class="label compactLabel">
             <aside class="brandRail">
               <div class="brandLetters"><b>N</b><b>C</b><b>S</b></div>
               <div class="hanger"><i></i></div>
@@ -959,7 +1112,7 @@ export default function BarcodesPage() {
     const printWindow = window.open(
       "",
       "_blank",
-      "width=900,height=760",
+      "width=980,height=820",
     );
 
     if (!printWindow) {
@@ -983,16 +1136,14 @@ export default function BarcodesPage() {
               margin: 0;
             }
 
-            * {
-              box-sizing: border-box;
-            }
+            * { box-sizing: border-box; }
 
             html,
             body {
               margin: 0 !important;
               padding: 0 !important;
               width: ${selectedSize.pageWidth}mm;
-              background: #ffffff;
+              background: #fff;
               font-family: Arial, Helvetica, sans-serif;
             }
 
@@ -1000,10 +1151,7 @@ export default function BarcodesPage() {
               width: ${selectedSize.pageWidth}mm;
               height: ${selectedSize.pageHeight}mm;
               display: grid;
-              grid-template-columns: repeat(
-                ${selectedSize.columns},
-                ${selectedSize.labelWidth}mm
-              );
+              grid-template-columns: repeat(${selectedSize.columns}, ${selectedSize.labelWidth}mm);
               grid-template-rows: ${selectedSize.pageHeight}mm;
               column-gap: ${selectedSize.gap}mm;
               row-gap: 0;
@@ -1028,11 +1176,7 @@ export default function BarcodesPage() {
               max-width: ${selectedSize.labelWidth}mm;
               min-height: ${selectedSize.pageHeight}mm;
               max-height: ${selectedSize.pageHeight}mm;
-              display: grid;
-              grid-template-columns: 7.2mm minmax(0, 1fr);
-              column-gap: 1mm;
               margin: 0;
-              padding: 1.05mm 1.05mm 1.05mm 1.25mm;
               overflow: hidden;
               break-inside: avoid;
               page-break-inside: avoid;
@@ -1040,8 +1184,368 @@ export default function BarcodesPage() {
               print-color-adjust: exact;
             }
 
-            .emptyLabel {
-              visibility: hidden;
+            .emptyLabel { visibility: hidden; }
+
+            /* ---------------- NEW 2 x 2 PREMIUM LABEL ---------------- */
+            /*
+             * PRINT-FIT FIX:
+             * Every fixed row plus every gap is kept below the physical
+             * 50.8 mm label height. This prevents Chrome/TSC preview clipping.
+             */
+            .advancedLabel {
+              position: relative;
+              display: grid;
+              grid-template-rows: 8.2mm 9.8mm 5.7mm 5.7mm 5.9mm 8.4mm 2.1mm;
+              row-gap: .35mm;
+              padding: .9mm 1mm;
+              color: #000;
+              background: #fff;
+            }
+
+            /*
+             * PREMIUM 2 x 2 FRAME:
+             * visual-only inset border, so the proven print-fit rows/spacing stay unchanged.
+             * The frame sits safely inside the physical cut edge and does not touch
+             * the barcode quiet zone or footer text.
+             */
+            .advancedLabel::after {
+              content: "";
+              position: absolute;
+              inset: .55mm;
+              z-index: 20;
+              border: .18mm solid #000;
+              border-radius: 1.65mm;
+              pointer-events: none;
+            }
+
+            .advHeader {
+              min-width: 0;
+              display: grid;
+              grid-template-columns: 9.2mm .35mm minmax(0, 1fr);
+              align-items: center;
+              column-gap: 1.2mm;
+              padding: .65mm 1mm;
+              border-radius: 1.35mm;
+              background: #000;
+              color: #fff;
+              overflow: hidden;
+            }
+
+            .advNcs {
+              height: 6.2mm;
+              display: grid;
+              place-items: center;
+              border-radius: .95mm;
+              background: #fff;
+              color: #000;
+              font-size: 8.6pt;
+              font-weight: 950;
+              line-height: 1;
+            }
+
+            .advHeaderDivider {
+              width: .35mm;
+              height: 6mm;
+              background: #fff;
+              opacity: .9;
+            }
+
+            .advBrandTitle {
+              min-width: 0;
+              display: grid;
+              align-content: center;
+              row-gap: .45mm;
+            }
+
+            .advBrandTitle strong {
+              overflow: hidden;
+              color: #fff;
+              font-size: 7.9pt;
+              font-weight: 950;
+              line-height: 1;
+              letter-spacing: .04mm;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .advBrandTitle span {
+              overflow: hidden;
+              color: #fff;
+              font-size: 3pt;
+              font-weight: 800;
+              line-height: 1;
+              letter-spacing: .03mm;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .advProductBlock {
+              min-width: 0;
+              display: grid;
+              grid-template-columns: 7.5mm minmax(0, 1fr);
+              align-items: center;
+              column-gap: 1.35mm;
+              overflow: hidden;
+            }
+
+            .advCategoryIcon {
+              width: 7.5mm;
+              height: 7.5mm;
+              display: grid;
+              place-items: center;
+              overflow: hidden;
+            }
+
+            .advCategoryIcon svg {
+              width: 7.1mm;
+              height: 7.1mm;
+              display: block;
+            }
+
+            .advProductCopy {
+              min-width: 0;
+              height: 100%;
+              display: grid;
+              grid-template-rows: 3.2mm minmax(4mm, 1fr) 1.45mm;
+              row-gap: .15mm;
+              align-content: center;
+              padding: .1mm 0 .25mm;
+              border-bottom: .22mm solid #000;
+              overflow: hidden;
+            }
+
+            .advProductType {
+              min-width: 0;
+              overflow: hidden;
+              font-size: 9.3pt;
+              font-weight: 950;
+              line-height: 1;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            /* Actual product name now owns a dedicated, larger row. */
+            .advProductName {
+              min-width: 0;
+              max-height: 4mm;
+              display: -webkit-box;
+              overflow: hidden;
+              color: #000;
+              font-size: 5.1pt;
+              font-weight: 950;
+              line-height: 1.02;
+              -webkit-box-orient: vertical;
+              -webkit-line-clamp: 2;
+              text-overflow: ellipsis;
+              white-space: normal;
+              overflow-wrap: anywhere;
+            }
+
+            .advSubtitle {
+              min-width: 0;
+              overflow: hidden;
+              color: #555;
+              font-size: 2.85pt;
+              font-weight: 850;
+              line-height: 1;
+              letter-spacing: .04mm;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .advIdentityRow,
+            .advMetricRow {
+              min-width: 0;
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              column-gap: 1.15mm;
+            }
+
+            .advInfoPill {
+              min-width: 0;
+              display: grid;
+              grid-template-columns: auto minmax(0, 1fr);
+              align-items: center;
+              gap: .65mm;
+              padding: .45mm .8mm;
+              border: .24mm solid #000;
+              border-radius: 1.05mm;
+              overflow: hidden;
+            }
+
+            .advInfoPill span {
+              color: #000;
+              font-size: 2.75pt;
+              font-weight: 950;
+              line-height: 1;
+            }
+
+            .advInfoPill strong {
+              min-width: 0;
+              overflow: hidden;
+              color: #000;
+              font-size: 4.8pt;
+              font-weight: 950;
+              line-height: 1;
+              text-align: right;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .advMetric {
+              min-width: 0;
+              display: grid;
+              place-items: center;
+              align-content: center;
+              row-gap: .25mm;
+              border-radius: 1.05mm;
+              background: #efefef;
+              overflow: hidden;
+            }
+
+            .advMetric span {
+              font-size: 3.05pt;
+              font-weight: 950;
+              line-height: 1;
+            }
+
+            .advMetric strong {
+              max-width: 100%;
+              overflow: hidden;
+              padding: 0 .55mm;
+              font-size: 8pt;
+              font-weight: 950;
+              line-height: 1;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .advOfferBar {
+              min-width: 0;
+              display: grid;
+              grid-template-columns: 11.5mm 12.8mm .3mm minmax(18mm, 1fr);
+              align-items: center;
+              column-gap: .75mm;
+              padding: .55mm .8mm;
+              border-radius: 1.1mm;
+              background: #000;
+              color: #fff;
+              overflow: hidden;
+            }
+
+            .advDiscount {
+              height: 4.25mm;
+              display: grid;
+              place-items: center;
+              overflow: hidden;
+              border-radius: .8mm;
+              background: #fff;
+              color: #000;
+              font-size: 4.55pt;
+              font-weight: 950;
+              line-height: 1;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .advOfferText {
+              overflow: hidden;
+              font-size: 4.6pt;
+              font-weight: 950;
+              line-height: 1;
+              text-align: center;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .advOfferBar > i {
+              width: .28mm;
+              height: 4.3mm;
+              background: #fff;
+            }
+
+            /* Never ellipsize the actual selling price. */
+            .advOfferPrice {
+              min-width: 18mm;
+              overflow: visible;
+              font-size: 8.7pt;
+              font-weight: 950;
+              line-height: 1;
+              letter-spacing: -.03mm;
+              text-align: right;
+              white-space: nowrap;
+            }
+
+            .advBarcodeWrap {
+              min-height: 0;
+              display: grid;
+              grid-template-rows: 6mm 2mm;
+              row-gap: .15mm;
+              align-items: stretch;
+              padding: .05mm 2.1mm 0;
+              overflow: hidden;
+            }
+
+            .advBarcode {
+              min-height: 0;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              overflow: hidden;
+            }
+
+            .advBarcode svg {
+              width: 37.8mm;
+              max-width: 37.8mm;
+              height: 5.7mm;
+              display: block;
+              overflow: visible;
+              shape-rendering: crispEdges;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            .advBarcodeNo {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 0;
+              overflow: hidden;
+              color: #000;
+              font-size: 5.25pt;
+              font-weight: 950;
+              line-height: 1;
+              letter-spacing: .07mm;
+              text-align: center;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .advFooter {
+              min-width: 0;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 1.5mm;
+              overflow: hidden;
+            }
+
+            .advFooter strong {
+              overflow: hidden;
+              color: #000;
+              font-size: 3.35pt;
+              font-weight: 950;
+              line-height: 1;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            /* ---------------- OLD COMPACT LABELS PRESERVED ---------------- */
+            .compactLabel {
+              display: grid;
+              grid-template-columns: 7.2mm minmax(0, 1fr);
+              column-gap: 1mm;
+              padding: 1.05mm 1.05mm 1.05mm 1.25mm;
             }
 
             .brandRail {
@@ -1062,7 +1566,7 @@ export default function BarcodesPage() {
               display: flex;
               flex-direction: column;
               align-items: center;
-              gap: 0.55mm;
+              gap: .55mm;
               font-size: 8.8pt;
               font-weight: 950;
               line-height: 1;
@@ -1072,28 +1576,28 @@ export default function BarcodesPage() {
               position: relative;
               width: 4.8mm;
               height: 4.9mm;
-              border-top: 0.45mm solid #fff;
+              border-top: .45mm solid #fff;
             }
 
             .hanger::before {
               content: "";
               position: absolute;
               left: 2mm;
-              top: 0.6mm;
-              width: 0.9mm;
-              height: 0.9mm;
-              border: 0.35mm solid #fff;
+              top: .6mm;
+              width: .9mm;
+              height: .9mm;
+              border: .35mm solid #fff;
               border-radius: 50%;
             }
 
             .hanger i {
               position: absolute;
-              left: 0.65mm;
-              bottom: 0.1mm;
+              left: .65mm;
+              bottom: .1mm;
               width: 3.5mm;
               height: 2.2mm;
-              border-right: 0.4mm solid #fff;
-              border-bottom: 0.4mm solid #fff;
+              border-right: .4mm solid #fff;
+              border-bottom: .4mm solid #fff;
               transform: rotate(45deg);
             }
 
@@ -1102,7 +1606,7 @@ export default function BarcodesPage() {
               height: 100%;
               display: grid;
               grid-template-rows: 4.5mm 5.9mm minmax(0, 1fr);
-              row-gap: 0.45mm;
+              row-gap: .45mm;
             }
 
             .labelHeader {
@@ -1110,7 +1614,7 @@ export default function BarcodesPage() {
               display: grid;
               grid-template-columns: minmax(0, 1fr) auto;
               align-items: center;
-              gap: 0.7mm;
+              gap: .7mm;
             }
 
             .store {
@@ -1140,7 +1644,7 @@ export default function BarcodesPage() {
               display: grid;
               grid-template-columns: minmax(0, 1fr) auto;
               align-items: center;
-              gap: 0.65mm;
+              gap: .65mm;
             }
 
             .productInfo {
@@ -1161,7 +1665,7 @@ export default function BarcodesPage() {
 
             .variant {
               width: 100%;
-              margin: 0.8mm 0 0;
+              margin: .8mm 0 0;
               overflow: hidden;
               font-size: 5.5pt;
               font-weight: 900;
@@ -1180,7 +1684,7 @@ export default function BarcodesPage() {
             }
 
             .offerBlock span {
-              margin-bottom: 0.45mm;
+              margin-bottom: .45mm;
               font-size: 4.9pt;
               font-weight: 950;
             }
@@ -1188,7 +1692,7 @@ export default function BarcodesPage() {
             .offerBlock strong {
               font-size: 8.4pt;
               font-weight: 950;
-              line-height: 0.9;
+              line-height: .9;
             }
 
             .barcodeFrame {
@@ -1197,8 +1701,8 @@ export default function BarcodesPage() {
               display: grid;
               grid-template-rows: minmax(0, 1fr) 3.3mm;
               align-items: stretch;
-              padding: 0.3mm 0.6mm 0.15mm;
-              border: 0.32mm solid #000;
+              padding: .3mm .6mm .15mm;
+              border: .32mm solid #000;
               border-radius: 1.2mm;
               overflow: hidden;
             }
@@ -1224,15 +1728,6 @@ export default function BarcodesPage() {
               print-color-adjust: exact;
             }
 
-            .barcode svg text {
-              fill: #000000 !important;
-              font-family: Arial, Helvetica, sans-serif !important;
-              font-size: 11px !important;
-              font-weight: 900 !important;
-              letter-spacing: 0.1px;
-              opacity: 1 !important;
-            }
-
             .barcodeNo {
               width: calc(100% - 1.6mm);
               height: 3mm;
@@ -1240,20 +1735,19 @@ export default function BarcodesPage() {
               display: flex;
               align-items: center;
               justify-content: center;
-              border-radius: 0.65mm;
-              background: #eeeeee;
-              color: #000000;
-              font-family: Arial, Helvetica, sans-serif;
+              border-radius: .65mm;
+              background: #eee;
+              color: #000;
               font-size: 7pt;
               font-weight: 950;
               line-height: 1;
-              letter-spacing: 0.35mm;
+              letter-spacing: .35mm;
               white-space: nowrap;
             }
 
             @media screen {
               body::before {
-                content: "${totalPhysicalLabels} label(s) ready • ${selectedSize.columns}-up layout";
+                content: "${totalPhysicalLabels} label(s) ready • ${selectedSize.columns}-up • ${isAdvanced2x2 ? "2 x 2 PREMIUM" : "LEGACY SIZE"}";
                 display: block;
                 padding: 8px 10px;
                 background: #0A2E73;
@@ -1261,9 +1755,7 @@ export default function BarcodesPage() {
                 font: 700 12px Arial, sans-serif;
               }
 
-              .printPage {
-                outline: 1px dashed #bbbbbb;
-              }
+              .printPage { outline: 1px dashed #bbb; }
             }
 
             @media print {
@@ -1552,8 +2044,11 @@ export default function BarcodesPage() {
               value={labelSize}
               onChange={(event) => setLabelSize(event.target.value)}
             >
+              <option value="tsc-te244-2up-2x2">
+                TSC TE244 — NEW 2 × 2 in (2 Labels / 50.8 × 50.8 mm)
+              </option>
               <option value="tsc-te244-2up">
-                TSC TE244 — 2 Labels (50.8 × 25.4 mm)
+                TSC TE244 — OLD 2 × 1 in (2 Labels / 50.8 × 25.4 mm)
               </option>
               <option value="38x25">38 × 25 mm — Single</option>
               <option value="50x25">50 × 25 mm — Single</option>
@@ -1738,6 +2233,21 @@ export default function BarcodesPage() {
                           </small>
                         )}
                       </p>
+
+                      <p className="brandInputRow">
+                        <span>Print Brand</span>
+                        <input
+                          type="text"
+                          maxLength={28}
+                          value={getPrintBrand(item)}
+                          onChange={(event) =>
+                            setPrintBrand(item.key, event.target.value)
+                          }
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label={`Print brand for ${item.name}`}
+                        />
+                        <small>Sticker only • product DB unchanged</small>
+                      </p>
                     </div>
 
                     <div className="batchActions">
@@ -1824,6 +2334,19 @@ export default function BarcodesPage() {
             </div>
 
             <strong>{previewItem.barcode}</strong>
+
+            <label className="previewCopies">
+              <span>Brand (print only)</span>
+              <input
+                type="text"
+                maxLength={28}
+                value={getPrintBrand(previewItem)}
+                onChange={(event) =>
+                  setPrintBrand(previewItem.key, event.target.value)
+                }
+              />
+              <small>Color: {previewItem.color || "STANDARD"}</small>
+            </label>
 
             <label className="previewCopies">
               <span>Discount % (print only)</span>
@@ -2457,6 +2980,36 @@ export default function BarcodesPage() {
           margin-top: 3px;
           color: ${ROYAL_BLUE};
           font-size: 10px;
+        }
+
+        .brandInputRow input {
+          width: 100%;
+          min-height: 30px;
+          margin-top: 4px;
+          padding: 4px 7px;
+          border: 1px solid rgba(10,46,115,.18);
+          border-radius: 8px;
+          background: #ffffff;
+          color: #03153F;
+          font: inherit;
+          font-size: 9px;
+          font-weight: 900;
+          text-align: center;
+          outline: none;
+          text-transform: uppercase;
+        }
+
+        .brandInputRow input:focus {
+          border-color: #D4AF37;
+          box-shadow: 0 0 0 3px rgba(212,175,55,.14);
+        }
+
+        .brandInputRow small {
+          display: block;
+          margin-top: 3px;
+          color: #667085;
+          font-size: 7px;
+          font-weight: 800;
         }
 
         .discountInputRow input {

@@ -1442,9 +1442,63 @@ export default function AdminLayout({
 
           <div className="ncsBrandText">
             <strong>NEW CITY STYLE</strong>
-            <span>Premium Admin Studio</span>
+            <span>Business Intelligence Matrix</span>
           </div>
         </div>
+
+        {!sidebarCollapsed && (
+          <section
+            className={`ncsSidebarIntelligence ${
+              offlinePosAccess ? "ncsSidebarIntelligenceOffline" : ""
+            }`}
+            aria-label="NCS intelligence matrix status"
+          >
+            <div className="ncsSidebarIntelTop">
+              <span>
+                <i />
+                NCS INTELLIGENCE
+              </span>
+              <b>{offlinePosAccess ? "LOCAL" : "LIVE"}</b>
+            </div>
+
+            <div className="ncsSidebarIntelCore">
+              <div className="ncsSidebarIntelGlyph" aria-hidden="true">
+                <span />
+                <b>◈</b>
+                <i />
+              </div>
+
+              <div className="ncsSidebarIntelCopy">
+                <small>ACTIVE MATRIX</small>
+                <strong>
+                  {offlinePosAccess ? "POS CORE" : activeMenuGroup.label}
+                </strong>
+                <span>
+                  {offlinePosAccess
+                    ? "Secure local billing channel"
+                    : `${activeMenuGroup.items.length} connected tools`}
+                </span>
+              </div>
+            </div>
+
+            {!offlinePosAccess && (
+              <div className="ncsSidebarIntelMetrics">
+                <span>
+                  <b>{allMenuItems.length}</b>
+                  <small>TOOLS</small>
+                </span>
+                <span>
+                  <b>{favoriteItems.length}</b>
+                  <small>PINNED</small>
+                </span>
+                <span>
+                  <b>{recentItems.length}</b>
+                  <small>RECENT</small>
+                </span>
+              </div>
+            )}
+          </section>
+        )}
 
         <nav className="ncsMenu" aria-label="Admin navigation">
           {offlinePosAccess ? (
@@ -4763,7 +4817,1200 @@ export default function AdminLayout({
           }
         }
 
-        `}</style>
+  
+
+        /* ============================================================
+           NCS MATRIX SHELL 1.0 • GLOBAL ADMIN FINISHING LAYER
+           Visual-only shell upgrade. Existing routes, auth, POS offline,
+           command palette, favorites, ticker and all child features stay.
+           ============================================================ */
+        .ncsAdminShell {
+          --matrix-ink:#17132d;
+          --matrix-deep:#211344;
+          --matrix-violet:#6d4dff;
+          --matrix-cyan:#18bed1;
+          --matrix-gold:#e7bd45;
+          --matrix-paper:#f5f7fb;
+          background:
+            linear-gradient(rgba(64,54,117,.028) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(64,54,117,.028) 1px,transparent 1px),
+            radial-gradient(circle at 78% -8%,rgba(109,77,255,.10),transparent 28%),
+            radial-gradient(circle at 18% 105%,rgba(24,190,209,.08),transparent 30%),
+            var(--matrix-paper) !important;
+          background-size:28px 28px,28px 28px,auto,auto,auto !important;
+        }
+
+        .ncsAdminShell .ncsSidebar {
+          isolation:isolate;
+          background:
+            radial-gradient(circle at 88% 8%,rgba(90,231,255,.22),transparent 19%),
+            radial-gradient(circle at 9% 88%,rgba(235,89,174,.22),transparent 23%),
+            linear-gradient(180deg,#1b1638 0%,#2d1a59 38%,#182e58 73%,#103d50 100%) !important;
+          border-right:1px solid rgba(255,255,255,.16) !important;
+          box-shadow:18px 0 54px rgba(29,21,67,.20) !important;
+        }
+
+        .ncsAdminShell .ncsSidebar::before {
+          content:"";
+          position:absolute;
+          z-index:-1;
+          inset:0;
+          pointer-events:none;
+          background:
+            linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
+          background-size:25px 25px;
+          mask-image:linear-gradient(to bottom,black 0%,rgba(0,0,0,.65) 52%,transparent 100%);
+        }
+
+        .ncsAdminShell .ncsBrandArea {
+          position:relative;
+          overflow:hidden;
+          border:1px solid rgba(255,255,255,.18) !important;
+          border-radius:22px !important;
+          background:
+            radial-gradient(circle at 88% 16%,rgba(255,199,93,.22),transparent 28%),
+            linear-gradient(135deg,rgba(109,77,255,.42),rgba(233,80,165,.31) 55%,rgba(24,190,209,.23)) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.19),
+            0 18px 35px rgba(7,8,32,.22) !important;
+        }
+
+        .ncsAdminShell .ncsBrandArea::after {
+          content:"MATRIX";
+          position:absolute;
+          right:13px;
+          bottom:7px;
+          color:rgba(255,255,255,.32);
+          font-size:7px;
+          font-weight:950;
+          letter-spacing:2.1px;
+        }
+
+        .ncsAdminShell .ncsBrandLogo {
+          border:1px solid rgba(255,255,255,.56) !important;
+          background:linear-gradient(145deg,#fff2a6,#f1c245) !important;
+          color:#261747 !important;
+          box-shadow:0 10px 28px rgba(235,189,69,.28) !important;
+        }
+
+        .ncsAdminShell .ncsMenuSearchWrap,
+        .ncsAdminShell .ncsCommandTrigger {
+          border:1px solid rgba(255,255,255,.14) !important;
+          background:rgba(255,255,255,.075) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.06) !important;
+          backdrop-filter:blur(14px);
+        }
+
+        .ncsAdminShell .ncsMenuGroup {
+          border:1px solid rgba(255,255,255,.10) !important;
+          border-radius:17px !important;
+          background:rgba(255,255,255,.055) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.035) !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupActive {
+          border-color:color-mix(in srgb,var(--group,#6d4dff) 54%,rgba(255,255,255,.2)) !important;
+          box-shadow:
+            0 12px 26px color-mix(in srgb,var(--group,#6d4dff) 14%,transparent),
+            inset 0 1px 0 rgba(255,255,255,.08) !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupButton {
+          min-height:47px !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupIcon {
+          position:relative;
+          overflow:hidden;
+          border:1px solid rgba(255,255,255,.2) !important;
+          box-shadow:
+            0 7px 18px color-mix(in srgb,var(--group,#6d4dff) 26%,transparent),
+            inset 0 1px 0 rgba(255,255,255,.22) !important;
+        }
+
+        .ncsAdminShell .ncsActiveMenuItem {
+          transform:translateX(2px);
+          border-color:rgba(255,255,255,.42) !important;
+          box-shadow:
+            0 12px 28px color-mix(in srgb,var(--group,#6d4dff) 25%,transparent),
+            inset 0 1px 0 rgba(255,255,255,.25) !important;
+        }
+
+        .ncsAdminShell .ncsAdminContent {
+          min-height:100vh;
+          background:
+            linear-gradient(rgba(54,46,104,.025) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(54,46,104,.025) 1px,transparent 1px),
+            radial-gradient(circle at 86% 3%,rgba(109,77,255,.06),transparent 23%),
+            #f5f7fb !important;
+          background-size:30px 30px,30px 30px,auto,auto !important;
+        }
+
+        .ncsBusinessTicker {
+          min-height:58px !important;
+          border-top:0 !important;
+          border-bottom:1px solid rgba(109,77,255,.18) !important;
+          background:
+            linear-gradient(90deg,rgba(29,21,67,.97),rgba(43,27,88,.97) 33%,rgba(24,48,84,.97)) !important;
+          box-shadow:0 12px 35px rgba(24,18,61,.17) !important;
+          backdrop-filter:blur(18px);
+        }
+
+        .ncsTickerLiveBadge {
+          min-width:205px !important;
+          border-right:1px solid rgba(255,255,255,.12) !important;
+          background:
+            radial-gradient(circle at 17% 20%,rgba(255,223,111,.25),transparent 24%),
+            rgba(255,255,255,.035) !important;
+          color:#ffe384 !important;
+          box-shadow:none !important;
+          letter-spacing:1.15px !important;
+        }
+
+        .ncsTickerViewport {
+          min-height:58px !important;
+        }
+
+        .ncsChequeTickerCard {
+          min-height:39px !important;
+          border:1px solid rgba(255,255,255,.16) !important;
+          background:rgba(255,255,255,.95) !important;
+          box-shadow:
+            0 8px 26px rgba(2,6,29,.25),
+            inset 0 1px 0 rgba(255,255,255,.98) !important;
+        }
+
+        .ncsCommandOverlay {
+          background:rgba(13,10,34,.68) !important;
+          backdrop-filter:blur(20px) saturate(120%);
+        }
+
+        .ncsCommandPalette {
+          overflow:hidden;
+          border:1px solid rgba(255,255,255,.24) !important;
+          border-radius:28px !important;
+          background:
+            linear-gradient(rgba(75,63,135,.04) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(75,63,135,.04) 1px,transparent 1px),
+            #fff !important;
+          background-size:24px 24px !important;
+          box-shadow:0 40px 120px rgba(6,6,30,.42) !important;
+        }
+
+        .ncsCommandHeader {
+          background:
+            radial-gradient(circle at 88% 20%,rgba(24,190,209,.24),transparent 28%),
+            linear-gradient(135deg,#1c153d,#5c3bd0 62%,#176779) !important;
+        }
+
+        .ncsAdminPageContent {
+          position:relative;
+          min-height:calc(100vh - 58px);
+        }
+
+        @media (max-width:900px) {
+          .ncsTickerLiveBadge { min-width:148px !important; padding:0 12px !important; }
+          .ncsAdminShell .ncsSidebar { width:286px !important; }
+        }
+
+
+        /* ============================================================
+           NCS INTELLIGENCE MATRIX SIDEBAR • FINAL VISUAL LAYER
+           Visual/navigation finishing only. Routes, auth, offline POS,
+           favorites, recents, command palette and child pages unchanged.
+           ============================================================ */
+        .ncsAdminShell .ncsSidebar {
+          --side-violet:#7657ff;
+          --side-cyan:#22c7d8;
+          --side-pink:#ef5ca9;
+          --side-gold:#f0c858;
+          --side-green:#32df9a;
+          overflow:visible !important;
+          background:
+            radial-gradient(circle at 76% 7%,rgba(34,199,216,.18),transparent 19%),
+            radial-gradient(circle at 12% 28%,rgba(118,87,255,.18),transparent 24%),
+            radial-gradient(circle at 92% 78%,rgba(239,92,169,.12),transparent 23%),
+            linear-gradient(180deg,#17122f 0%,#211642 34%,#172a4b 68%,#103a49 100%) !important;
+          border-right:1px solid rgba(151,139,255,.22) !important;
+          box-shadow:
+            18px 0 55px rgba(16,12,44,.26),
+            inset -1px 0 0 rgba(255,255,255,.035) !important;
+        }
+
+        .ncsAdminShell .ncsSidebar::before {
+          background:
+            linear-gradient(rgba(255,255,255,.034) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(255,255,255,.034) 1px,transparent 1px),
+            radial-gradient(circle at 50% 15%,rgba(118,87,255,.16),transparent 34%) !important;
+          background-size:24px 24px,24px 24px,auto !important;
+          mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.78) 74%,transparent 100%) !important;
+        }
+
+        .ncsAdminShell .ncsSidebar::after {
+          content:"";
+          position:absolute;
+          z-index:-1;
+          top:118px;
+          bottom:118px;
+          left:17px;
+          width:1px;
+          background:linear-gradient(transparent,rgba(118,87,255,.5) 14%,rgba(34,199,216,.42) 53%,rgba(239,92,169,.35) 82%,transparent);
+          box-shadow:0 0 14px rgba(118,87,255,.28);
+          pointer-events:none;
+        }
+
+        .ncsAdminShell .ncsBrandArea {
+          min-height:76px !important;
+          padding:11px 12px !important;
+          border:1px solid rgba(255,255,255,.17) !important;
+          border-radius:22px !important;
+          background:
+            linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px),
+            radial-gradient(circle at 86% 20%,rgba(240,200,88,.23),transparent 27%),
+            linear-gradient(135deg,rgba(118,87,255,.30),rgba(239,92,169,.20) 56%,rgba(34,199,216,.16)) !important;
+          background-size:18px 18px,18px 18px,auto,auto !important;
+          box-shadow:
+            0 16px 34px rgba(5,7,28,.20),
+            inset 0 1px 0 rgba(255,255,255,.14) !important;
+        }
+
+        .ncsAdminShell .ncsBrandArea::before {
+          content:"";
+          position:absolute;
+          right:12px;
+          top:11px;
+          width:7px;
+          height:7px;
+          border-radius:999px;
+          background:#41f2a7;
+          box-shadow:0 0 0 4px rgba(65,242,167,.09),0 0 15px rgba(65,242,167,.55);
+        }
+
+        .ncsAdminShell .ncsBrandArea::after {
+          content:"ADMIN MATRIX" !important;
+          right:12px !important;
+          bottom:8px !important;
+          color:rgba(255,255,255,.34) !important;
+          font-size:6.5px !important;
+          font-weight:950 !important;
+          letter-spacing:1.8px !important;
+        }
+
+        .ncsAdminShell .ncsBrandLogo {
+          width:52px !important;
+          height:52px !important;
+          flex:0 0 52px !important;
+          border:1px solid rgba(255,255,255,.54) !important;
+          border-radius:16px !important;
+          background:linear-gradient(145deg,#fff4b4,#f0c858 52%,#dba934) !important;
+          color:#241745 !important;
+          box-shadow:0 9px 24px rgba(240,200,88,.22),inset 0 1px 0 #fff !important;
+        }
+
+        .ncsAdminShell .ncsBrandText strong {
+          font-size:14px !important;
+          letter-spacing:.2px !important;
+        }
+
+        .ncsAdminShell .ncsBrandText span {
+          margin-top:3px !important;
+          color:rgba(255,255,255,.57) !important;
+          font-size:7.5px !important;
+          font-weight:800 !important;
+          letter-spacing:.45px !important;
+        }
+
+        .ncsSidebarIntelligence {
+          position:relative;
+          margin:10px 0 9px;
+          padding:9px;
+          overflow:hidden;
+          border:1px solid rgba(255,255,255,.13);
+          border-radius:18px;
+          background:
+            radial-gradient(circle at 76% 0%,rgba(34,199,216,.16),transparent 30%),
+            linear-gradient(145deg,rgba(255,255,255,.085),rgba(255,255,255,.035));
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 10px 24px rgba(4,7,28,.13);
+          backdrop-filter:blur(16px);
+        }
+
+        .ncsSidebarIntelligence::before {
+          content:"";
+          position:absolute;
+          inset:0;
+          pointer-events:none;
+          background:
+            linear-gradient(rgba(255,255,255,.026) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(255,255,255,.026) 1px,transparent 1px);
+          background-size:14px 14px;
+          mask-image:linear-gradient(90deg,#000,transparent);
+        }
+
+        .ncsSidebarIntelTop,
+        .ncsSidebarIntelCore,
+        .ncsSidebarIntelMetrics {
+          position:relative;
+          z-index:1;
+        }
+
+        .ncsSidebarIntelTop {
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:8px;
+          padding:0 1px 7px;
+        }
+
+        .ncsSidebarIntelTop > span {
+          display:flex;
+          align-items:center;
+          gap:6px;
+          color:rgba(255,255,255,.68);
+          font-size:6.7px;
+          font-weight:950;
+          letter-spacing:1.15px;
+        }
+
+        .ncsSidebarIntelTop > span i {
+          width:6px;
+          height:6px;
+          border-radius:50%;
+          background:#3df0a1;
+          box-shadow:0 0 11px rgba(61,240,161,.64);
+        }
+
+        .ncsSidebarIntelTop > b {
+          padding:3px 6px;
+          border:1px solid rgba(61,240,161,.22);
+          border-radius:999px;
+          background:rgba(61,240,161,.08);
+          color:#7ef5be;
+          font-size:6.3px;
+          letter-spacing:.8px;
+        }
+
+        .ncsSidebarIntelligenceOffline .ncsSidebarIntelTop > span i {
+          background:#f0c858;
+          box-shadow:0 0 11px rgba(240,200,88,.55);
+        }
+
+        .ncsSidebarIntelligenceOffline .ncsSidebarIntelTop > b {
+          border-color:rgba(240,200,88,.22);
+          background:rgba(240,200,88,.08);
+          color:#f7da83;
+        }
+
+        .ncsSidebarIntelCore {
+          display:grid;
+          grid-template-columns:42px minmax(0,1fr);
+          align-items:center;
+          gap:9px;
+          min-height:45px;
+          padding:7px;
+          border:1px solid rgba(255,255,255,.09);
+          border-radius:13px;
+          background:rgba(4,7,28,.16);
+        }
+
+        .ncsSidebarIntelGlyph {
+          position:relative;
+          width:38px;
+          height:38px;
+          display:grid;
+          place-items:center;
+          border:1px solid rgba(160,147,255,.28);
+          border-radius:50%;
+          background:radial-gradient(circle,rgba(118,87,255,.34),rgba(118,87,255,.08) 55%,transparent 60%);
+          box-shadow:0 0 22px rgba(118,87,255,.18);
+        }
+
+        .ncsSidebarIntelGlyph::before,
+        .ncsSidebarIntelGlyph::after {
+          content:"";
+          position:absolute;
+          border:1px solid rgba(34,199,216,.18);
+          border-radius:50%;
+        }
+
+        .ncsSidebarIntelGlyph::before { inset:4px; }
+        .ncsSidebarIntelGlyph::after { inset:9px; border-color:rgba(240,200,88,.16); }
+        .ncsSidebarIntelGlyph b { color:#fff; font-size:14px; line-height:1; }
+        .ncsSidebarIntelGlyph span, .ncsSidebarIntelGlyph i {
+          position:absolute;
+          width:4px;
+          height:4px;
+          border-radius:50%;
+          background:#27cad8;
+          box-shadow:0 0 8px rgba(39,202,216,.7);
+        }
+        .ncsSidebarIntelGlyph span { top:3px; left:17px; }
+        .ncsSidebarIntelGlyph i { right:2px; bottom:9px; background:#ef5ca9; box-shadow:0 0 8px rgba(239,92,169,.65); }
+
+        .ncsSidebarIntelCopy { min-width:0; }
+        .ncsSidebarIntelCopy small,
+        .ncsSidebarIntelCopy strong,
+        .ncsSidebarIntelCopy span { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .ncsSidebarIntelCopy small { color:rgba(255,255,255,.42); font-size:5.8px; font-weight:950; letter-spacing:1px; }
+        .ncsSidebarIntelCopy strong { margin-top:2px; color:#fff; font-size:10px; font-weight:950; }
+        .ncsSidebarIntelCopy span { margin-top:2px; color:rgba(255,255,255,.52); font-size:6.6px; font-weight:750; }
+
+        .ncsSidebarIntelMetrics {
+          display:grid;
+          grid-template-columns:repeat(3,minmax(0,1fr));
+          gap:5px;
+          margin-top:6px;
+        }
+        .ncsSidebarIntelMetrics > span {
+          min-width:0;
+          padding:5px 4px;
+          border:1px solid rgba(255,255,255,.07);
+          border-radius:9px;
+          background:rgba(255,255,255,.035);
+          text-align:center;
+        }
+        .ncsSidebarIntelMetrics b, .ncsSidebarIntelMetrics small { display:block; }
+        .ncsSidebarIntelMetrics b { color:#fff; font-size:8px; font-weight:950; }
+        .ncsSidebarIntelMetrics small { margin-top:1px; color:rgba(255,255,255,.38); font-size:5.2px; font-weight:900; letter-spacing:.45px; }
+
+        .ncsAdminShell .ncsMenu {
+          position:relative;
+        }
+
+        .ncsAdminShell .ncsMenuSearchWrap {
+          min-height:42px !important;
+          border-color:rgba(255,255,255,.12) !important;
+          border-radius:13px !important;
+          background:rgba(5,9,31,.22) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.055) !important;
+        }
+        .ncsAdminShell .ncsMenuSearchWrap:focus-within {
+          border-color:rgba(34,199,216,.48) !important;
+          box-shadow:0 0 0 3px rgba(34,199,216,.07),inset 0 1px 0 rgba(255,255,255,.07) !important;
+        }
+        .ncsAdminShell .ncsMenuSearch { color:#fff !important; }
+        .ncsAdminShell .ncsMenuSearch::placeholder { color:rgba(255,255,255,.36) !important; }
+
+        .ncsAdminShell .ncsCommandTrigger {
+          position:relative;
+          min-height:44px !important;
+          overflow:hidden;
+          border:1px solid rgba(118,87,255,.30) !important;
+          border-radius:14px !important;
+          background:
+            linear-gradient(90deg,rgba(118,87,255,.16),rgba(34,199,216,.07)),
+            rgba(5,9,31,.18) !important;
+        }
+        .ncsAdminShell .ncsCommandTrigger::after {
+          content:"AI ROUTER";
+          position:absolute;
+          right:10px;
+          bottom:3px;
+          color:rgba(34,199,216,.44);
+          font-size:4.8px;
+          font-weight:950;
+          letter-spacing:1px;
+        }
+        .ncsAdminShell .ncsCommandTrigger > span {
+          color:#f0c858 !important;
+          text-shadow:0 0 10px rgba(240,200,88,.24);
+        }
+        .ncsAdminShell .ncsCommandTrigger kbd {
+          border:1px solid rgba(255,255,255,.12) !important;
+          background:rgba(255,255,255,.07) !important;
+          color:rgba(255,255,255,.67) !important;
+        }
+
+        .ncsAdminShell .ncsMenuSmartArea {
+          position:relative;
+          border:1px solid rgba(255,255,255,.07) !important;
+          border-radius:14px !important;
+          background:rgba(3,7,27,.13) !important;
+        }
+        .ncsAdminShell .ncsSmartBlock {
+          background:transparent !important;
+          border-color:rgba(255,255,255,.055) !important;
+        }
+        .ncsAdminShell .ncsSmartBlockHeader span {
+          color:rgba(240,200,88,.78) !important;
+          letter-spacing:.9px !important;
+        }
+        .ncsAdminShell .ncsSmartLink {
+          border:1px solid rgba(255,255,255,.055) !important;
+          background:rgba(255,255,255,.032) !important;
+          color:rgba(255,255,255,.75) !important;
+        }
+        .ncsAdminShell .ncsSmartLink:hover,
+        .ncsAdminShell .ncsSmartLinkActive {
+          transform:translateX(2px);
+          border-color:rgba(118,87,255,.30) !important;
+          background:linear-gradient(90deg,rgba(118,87,255,.16),rgba(34,199,216,.06)) !important;
+          color:#fff !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroups {
+          display:grid !important;
+          gap:7px !important;
+          padding:1px 0 7px !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroup {
+          position:relative;
+          overflow:hidden;
+          border:1px solid rgba(255,255,255,.085) !important;
+          border-radius:15px !important;
+          background:
+            linear-gradient(100deg,rgba(255,255,255,.055),rgba(255,255,255,.022)) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.035) !important;
+          transition:transform .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease;
+        }
+
+        .ncsAdminShell .ncsMenuGroup::before {
+          content:"";
+          position:absolute;
+          left:0;
+          top:9px;
+          bottom:9px;
+          width:2px;
+          border-radius:0 3px 3px 0;
+          background:rgba(255,255,255,.12);
+          transition:all .18s ease;
+        }
+
+        .ncsAdminShell .ncsMenuGroup:nth-child(6n+1){--matrix-cell:#8a6cff;--matrix-glow:rgba(138,108,255,.25)}
+        .ncsAdminShell .ncsMenuGroup:nth-child(6n+2){--matrix-cell:#35d59f;--matrix-glow:rgba(53,213,159,.22)}
+        .ncsAdminShell .ncsMenuGroup:nth-child(6n+3){--matrix-cell:#ef6aad;--matrix-glow:rgba(239,106,173,.22)}
+        .ncsAdminShell .ncsMenuGroup:nth-child(6n+4){--matrix-cell:#f1b451;--matrix-glow:rgba(241,180,81,.22)}
+        .ncsAdminShell .ncsMenuGroup:nth-child(6n+5){--matrix-cell:#32c5da;--matrix-glow:rgba(50,197,218,.22)}
+        .ncsAdminShell .ncsMenuGroup:nth-child(6n+6){--matrix-cell:#9ea9ef;--matrix-glow:rgba(158,169,239,.20)}
+
+        .ncsAdminShell .ncsMenuGroup:hover {
+          transform:translateX(2px);
+          border-color:color-mix(in srgb,var(--matrix-cell) 30%,rgba(255,255,255,.10)) !important;
+          background:linear-gradient(100deg,color-mix(in srgb,var(--matrix-cell) 10%,transparent),rgba(255,255,255,.025)) !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupActive {
+          transform:translateX(3px);
+          border-color:color-mix(in srgb,var(--matrix-cell) 48%,rgba(255,255,255,.12)) !important;
+          background:
+            radial-gradient(circle at 10% 50%,color-mix(in srgb,var(--matrix-cell) 17%,transparent),transparent 42%),
+            linear-gradient(100deg,rgba(255,255,255,.075),rgba(255,255,255,.026)) !important;
+          box-shadow:0 10px 25px var(--matrix-glow),inset 0 1px 0 rgba(255,255,255,.06) !important;
+        }
+        .ncsAdminShell .ncsMenuGroupActive::before {
+          top:7px;
+          bottom:7px;
+          width:3px;
+          background:var(--matrix-cell);
+          box-shadow:0 0 13px var(--matrix-cell);
+        }
+
+        .ncsAdminShell .ncsMenuGroupButton {
+          min-height:46px !important;
+          padding:6px 7px 6px 8px !important;
+          gap:8px !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupIcon {
+          width:31px !important;
+          height:31px !important;
+          flex:0 0 31px !important;
+          border:1px solid color-mix(in srgb,var(--matrix-cell,#8a6cff) 28%,rgba(255,255,255,.12)) !important;
+          border-radius:10px !important;
+          background:color-mix(in srgb,var(--matrix-cell,#8a6cff) 16%,rgba(255,255,255,.045)) !important;
+          color:var(--matrix-cell,#fff) !important;
+          box-shadow:0 6px 16px var(--matrix-glow,rgba(118,87,255,.14)),inset 0 1px 0 rgba(255,255,255,.08) !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupLabel {
+          color:rgba(255,255,255,.88) !important;
+          font-size:10.5px !important;
+          font-weight:900 !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupCount {
+          min-width:22px !important;
+          height:21px !important;
+          display:grid !important;
+          place-items:center;
+          padding:0 5px !important;
+          border:1px solid rgba(255,255,255,.09) !important;
+          border-radius:999px !important;
+          background:rgba(255,255,255,.045) !important;
+          color:rgba(255,255,255,.56) !important;
+          font-size:7px !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupChevron {
+          color:var(--matrix-cell,#fff) !important;
+          opacity:.72;
+        }
+
+        .ncsAdminShell .ncsMenuGroupItems {
+          padding:0 7px 7px 45px !important;
+          gap:5px !important;
+        }
+
+        .ncsAdminShell .ncsMenuItem {
+          min-height:34px !important;
+          border:1px solid rgba(255,255,255,.055) !important;
+          border-radius:10px !important;
+          background:rgba(255,255,255,.025) !important;
+          color:rgba(255,255,255,.68) !important;
+          transition:transform .16s ease,border-color .16s ease,background .16s ease;
+        }
+        .ncsAdminShell .ncsMenuItem:hover {
+          transform:translateX(2px);
+          border-color:color-mix(in srgb,var(--matrix-cell,#8a6cff) 25%,rgba(255,255,255,.06)) !important;
+          background:color-mix(in srgb,var(--matrix-cell,#8a6cff) 8%,rgba(255,255,255,.025)) !important;
+          color:#fff !important;
+        }
+        .ncsAdminShell .ncsActiveMenuItem {
+          transform:none !important;
+          border-color:color-mix(in srgb,var(--matrix-cell,#8a6cff) 44%,rgba(255,255,255,.08)) !important;
+          background:linear-gradient(90deg,color-mix(in srgb,var(--matrix-cell,#8a6cff) 15%,transparent),rgba(255,255,255,.035)) !important;
+          color:#fff !important;
+          box-shadow:0 6px 15px var(--matrix-glow,rgba(118,87,255,.13)) !important;
+        }
+
+        .ncsAdminShell .ncsMenuIcon {
+          opacity:.85;
+          filter:saturate(.8);
+        }
+        .ncsAdminShell .ncsFavoriteButton {
+          color:rgba(255,255,255,.24) !important;
+        }
+        .ncsAdminShell .ncsFavoriteButtonActive {
+          color:#f4d36f !important;
+          text-shadow:0 0 9px rgba(244,211,111,.35);
+        }
+
+        .ncsExpandedFlyout {
+          width:360px !important;
+          max-height:min(72vh,650px) !important;
+          left:calc(100% + 10px) !important;
+          border:1px solid rgba(158,145,255,.24) !important;
+          border-radius:24px !important;
+          background:
+            linear-gradient(rgba(255,255,255,.033) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(255,255,255,.033) 1px,transparent 1px),
+            radial-gradient(circle at 10% 0%,rgba(118,87,255,.22),transparent 28%),
+            radial-gradient(circle at 100% 85%,rgba(34,199,216,.16),transparent 28%),
+            linear-gradient(155deg,#1c1539,#263a59 72%,#164a55) !important;
+          background-size:22px 22px,22px 22px,auto,auto,auto !important;
+          box-shadow:0 30px 75px rgba(7,7,30,.38),inset 0 1px 0 rgba(255,255,255,.08) !important;
+          backdrop-filter:blur(20px) saturate(115%);
+        }
+
+        .ncsExpandedFlyout::before {
+          content:"INTELLIGENCE WINDOW";
+          position:absolute;
+          top:14px;
+          right:50px;
+          color:rgba(255,255,255,.27);
+          font-size:5.6px;
+          font-weight:950;
+          letter-spacing:1.5px;
+          pointer-events:none;
+        }
+
+        .ncsExpandedFlyoutHeader {
+          border-bottom:1px solid rgba(255,255,255,.08) !important;
+          background:linear-gradient(90deg,rgba(118,87,255,.14),rgba(34,199,216,.055)) !important;
+        }
+        .ncsExpandedFlyoutHeaderIcon {
+          border-color:rgba(255,255,255,.18) !important;
+          background:linear-gradient(135deg,#8b6fff,#4d61c9) !important;
+          box-shadow:0 9px 22px rgba(118,87,255,.22) !important;
+        }
+        .ncsExpandedFlyoutItems {
+          display:grid !important;
+          gap:7px !important;
+          padding:10px !important;
+        }
+        .ncsExpandedFlyoutItem {
+          min-height:58px !important;
+          border:1px solid rgba(255,255,255,.08) !important;
+          border-radius:14px !important;
+          background:linear-gradient(90deg,rgba(255,255,255,.055),rgba(255,255,255,.025)) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.035) !important;
+        }
+        .ncsExpandedFlyoutItem:hover {
+          transform:translateX(3px) !important;
+          border-color:rgba(118,87,255,.30) !important;
+          background:linear-gradient(90deg,rgba(118,87,255,.13),rgba(34,199,216,.05)) !important;
+        }
+        .ncsExpandedFlyoutItemActive {
+          border-color:rgba(61,240,161,.30) !important;
+          background:linear-gradient(90deg,rgba(61,240,161,.11),rgba(34,199,216,.05)) !important;
+        }
+        .ncsExpandedFlyoutItemActive::after {
+          content:"LIVE";
+          margin-left:auto;
+          padding:3px 6px;
+          border:1px solid rgba(61,240,161,.18);
+          border-radius:999px;
+          background:rgba(61,240,161,.07);
+          color:#7ef5be;
+          font-size:5.5px;
+          font-weight:950;
+          letter-spacing:.6px;
+        }
+
+        .ncsAdminShell .ncsSidebarBottom {
+          gap:7px !important;
+          padding-top:9px !important;
+          border-top:1px solid rgba(255,255,255,.08) !important;
+          background:linear-gradient(180deg,transparent,rgba(4,8,26,.15));
+        }
+        .ncsAdminShell .ncsAdminIdentity {
+          min-height:58px !important;
+          border:1px solid rgba(255,255,255,.10) !important;
+          border-radius:15px !important;
+          background:linear-gradient(100deg,rgba(255,255,255,.06),rgba(255,255,255,.025)) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.04) !important;
+        }
+        .ncsAdminShell .ncsAdminIdentity::after {
+          content:"OWNER NODE";
+          position:absolute;
+          right:9px;
+          bottom:6px;
+          color:rgba(34,199,216,.36);
+          font-size:4.8px;
+          font-weight:950;
+          letter-spacing:1px;
+        }
+        .ncsAdminShell .ncsAdminAvatar {
+          border-color:rgba(240,200,88,.34) !important;
+          background:linear-gradient(145deg,#f8dc82,#e9b83f) !important;
+          color:#241745 !important;
+          box-shadow:0 7px 17px rgba(240,200,88,.18) !important;
+        }
+        .ncsAdminShell .ncsViewStoreButton,
+        .ncsAdminShell .ncsLogoutButton {
+          min-height:38px !important;
+          border-radius:11px !important;
+        }
+        .ncsAdminShell .ncsViewStoreButton {
+          border-color:rgba(34,199,216,.16) !important;
+          background:rgba(34,199,216,.07) !important;
+          color:#b5f5fb !important;
+        }
+        .ncsAdminShell .ncsLogoutButton {
+          border-color:rgba(239,92,169,.16) !important;
+          background:rgba(239,92,169,.065) !important;
+          color:#ffd4ea !important;
+        }
+
+        .ncsAdminShell .ncsSidebarCollapseButton {
+          border:1px solid rgba(240,200,88,.36) !important;
+          background:linear-gradient(145deg,#f7dc84,#eab83d) !important;
+          color:#251747 !important;
+          box-shadow:0 8px 18px rgba(240,200,88,.18) !important;
+        }
+
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed {
+          width:76px !important;
+          padding:14px 9px !important;
+          background:
+            radial-gradient(circle at 50% 7%,rgba(118,87,255,.24),transparent 20%),
+            linear-gradient(180deg,#17122f,#1b2e4a 68%,#103947) !important;
+        }
+        .ncsAdminShell.ncsAdminShellCollapsed .ncsAdminContent {
+          margin-left:76px !important;
+        }
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsBrandArea {
+          min-height:58px !important;
+          padding:5px !important;
+          border-radius:17px !important;
+        }
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsBrandLogo {
+          width:44px !important;
+          height:44px !important;
+          flex-basis:44px !important;
+          border-radius:14px !important;
+        }
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupRail {
+          gap:9px !important;
+          padding-top:8px !important;
+        }
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButton {
+          width:48px !important;
+          height:48px !important;
+          border:1px solid rgba(255,255,255,.09) !important;
+          border-radius:15px !important;
+          background:rgba(255,255,255,.045) !important;
+          color:rgba(255,255,255,.60) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.04) !important;
+        }
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButtonActive,
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed .ncsCollapsedGroupButtonFlyoutOpen {
+          border-color:rgba(118,87,255,.40) !important;
+          background:radial-gradient(circle,rgba(118,87,255,.28),rgba(255,255,255,.05)) !important;
+          color:#fff !important;
+          box-shadow:0 0 0 4px rgba(118,87,255,.065),0 10px 24px rgba(118,87,255,.20) !important;
+        }
+
+        @media(min-width:1101px){
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed){
+            width:266px !important;
+            padding:14px 13px !important;
+          }
+          .ncsAdminShell:not(.ncsAdminShellCollapsed) .ncsAdminContent{
+            margin-left:266px !important;
+          }
+        }
+
+        @media(max-width:1100px){
+          .ncsAdminShell .ncsSidebar { width:286px !important; }
+          .ncsSidebarIntelligence { margin-top:9px; }
+        }
+
+
+        /* ============================================================
+           NCS INTELLIGENCE MATRIX SIDEBAR — VISIBILITY / FIT PASS V2
+           Keeps every existing route, favorite, recent, search, command,
+           flyout, auth and offline-POS behavior. Visual layout only.
+           ============================================================ */
+        @media (min-width:1101px) {
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) {
+            width:278px !important;
+            height:100vh !important;
+            min-height:100vh !important;
+            padding:12px 12px 10px !important;
+            overflow:visible !important;
+          }
+
+          .ncsAdminShell:not(.ncsAdminShellCollapsed) .ncsAdminContent {
+            margin-left:278px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsBrandArea {
+            min-height:66px !important;
+            padding:5px 7px 9px !important;
+            flex:0 0 auto;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsBrandLogo {
+            width:50px !important;
+            height:50px !important;
+            flex:0 0 50px !important;
+            border-radius:15px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsBrandText strong {
+            font-size:13px !important;
+            line-height:1.05 !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsBrandText span {
+            margin-top:3px !important;
+            font-size:5.8px !important;
+            letter-spacing:.75px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarIntelligence {
+            flex:0 0 auto;
+            margin:7px 0 8px !important;
+            padding:7px !important;
+            border-radius:15px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarIntelTop {
+            min-height:17px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarIntelTop span {
+            font-size:5.5px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarIntelCore {
+            grid-template-columns:36px minmax(0,1fr) !important;
+            gap:8px !important;
+            min-height:42px !important;
+            padding:5px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarIntelGlyph {
+            width:34px !important;
+            height:34px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarIntelCopy strong {
+            font-size:9px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarIntelCopy span {
+            font-size:5.8px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarIntelMetrics {
+            gap:4px !important;
+            margin-top:4px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarIntelMetrics > span {
+            padding:3px 2px !important;
+            border-radius:7px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarIntelMetrics b {
+            font-size:7px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarIntelMetrics small {
+            font-size:4.7px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenu {
+            min-height:0 !important;
+            flex:1 1 auto !important;
+            display:flex !important;
+            flex-direction:column !important;
+            gap:6px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuSearchWrap {
+            min-height:36px !important;
+            height:36px !important;
+            flex:0 0 36px !important;
+            border-radius:11px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuSearch {
+            font-size:9px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsCommandTrigger {
+            min-height:38px !important;
+            height:38px !important;
+            flex:0 0 38px !important;
+            border-radius:12px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsCommandTrigger strong {
+            font-size:8.7px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuSmartArea {
+            flex:0 0 auto !important;
+            max-height:54px !important;
+            overflow:auto !important;
+            border-radius:11px !important;
+            scrollbar-width:none;
+          }
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuSmartArea::-webkit-scrollbar { display:none; }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSmartBlock {
+            padding:4px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSmartBlockHeader {
+            display:none !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSmartLinks {
+            display:flex !important;
+            gap:4px !important;
+            overflow-x:auto !important;
+            overflow-y:hidden !important;
+            scrollbar-width:none;
+          }
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSmartLinks::-webkit-scrollbar { display:none; }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSmartLink {
+            flex:0 0 auto !important;
+            min-height:29px !important;
+            padding:0 7px !important;
+            border-radius:9px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSmartLink strong {
+            max-width:88px !important;
+            overflow:hidden !important;
+            text-overflow:ellipsis !important;
+            white-space:nowrap !important;
+            font-size:7px !important;
+          }
+
+          /* Six primary matrices always visible: 2 columns × 3 rows. */
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroups {
+            flex:0 0 auto !important;
+            min-height:0 !important;
+            max-height:none !important;
+            display:grid !important;
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+            grid-auto-rows:62px !important;
+            gap:6px !important;
+            padding:1px 0 4px !important;
+            overflow:visible !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroup {
+            min-width:0 !important;
+            min-height:62px !important;
+            height:62px !important;
+            border-radius:14px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroup:hover,
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupActive {
+            transform:translateY(-1px) !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupButton {
+            position:relative !important;
+            width:100% !important;
+            height:62px !important;
+            min-height:62px !important;
+            display:grid !important;
+            grid-template-columns:30px minmax(0,1fr) !important;
+            grid-template-rows:1fr !important;
+            align-items:center !important;
+            gap:6px !important;
+            padding:7px 21px 7px 7px !important;
+            text-align:left !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupIcon {
+            width:30px !important;
+            height:30px !important;
+            flex:0 0 30px !important;
+            border-radius:9px !important;
+            font-size:13px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupLabel {
+            min-width:0 !important;
+            display:-webkit-box !important;
+            -webkit-box-orient:vertical !important;
+            -webkit-line-clamp:2 !important;
+            overflow:hidden !important;
+            color:rgba(255,255,255,.90) !important;
+            font-size:8.1px !important;
+            line-height:1.15 !important;
+            font-weight:900 !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupCount {
+            position:absolute !important;
+            top:6px !important;
+            right:6px !important;
+            min-width:18px !important;
+            height:17px !important;
+            padding:0 4px !important;
+            font-size:6px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupChevron {
+            position:absolute !important;
+            right:7px !important;
+            bottom:5px !important;
+            font-size:13px !important;
+          }
+
+          /* Individual tools stay available in the existing Intelligence Window.
+             Hiding the inline accordion is what keeps every matrix visible. */
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupItems {
+            display:none !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuEmpty {
+            grid-column:1 / -1;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsExpandedFlyout {
+            top:clamp(92px,18vh,165px) !important;
+            width:370px !important;
+            max-height:min(72vh,650px) !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarBottom {
+            flex:0 0 auto !important;
+            gap:5px !important;
+            margin-top:auto !important;
+            padding-top:6px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsAdminIdentity {
+            min-height:48px !important;
+            padding:7px 8px !important;
+            border-radius:13px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsAdminAvatar {
+            width:34px !important;
+            height:34px !important;
+            flex:0 0 34px !important;
+            border-radius:10px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsAdminText strong {
+            font-size:9px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsAdminText span {
+            max-width:152px !important;
+            font-size:6.3px !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsViewStoreButton,
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsLogoutButton {
+            min-height:32px !important;
+            height:32px !important;
+            border-radius:10px !important;
+            font-size:8.5px !important;
+          }
+        }
+
+        @media (min-width:1101px) and (max-height:760px) {
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarIntelMetrics { display:none !important; }
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuSmartArea { display:none !important; }
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroups { grid-auto-rows:56px !important; }
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroup,
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupButton { height:56px !important; min-height:56px !important; }
+        }
+
+        /* ============================================================
+           NCS MATRIX SUBPAGE WINDOW + ALERT SAFE OFFSET FIX
+           Keeps all routes/features. Makes group tools visible again.
+           ============================================================ */
+        .ncsAdminPageContent {
+          padding-top:14px !important;
+        }
+
+        @media (min-width:1101px) {
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) {
+            overflow:visible !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsExpandedFlyout {
+            display:flex !important;
+            flex-direction:column !important;
+            left:290px !important;
+            top:132px !important;
+            width:372px !important;
+            max-height:calc(100vh - 158px) !important;
+            overflow:hidden !important;
+            z-index:1200 !important;
+            opacity:1 !important;
+            visibility:visible !important;
+            pointer-events:auto !important;
+          }
+
+          .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsExpandedFlyoutItems {
+            min-height:0 !important;
+            flex:1 1 auto !important;
+            max-height:none !important;
+            overflow-y:auto !important;
+          }
+        }
+
+      `}</style>
     </div>
   );
 }

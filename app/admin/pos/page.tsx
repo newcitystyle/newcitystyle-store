@@ -135,6 +135,9 @@ type PosProductGroup = {
 };
 
 type ProductViewMode = "smart" | "brands" | "products" | "all";
+type PosBrandMatrixMode = "popular" | "recent" | "az" | "all";
+
+const POS_BRAND_MATRIX_PAGE_SIZE = 8;
 
 function getPosProductFamily(group: PosProductGroup) {
   const text = `${group.name} ${group.subcategory}`.toUpperCase().replace(/[^A-Z0-9]+/g, " ");
@@ -295,6 +298,13 @@ const EMPTY_QUICK_ITEM_FORM: QuickItemForm = {
 };
 
 type PaymentMethod = "cash" | "upi" | "card" | "credit";
+type CompletedPaymentMethod = PaymentMethod | "split";
+
+type PosPaymentBreakdown = {
+  cash: number;
+  upi: number;
+  card: number;
+};
 
 type HeldBill = {
   id: string;
@@ -306,7 +316,14 @@ type HeldBill = {
   billDiscount?: number;
   roundOffAmount?: number;
   paymentMethod: PaymentMethod;
+  splitPaymentActive?: boolean;
+  splitCashAmount?: number;
+  splitUpiAmount?: number;
+  splitCardAmount?: number;
   creditPaidNow?: number;
+  creditPaidCash?: number;
+  creditPaidUpi?: number;
+  creditPaidCard?: number;
   creditDueDate?: string;
   createdAt: string;
 };
@@ -337,6 +354,14 @@ type CustomerRewardLookup = {
   total_orders?: number | string | null;
   total_spent?: number | string | null;
   whatsapp_opt_in?: boolean | null;
+};
+
+type VipCustomerRecognition = {
+  name: string;
+  phone: string;
+  totalSpent: number;
+  totalOrders: number;
+  rewardPoints: number;
 };
 
 type RewardApplyResult = {
@@ -386,7 +411,8 @@ type CompletedSale = {
   totalAmount: number;
   paidAmount: number;
   dueAmount: number;
-  paymentMethod: PaymentMethod;
+  paymentMethod: CompletedPaymentMethod;
+  paymentBreakdown?: PosPaymentBreakdown;
   rewardPointsUsed: number;
   rewardDiscount: number;
   rewardPointsEarned: number;
@@ -1461,6 +1487,8 @@ const POS_FESTIVAL_OFFERS: PosFestivalOffer[] = [
 const POS_OFFER_CORNERS = ["topLeft", "topRight", "bottomLeft", "bottomRight"] as const;
 type PosOfferCorner = (typeof POS_OFFER_CORNERS)[number];
 
+const POS_VIP_SPEND_THRESHOLD = 10_000;
+
 export default function PosPage() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const quickItemNameInputRef = useRef<HTMLInputElement | null>(null);
@@ -1468,6 +1496,7 @@ export default function PosPage() {
   const customerPhoneInputRef = useRef<HTMLInputElement | null>(null);
   const saleSubmissionLockRef = useRef(false);
   const activeBillRecoveryLoadedRef = useRef(false);
+  const vipPopupSeenPhoneRef = useRef("");
 
   const [products, setProducts] = useState<PosProduct[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
@@ -1521,6 +1550,10 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
     useState<string[]>([]);
   const [popularProductCounts, setPopularProductCounts] =
     useState<Record<string, number>>({});
+  const [brandMatrixMode, setBrandMatrixMode] =
+    useState<PosBrandMatrixMode>("popular");
+  const [brandMatrixQuery, setBrandMatrixQuery] = useState("");
+  const [brandMatrixPage, setBrandMatrixPage] = useState(0);
 
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [billDiscountPercent, setBillDiscountPercent] = useState(0);
@@ -1542,11 +1575,21 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
     useState(false);
   const [rewardCustomerFound, setRewardCustomerFound] =
     useState(false);
+  const [vipCustomerProfile, setVipCustomerProfile] =
+    useState<VipCustomerRecognition | null>(null);
+  const [showVipWelcome, setShowVipWelcome] = useState(false);
 
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>("cash");
+  const [splitPaymentActive, setSplitPaymentActive] = useState(false);
+  const [splitCashAmount, setSplitCashAmount] = useState(0);
+  const [splitUpiAmount, setSplitUpiAmount] = useState(0);
+  const [splitCardAmount, setSplitCardAmount] = useState(0);
 
   const [creditPaidNow, setCreditPaidNow] = useState(0);
+  const [creditPaidCash, setCreditPaidCash] = useState(0);
+  const [creditPaidUpi, setCreditPaidUpi] = useState(0);
+  const [creditPaidCard, setCreditPaidCard] = useState(0);
   const [creditDueDate, setCreditDueDate] = useState(
     getDefaultCreditDueDate()
   );
@@ -1910,6 +1953,7 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
       if (isBrowserOnline()) {
         const [
           salesResponse,
+          paymentsResponse,
           creditResponse,
           exchangeResponse,
           refundResponse,
@@ -1922,6 +1966,13 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
             .eq("is_deleted", false)
             .gte("created_at", startOfDay.toISOString())
             .lt("created_at", endOfDay.toISOString()),
+
+          supabase
+            .from("pos_payments")
+            .select("amount,payment_method,payment_status,paid_at")
+            .eq("payment_status", "completed")
+            .gte("paid_at", startOfDay.toISOString())
+            .lt("paid_at", endOfDay.toISOString()),
 
           supabase
             .from("customer_credit_accounts")
@@ -1993,17 +2044,48 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
 
             todaySales += total;
 
-            if (method === "cash") {
-              todayCash += paid;
-            } else if (
-              method === "upi" ||
-              method === "card" ||
-              method === "bank" ||
-              method === "bank_transfer"
-            ) {
-              todayDigital += paid;
+            if (paymentsResponse.error) {
+              if (method === "cash") {
+                todayCash += paid;
+              } else if (
+                method === "upi" ||
+                method === "card" ||
+                method === "bank" ||
+                method === "bank_transfer"
+              ) {
+                todayDigital += paid;
+              }
             }
           });
+
+          if (!paymentsResponse.error) {
+            const paymentRows = (paymentsResponse.data || []) as Array<{
+              amount?: number | string | null;
+              payment_method?: string | null;
+              payment_status?: string | null;
+            }>;
+
+            paymentRows.forEach((payment) => {
+              const amount = Math.max(0, toNumber(payment.amount));
+              const method = normalizeText(payment.payment_method);
+              if (method === "cash") {
+                todayCash += amount;
+              } else if (
+                method === "upi" ||
+                method === "card" ||
+                method === "bank" ||
+                method === "bank_transfer" ||
+                method === "wallet"
+              ) {
+                todayDigital += amount;
+              }
+            });
+          } else {
+            console.info(
+              "POS payment breakdown unavailable; using sale payment method fallback:",
+              paymentsResponse.error.message,
+            );
+          }
 
           if (!exchangeResponse.error) {
             const exchangeRows =
@@ -2387,7 +2469,25 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
             ? draft.paymentMethod
             : "cash"
         );
-        setCreditPaidNow(Math.max(0, toNumber(draft.creditPaidNow)));
+        const recoveredSplitActive = draft.splitPaymentActive === true;
+        setSplitPaymentActive(recoveredSplitActive);
+        setSplitCashAmount(Math.max(0, toNumber(draft.splitCashAmount)));
+        setSplitUpiAmount(Math.max(0, toNumber(draft.splitUpiAmount)));
+        setSplitCardAmount(Math.max(0, toNumber(draft.splitCardAmount)));
+
+        const recoveredCreditPaid = Math.max(0, toNumber(draft.creditPaidNow));
+        const recoveredCreditCash = Math.max(
+          0,
+          toNumber(draft.creditPaidCash, recoveredCreditPaid),
+        );
+        const recoveredCreditUpi = Math.max(0, toNumber(draft.creditPaidUpi));
+        const recoveredCreditCard = Math.max(0, toNumber(draft.creditPaidCard));
+        setCreditPaidCash(recoveredCreditCash);
+        setCreditPaidUpi(recoveredCreditUpi);
+        setCreditPaidCard(recoveredCreditCard);
+        setCreditPaidNow(
+          recoveredCreditCash + recoveredCreditUpi + recoveredCreditCard,
+        );
         setCreditDueDate(
           draft.creditDueDate || getDefaultCreditDueDate()
         );
@@ -2426,10 +2526,20 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
       ),
       roundOffAmount: Math.max(0, roundOffAmount),
       paymentMethod,
+      splitPaymentActive,
+      splitCashAmount: splitPaymentActive ? Math.max(0, splitCashAmount) : 0,
+      splitUpiAmount: splitPaymentActive ? Math.max(0, splitUpiAmount) : 0,
+      splitCardAmount: splitPaymentActive ? Math.max(0, splitCardAmount) : 0,
       creditPaidNow:
         paymentMethod === "credit"
           ? Math.max(0, creditPaidNow)
           : 0,
+      creditPaidCash:
+        paymentMethod === "credit" ? Math.max(0, creditPaidCash) : 0,
+      creditPaidUpi:
+        paymentMethod === "credit" ? Math.max(0, creditPaidUpi) : 0,
+      creditPaidCard:
+        paymentMethod === "credit" ? Math.max(0, creditPaidCard) : 0,
       creditDueDate:
         paymentMethod === "credit" ? creditDueDate : undefined,
       createdAt: new Date().toISOString(),
@@ -2447,7 +2557,14 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
     billDiscountPercent,
     roundOffAmount,
     paymentMethod,
+    splitPaymentActive,
+    splitCashAmount,
+    splitUpiAmount,
+    splitCardAmount,
     creditPaidNow,
+    creditPaidCash,
+    creditPaidUpi,
+    creditPaidCard,
     creditDueDate,
   ]);
 
@@ -3150,6 +3267,9 @@ if (!variantsError) {
         setAvailableRewardPoints(0);
         setRewardPointsToUse(0);
         setRewardCustomerFound(false);
+        setVipCustomerProfile(null);
+        setShowVipWelcome(false);
+        vipPopupSeenPhoneRef.current = "";
         return;
       }
 
@@ -3164,6 +3284,8 @@ if (!variantsError) {
         setAvailableRewardPoints(0);
         setRewardPointsToUse(0);
         setRewardCustomerFound(false);
+        setVipCustomerProfile(null);
+        setShowVipWelcome(false);
         setRewardLookupLoading(false);
         return;
       }
@@ -3188,6 +3310,8 @@ if (!variantsError) {
           setAvailableRewardPoints(0);
           setRewardPointsToUse(0);
           setRewardCustomerFound(false);
+          setVipCustomerProfile(null);
+          setShowVipWelcome(false);
           return;
         }
 
@@ -3204,12 +3328,36 @@ if (!variantsError) {
         if (customer.full_name?.trim()) {
           setCustomerName(customer.full_name.trim());
         }
+
+        const vipTotalSpent = Math.max(0, toNumber(customer.total_spent));
+        const vipTotalOrders = Math.max(0, Math.trunc(toNumber(customer.total_orders)));
+        const vipProfile: VipCustomerRecognition | null =
+          vipTotalSpent >= POS_VIP_SPEND_THRESHOLD && vipTotalOrders > 0
+            ? {
+                name: customer.full_name?.trim() || "Valued Customer",
+                phone,
+                totalSpent: vipTotalSpent,
+                totalOrders: vipTotalOrders,
+                rewardPoints: Math.max(0, toNumber(customer.reward_points)),
+              }
+            : null;
+
+        setVipCustomerProfile(vipProfile);
+
+        if (vipProfile && vipPopupSeenPhoneRef.current !== phone) {
+          vipPopupSeenPhoneRef.current = phone;
+          setShowVipWelcome(true);
+        } else if (!vipProfile) {
+          setShowVipWelcome(false);
+        }
       } catch (error) {
         console.info("Customer rewards are temporarily unavailable:", error);
         setRewardCustomerId(null);
         setAvailableRewardPoints(0);
         setRewardPointsToUse(0);
         setRewardCustomerFound(false);
+        setVipCustomerProfile(null);
+        setShowVipWelcome(false);
       } finally {
         setRewardLookupLoading(false);
       }
@@ -3225,6 +3373,9 @@ if (!variantsError) {
       setAvailableRewardPoints(0);
       setRewardPointsToUse(0);
       setRewardCustomerFound(false);
+      setVipCustomerProfile(null);
+      setShowVipWelcome(false);
+      vipPopupSeenPhoneRef.current = "";
       return;
     }
 
@@ -3250,6 +3401,30 @@ if (!variantsError) {
         a.localeCompare(b)
       ),
     ];
+  }, [products]);
+
+  const categoryIntelligence = useMemo(() => {
+    const stats: Record<string, { variants: number; stock: number }> = {
+      All: { variants: 0, stock: 0 },
+    };
+
+    products.forEach((product) => {
+      const availableStock = Math.max(0, getAvailableStock(product));
+      if (availableStock <= 0) return;
+
+      stats.All.variants += 1;
+      stats.All.stock += availableStock;
+
+      const category = product.category || "Other";
+      if (!stats[category]) {
+        stats[category] = { variants: 0, stock: 0 };
+      }
+
+      stats[category].variants += 1;
+      stats[category].stock += availableStock;
+    });
+
+    return stats;
   }, [products]);
 
   const filteredProducts = useMemo(() => {
@@ -3442,6 +3617,103 @@ if (!variantsError) {
       )
       .slice(0, 6);
   }, [groupedProducts, popularProductCounts]);
+
+  const brandMatrixGroups = useMemo(() => {
+    const normalizedQuery = normalizeText(brandMatrixQuery);
+
+    const enriched = brandGroups
+      .filter((brandGroup) => {
+        if (!normalizedQuery) return true;
+
+        const searchableText = normalizeText(
+          [
+            brandGroup.brand,
+            ...brandGroup.groups.flatMap((group) => [
+              group.name,
+              group.category,
+              group.subcategory,
+            ]),
+          ].join(" ")
+        );
+
+        return searchableText.includes(normalizedQuery);
+      })
+      .map((brandGroup) => {
+        const popularityScore = brandGroup.groups.reduce(
+          (sum, group) =>
+            sum + (popularProductCounts[String(group.productId)] || 0),
+          0
+        );
+
+        const recentRanks = brandGroup.groups
+          .map((group) => recentProductKeys.indexOf(String(group.productId)))
+          .filter((rank) => rank >= 0);
+
+        const recentRank =
+          recentRanks.length > 0
+            ? Math.min(...recentRanks)
+            : Number.MAX_SAFE_INTEGER;
+
+        return {
+          ...brandGroup,
+          popularityScore,
+          recentRank,
+        };
+      });
+
+    return enriched.sort((a, b) => {
+      if (brandMatrixMode === "popular") {
+        return (
+          b.popularityScore - a.popularityScore ||
+          b.totalStock - a.totalStock ||
+          a.brand.localeCompare(b.brand)
+        );
+      }
+
+      if (brandMatrixMode === "recent") {
+        return (
+          a.recentRank - b.recentRank ||
+          b.popularityScore - a.popularityScore ||
+          a.brand.localeCompare(b.brand)
+        );
+      }
+
+      if (brandMatrixMode === "az") {
+        return a.brand.localeCompare(b.brand);
+      }
+
+      return a.brand.localeCompare(b.brand);
+    });
+  }, [
+    brandGroups,
+    brandMatrixMode,
+    brandMatrixQuery,
+    popularProductCounts,
+    recentProductKeys,
+  ]);
+
+  const brandMatrixPageCount = Math.max(
+    1,
+    Math.ceil(brandMatrixGroups.length / POS_BRAND_MATRIX_PAGE_SIZE)
+  );
+
+  const brandMatrixPageGroups = useMemo(() => {
+    const start = brandMatrixPage * POS_BRAND_MATRIX_PAGE_SIZE;
+    return brandMatrixGroups.slice(
+      start,
+      start + POS_BRAND_MATRIX_PAGE_SIZE
+    );
+  }, [brandMatrixGroups, brandMatrixPage]);
+
+  useEffect(() => {
+    setBrandMatrixPage(0);
+  }, [brandMatrixMode, brandMatrixQuery, selectedCategory]);
+
+  useEffect(() => {
+    setBrandMatrixPage((current) =>
+      Math.min(current, Math.max(0, brandMatrixPageCount - 1))
+    );
+  }, [brandMatrixPageCount]);
 
   const itemMrpSubtotal = useMemo(
     () =>
@@ -3732,6 +4004,17 @@ if (!variantsError) {
     safeBillDiscountPercent,
   ]);
 
+  const safeSplitCashAmount = Math.max(0, splitCashAmount);
+  const safeSplitUpiAmount = Math.max(0, splitUpiAmount);
+  const safeSplitCardAmount = Math.max(0, splitCardAmount);
+  const splitPaidTotal = Number(
+    (safeSplitCashAmount + safeSplitUpiAmount + safeSplitCardAmount).toFixed(2),
+  );
+  const splitRemainingAmount = Math.max(
+    0,
+    Number((finalPayable - splitPaidTotal).toFixed(2)),
+  );
+
   const safeCreditPaidNow =
     paymentMethod === "credit"
       ? Math.min(
@@ -3740,10 +4023,70 @@ if (!variantsError) {
         )
       : finalPayable;
 
+  const safeCreditBreakdown: PosPaymentBreakdown = {
+    cash: Math.max(0, creditPaidCash),
+    upi: Math.max(0, creditPaidUpi),
+    card: Math.max(0, creditPaidCard),
+  };
+
   const creditDueAmount =
     paymentMethod === "credit"
       ? Math.max(0, finalPayable - safeCreditPaidNow)
       : 0;
+
+  function updateSplitPaymentPart(
+    method: keyof PosPaymentBreakdown,
+    nextValue: number,
+  ) {
+    const next = Math.max(0, nextValue);
+    const otherTotal =
+      method === "cash"
+        ? safeSplitUpiAmount + safeSplitCardAmount
+        : method === "upi"
+          ? safeSplitCashAmount + safeSplitCardAmount
+          : safeSplitCashAmount + safeSplitUpiAmount;
+    const clamped = Math.min(Math.max(0, finalPayable - otherTotal), next);
+
+    if (method === "cash") setSplitCashAmount(clamped);
+    if (method === "upi") setSplitUpiAmount(clamped);
+    if (method === "card") setSplitCardAmount(clamped);
+  }
+
+  function updateCreditPaidPart(
+    method: keyof PosPaymentBreakdown,
+    nextValue: number,
+  ) {
+    const next = Math.max(0, nextValue);
+    const current = {
+      cash: Math.max(0, creditPaidCash),
+      upi: Math.max(0, creditPaidUpi),
+      card: Math.max(0, creditPaidCard),
+    };
+    const otherTotal =
+      Object.entries(current)
+        .filter(([key]) => key !== method)
+        .reduce((sum, [, value]) => sum + value, 0);
+    const clamped = Math.min(Math.max(0, finalPayable - otherTotal), next);
+    const updated = { ...current, [method]: clamped };
+
+    if (method === "cash") setCreditPaidCash(clamped);
+    if (method === "upi") setCreditPaidUpi(clamped);
+    if (method === "card") setCreditPaidCard(clamped);
+    setCreditPaidNow(
+      Number((updated.cash + updated.upi + updated.card).toFixed(2)),
+    );
+  }
+
+  function clearPaymentAllocations() {
+    setSplitPaymentActive(false);
+    setSplitCashAmount(0);
+    setSplitUpiAmount(0);
+    setSplitCardAmount(0);
+    setCreditPaidNow(0);
+    setCreditPaidCash(0);
+    setCreditPaidUpi(0);
+    setCreditPaidCard(0);
+  }
 
   const totalQuantity = useMemo(
     () =>
@@ -5123,7 +5466,7 @@ if (!variantsError) {
     setRewardPointsToUse(0);
     setRewardCustomerFound(false);
     setPaymentMethod("cash");
-    setCreditPaidNow(0);
+    clearPaymentAllocations();
     setCreditDueDate(getDefaultCreditDueDate());
 
     showNotice("Current bill cleared.", "info");
@@ -5182,10 +5525,20 @@ if (!variantsError) {
       billDiscountPercent: safeBillDiscountPercent,
       roundOffAmount: safeRoundOffAmount,
       paymentMethod,
+      splitPaymentActive,
+      splitCashAmount: splitPaymentActive ? safeSplitCashAmount : 0,
+      splitUpiAmount: splitPaymentActive ? safeSplitUpiAmount : 0,
+      splitCardAmount: splitPaymentActive ? safeSplitCardAmount : 0,
       creditPaidNow:
         paymentMethod === "credit"
           ? safeCreditPaidNow
           : 0,
+      creditPaidCash:
+        paymentMethod === "credit" ? safeCreditBreakdown.cash : 0,
+      creditPaidUpi:
+        paymentMethod === "credit" ? safeCreditBreakdown.upi : 0,
+      creditPaidCard:
+        paymentMethod === "credit" ? safeCreditBreakdown.card : 0,
       creditDueDate:
         paymentMethod === "credit"
           ? creditDueDate
@@ -5211,7 +5564,7 @@ if (!variantsError) {
     setRewardPointsToUse(0);
     setRewardCustomerFound(false);
     setPaymentMethod("cash");
-    setCreditPaidNow(0);
+    clearPaymentAllocations();
     setCreditDueDate(getDefaultCreditDueDate());
 
     showNotice(
@@ -5280,10 +5633,31 @@ if (!variantsError) {
     setRewardPointsToUse(0);
     setRewardCustomerFound(false);
     setPaymentMethod(heldBill.paymentMethod);
+    setSplitPaymentActive(heldBill.splitPaymentActive === true);
+    setSplitCashAmount(Math.max(0, toNumber(heldBill.splitCashAmount)));
+    setSplitUpiAmount(Math.max(0, toNumber(heldBill.splitUpiAmount)));
+    setSplitCardAmount(Math.max(0, toNumber(heldBill.splitCardAmount)));
+
+    const heldCreditPaid = Math.max(0, toNumber(heldBill.creditPaidNow));
+    const heldCreditCash = Math.max(
+      0,
+      toNumber(heldBill.creditPaidCash, heldCreditPaid),
+    );
+    const heldCreditUpi = Math.max(0, toNumber(heldBill.creditPaidUpi));
+    const heldCreditCard = Math.max(0, toNumber(heldBill.creditPaidCard));
+    setCreditPaidCash(
+      heldBill.paymentMethod === "credit" ? heldCreditCash : 0,
+    );
+    setCreditPaidUpi(
+      heldBill.paymentMethod === "credit" ? heldCreditUpi : 0,
+    );
+    setCreditPaidCard(
+      heldBill.paymentMethod === "credit" ? heldCreditCard : 0,
+    );
     setCreditPaidNow(
       heldBill.paymentMethod === "credit"
-        ? Math.max(0, toNumber(heldBill.creditPaidNow))
-        : 0
+        ? heldCreditCash + heldCreditUpi + heldCreditCard
+        : 0,
     );
     setCreditDueDate(
       heldBill.creditDueDate ||
@@ -6898,6 +7272,25 @@ if (!variantsError) {
       return;
     }
 
+    if (splitPaymentActive && !isBrowserOnline()) {
+      showNotice(
+        "Split Cash / UPI / Card needs internet so the exact payment breakup can be saved safely. Use one payment method while offline.",
+        "error",
+      );
+      return;
+    }
+
+    if (splitPaymentActive) {
+      const difference = Math.abs(splitPaidTotal - finalPayable);
+      if (splitPaidTotal <= 0 || difference > 0.01) {
+        showNotice(
+          `Split payment must equal the bill total. Remaining ${formatCurrency(splitRemainingAmount)}.`,
+          "error",
+        );
+        return;
+      }
+    }
+
     if (
       paymentMethod === "credit" &&
       !customerName.trim()
@@ -7101,7 +7494,7 @@ if (!variantsError) {
         setRewardPointsToUse(0);
         setRewardCustomerFound(false);
         setPaymentMethod("cash");
-        setCreditPaidNow(0);
+        clearPaymentAllocations();
         setCreditDueDate(getDefaultCreditDueDate());
         setMobileCartOpen(false);
         setSearchQuery("");
@@ -7161,6 +7554,30 @@ if (!variantsError) {
         });
       }
 
+      const rpcPaymentMethod: PaymentMethod = splitPaymentActive
+        ? safeSplitCashAmount > 0
+          ? "cash"
+          : safeSplitUpiAmount > 0
+            ? "upi"
+            : "card"
+        : paymentMethod;
+
+      const saleNoteParts: string[] = [];
+      const quickItemCount = cartItems.filter((item) => item.isQuickItem).length;
+      if (quickItemCount > 0) {
+        saleNoteParts.push(`${quickItemCount} quick item(s) included`);
+      }
+      if (splitPaymentActive) {
+        saleNoteParts.push(
+          `NCS_SPLIT_V1 cash=${safeSplitCashAmount.toFixed(2)} upi=${safeSplitUpiAmount.toFixed(2)} card=${safeSplitCardAmount.toFixed(2)}`,
+        );
+      }
+      if (paymentMethod === "credit" && safeCreditPaidNow > 0) {
+        saleNoteParts.push(
+          `NCS_CREDIT_PAID_V1 cash=${safeCreditBreakdown.cash.toFixed(2)} upi=${safeCreditBreakdown.upi.toFixed(2)} card=${safeCreditBreakdown.card.toFixed(2)}`,
+        );
+      }
+
       const { data, error } = await supabase.rpc(
         "complete_pos_sale",
         {
@@ -7170,14 +7587,11 @@ if (!variantsError) {
           p_customer_phone:
             customerPhone.trim() || null,
           p_customer_email: null,
-          p_payment_method: paymentMethod,
+          p_payment_method: rpcPaymentMethod,
           p_bill_discount:
             billDiscountAmount + rewardDiscountAmount,
           p_round_off: safeRoundOffAmount,
-          p_notes:
-            cartItems.some((item) => item.isQuickItem)
-              ? `${cartItems.filter((item) => item.isQuickItem).length} quick item(s) included`
-              : null,
+          p_notes: saleNoteParts.length > 0 ? saleNoteParts.join(" • ") : null,
           p_client_transaction_id:
             clientTransactionId,
           p_device_id: "web-admin-pos",
@@ -7201,6 +7615,40 @@ if (!variantsError) {
 
       const invoiceNumber =
         result.invoice_number || "Invoice created";
+
+      if (splitPaymentActive && result.sale_id) {
+        const { data: splitData, error: splitError } = await supabase.rpc(
+          "ncs_set_pos_payment_breakdown_v1",
+          {
+            p_sale_id: String(result.sale_id),
+            p_client_transaction_id: clientTransactionId,
+            p_cash: Number(safeSplitCashAmount.toFixed(2)),
+            p_upi: Number(safeSplitUpiAmount.toFixed(2)),
+            p_card: Number(safeSplitCardAmount.toFixed(2)),
+            p_keep_credit: false,
+          },
+        );
+
+        if (splitError) {
+          throw new Error(
+            `Split payment breakup could not be saved: ${splitError.message}. Apply the NCS split-payment SQL migration first.`,
+          );
+        }
+
+        const splitPayload = (splitData || {}) as {
+          success?: boolean;
+          message?: string;
+        };
+        if (splitPayload.success === false) {
+          throw new Error(
+            splitPayload.message || "Split payment breakup could not be saved.",
+          );
+        }
+
+        result.payment_method = "split";
+        result.paid_amount = finalPayable;
+        result.due_amount = 0;
+      }
 
       let designSyncWarning = "";
       const soldDesignItems = cartItems
@@ -7376,6 +7824,35 @@ if (!variantsError) {
           );
         }
 
+        if (safeCreditPaidNow > 0) {
+          const { data: creditPaymentData, error: creditPaymentError } =
+            await supabase.rpc("ncs_set_pos_payment_breakdown_v1", {
+              p_sale_id: saleId,
+              p_client_transaction_id: clientTransactionId,
+              p_cash: Number(safeCreditBreakdown.cash.toFixed(2)),
+              p_upi: Number(safeCreditBreakdown.upi.toFixed(2)),
+              p_card: Number(safeCreditBreakdown.card.toFixed(2)),
+              p_keep_credit: true,
+            });
+
+          if (creditPaymentError) {
+            throw new Error(
+              `Credit paid-now breakup could not be saved: ${creditPaymentError.message}. Apply the NCS split-payment SQL migration first.`,
+            );
+          }
+
+          const creditPaymentPayload = (creditPaymentData || {}) as {
+            success?: boolean;
+            message?: string;
+          };
+          if (creditPaymentPayload.success === false) {
+            throw new Error(
+              creditPaymentPayload.message ||
+                "Credit paid-now breakup could not be saved.",
+            );
+          }
+        }
+
         if (
           safeCreditPaidNow > 0 &&
           customerPhone.trim()
@@ -7426,34 +7903,49 @@ if (!variantsError) {
               );
             }
 
-            const { error: paymentTransactionError } =
-              await supabase
-                .from("customer_credit_transactions")
-                .insert({
-                  credit_account_id: creditAccount.id,
-                  customer_id:
-                    creditAccount.customer_id || null,
-                  customer_phone: customerPhone.trim(),
-                  sale_id: saleId,
-                  transaction_type: "payment",
-                  amount_change: -safeCreditPaidNow,
-                  balance_before: balanceBefore,
-                  balance_after: balanceAfter,
-                  payment_method: "cash",
-                  reference_number: invoiceNumber,
-                  due_date: creditDueDate,
-                  description:
-                    `Advance payment received for ${invoiceNumber}`,
-                  notes:
-                    `Paid now ${formatCurrency(safeCreditPaidNow)}; due ${formatCurrency(creditDueAmount)}`,
-                  received_by: null,
-                  created_at: now,
-                });
+            const paidParts = (
+              [
+                ["cash", safeCreditBreakdown.cash],
+                ["upi", safeCreditBreakdown.upi],
+                ["card", safeCreditBreakdown.card],
+              ] as const
+            ).filter(([, amount]) => amount > 0);
 
-            if (paymentTransactionError) {
-              throw new Error(
-                `Credit payment transaction could not be saved: ${paymentTransactionError.message}`,
-              );
+            let runningBalance = balanceBefore;
+            const paymentTransactions = paidParts.map(([method, amount]) => {
+              const before = runningBalance;
+              const after = Math.max(0, Number((before - amount).toFixed(2)));
+              runningBalance = after;
+              return {
+                credit_account_id: creditAccount.id,
+                customer_id: creditAccount.customer_id || null,
+                customer_phone: customerPhone.trim(),
+                sale_id: saleId,
+                transaction_type: "payment",
+                amount_change: -amount,
+                balance_before: before,
+                balance_after: after,
+                payment_method: method,
+                reference_number: invoiceNumber,
+                due_date: creditDueDate,
+                description: `Advance ${method.toUpperCase()} payment received for ${invoiceNumber}`,
+                notes: `Paid now ${formatCurrency(safeCreditPaidNow)}; due ${formatCurrency(creditDueAmount)}`,
+                received_by: null,
+                created_at: now,
+              };
+            });
+
+            if (paymentTransactions.length > 0) {
+              const { error: paymentTransactionError } =
+                await supabase
+                  .from("customer_credit_transactions")
+                  .insert(paymentTransactions);
+
+              if (paymentTransactionError) {
+                throw new Error(
+                  `Credit payment transaction could not be saved: ${paymentTransactionError.message}`,
+                );
+              }
             }
           }
         }
@@ -7506,7 +7998,16 @@ if (!variantsError) {
           paymentMethod === "credit"
             ? creditDueAmount
             : 0,
-        paymentMethod,
+        paymentMethod: splitPaymentActive ? "split" : paymentMethod,
+        paymentBreakdown: splitPaymentActive
+          ? {
+              cash: safeSplitCashAmount,
+              upi: safeSplitUpiAmount,
+              card: safeSplitCardAmount,
+            }
+          : paymentMethod === "credit"
+            ? { ...safeCreditBreakdown }
+            : undefined,
         completedAt: new Date().toISOString(),
       };
 
@@ -7551,7 +8052,7 @@ if (!variantsError) {
       setRewardPointsToUse(0);
       setRewardCustomerFound(false);
       setPaymentMethod("cash");
-      setCreditPaidNow(0);
+      clearPaymentAllocations();
       setCreditDueDate(getDefaultCreditDueDate());
       setMobileCartOpen(false);
       setSearchQuery("");
@@ -7620,6 +8121,81 @@ if (!variantsError) {
           : ""
       }`}
     >
+      {showVipWelcome && vipCustomerProfile && typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="ncsPosVipBackdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setShowVipWelcome(false);
+              }
+            }}
+          >
+            <section
+              className="ncsPosVipPortal"
+              role="dialog"
+              aria-modal="true"
+              aria-label="NEW CITY STYLE VIP customer welcome"
+            >
+              <button
+                type="button"
+                className="ncsPosVipClose"
+                onClick={() => setShowVipWelcome(false)}
+                aria-label="Close VIP welcome"
+              >
+                ×
+              </button>
+
+              <div className="ncsPosVipHalo" aria-hidden="true">
+                <span>✦</span>
+              </div>
+
+              <div className="ncsPosVipEyebrow">
+                <i /> NEW CITY STYLE • VIP RECOGNITION
+              </div>
+
+              <h2>Welcome back, {vipCustomerProfile.name}</h2>
+              <h3>YOU ARE A NEW CITY STYLE VIP CUSTOMER</h3>
+
+              <p className="ncsPosVipMessage">
+                మీ నమ్మకానికి హృదయపూర్వక ధన్యవాదాలు. మీరు NEW CITY STYLEలో
+                ₹10,000+ shopping milestone పూర్తి చేశారు. మిమ్మల్ని మళ్లీ
+                స్వాగతించడం మా ఆనందం.
+              </p>
+
+              <div className="ncsPosVipMetrics">
+                <article>
+                  <span>LIFETIME SHOPPING</span>
+                  <strong>{formatCurrency(vipCustomerProfile.totalSpent)}</strong>
+                </article>
+                <article>
+                  <span>SHOPPING VISITS</span>
+                  <strong>{vipCustomerProfile.totalOrders}</strong>
+                </article>
+                <article>
+                  <span>REWARD POINTS</span>
+                  <strong>{Math.floor(vipCustomerProfile.rewardPoints)}</strong>
+                </article>
+              </div>
+
+              <div className="ncsPosVipFooter">
+                <div>
+                  <span>✦ VIP STATUS ACTIVE</span>
+                  <small>Thank you for choosing NEW CITY STYLE again.</small>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowVipWelcome(false)}
+                >
+                  Continue Billing <b>→</b>
+                </button>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )}
+
       {designPickerProduct && typeof document !== "undefined" && createPortal(
         <div className="ncsPosDesignPickerBackdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDesignPickerProduct(null); }}>
           <section className="ncsPosDesignPicker" role="dialog" aria-modal="true" aria-label="Select sold design">
@@ -8106,6 +8682,12 @@ if (!variantsError) {
               <span>＋</span>
               Quick Item
             </button>
+
+            <div className="ncsPosSearchTelemetry" aria-hidden="true">
+              <span>SCAN CORE 2036</span>
+              <b>{searchQuery.trim() ? `${filteredProducts.length} MATCH` : "READY"}</b>
+              <small>F2</small>
+            </div>
       </form>
 
       <section
@@ -8119,11 +8701,17 @@ if (!variantsError) {
           aria-expanded={posAiExpanded}
         >
           <span className="ncsPosPremiumAiButton" aria-hidden="true">
-            <span className="ncsPosPremiumAiSpark">✦</span>
-            <span className="ncsPosPremiumAiCopy">
-              <b>Ask NCS AI</b>
-              <small>Billing Assistant</small>
+            <span className="ncsPosPremiumAiOrb">
+              <span className="ncsPosPremiumAiSpark">✦</span>
+              <i />
+              <i />
             </span>
+            <span className="ncsPosPremiumAiCopy">
+              <em>NCS INTELLIGENCE</em>
+              <b>Ask NCS AI</b>
+              <small>Live Bill Copilot</small>
+            </span>
+            <span className="ncsPosPremiumAiLive"><i />LIVE</span>
             <span className="ncsPosPremiumAiArrow">›</span>
           </span>
         </button>
@@ -8156,6 +8744,12 @@ if (!variantsError) {
 
         {posAiExpanded && (
           <div className="ncsPosAiExpandableBody">
+            <div className="ncsPosAiContextStrip">
+              <span><i /> LIVE BILL CONTEXT</span>
+              <b>{totalQuantity} item{totalQuantity === 1 ? "" : "s"}</b>
+              <strong>{formatCurrency(finalPayable)}</strong>
+              <small>{customerPhone ? "CUSTOMER LINKED" : "READY FOR CUSTOMER"}</small>
+            </div>
         <form
           className="ncsPosAiCommandRow"
           onSubmit={handlePosAiSubmit}
@@ -8199,6 +8793,18 @@ if (!variantsError) {
           <span>తెలుగు</span>
           <span>Mixed commands</span>
           <small>Multi-item • Qty • Discount • Stock • Customer • Payment • Hold • Total • Voice-ready</small>
+        </div>
+
+        <div className="ncsPosAiQuickPrompts" aria-label="AI command shortcuts">
+          <button type="button" onClick={() => setPosAiCommand("bill total")}>
+            <span>Σ</span> Bill Total
+          </button>
+          <button type="button" onClick={() => setPosAiCommand("hold bill")}>
+            <span>◫</span> Hold Bill
+          </button>
+          <button type="button" onClick={() => setPosAiCommand("cash")}>
+            <span>₹</span> Cash Payment
+          </button>
         </div>
 
 
@@ -8288,38 +8894,57 @@ if (!variantsError) {
         )}
       </section>
 
-      <div className="ncsPosCategoryRow">
-            {categories.map((category) => (
-              <button
-                key={category}
-                type="button"
-                className={
-                  selectedCategory === category
-                    ? "ncsPosCategoryButton ncsPosCategoryActive"
-                    : "ncsPosCategoryButton"
-                }
-                onClick={() => {
-                  setSelectedCategory(category);
-                  setProductViewMode("brands");
-                  setExpandedBrand(null);
-                  setExpandedProductFamily(null);
-                  setExpandedProductId(null);
-                }}
-              >
-                {category}
-              </button>
-            ))}
+      <div className="ncsPosCategoryOrbit">
+        <div className="ncsPosCategoryOrbitLabel" aria-hidden="true">
+          <span>CATEGORY ORBIT</span>
+          <b>{selectedCategory === "All" ? "ALL STOCK" : selectedCategory}</b>
+        </div>
+
+        <div className="ncsPosCategoryRow">
+              {categories.map((category) => {
+                const stats = categoryIntelligence[category] || { variants: 0, stock: 0 };
+
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    className={
+                      selectedCategory === category
+                        ? "ncsPosCategoryButton ncsPosCategoryActive"
+                        : "ncsPosCategoryButton"
+                    }
+                    onClick={() => {
+                      setSelectedCategory(category);
+                      setProductViewMode("brands");
+                      setExpandedBrand(null);
+                      setExpandedProductFamily(null);
+                      setExpandedProductId(null);
+                    }}
+                  >
+                    <span className="ncsPosCategoryGlyph">
+                      {category === "All" ? "◎" : category.slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="ncsPosCategoryCopy">
+                      <b>{category}</b>
+                      <small>{stats.variants} variants • {stats.stock} stock</small>
+                    </span>
+                    <i aria-hidden="true" />
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="ncsPosCatalogueTop">
             <div>
+              <span className="ncsPosFinderEyebrow">PRODUCT INTELLIGENCE • 2036</span>
               <h2>Smart Product Finder</h2>
 
-              <p>
-                {loadingProducts
-                  ? "Loading products..."
-                  : `${groupedProducts.length} style(s) • ${filteredProducts.length} variant(s)`}
-              </p>
+              <div className="ncsPosFinderTelemetry">
+                <span><b>{groupedProducts.length}</b> Styles</span>
+                <span><b>{filteredProducts.length}</b> Variants</span>
+                <span><b>{brandGroups.length}</b> Brands</span>
+              </div>
             </div>
 
             <div className="ncsPosStatusBadge">
@@ -8533,30 +9158,155 @@ if (!variantsError) {
 
               {productViewMode === "brands" && (
                 <>
-                  <div className="ncsPosBrandCompactGrid">
-                    {brandGroups.map((brandGroup) => (
-                      <button
-                        key={brandGroup.brand}
-                        type="button"
-                        className="ncsPosBrandCompactCard"
-                        onClick={() => {
-                          setExpandedProductId(null);
-                          setExpandedBrand(brandGroup.brand);
-                        }}
+                  <section className="ncsPosBrandMatrixShell">
+                    <div className="ncsPosBrandMatrixCommand">
+                      <label className="ncsPosBrandMatrixSearch">
+                        <span>⌕</span>
+                        <input
+                          value={brandMatrixQuery}
+                          onChange={(event) =>
+                            setBrandMatrixQuery(event.target.value)
+                          }
+                          placeholder="Search brand / product..."
+                          aria-label="Search brands and products"
+                        />
+                        {brandMatrixQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setBrandMatrixQuery("")}
+                            aria-label="Clear brand search"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </label>
+
+                      <div
+                        className="ncsPosBrandMatrixModes"
+                        role="group"
+                        aria-label="Brand order"
                       >
-                        <span className="ncsPosBrandCompactMark">
-                          {brandGroup.brand.slice(0, 2).toUpperCase()}
-                        </span>
-                        <div>
-                          <strong>{brandGroup.brand}</strong>
-                          <small>
-                            {brandGroup.groups.length} styles • {brandGroup.totalVariants} variants
-                          </small>
-                        </div>
-                        <b>›</b>
+                        {([
+                          ["popular", "POPULAR"],
+                          ["recent", "RECENT"],
+                          ["az", "A–Z"],
+                          ["all", "ALL"],
+                        ] as const).map(([mode, label]) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            className={
+                              brandMatrixMode === mode ? "active" : ""
+                            }
+                            onClick={() => setBrandMatrixMode(mode)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="ncsPosBrandMatrixMeta">
+                      <div>
+                        <span>BRAND INTELLIGENCE MATRIX</span>
+                        <strong>
+                          {brandMatrixGroups.length} live brand node(s)
+                        </strong>
+                      </div>
+                      <small>8 nodes per field • no long page scroll</small>
+                    </div>
+
+                    <div className="ncsPosBrandMatrixViewport">
+                      <div className="ncsPosBrandCompactGrid ncsPosBrandMatrixGrid">
+                        {brandMatrixPageGroups.map((brandGroup) => (
+                          <button
+                            key={brandGroup.brand}
+                            type="button"
+                            className="ncsPosBrandCompactCard ncsPosBrandMatrixCard"
+                            onClick={() => {
+                              setExpandedProductId(null);
+                              setExpandedBrand(brandGroup.brand);
+                            }}
+                          >
+                            <span className="ncsPosBrandCompactMark">
+                              {brandGroup.brand.slice(0, 2).toUpperCase()}
+                            </span>
+                            <div>
+                              <strong>{brandGroup.brand}</strong>
+                              <small>
+                                {brandGroup.groups.length} styles • {brandGroup.totalVariants} variants
+                              </small>
+                              <em>{brandGroup.totalStock} STOCK</em>
+                            </div>
+                            <span className="ncsPosBrandNodeLive">LIVE</span>
+                            <b>›</b>
+                          </button>
+                        ))}
+
+                        {brandMatrixPageGroups.length === 0 && (
+                          <div className="ncsPosBrandMatrixEmpty">
+                            <span>⌕</span>
+                            <strong>No matching brand</strong>
+                            <small>Try another brand or product name.</small>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="ncsPosBrandMatrixPager">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setBrandMatrixPage((page) => Math.max(0, page - 1))
+                        }
+                        disabled={brandMatrixPage <= 0}
+                        aria-label="Previous brand page"
+                      >
+                        ‹
                       </button>
-                    ))}
-                  </div>
+
+                      <div>
+                        <span>FIELD</span>
+                        <strong>
+                          {Math.min(brandMatrixPage + 1, brandMatrixPageCount)} / {brandMatrixPageCount}
+                        </strong>
+                      </div>
+
+                      <span
+                        className="ncsPosBrandMatrixDots"
+                        aria-hidden="true"
+                      >
+                        {Array.from(
+                          { length: Math.min(brandMatrixPageCount, 6) },
+                          (_, index) => (
+                            <i
+                              key={index}
+                              className={
+                                index === Math.min(brandMatrixPage, 5)
+                                  ? "active"
+                                  : ""
+                              }
+                            />
+                          )
+                        )}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setBrandMatrixPage((page) =>
+                            Math.min(brandMatrixPageCount - 1, page + 1)
+                          )
+                        }
+                        disabled={
+                          brandMatrixPage >= brandMatrixPageCount - 1
+                        }
+                        aria-label="Next brand page"
+                      >
+                        ›
+                      </button>
+                    </div>
+                  </section>
 
                   {expandedBrand &&
                     typeof document !== "undefined" &&
@@ -8598,6 +9348,12 @@ if (!variantsError) {
                                     {selectedBrandGroup.groups.length} styles • {selectedBrandGroup.totalVariants} variants • {selectedBrandGroup.totalStock} stock
                                   </p>
                                 </div>
+                              </div>
+
+                              <div className="ncsPosBrandModalTelemetry">
+                                <span><small>STYLES</small><b>{selectedBrandGroup.groups.length}</b></span>
+                                <span><small>VARIANTS</small><b>{selectedBrandGroup.totalVariants}</b></span>
+                                <span><small>LIVE STOCK</small><b>{selectedBrandGroup.totalStock}</b></span>
                               </div>
 
                               <button
@@ -8728,6 +9484,11 @@ if (!variantsError) {
                                   <p>{selectedFamily.groups.length} products • {selectedFamily.totalVariants} variants • {selectedFamily.totalStock} stock</p>
                                 </div>
                               </div>
+                              <div className="ncsPosBrandModalTelemetry">
+                                <span><small>PRODUCTS</small><b>{selectedFamily.groups.length}</b></span>
+                                <span><small>VARIANTS</small><b>{selectedFamily.totalVariants}</b></span>
+                                <span><small>LIVE STOCK</small><b>{selectedFamily.totalStock}</b></span>
+                              </div>
                               <button
                                 type="button"
                                 className="ncsPosBrandModalClose"
@@ -8846,6 +9607,12 @@ if (!variantsError) {
               </h2>
             </div>
 
+            <div className="ncsPosBillLivePulse">
+              <span><i /> ACTIVE BILL MATRIX</span>
+              <strong>{formatCurrency(finalPayable)}</strong>
+              <small>{customerPhone ? "CUSTOMER LINKED" : "COUNTER READY"}</small>
+            </div>
+
             <div className="ncsPosBillHeaderActions">
               {cartItems.length > 0 && (
                 <>
@@ -8931,6 +9698,11 @@ if (!variantsError) {
               <div className="ncsPosCustomerMiniLabel" title="Customer details">
                 <span>👤</span>
                 <strong>Customer</strong>
+                {vipCustomerProfile && (
+                  <b className="ncsPosVipMiniBadge" title="NEW CITY STYLE VIP customer">
+                    ✦ VIP
+                  </b>
+                )}
               </div>
 
               <input
@@ -9429,61 +10201,145 @@ if (!variantsError) {
           </div>
 
           <div className="ncsPosPaymentSection">
-            <span className="ncsPosPaymentLabel">
-              Payment Method
-            </span>
+            <div className="ncsPosPaymentHeading2036">
+              <div>
+                <span>PAYMENT MATRIX • 2036</span>
+                <strong>Choose exactly how the customer pays</strong>
+              </div>
+              <small><i /> Manual allocation • no auto payment</small>
+            </div>
 
-            <div className="ncsPosPaymentGrid">
-              {(
-                [
-                  {
-                    value: "cash",
-                    label: "Cash",
-                    icon: "₹",
-                  },
-                  {
-                    value: "upi",
-                    label: "UPI",
-                    icon: "▣",
-                  },
-                  {
-                    value: "card",
-                    label: "Card",
-                    icon: "▤",
-                  },
-                  {
-                    value: "credit",
-                    label: "Credit",
-                    icon: "◷",
-                  },
-                ] as const
-              ).map((method) => (
+            <div className="ncsPosPaymentGrid ncsPosPaymentGrid2036">
+              {[
+                { value: "cash", label: "Cash", icon: "₹", sub: "Counter cash" },
+                { value: "upi", label: "UPI", icon: "▣", sub: "PhonePe / GPay" },
+                { value: "card", label: "Card", icon: "▤", sub: "Card terminal" },
+              ].map((method) => (
                 <button
                   key={method.value}
                   type="button"
                   className={
-                    paymentMethod === method.value
+                    !splitPaymentActive && paymentMethod === method.value
                       ? "ncsPosPaymentButton ncsPosPaymentActive"
                       : "ncsPosPaymentButton"
                   }
                   onClick={() => {
-                    setPaymentMethod(method.value);
-
-                    if (method.value === "credit") {
-                      setCreditPaidNow(0);
-                      setCreditDueDate(
-                        getDefaultCreditDueDate()
-                      );
-                    } else {
-                      setCreditPaidNow(0);
-                    }
+                    setSplitPaymentActive(false);
+                    setPaymentMethod(method.value as PaymentMethod);
+                    setSplitCashAmount(0);
+                    setSplitUpiAmount(0);
+                    setSplitCardAmount(0);
+                    setCreditPaidNow(0);
+                    setCreditPaidCash(0);
+                    setCreditPaidUpi(0);
+                    setCreditPaidCard(0);
                   }}
                 >
                   <span>{method.icon}</span>
-                  {method.label}
+                  <b>{method.label}</b>
+                  <small>{method.sub}</small>
                 </button>
               ))}
+
+              <button
+                type="button"
+                className={
+                  splitPaymentActive
+                    ? "ncsPosPaymentButton ncsPosPaymentActive ncsPosPaymentSplitMode"
+                    : "ncsPosPaymentButton ncsPosPaymentSplitMode"
+                }
+                onClick={() => {
+                  setSplitPaymentActive(true);
+                  setPaymentMethod("cash");
+                  setCreditPaidNow(0);
+                  setCreditPaidCash(0);
+                  setCreditPaidUpi(0);
+                  setCreditPaidCard(0);
+                }}
+              >
+                <span>◫</span>
+                <b>Split</b>
+                <small>Cash + UPI + Card</small>
+              </button>
+
+              <button
+                type="button"
+                className={
+                  !splitPaymentActive && paymentMethod === "credit"
+                    ? "ncsPosPaymentButton ncsPosPaymentActive ncsPosPaymentCreditMode"
+                    : "ncsPosPaymentButton ncsPosPaymentCreditMode"
+                }
+                onClick={() => {
+                  setSplitPaymentActive(false);
+                  setPaymentMethod("credit");
+                  setSplitCashAmount(0);
+                  setSplitUpiAmount(0);
+                  setSplitCardAmount(0);
+                  setCreditPaidNow(0);
+                  setCreditPaidCash(0);
+                  setCreditPaidUpi(0);
+                  setCreditPaidCard(0);
+                  setCreditDueDate(getDefaultCreditDueDate());
+                }}
+              >
+                <span>◷</span>
+                <b>Credit</b>
+                <small>Paid now + due</small>
+              </button>
             </div>
+
+            {splitPaymentActive && (
+              <div className="ncsPosSplitPaymentPanel2036">
+                <div className="ncsPosSplitPaymentHeader2036">
+                  <div>
+                    <span>SPLIT PAYMENT ROUTER</span>
+                    <strong>Enter the amount received in each mode</strong>
+                  </div>
+                  <b className={splitRemainingAmount <= 0.01 ? "done" : "pending"}>
+                    {splitRemainingAmount <= 0.01
+                      ? "READY"
+                      : `${formatCurrency(splitRemainingAmount)} LEFT`}
+                  </b>
+                </div>
+
+                <div className="ncsPosPaymentAllocationGrid2036">
+                  {[
+                    ["cash", "Cash", "₹", safeSplitCashAmount],
+                    ["upi", "UPI / PhonePe", "▣", safeSplitUpiAmount],
+                    ["card", "Card", "▤", safeSplitCardAmount],
+                  ].map(([key, label, icon, value]) => (
+                    <label key={String(key)}>
+                      <span><i>{icon}</i>{label}</span>
+                      <div>
+                        <b>₹</b>
+                        <input
+                          type="number"
+                          min="0"
+                          max={finalPayable}
+                          step="0.01"
+                          value={Number(value) === 0 ? "" : Number(value)}
+                          onChange={(event) =>
+                            updateSplitPaymentPart(
+                              key as keyof PosPaymentBreakdown,
+                              toNumber(event.target.value),
+                            )
+                          }
+                          placeholder="0"
+                          inputMode="decimal"
+                        />
+                      </div>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="ncsPosSplitPaymentSummary2036">
+                  <span>Cash <b>{formatCurrency(safeSplitCashAmount)}</b></span>
+                  <span>UPI <b>{formatCurrency(safeSplitUpiAmount)}</b></span>
+                  <span>Card <b>{formatCurrency(safeSplitCardAmount)}</b></span>
+                  <strong>Received {formatCurrency(splitPaidTotal)}</strong>
+                </div>
+              </div>
+            )}
 
             <div className="ncsPosTotalLine">
               <div>
@@ -9516,11 +10372,13 @@ if (!variantsError) {
                       : "Complete Sale"}
                   </strong>
                   <small>
-                    {paymentMethod === "credit"
-                      ? `Due ${formatCurrency(
-                          creditDueAmount
-                        )}`
-                      : formatCurrency(finalPayable)}
+                    {splitPaymentActive
+                      ? splitRemainingAmount <= 0.01
+                        ? `Split ready • ${formatCurrency(splitPaidTotal)}`
+                        : `Split left ${formatCurrency(splitRemainingAmount)}`
+                      : paymentMethod === "credit"
+                        ? `Due ${formatCurrency(creditDueAmount)}`
+                        : formatCurrency(finalPayable)}
                   </small>
                 </div>
                 <b>{isCompletingSale ? "⌛" : "→"}</b>
@@ -9545,50 +10403,54 @@ if (!variantsError) {
                   </b>
                 </div>
 
-                <div className="ncsPosCreditFields">
-                  <label>
-                    <span>Paid Now</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max={finalPayable}
-                      step="0.01"
-                      value={
-                        creditPaidNow === 0
-                          ? ""
-                          : creditPaidNow
-                      }
-                      onChange={(event) =>
-                        setCreditPaidNow(
-                          Math.min(
-                            finalPayable,
-                            Math.max(
-                              0,
-                              toNumber(event.target.value)
-                            )
-                          )
-                        )
-                      }
-                      placeholder="0"
-                      inputMode="decimal"
-                    />
-                  </label>
+                <div className="ncsPosCreditPaidNowMatrix2036">
+                  <div className="ncsPosCreditPaidNowTitle2036">
+                    <span>PAID NOW ALLOCATION</span>
+                    <strong>How much came by Cash / UPI / Card?</strong>
+                    <small>Leave all three at ₹0 when nothing is paid now.</small>
+                  </div>
 
-                  <label>
-                    <span>Due Date</span>
-                    <input
-                      type="date"
-                      value={creditDueDate}
-                      min={new Date()
-                        .toISOString()
-                        .slice(0, 10)}
-                      onChange={(event) =>
-                        setCreditDueDate(
-                          event.target.value
-                        )
-                      }
-                    />
-                  </label>
+                  <div className="ncsPosPaymentAllocationGrid2036 ncsPosCreditAllocationGrid2036">
+                    {[
+                      ["cash", "Cash", "₹", safeCreditBreakdown.cash],
+                      ["upi", "UPI / PhonePe", "▣", safeCreditBreakdown.upi],
+                      ["card", "Card", "▤", safeCreditBreakdown.card],
+                    ].map(([key, label, icon, value]) => (
+                      <label key={String(key)}>
+                        <span><i>{icon}</i>{label}</span>
+                        <div>
+                          <b>₹</b>
+                          <input
+                            type="number"
+                            min="0"
+                            max={finalPayable}
+                            step="0.01"
+                            value={Number(value) === 0 ? "" : Number(value)}
+                            onChange={(event) =>
+                              updateCreditPaidPart(
+                                key as keyof PosPaymentBreakdown,
+                                toNumber(event.target.value),
+                              )
+                            }
+                            placeholder="0"
+                            inputMode="decimal"
+                          />
+                        </div>
+                      </label>
+                    ))}
+
+                    <label className="ncsPosCreditDueDate2036">
+                      <span><i>◷</i>Due Date</span>
+                      <div>
+                        <input
+                          type="date"
+                          value={creditDueDate}
+                          min={new Date().toISOString().slice(0, 10)}
+                          onChange={(event) => setCreditDueDate(event.target.value)}
+                        />
+                      </div>
+                    </label>
+                  </div>
                 </div>
 
                 <div className="ncsPosCreditSummary">
@@ -9636,11 +10498,13 @@ if (!variantsError) {
                     : "Complete Sale"}
                 </strong>
                 <small>
-                  {paymentMethod === "credit"
-                    ? `Due ${formatCurrency(
-                        creditDueAmount
-                      )}`
-                    : formatCurrency(finalPayable)}
+                  {splitPaymentActive
+                    ? splitRemainingAmount <= 0.01
+                      ? `Split ready • ${formatCurrency(splitPaidTotal)}`
+                      : `Split left ${formatCurrency(splitRemainingAmount)}`
+                    : paymentMethod === "credit"
+                      ? `Due ${formatCurrency(creditDueAmount)}`
+                      : formatCurrency(finalPayable)}
                 </small>
               </div>
 
@@ -19014,6 +19878,3576 @@ if (!variantsError) {
           .ncsPosShortcutStrip { display:none; }
           .ncsPosCounterIntelligence { margin-top:5px; }
           .ncsPosLastAddedItem::after { display:none; }
+        }
+
+        /* ============================================================
+           NCS POS MATRIX INTELLIGENCE • VISUAL-ONLY FINISHING PASS
+           Existing billing, stock, customer, rewards, offline sync,
+           owner guard, design/MRP flow, payment, held bills and AI logic
+           remain unchanged. This block only upgrades presentation.
+           ============================================================ */
+
+        .ncsPosPage {
+          position: relative;
+          background:
+            linear-gradient(rgba(74,57,140,.026) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(74,57,140,.026) 1px,transparent 1px),
+            radial-gradient(circle at 6% 0%,rgba(109,77,255,.11),transparent 24%),
+            radial-gradient(circle at 96% 7%,rgba(22,184,212,.10),transparent 24%),
+            linear-gradient(180deg,#f7f8fc 0%,#f2f5fa 52%,#edf2f8 100%) !important;
+          background-size:26px 26px,26px 26px,auto,auto,auto !important;
+        }
+
+        .ncsPosHeader {
+          isolation:isolate;
+          min-height:154px;
+          border:1px solid rgba(255,255,255,.22) !important;
+          border-radius:26px !important;
+          background:
+            radial-gradient(circle at 91% -14%,rgba(59,231,232,.24),transparent 34%),
+            radial-gradient(circle at 10% 118%,rgba(229,80,165,.23),transparent 35%),
+            linear-gradient(118deg,#2a174a 0%,#5532b6 35%,#23527a 68%,#0e756d 100%) !important;
+          box-shadow:0 24px 58px rgba(30,25,69,.22),inset 0 1px 0 rgba(255,255,255,.10) !important;
+        }
+        .ncsPosHeader::before {
+          content:"";
+          position:absolute;
+          z-index:0;
+          inset:0;
+          pointer-events:none;
+          border-radius:inherit;
+          background:
+            linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px),
+            linear-gradient(90deg,transparent 0 69%,rgba(73,233,228,.15) 69.2%,transparent 69.5%);
+          background-size:24px 24px,24px 24px,100% 100%;
+          mask-image:linear-gradient(90deg,rgba(0,0,0,.82),rgba(0,0,0,.45) 70%,transparent 98%);
+        }
+        .ncsPosHeader > * { position:relative; z-index:2; }
+        .ncsPosHeader > div:first-child { max-width:46%; }
+        .ncsPosHeader h1 {
+          margin-top:7px !important;
+          font-size:clamp(31px,3.1vw,46px) !important;
+          line-height:1 !important;
+          letter-spacing:-1.4px !important;
+        }
+        .ncsPosHeader p { max-width:560px; color:rgba(255,255,255,.72) !important; }
+        .ncsPosEyebrow {
+          display:inline-flex !important;
+          align-items:center;
+          gap:8px;
+          padding:6px 10px;
+          border:1px solid rgba(242,207,103,.22);
+          border-radius:999px;
+          background:rgba(16,9,44,.20);
+          color:#f8d96f !important;
+          backdrop-filter:blur(8px);
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+        }
+        .ncsPosCustomerQueue {
+          border:1px solid rgba(255,255,255,.18) !important;
+          border-radius:22px !important;
+          box-shadow:0 16px 38px rgba(7,14,43,.20),inset 0 1px 0 rgba(255,255,255,.08) !important;
+          opacity:.92;
+        }
+        .ncsPosHeaderActions {
+          padding:7px !important;
+          border:1px solid rgba(255,255,255,.13);
+          border-radius:18px;
+          background:rgba(5,16,43,.22);
+          backdrop-filter:blur(12px);
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+        }
+        .ncsPosHeaderActions button {
+          min-height:45px !important;
+          border-radius:13px !important;
+        }
+        .ncsPosNextCustomerButton {
+          background:linear-gradient(135deg,rgba(109,77,255,.24),rgba(22,184,212,.14)) !important;
+          border-color:rgba(139,121,255,.32) !important;
+        }
+        .ncsPosOwnerSummaryButton {
+          background:linear-gradient(135deg,rgba(242,180,81,.16),rgba(255,255,255,.07)) !important;
+          border-color:rgba(242,180,81,.28) !important;
+        }
+
+        .ncsPosWorkspace {
+          gap:16px !important;
+          align-items:start;
+        }
+        .ncsPosCatalogue {
+          position:relative;
+          overflow:hidden;
+          border:1px solid rgba(71,56,138,.10) !important;
+          border-radius:24px !important;
+          background:
+            radial-gradient(circle at 0% 0%,rgba(109,77,255,.055),transparent 28%),
+            radial-gradient(circle at 100% 10%,rgba(22,184,212,.05),transparent 30%),
+            rgba(255,255,255,.96) !important;
+          box-shadow:0 18px 48px rgba(33,37,78,.10),inset 0 1px 0 rgba(255,255,255,.95) !important;
+        }
+        .ncsPosCatalogue::before {
+          content:"PRODUCT INTELLIGENCE FIELD";
+          position:absolute;
+          z-index:3;
+          top:8px;
+          right:12px;
+          color:rgba(70,59,131,.26);
+          font-size:5.5px;
+          font-weight:1000;
+          letter-spacing:1.4px;
+          pointer-events:none;
+        }
+
+        .ncsPosSearchPanel {
+          position:relative;
+          margin:0 !important;
+          padding:11px !important;
+          border:0 !important;
+          border-bottom:1px solid rgba(62,53,119,.08) !important;
+          border-radius:0 !important;
+          background:
+            linear-gradient(90deg,rgba(109,77,255,.055),rgba(22,184,212,.035)),
+            #fff !important;
+          box-shadow:none !important;
+        }
+        .ncsPosSearchIcon {
+          border:1px solid rgba(109,77,255,.16) !important;
+          border-radius:12px !important;
+          background:linear-gradient(135deg,#f0edff,#ecfbff) !important;
+          color:#6449d8 !important;
+        }
+        .ncsPosSearchPanel input {
+          border-color:rgba(49,51,104,.10) !important;
+          border-radius:12px !important;
+          background:#fbfcff !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.9) !important;
+        }
+        .ncsPosSearchPanel input:focus {
+          border-color:rgba(109,77,255,.38) !important;
+          box-shadow:0 0 0 4px rgba(109,77,255,.07),inset 0 1px 0 #fff !important;
+        }
+        .ncsPosSearchButton {
+          border:0 !important;
+          border-radius:12px !important;
+          background:linear-gradient(135deg,#6d4dff,#16b8d4) !important;
+          box-shadow:0 9px 20px rgba(91,70,220,.20) !important;
+        }
+        .ncsPosSearchQuickItemButton {
+          border-radius:12px !important;
+          border-color:rgba(242,155,48,.26) !important;
+          background:linear-gradient(135deg,#fff8ea,#fff) !important;
+          color:#9a620d !important;
+        }
+
+        .ncsPosCategoryRow {
+          gap:7px !important;
+          padding:10px 12px !important;
+          border-bottom:1px solid rgba(60,54,115,.075);
+          background:linear-gradient(90deg,#fbfaff,#f7fbff) !important;
+          scrollbar-width:none;
+        }
+        .ncsPosCategoryRow::-webkit-scrollbar { display:none; }
+        .ncsPosCategoryButton {
+          min-height:38px !important;
+          padding:0 14px !important;
+          border:1px solid rgba(52,49,97,.09) !important;
+          border-radius:12px !important;
+          background:#fff !important;
+          color:#4b5368 !important;
+          box-shadow:0 5px 13px rgba(31,35,72,.035);
+        }
+        .ncsPosCategoryButton:hover {
+          border-color:rgba(109,77,255,.24) !important;
+          color:#5a43c9 !important;
+        }
+        .ncsPosCategoryActive {
+          border-color:rgba(109,77,255,.44) !important;
+          background:linear-gradient(135deg,#5d42db,#7759ff 58%,#2d9fc4) !important;
+          color:#fff !important;
+          box-shadow:0 9px 20px rgba(93,66,219,.22) !important;
+        }
+
+        .ncsPosCatalogueTop {
+          position:relative;
+          margin:0 !important;
+          padding:17px 16px 12px !important;
+          border-bottom:0 !important;
+          background:transparent !important;
+        }
+        .ncsPosCatalogueTop::before {
+          content:"◈";
+          display:grid;
+          place-items:center;
+          width:30px;
+          height:30px;
+          margin-right:9px;
+          border:1px solid rgba(109,77,255,.18);
+          border-radius:10px;
+          background:linear-gradient(135deg,#eeeaff,#edfbff);
+          color:#6d4dff;
+          font-size:13px;
+          font-weight:1000;
+          box-shadow:0 6px 15px rgba(91,70,220,.10);
+        }
+        .ncsPosCatalogueTop > div:first-child { flex:1; }
+        .ncsPosCatalogueTop h2 {
+          font-size:21px !important;
+          letter-spacing:-.4px;
+          color:#24184c !important;
+        }
+        .ncsPosCatalogueTop p { color:#7a8090 !important; }
+        .ncsPosStatusBadge {
+          border:1px solid rgba(0,166,122,.18) !important;
+          border-radius:999px !important;
+          background:#effbf7 !important;
+          color:#08785d !important;
+          box-shadow:0 5px 14px rgba(0,166,122,.07);
+        }
+
+        .ncsPosFinderToolbar {
+          display:grid !important;
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          gap:7px !important;
+          margin:0 12px 12px !important;
+          padding:6px !important;
+          border:1px solid rgba(57,51,111,.08);
+          border-radius:15px;
+          background:linear-gradient(135deg,#f9f8ff,#f5fbfd) !important;
+        }
+        .ncsPosFinderToolbar button {
+          min-height:40px !important;
+          padding:0 8px !important;
+          border:1px solid transparent !important;
+          border-radius:10px !important;
+          background:transparent !important;
+          color:#687085 !important;
+          font-size:8.5px !important;
+          font-weight:900 !important;
+          box-shadow:none !important;
+        }
+        .ncsPosFinderToolbar button:hover {
+          transform:none !important;
+          background:rgba(109,77,255,.055) !important;
+          color:#5440bd !important;
+        }
+        .ncsPosFinderToolbar button.active {
+          border-color:rgba(255,255,255,.55) !important;
+          background:linear-gradient(135deg,#5e45d6,#6d4dff 55%,#2d9cc0) !important;
+          color:#fff !important;
+          box-shadow:0 8px 18px rgba(92,70,218,.19),inset 0 1px 0 rgba(255,255,255,.18) !important;
+        }
+
+        .ncsPosBrandCompactGrid,
+        .ncsPosBrandGrid {
+          position:relative;
+          display:grid !important;
+          grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          gap:9px !important;
+          padding:34px 12px 13px !important;
+          border-top:1px solid rgba(58,51,109,.06);
+          background:
+            linear-gradient(rgba(96,75,177,.025) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(96,75,177,.025) 1px,transparent 1px),
+            linear-gradient(180deg,#fff,#fbfcff) !important;
+          background-size:22px 22px,22px 22px,auto !important;
+        }
+        .ncsPosBrandCompactGrid::before,
+        .ncsPosBrandGrid::before {
+          content:"BRAND MATRIX  •  LIVE STOCK NODES";
+          position:absolute;
+          top:11px;
+          left:14px;
+          color:#7562c4;
+          font-size:6.4px;
+          font-weight:1000;
+          letter-spacing:1.25px;
+        }
+        .ncsPosProductFamilyGrid::before {
+          content:"PRODUCT MATRIX  •  EXACT VARIANT ROUTING" !important;
+        }
+
+        .ncsPosBrandCompactCard,
+        .ncsPosBrandSummary {
+          --node:#6d4dff;
+          position:relative !important;
+          min-height:76px !important;
+          overflow:hidden !important;
+          border:1px solid color-mix(in srgb,var(--node) 24%,rgba(23,32,51,.06)) !important;
+          border-radius:17px !important;
+          background:
+            radial-gradient(circle at 100% 0%,color-mix(in srgb,var(--node) 14%,transparent),transparent 40%),
+            linear-gradient(135deg,#fff,#fbfbfe) !important;
+          box-shadow:0 9px 22px rgba(33,36,72,.065),inset 0 1px 0 rgba(255,255,255,.95) !important;
+          transition:transform .17s ease,border-color .17s ease,box-shadow .17s ease !important;
+        }
+        .ncsPosBrandCompactCard::before,
+        .ncsPosBrandSummary::before {
+          content:"";
+          position:absolute;
+          left:0;
+          top:10px;
+          bottom:10px;
+          width:3px;
+          border-radius:0 4px 4px 0;
+          background:var(--node);
+          box-shadow:0 0 12px color-mix(in srgb,var(--node) 38%,transparent);
+        }
+        .ncsPosBrandCompactCard::after,
+        .ncsPosBrandSummary::after {
+          content:"LIVE";
+          position:absolute;
+          right:9px;
+          top:7px;
+          padding:2px 5px;
+          border:1px solid color-mix(in srgb,var(--node) 18%,transparent);
+          border-radius:999px;
+          background:color-mix(in srgb,var(--node) 6%,#fff);
+          color:color-mix(in srgb,var(--node) 72%,#28304d);
+          font-size:4.8px;
+          font-weight:1000;
+          letter-spacing:.7px;
+          opacity:.72;
+          pointer-events:none;
+        }
+        .ncsPosBrandCompactCard:nth-child(6n+1), .ncsPosBrandSummary:nth-child(6n+1){--node:#7255ee}
+        .ncsPosBrandCompactCard:nth-child(6n+2), .ncsPosBrandSummary:nth-child(6n+2){--node:#09a779}
+        .ncsPosBrandCompactCard:nth-child(6n+3), .ncsPosBrandSummary:nth-child(6n+3){--node:#e1539d}
+        .ncsPosBrandCompactCard:nth-child(6n+4), .ncsPosBrandSummary:nth-child(6n+4){--node:#e99d32}
+        .ncsPosBrandCompactCard:nth-child(6n+5), .ncsPosBrandSummary:nth-child(6n+5){--node:#16a9c3}
+        .ncsPosBrandCompactCard:nth-child(6n+6), .ncsPosBrandSummary:nth-child(6n+6){--node:#6978c9}
+        .ncsPosBrandCompactCard:hover,
+        .ncsPosBrandSummary:hover {
+          transform:translateY(-2px) !important;
+          border-color:color-mix(in srgb,var(--node) 48%,rgba(23,32,51,.08)) !important;
+          box-shadow:0 14px 28px color-mix(in srgb,var(--node) 13%,rgba(33,36,72,.08)),inset 0 1px 0 #fff !important;
+        }
+        .ncsPosBrandCompactMark,
+        .ncsPosBrandMark {
+          position:relative;
+          width:39px !important;
+          height:39px !important;
+          border:1px solid color-mix(in srgb,var(--node,#6d4dff) 28%,#fff) !important;
+          border-radius:12px !important;
+          background:
+            radial-gradient(circle at 32% 27%,rgba(255,255,255,.34),transparent 26%),
+            linear-gradient(145deg,color-mix(in srgb,var(--node,#6d4dff) 86%,#fff),color-mix(in srgb,var(--node,#6d4dff) 76%,#22335c)) !important;
+          color:#fff !important;
+          box-shadow:0 8px 17px color-mix(in srgb,var(--node,#6d4dff) 20%,transparent),inset 0 1px 0 rgba(255,255,255,.22) !important;
+        }
+        .ncsPosBrandCompactCard > div,
+        .ncsPosBrandSummary > div { min-width:0; }
+        .ncsPosBrandCompactCard strong,
+        .ncsPosBrandSummary strong {
+          display:block;
+          max-width:100%;
+          overflow:hidden;
+          text-overflow:ellipsis;
+          white-space:nowrap;
+          color:#252044 !important;
+          font-size:10.5px !important;
+          font-weight:950 !important;
+        }
+        .ncsPosBrandCompactCard small,
+        .ncsPosBrandSummary small {
+          display:block;
+          margin-top:4px !important;
+          max-width:100%;
+          overflow:hidden;
+          text-overflow:ellipsis;
+          white-space:nowrap;
+          color:#7a8190 !important;
+          font-size:6.9px !important;
+          font-weight:750 !important;
+        }
+        .ncsPosBrandCompactCard > b,
+        .ncsPosBrandSummary > b {
+          display:grid !important;
+          place-items:center;
+          width:24px;
+          height:24px;
+          border:1px solid color-mix(in srgb,var(--node) 18%,transparent);
+          border-radius:9px;
+          background:color-mix(in srgb,var(--node) 6%,#fff);
+          color:var(--node) !important;
+          font-size:16px !important;
+        }
+
+        .ncsPosSmartSection,
+        .ncsPosSmartExpandedProduct {
+          border-color:rgba(69,56,130,.09) !important;
+          background:#fff !important;
+          box-shadow:0 10px 25px rgba(31,35,72,.055) !important;
+        }
+        .ncsPosGroupedCard {
+          border-color:rgba(51,48,104,.09) !important;
+          border-radius:17px !important;
+          box-shadow:0 9px 22px rgba(30,35,72,.055) !important;
+        }
+        .ncsPosGroupedCard.open {
+          border-color:rgba(109,77,255,.30) !important;
+          box-shadow:0 13px 30px rgba(91,70,220,.10) !important;
+        }
+        .ncsPosVariantPanel {
+          background:linear-gradient(180deg,#fbfaff,#f7fbfd) !important;
+        }
+        .ncsPosVariantList button {
+          border-radius:11px !important;
+          border-color:rgba(50,48,100,.08) !important;
+          background:#fff !important;
+        }
+        .ncsPosVariantList button:hover:not(:disabled) {
+          border-color:rgba(109,77,255,.28) !important;
+          box-shadow:0 7px 16px rgba(91,70,220,.08) !important;
+        }
+
+        .ncsPosBrandModalBackdrop {
+          background:rgba(14,12,38,.64) !important;
+          backdrop-filter:blur(18px) saturate(120%) !important;
+        }
+        .ncsPosBrandModal {
+          overflow:hidden;
+          border:1px solid rgba(255,255,255,.20) !important;
+          border-radius:27px !important;
+          background:
+            linear-gradient(rgba(92,70,218,.035) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(92,70,218,.035) 1px,transparent 1px),
+            #f8f9fd !important;
+          background-size:25px 25px !important;
+          box-shadow:0 38px 110px rgba(7,8,31,.42),inset 0 1px 0 #fff !important;
+        }
+        .ncsPosBrandModalHeader {
+          min-height:86px;
+          border-bottom:1px solid rgba(255,255,255,.10) !important;
+          background:
+            radial-gradient(circle at 90% 0%,rgba(22,184,212,.20),transparent 30%),
+            linear-gradient(120deg,#261744,#5937b8 52%,#176272) !important;
+          color:#fff !important;
+        }
+        .ncsPosBrandModalTitle small,
+        .ncsPosBrandModalTitle h3,
+        .ncsPosBrandModalTitle p { color:inherit !important; }
+        .ncsPosBrandModalTitle p { color:rgba(255,255,255,.65) !important; }
+        .ncsPosBrandModalClose {
+          border-color:rgba(255,255,255,.16) !important;
+          background:rgba(255,255,255,.08) !important;
+          color:#fff !important;
+        }
+        .ncsPosBrandModalBody {
+          background:
+            radial-gradient(circle at 0% 0%,rgba(109,77,255,.05),transparent 25%),
+            radial-gradient(circle at 100% 100%,rgba(22,184,212,.04),transparent 28%),
+            transparent !important;
+        }
+        .ncsPosBrandModalFooter {
+          border-top-color:rgba(51,48,104,.08) !important;
+          background:rgba(255,255,255,.92) !important;
+          backdrop-filter:blur(12px);
+        }
+
+        .ncsPosBillPanel {
+          overflow:hidden;
+          border:1px solid rgba(83,65,174,.13) !important;
+          border-radius:24px !important;
+          background:
+            radial-gradient(circle at 100% 0%,rgba(22,184,212,.055),transparent 25%),
+            #fff !important;
+          box-shadow:0 20px 52px rgba(30,34,75,.13),inset 0 1px 0 rgba(255,255,255,.96) !important;
+        }
+        .ncsPosBillHeader {
+          position:relative;
+          overflow:hidden;
+          min-height:78px !important;
+          background:
+            radial-gradient(circle at 92% 0%,rgba(54,220,229,.19),transparent 34%),
+            linear-gradient(118deg,#2b194d,#5b38bd 55%,#2579a2) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.08) !important;
+        }
+        .ncsPosBillHeader::after {
+          content:"ACTIVE BILL MATRIX";
+          position:absolute;
+          right:12px;
+          bottom:6px;
+          color:rgba(255,255,255,.27);
+          font-size:5px;
+          font-weight:1000;
+          letter-spacing:1.2px;
+          pointer-events:none;
+        }
+        .ncsPosBillHeaderActions button {
+          border-color:rgba(255,255,255,.16) !important;
+          background:rgba(255,255,255,.08) !important;
+          color:#fff !important;
+          backdrop-filter:blur(8px);
+        }
+        .ncsPosBillHeaderActions button:hover:not(:disabled) {
+          background:rgba(255,255,255,.16) !important;
+        }
+        .ncsPosCustomerCardCompact {
+          margin:0 !important;
+          border:0 !important;
+          border-bottom:1px solid rgba(56,50,108,.08) !important;
+          border-radius:0 !important;
+          background:linear-gradient(90deg,#fff7fb,#fbfdff) !important;
+          box-shadow:none !important;
+        }
+        .ncsPosCustomerCompactRow input {
+          border-color:rgba(55,51,104,.10) !important;
+          border-radius:10px !important;
+          background:#fff !important;
+        }
+        .ncsPosWhatsAppInline {
+          border-color:rgba(0,166,122,.18) !important;
+          border-radius:10px !important;
+          background:#f2fbf7 !important;
+        }
+        .ncsPosCartTableHeader {
+          background:linear-gradient(90deg,#f6f3ff,#f0fbfd) !important;
+          border-bottom-color:rgba(68,55,135,.08) !important;
+          color:#443b78 !important;
+        }
+        .ncsPosCartItem {
+          border-color:rgba(53,50,98,.075) !important;
+          border-radius:14px !important;
+          background:#fff !important;
+          box-shadow:0 6px 16px rgba(32,35,70,.04) !important;
+        }
+        .ncsPosCartItem:hover {
+          border-color:rgba(109,77,255,.18) !important;
+          box-shadow:0 8px 20px rgba(91,70,220,.065) !important;
+        }
+        .ncsPosTotalLine {
+          border-color:rgba(109,77,255,.13) !important;
+          background:rgba(255,255,255,.95) !important;
+          box-shadow:0 -10px 28px rgba(45,37,103,.11),0 8px 22px rgba(31,34,70,.06) !important;
+          backdrop-filter:blur(15px) saturate(115%) !important;
+        }
+
+        .ncsPosPremiumAiButton {
+          min-width:190px !important;
+          min-height:60px !important;
+          border:1px solid rgba(255,255,255,.18) !important;
+          border-radius:20px !important;
+          background:
+            radial-gradient(circle at 16% 16%,rgba(255,218,95,.23),transparent 27%),
+            linear-gradient(135deg,#2a174a,#5b3ed1 56%,#176c7c) !important;
+          box-shadow:0 18px 38px rgba(27,22,70,.26),inset 0 1px 0 rgba(255,255,255,.12) !important;
+        }
+        .ncsPosPremiumAiSpark {
+          border:1px solid rgba(255,220,111,.30) !important;
+          background:linear-gradient(145deg,#f4d75f,#e8b838) !important;
+          color:#2a174a !important;
+          box-shadow:0 7px 17px rgba(236,190,63,.22) !important;
+        }
+        .ncsPosPremiumAiCopy b { letter-spacing:.1px; }
+        .ncsPosPremiumAiCopy small { color:rgba(255,255,255,.63) !important; }
+        .ncsPosPremiumAiArrow {
+          border:1px solid rgba(255,255,255,.12);
+          border-radius:10px;
+          background:rgba(255,255,255,.07);
+        }
+        .ncsPosAiPanel.expanded {
+          border:1px solid rgba(126,103,241,.22) !important;
+          border-radius:24px !important;
+          background:
+            linear-gradient(rgba(100,79,190,.035) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(100,79,190,.035) 1px,transparent 1px),
+            #fff !important;
+          background-size:22px 22px !important;
+          box-shadow:0 28px 82px rgba(18,17,58,.30) !important;
+        }
+
+        @media (min-width:1200px) {
+          .ncsPosBrandCompactGrid,
+          .ncsPosBrandGrid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+        }
+        @media (max-width:1180px) {
+          .ncsPosHeader > div:first-child { max-width:55%; }
+          .ncsPosFinderToolbar { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+        }
+        @media (max-width:900px) {
+          .ncsPosHeader { min-height:auto; }
+          .ncsPosHeader > div:first-child { max-width:none; }
+          .ncsPosBrandCompactGrid,
+          .ncsPosBrandGrid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          .ncsPosCatalogue::before { display:none; }
+        }
+        @media (max-width:560px) {
+          .ncsPosBrandCompactGrid,
+          .ncsPosBrandGrid { grid-template-columns:1fr !important; }
+          .ncsPosFinderToolbar { grid-template-columns:1fr 1fr !important; }
+        }
+
+        /* ============================================================
+           NCS POS MATRIX INTELLIGENCE V2 • VIDEO PORTAL + CLEAN SPATIAL POLISH
+           Visual-only override. The existing family-shopping video and every
+           billing / stock / customer / reward / payment / offline / AI flow
+           remain untouched.
+           ============================================================ */
+
+        .ncsPosHeader {
+          min-height:178px !important;
+          padding:18px 22px !important;
+          border-radius:28px !important;
+          background:
+            radial-gradient(circle at 86% -12%,rgba(74,235,224,.22),transparent 34%),
+            radial-gradient(circle at 5% 118%,rgba(230,77,168,.22),transparent 34%),
+            linear-gradient(116deg,#23133f 0%,#5230ae 35%,#24517d 68%,#0b766d 100%) !important;
+          box-shadow:0 24px 58px rgba(27,24,67,.22),inset 0 1px 0 rgba(255,255,255,.10) !important;
+        }
+
+        .ncsPosHeader::after {
+          right:20px !important;
+          top:-12px !important;
+          font-size:96px !important;
+          opacity:.52;
+        }
+
+        .ncsPosHeader > div:first-child {
+          max-width:none !important;
+          min-width:0;
+        }
+
+        .ncsPosHeader h1 {
+          margin-top:8px !important;
+          font-size:clamp(34px,2.7vw,44px) !important;
+          line-height:.96 !important;
+          letter-spacing:-1.45px !important;
+          text-shadow:0 7px 26px rgba(8,10,35,.22);
+        }
+
+        .ncsPosHeader p {
+          max-width:390px !important;
+          margin-top:9px !important;
+          color:rgba(255,255,255,.72) !important;
+          font-size:11px !important;
+          line-height:1.45 !important;
+        }
+
+        .ncsPosEyebrow {
+          width:max-content;
+          max-width:100%;
+          padding:6px 11px !important;
+          border-color:rgba(242,207,103,.28) !important;
+          background:rgba(13,8,38,.28) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 7px 20px rgba(9,8,31,.12) !important;
+        }
+
+        /* Keep the family-shopping video, but give it its own clean portal. */
+        .ncsPosCustomerQueue {
+          isolation:isolate;
+          overflow:hidden !important;
+          pointer-events:none;
+          border:1px solid rgba(255,255,255,.20) !important;
+          border-radius:23px !important;
+          background:
+            radial-gradient(circle at 50% 110%,rgba(79,226,220,.16),transparent 42%),
+            rgba(6,15,43,.24) !important;
+          box-shadow:0 17px 36px rgba(5,10,35,.20),inset 0 1px 0 rgba(255,255,255,.10) !important;
+          -webkit-mask-image:none !important;
+          mask-image:none !important;
+        }
+
+        .ncsPosCustomerQueue::before {
+          z-index:4 !important;
+          background:
+            linear-gradient(180deg,rgba(5,13,40,.25),transparent 28%),
+            linear-gradient(90deg,rgba(32,18,74,.28),transparent 24%,transparent 76%,rgba(4,81,83,.26)) !important;
+        }
+
+        .ncsPosCustomerQueue::after {
+          content:"LIVE CUSTOMER FLOW";
+          position:absolute;
+          z-index:5;
+          left:10px;
+          bottom:8px;
+          padding:4px 7px;
+          border:1px solid rgba(255,255,255,.13);
+          border-radius:999px;
+          background:rgba(7,11,36,.38);
+          color:rgba(255,255,255,.70);
+          font-size:5.5px;
+          font-weight:1000;
+          letter-spacing:1.05px;
+          backdrop-filter:blur(8px);
+        }
+
+        .ncsRealFamilyVideoBg {
+          width:112% !important;
+          height:114% !important;
+          opacity:.48 !important;
+          filter:blur(13px) saturate(1.16) brightness(.74) !important;
+        }
+
+        .ncsRealFamilyVideoMain {
+          width:98% !important;
+          height:100% !important;
+          object-fit:contain !important;
+          object-position:center bottom !important;
+          filter:saturate(1.05) contrast(1.04) brightness(1.02) drop-shadow(0 13px 18px rgba(2,11,36,.34)) !important;
+        }
+
+        .ncsPosHeaderActions {
+          width:100%;
+          max-width:480px;
+          justify-self:end;
+          display:grid !important;
+          grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          gap:9px !important;
+          padding:8px !important;
+          border:1px solid rgba(255,255,255,.14) !important;
+          border-radius:20px !important;
+          background:rgba(4,13,38,.23) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 10px 28px rgba(4,8,30,.12) !important;
+          backdrop-filter:blur(14px) saturate(118%) !important;
+        }
+
+        .ncsPosHeaderActions button {
+          min-width:0 !important;
+          min-height:48px !important;
+          padding:0 12px !important;
+          border-radius:14px !important;
+          font-size:10px !important;
+          font-weight:950 !important;
+          white-space:nowrap;
+          overflow:hidden;
+          text-overflow:ellipsis;
+        }
+
+        .ncsPosHeaderActions button > span {
+          display:inline-grid;
+          place-items:center;
+          width:22px;
+          height:22px;
+          margin-right:5px;
+          border-radius:8px;
+          background:rgba(255,255,255,.08);
+        }
+
+        .ncsPosRefreshButton {
+          background:linear-gradient(135deg,#f9da70,#f3a63a) !important;
+          color:#251744 !important;
+          box-shadow:0 9px 22px rgba(240,169,57,.24) !important;
+        }
+
+        .ncsPosOwnerSummaryButton.active {
+          border-color:rgba(245,205,94,.42) !important;
+          background:linear-gradient(135deg,rgba(245,205,94,.24),rgba(255,255,255,.08)) !important;
+          box-shadow:0 8px 18px rgba(238,188,65,.13) !important;
+        }
+
+        @media (min-width:1281px) {
+          .ncsPosHeader {
+            display:grid !important;
+            grid-template-columns:minmax(285px,.82fr) minmax(285px,.86fr) minmax(430px,1.28fr) !important;
+            align-items:center !important;
+            gap:18px !important;
+          }
+          .ncsPosCustomerQueue {
+            position:relative !important;
+            right:auto !important;
+            bottom:auto !important;
+            width:100% !important;
+            height:142px !important;
+          }
+          .ncsPosHeader h1 { white-space:nowrap; }
+        }
+
+        @media (min-width:901px) and (max-width:1280px) {
+          .ncsPosHeader {
+            display:grid !important;
+            grid-template-columns:minmax(300px,1fr) minmax(300px,1fr) !important;
+            align-items:center !important;
+            gap:14px !important;
+          }
+          .ncsPosCustomerQueue {
+            position:relative !important;
+            right:auto !important;
+            bottom:auto !important;
+            width:100% !important;
+            height:132px !important;
+          }
+          .ncsPosHeaderActions {
+            grid-column:1 / -1;
+            max-width:none;
+            grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          }
+        }
+
+        /* Product intelligence surface */
+        .ncsPosCatalogue {
+          border-radius:26px !important;
+          box-shadow:0 20px 50px rgba(31,34,76,.105),inset 0 1px 0 rgba(255,255,255,.98) !important;
+        }
+
+        .ncsPosSearchPanel {
+          margin:0 !important;
+          padding:9px !important;
+          gap:7px !important;
+          border:0 !important;
+          border-bottom:1px solid rgba(64,55,120,.08) !important;
+          border-radius:0 !important;
+          background:
+            radial-gradient(circle at 0% 0%,rgba(109,77,255,.07),transparent 30%),
+            linear-gradient(90deg,#fbfaff,#f8fcff) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosSearchIcon {
+          width:40px !important;
+          height:40px !important;
+          border:1px solid rgba(109,77,255,.16) !important;
+          border-radius:13px !important;
+          background:linear-gradient(145deg,#f4f0ff,#eefbff) !important;
+          color:#6549dc !important;
+          box-shadow:inset 0 1px 0 #fff !important;
+        }
+
+        .ncsPosSearchPanel input {
+          min-height:44px !important;
+          border:1px solid rgba(54,49,104,.10) !important;
+          border-radius:13px !important;
+          background:#fff !important;
+          box-shadow:inset 0 1px 2px rgba(39,34,90,.035) !important;
+        }
+
+        .ncsPosSearchPanel input:focus {
+          border-color:rgba(109,77,255,.42) !important;
+          box-shadow:0 0 0 4px rgba(109,77,255,.07),inset 0 1px 2px rgba(39,34,90,.035) !important;
+        }
+
+        .ncsPosSearchButton,
+        .ncsPosSearchQuickItemButton {
+          min-height:44px !important;
+          border-radius:13px !important;
+          padding-left:16px !important;
+          padding-right:16px !important;
+        }
+
+        .ncsPosCategoryRow {
+          gap:7px !important;
+          padding:10px 12px !important;
+          border-bottom:1px solid rgba(55,49,105,.075) !important;
+          background:rgba(255,255,255,.86) !important;
+        }
+
+        .ncsPosCategoryButton {
+          min-height:37px !important;
+          padding:0 14px !important;
+          border-radius:12px !important;
+          border-color:rgba(61,54,111,.10) !important;
+          background:#fff !important;
+          color:#4f5470 !important;
+          font-size:9px !important;
+          font-weight:900 !important;
+          box-shadow:0 4px 12px rgba(30,34,72,.035) !important;
+        }
+
+        .ncsPosCategoryActive {
+          border-color:rgba(109,77,255,.48) !important;
+          background:linear-gradient(135deg,#6848ee,#6a50ff 55%,#2e99cb) !important;
+          color:#fff !important;
+          box-shadow:0 9px 20px rgba(94,72,225,.22) !important;
+        }
+
+        .ncsPosCatalogueTop {
+          position:relative;
+          margin:10px 12px 8px !important;
+          padding:14px 15px 14px 58px !important;
+          border:1px solid rgba(255,255,255,.12) !important;
+          border-radius:19px !important;
+          background:
+            radial-gradient(circle at 92% 0%,rgba(32,201,214,.16),transparent 32%),
+            linear-gradient(118deg,#221643,#4c36a0 57%,#245e75) !important;
+          color:#fff !important;
+          box-shadow:0 14px 30px rgba(30,26,73,.14),inset 0 1px 0 rgba(255,255,255,.08) !important;
+        }
+
+        .ncsPosCatalogueTop::before {
+          content:"◈";
+          position:absolute;
+          left:14px;
+          top:50%;
+          width:32px;
+          height:32px;
+          display:grid;
+          place-items:center;
+          border:1px solid rgba(255,255,255,.18);
+          border-radius:11px;
+          background:linear-gradient(145deg,rgba(126,97,255,.85),rgba(39,182,203,.72));
+          color:#fff;
+          font-size:14px;
+          box-shadow:0 8px 18px rgba(14,13,45,.18);
+          transform:translateY(-50%);
+        }
+
+        .ncsPosCatalogueTop h2 {
+          margin:0 !important;
+          color:#fff !important;
+          font-size:19px !important;
+          letter-spacing:-.45px !important;
+        }
+
+        .ncsPosCatalogueTop p {
+          color:rgba(255,255,255,.60) !important;
+          font-size:7.8px !important;
+        }
+
+        .ncsPosStatusBadge {
+          border-color:rgba(85,243,178,.22) !important;
+          background:rgba(30,191,129,.10) !important;
+          color:#9ff5cf !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.05) !important;
+        }
+
+        .ncsPosFinderToolbar {
+          margin:0 12px 10px !important;
+          padding:6px !important;
+          gap:5px !important;
+          border:1px solid rgba(57,50,110,.08) !important;
+          border-radius:16px !important;
+          background:linear-gradient(180deg,#f8f8fc,#f2f5fa) !important;
+          box-shadow:inset 0 1px 0 #fff !important;
+        }
+
+        .ncsPosFinderToolbar button {
+          min-height:38px !important;
+          border:1px solid transparent !important;
+          border-radius:11px !important;
+          background:transparent !important;
+          color:#596078 !important;
+          font-size:8px !important;
+          font-weight:900 !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosFinderToolbar button:hover {
+          background:#fff !important;
+          color:#35285f !important;
+        }
+
+        .ncsPosFinderToolbar button.active {
+          border-color:rgba(109,77,255,.14) !important;
+          background:linear-gradient(135deg,#6748ee,#7257ff 57%,#2f9cc7) !important;
+          color:#fff !important;
+          box-shadow:0 8px 17px rgba(91,70,220,.18) !important;
+        }
+
+        .ncsPosFinderToolbar > span {
+          grid-column:1 / -1;
+          padding:2px 7px 1px;
+          color:#8a8f9f !important;
+          font-size:6.3px !important;
+        }
+
+        /* Brand cards become compact intelligence nodes rather than ordinary boxes. */
+        .ncsPosBrandCompactGrid,
+        .ncsPosBrandGrid {
+          gap:9px !important;
+          padding:2px 12px 12px !important;
+        }
+
+        .ncsPosBrandCompactCard,
+        .ncsPosBrandSummary {
+          position:relative;
+          isolation:isolate;
+          min-height:78px !important;
+          padding:11px 36px 11px 11px !important;
+          border:1px solid color-mix(in srgb,var(--node,#7255ee) 17%,rgba(48,44,92,.09)) !important;
+          border-radius:18px !important;
+          background:
+            radial-gradient(circle at 10% 18%,color-mix(in srgb,var(--node,#7255ee) 11%,transparent),transparent 37%),
+            linear-gradient(145deg,#fff,#f8f9fd) !important;
+          box-shadow:0 10px 24px rgba(30,34,72,.065),inset 0 1px 0 #fff !important;
+          overflow:hidden;
+        }
+
+        .ncsPosBrandCompactCard::before,
+        .ncsPosBrandSummary::before {
+          content:"";
+          position:absolute;
+          z-index:-1;
+          left:0;
+          top:12px;
+          bottom:12px;
+          width:3px;
+          border-radius:0 4px 4px 0;
+          background:var(--node,#7255ee);
+          box-shadow:0 0 14px color-mix(in srgb,var(--node,#7255ee) 45%,transparent);
+        }
+
+        .ncsPosBrandCompactCard::after,
+        .ncsPosBrandSummary::after {
+          content:"LIVE";
+          position:absolute;
+          top:7px;
+          right:8px;
+          color:color-mix(in srgb,var(--node,#7255ee) 78%,#3d4160);
+          font-size:4.8px;
+          font-weight:1000;
+          letter-spacing:.9px;
+          opacity:.62;
+        }
+
+        .ncsPosBrandCompactCard:hover,
+        .ncsPosBrandSummary:hover {
+          transform:translateY(-2px) !important;
+          border-color:color-mix(in srgb,var(--node,#7255ee) 35%,rgba(48,44,92,.09)) !important;
+          box-shadow:0 15px 31px color-mix(in srgb,var(--node,#7255ee) 12%,rgba(29,33,72,.08)),inset 0 1px 0 #fff !important;
+        }
+
+        .ncsPosBrandCompactMark,
+        .ncsPosBrandMark {
+          width:43px !important;
+          height:43px !important;
+          flex:0 0 43px !important;
+          border-radius:14px !important;
+          font-size:10px !important;
+          font-weight:1000 !important;
+        }
+
+        .ncsPosBrandCompactCard strong,
+        .ncsPosBrandSummary strong {
+          font-size:11px !important;
+          letter-spacing:-.1px;
+        }
+
+        .ncsPosBrandCompactCard small,
+        .ncsPosBrandSummary small {
+          margin-top:5px !important;
+          font-size:7.1px !important;
+          line-height:1.35 !important;
+        }
+
+        .ncsPosBrandCompactCard > b,
+        .ncsPosBrandSummary > b {
+          position:absolute;
+          right:8px;
+          bottom:8px;
+          width:25px !important;
+          height:25px !important;
+          border-radius:9px !important;
+        }
+
+        .ncsPosBillPanel {
+          border-radius:26px !important;
+          box-shadow:0 22px 54px rgba(30,34,75,.13),inset 0 1px 0 rgba(255,255,255,.98) !important;
+        }
+
+        .ncsPosBillHeader {
+          min-height:84px !important;
+          padding-top:13px !important;
+          padding-bottom:13px !important;
+        }
+
+        .ncsPosBillHeader::before {
+          content:"";
+          position:absolute;
+          inset:0;
+          pointer-events:none;
+          background:
+            linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);
+          background-size:21px 21px;
+          mask-image:linear-gradient(90deg,#000,transparent 82%);
+        }
+
+        .ncsPosBillHeader > * { position:relative; z-index:2; }
+
+        .ncsPosPremiumAiButton {
+          min-width:186px !important;
+          min-height:58px !important;
+          border-radius:19px !important;
+        }
+
+        @media (max-width:900px) {
+          .ncsPosHeader {
+            display:block !important;
+            min-height:auto !important;
+          }
+          .ncsPosCustomerQueue { display:none !important; }
+          .ncsPosHeaderActions {
+            max-width:none;
+            margin-top:14px;
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          }
+        }
+
+        @media (max-width:560px) {
+          .ncsPosHeaderActions { grid-template-columns:1fr 1fr !important; }
+          .ncsPosHeaderActions button { font-size:8px !important; padding:0 8px !important; }
+          .ncsPosCatalogueTop { padding-left:52px !important; }
+          .ncsPosBrandCompactGrid,
+          .ncsPosBrandGrid { grid-template-columns:1fr !important; }
+        }
+
+
+        /* ============================================================
+           NCS POS MATRIX INTELLIGENCE V3 • BRAND FIELD PAGINATION
+           Fixed-height 8-node brand field + Popular/Recent/A-Z/All routing.
+           No billing, stock, AI, reward, payment or offline logic changes.
+           ============================================================ */
+        .ncsPosBrandMatrixShell {
+          margin:10px 10px 14px !important;
+          overflow:hidden;
+          border:1px solid rgba(77,61,151,.12);
+          border-radius:22px;
+          background:
+            linear-gradient(rgba(92,70,218,.025) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(92,70,218,.025) 1px,transparent 1px),
+            radial-gradient(circle at 0% 0%,rgba(109,77,255,.08),transparent 28%),
+            radial-gradient(circle at 100% 100%,rgba(22,184,212,.07),transparent 30%),
+            #fbfcff;
+          background-size:22px 22px,22px 22px,auto,auto,auto;
+          box-shadow:0 16px 38px rgba(31,34,77,.08),inset 0 1px 0 #fff;
+        }
+        .ncsPosBrandMatrixCommand {
+          display:grid;
+          grid-template-columns:minmax(0,1fr) auto;
+          gap:9px;
+          align-items:center;
+          padding:11px 11px 8px;
+          border-bottom:1px solid rgba(68,56,135,.07);
+          background:linear-gradient(90deg,rgba(255,255,255,.92),rgba(247,250,255,.86));
+        }
+        .ncsPosBrandMatrixSearch {
+          min-width:0;
+          height:38px;
+          display:grid;
+          grid-template-columns:28px minmax(0,1fr) 24px;
+          align-items:center;
+          gap:4px;
+          padding:0 6px;
+          border:1px solid rgba(73,61,137,.11);
+          border-radius:12px;
+          background:#fff;
+        }
+        .ncsPosBrandMatrixSearch > span {
+          display:grid;
+          place-items:center;
+          color:#644ce5;
+          font-size:17px;
+          font-weight:950;
+        }
+        .ncsPosBrandMatrixSearch input {
+          min-width:0;
+          width:100%;
+          border:0;
+          outline:0;
+          background:transparent;
+          color:#262142;
+          font-size:9px;
+          font-weight:800;
+        }
+        .ncsPosBrandMatrixSearch input::placeholder { color:#9aa0ae; }
+        .ncsPosBrandMatrixSearch button {
+          width:22px;
+          height:22px;
+          border:0;
+          border-radius:7px;
+          background:#f3f1fb;
+          color:#615980;
+          cursor:pointer;
+          font-weight:950;
+        }
+        .ncsPosBrandMatrixModes {
+          display:flex;
+          gap:4px;
+          padding:3px;
+          border:1px solid rgba(73,61,137,.09);
+          border-radius:12px;
+          background:#f4f5fb;
+        }
+        .ncsPosBrandMatrixModes button {
+          min-height:30px;
+          padding:0 8px;
+          border:0;
+          border-radius:9px;
+          background:transparent;
+          color:#777d8d;
+          font-size:6.4px;
+          font-weight:1000;
+          letter-spacing:.35px;
+          cursor:pointer;
+        }
+        .ncsPosBrandMatrixModes button.active {
+          background:linear-gradient(135deg,#6145e7,#6f55ff 58%,#2fa2be);
+          color:#fff;
+          box-shadow:0 7px 14px rgba(91,70,220,.18);
+        }
+        .ncsPosBrandMatrixMeta {
+          display:flex;
+          align-items:end;
+          justify-content:space-between;
+          gap:12px;
+          padding:9px 12px 6px;
+        }
+        .ncsPosBrandMatrixMeta span,
+        .ncsPosBrandMatrixMeta strong { display:block; }
+        .ncsPosBrandMatrixMeta span {
+          color:#22a9ba;
+          font-size:5.4px;
+          font-weight:1000;
+          letter-spacing:1.15px;
+        }
+        .ncsPosBrandMatrixMeta strong {
+          margin-top:2px;
+          color:#2a214d;
+          font-size:9.2px;
+          font-weight:950;
+        }
+        .ncsPosBrandMatrixMeta > small {
+          color:#999eac;
+          font-size:5.8px;
+          font-weight:800;
+          white-space:nowrap;
+        }
+        .ncsPosBrandMatrixViewport {
+          min-height:314px;
+          height:314px;
+          overflow:hidden;
+          padding:0 2px;
+        }
+        .ncsPosBrandMatrixGrid {
+          min-height:314px !important;
+          height:314px !important;
+          display:grid !important;
+          grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          grid-template-rows:repeat(4,minmax(0,1fr)) !important;
+          grid-auto-rows:minmax(0,1fr) !important;
+          gap:8px !important;
+          padding:4px 10px 8px !important;
+          overflow:hidden !important;
+        }
+        .ncsPosBrandMatrixCard {
+          min-height:0 !important;
+          height:auto !important;
+          padding:8px 31px 8px 8px !important;
+          border-radius:15px !important;
+        }
+        .ncsPosBrandMatrixCard::after {
+          content:"";
+          position:absolute;
+          left:0;
+          top:10px;
+          bottom:10px;
+          width:3px;
+          border-radius:0 3px 3px 0;
+          background:var(--node,#7255ee);
+          box-shadow:0 0 11px color-mix(in srgb,var(--node,#7255ee) 35%,transparent);
+        }
+        .ncsPosBrandMatrixCard .ncsPosBrandCompactMark {
+          width:37px !important;
+          height:37px !important;
+          border-radius:11px !important;
+          font-size:10px !important;
+        }
+        .ncsPosBrandMatrixCard strong { font-size:9.4px !important; }
+        .ncsPosBrandMatrixCard small { margin-top:2px !important; font-size:5.9px !important; }
+        .ncsPosBrandMatrixCard em {
+          display:block;
+          margin-top:3px;
+          color:color-mix(in srgb,var(--node,#7255ee) 84%,#2e2947);
+          font-size:5.5px;
+          font-style:normal;
+          font-weight:1000;
+          letter-spacing:.5px;
+        }
+        .ncsPosBrandNodeLive {
+          position:absolute;
+          top:6px;
+          right:7px;
+          padding:2px 5px;
+          border:1px solid color-mix(in srgb,var(--node,#7255ee) 16%,transparent);
+          border-radius:999px;
+          background:color-mix(in srgb,var(--node,#7255ee) 5%,#fff);
+          color:color-mix(in srgb,var(--node,#7255ee) 80%,#4e4b62);
+          font-size:4.4px;
+          font-weight:1000;
+          letter-spacing:.65px;
+        }
+        .ncsPosBrandMatrixCard > b {
+          position:absolute;
+          right:7px;
+          bottom:7px;
+          width:20px !important;
+          height:20px !important;
+          border-radius:7px !important;
+          font-size:13px !important;
+        }
+        .ncsPosBrandMatrixEmpty {
+          grid-column:1 / -1;
+          grid-row:1 / -1;
+          display:flex;
+          flex-direction:column;
+          align-items:center;
+          justify-content:center;
+          gap:4px;
+          border:1px dashed rgba(91,70,220,.16);
+          border-radius:16px;
+          background:rgba(255,255,255,.66);
+          color:#5c5574;
+          text-align:center;
+        }
+        .ncsPosBrandMatrixEmpty > span { color:#644ce5; font-size:22px; }
+        .ncsPosBrandMatrixEmpty strong { font-size:10px; }
+        .ncsPosBrandMatrixEmpty small { color:#9aa0ae; font-size:6px; }
+        .ncsPosBrandMatrixPager {
+          min-height:45px;
+          display:grid;
+          grid-template-columns:34px auto minmax(50px,1fr) 34px;
+          align-items:center;
+          gap:8px;
+          padding:7px 10px 9px;
+          border-top:1px solid rgba(68,56,135,.07);
+          background:rgba(255,255,255,.80);
+        }
+        .ncsPosBrandMatrixPager > button {
+          width:34px;
+          height:31px;
+          display:grid;
+          place-items:center;
+          border:1px solid rgba(94,73,210,.13);
+          border-radius:10px;
+          background:#fff;
+          color:#624be3;
+          font-size:18px;
+          font-weight:950;
+          cursor:pointer;
+          box-shadow:0 5px 12px rgba(42,39,82,.055);
+        }
+        .ncsPosBrandMatrixPager > button:disabled {
+          opacity:.32;
+          cursor:default;
+          box-shadow:none;
+        }
+        .ncsPosBrandMatrixPager > div span,
+        .ncsPosBrandMatrixPager > div strong { display:block; }
+        .ncsPosBrandMatrixPager > div span {
+          color:#9ba0ae;
+          font-size:4.8px;
+          font-weight:1000;
+          letter-spacing:.8px;
+        }
+        .ncsPosBrandMatrixPager > div strong {
+          margin-top:1px;
+          color:#302651;
+          font-size:8px;
+          font-weight:1000;
+        }
+        .ncsPosBrandMatrixDots {
+          display:flex;
+          justify-content:center;
+          gap:4px;
+        }
+        .ncsPosBrandMatrixDots i {
+          width:5px;
+          height:5px;
+          border-radius:999px;
+          background:#d6d8e5;
+          transition:width .16s ease,background .16s ease;
+        }
+        .ncsPosBrandMatrixDots i.active {
+          width:17px;
+          background:linear-gradient(90deg,#6d4dff,#22b8c8);
+        }
+        @media (min-width:1181px) {
+          .ncsPosBillPanel {
+            position:sticky !important;
+            top:72px !important;
+            max-height:calc(100vh - 86px) !important;
+            align-self:start !important;
+          }
+        }
+        @media (max-width:720px) {
+          .ncsPosBrandMatrixCommand { grid-template-columns:1fr !important; }
+          .ncsPosBrandMatrixModes {
+            display:grid;
+            grid-template-columns:repeat(4,minmax(0,1fr));
+          }
+          .ncsPosBrandMatrixModes button { padding:0 4px; }
+          .ncsPosBrandMatrixMeta > small { display:none; }
+          .ncsPosBrandMatrixViewport,
+          .ncsPosBrandMatrixGrid {
+            height:auto !important;
+            min-height:0 !important;
+          }
+          .ncsPosBrandMatrixGrid {
+            grid-template-columns:1fr !important;
+            grid-template-rows:none !important;
+            grid-auto-rows:68px !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS MATRIX INTELLIGENCE V4 • WOW SURFACES
+           Product Universe + Active Bill Matrix + NCS AI Live Copilot.
+           Visual/context layer only: existing billing, barcode, stock,
+           variants, rewards, payment, held bills, offline sync and AI
+           command execution remain untouched.
+           ============================================================ */
+
+        /* ---------- PRODUCT UNIVERSE WINDOW ---------- */
+        .ncsPosBrandModalBackdrop {
+          background:
+            radial-gradient(circle at 16% 10%,rgba(109,77,255,.18),transparent 30%),
+            radial-gradient(circle at 88% 86%,rgba(22,184,212,.15),transparent 34%),
+            rgba(10,13,37,.70) !important;
+          backdrop-filter:blur(18px) saturate(118%) !important;
+        }
+
+        .ncsPosBrandModal {
+          width:min(1120px,calc(100vw - 54px)) !important;
+          max-height:min(86vh,820px) !important;
+          border:1px solid rgba(166,151,255,.34) !important;
+          border-radius:30px !important;
+          background:
+            linear-gradient(rgba(85,67,185,.028) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(85,67,185,.028) 1px,transparent 1px),
+            radial-gradient(circle at 8% 0%,rgba(109,77,255,.08),transparent 24%),
+            radial-gradient(circle at 100% 14%,rgba(22,184,212,.075),transparent 28%),
+            linear-gradient(180deg,#fbfcff 0%,#f6f8fd 100%) !important;
+          background-size:24px 24px,24px 24px,auto,auto,auto !important;
+          box-shadow:
+            0 46px 130px rgba(7,10,34,.52),
+            0 0 0 1px rgba(255,255,255,.12) inset !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosBrandModal::before {
+          content:"";
+          position:absolute;
+          z-index:4;
+          top:0;
+          left:8%;
+          right:8%;
+          height:1px;
+          background:linear-gradient(90deg,transparent,#8f79ff,#47dbe1,#f3ca5f,transparent);
+          box-shadow:0 0 18px rgba(82,207,223,.42);
+          pointer-events:none;
+        }
+
+        .ncsPosBrandModalHeader {
+          position:relative !important;
+          min-height:108px !important;
+          display:grid !important;
+          grid-template-columns:minmax(0,1fr) auto 48px !important;
+          align-items:center !important;
+          gap:18px !important;
+          padding:18px 20px !important;
+          border-bottom:1px solid rgba(255,255,255,.12) !important;
+          background:
+            radial-gradient(circle at 84% -30%,rgba(88,232,226,.25),transparent 38%),
+            radial-gradient(circle at 6% 130%,rgba(232,77,169,.23),transparent 38%),
+            linear-gradient(116deg,#21123e 0%,#4d2ea6 39%,#24577b 72%,#08766e 100%) !important;
+          color:#fff !important;
+          overflow:hidden;
+        }
+
+        .ncsPosBrandModalHeader::after {
+          content:"PRODUCT UNIVERSE";
+          position:absolute;
+          right:84px;
+          bottom:5px;
+          color:rgba(255,255,255,.075);
+          font-size:27px;
+          font-weight:1000;
+          letter-spacing:2.5px;
+          pointer-events:none;
+        }
+
+        .ncsPosBrandModalTitle {
+          min-width:0;
+          display:grid !important;
+          grid-template-columns:58px minmax(0,1fr) !important;
+          align-items:center !important;
+          gap:13px !important;
+        }
+
+        .ncsPosBrandModalTitle .ncsPosBrandCompactMark {
+          width:58px !important;
+          height:58px !important;
+          border:1px solid rgba(255,255,255,.30) !important;
+          border-radius:19px !important;
+          background:
+            radial-gradient(circle at 30% 20%,rgba(255,255,255,.30),transparent 34%),
+            linear-gradient(145deg,#7658ff,#3c7fd0 58%,#23b8bb) !important;
+          color:#fff !important;
+          box-shadow:0 13px 32px rgba(6,12,45,.26),inset 0 1px 0 rgba(255,255,255,.24) !important;
+          font-size:14px !important;
+        }
+
+        .ncsPosBrandModalTitle small {
+          color:#79ecdf !important;
+          font-size:7px !important;
+          font-weight:1000 !important;
+          letter-spacing:1.45px !important;
+        }
+        .ncsPosBrandModalTitle h3 {
+          margin:3px 0 2px !important;
+          color:#fff !important;
+          font-size:24px !important;
+          line-height:1 !important;
+          letter-spacing:-.5px !important;
+        }
+        .ncsPosBrandModalTitle p {
+          margin:0 !important;
+          color:rgba(255,255,255,.68) !important;
+          font-size:8.5px !important;
+          font-weight:750 !important;
+        }
+
+        .ncsPosBrandModalTelemetry {
+          display:grid;
+          grid-template-columns:repeat(3,minmax(70px,1fr));
+          gap:7px;
+          padding:6px;
+          border:1px solid rgba(255,255,255,.13);
+          border-radius:16px;
+          background:rgba(5,18,45,.20);
+          backdrop-filter:blur(12px);
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.07);
+        }
+        .ncsPosBrandModalTelemetry > span {
+          min-width:70px;
+          padding:7px 9px;
+          border:1px solid rgba(255,255,255,.08);
+          border-radius:11px;
+          background:rgba(255,255,255,.055);
+          text-align:left;
+        }
+        .ncsPosBrandModalTelemetry small,
+        .ncsPosBrandModalTelemetry b { display:block; }
+        .ncsPosBrandModalTelemetry small {
+          color:rgba(255,255,255,.48);
+          font-size:5.2px;
+          font-weight:1000;
+          letter-spacing:1px;
+        }
+        .ncsPosBrandModalTelemetry b {
+          margin-top:2px;
+          color:#fff;
+          font-size:13px;
+          font-weight:1000;
+        }
+        .ncsPosBrandModalTelemetry > span:nth-child(1) b { color:#f3d264; }
+        .ncsPosBrandModalTelemetry > span:nth-child(2) b { color:#76ecdc; }
+        .ncsPosBrandModalTelemetry > span:nth-child(3) b { color:#9b8cff; }
+
+        .ncsPosBrandModalClose {
+          width:46px !important;
+          height:46px !important;
+          border:1px solid rgba(255,255,255,.18) !important;
+          border-radius:15px !important;
+          background:rgba(255,255,255,.08) !important;
+          color:#fff !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.08) !important;
+          backdrop-filter:blur(10px);
+          transition:transform .18s ease,background .18s ease !important;
+        }
+        .ncsPosBrandModalClose:hover {
+          transform:rotate(4deg) scale(1.04);
+          background:rgba(255,255,255,.15) !important;
+        }
+
+        .ncsPosBrandModalBody {
+          flex:1 1 auto !important;
+          min-height:0 !important;
+          display:grid !important;
+          grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          align-content:start !important;
+          gap:12px !important;
+          padding:16px !important;
+          overflow:auto !important;
+          scrollbar-width:thin;
+          scrollbar-color:rgba(105,84,221,.45) transparent;
+        }
+
+        .ncsPosBrandModalBody .ncsPosGroupedCard {
+          min-width:0 !important;
+          border:1px solid rgba(52,52,96,.09) !important;
+          border-radius:20px !important;
+          background:
+            radial-gradient(circle at 0% 0%,rgba(109,77,255,.055),transparent 31%),
+            #fff !important;
+          box-shadow:0 12px 28px rgba(34,37,78,.075),inset 0 1px 0 #fff !important;
+          overflow:hidden !important;
+          transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease !important;
+        }
+        .ncsPosBrandModalBody .ncsPosGroupedCard:hover {
+          transform:translateY(-2px);
+          border-color:rgba(109,77,255,.20) !important;
+          box-shadow:0 18px 34px rgba(75,60,155,.12),inset 0 1px 0 #fff !important;
+        }
+        .ncsPosBrandModalBody .ncsPosGroupedCard.open {
+          grid-column:1 / -1 !important;
+          border-color:rgba(87,68,218,.28) !important;
+          background:
+            radial-gradient(circle at 100% 0%,rgba(22,184,212,.08),transparent 26%),
+            linear-gradient(145deg,#fff,#f9faff) !important;
+          box-shadow:0 22px 48px rgba(47,42,110,.14) !important;
+        }
+
+        .ncsPosBrandModalBody .ncsPosGroupedCardMain {
+          min-height:132px !important;
+          padding:12px !important;
+        }
+        .ncsPosBrandModalBody .ncsPosGroupedImage {
+          border-radius:15px !important;
+          background:linear-gradient(145deg,#0a2e73,#123f91) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.09) !important;
+        }
+        .ncsPosBrandModalBody .ncsPosGroupedInfo h3 {
+          color:#181735 !important;
+          font-size:15px !important;
+          letter-spacing:-.25px !important;
+        }
+        .ncsPosBrandModalBody .ncsPosGroupedInfo > small {
+          color:#e1aa22 !important;
+          font-weight:1000 !important;
+          letter-spacing:.7px !important;
+        }
+        .ncsPosBrandModalBody .ncsPosGroupedToggle {
+          border-radius:13px !important;
+          background:linear-gradient(145deg,#6d4dff,#2ea4c7) !important;
+          box-shadow:0 10px 20px rgba(78,66,203,.20) !important;
+        }
+
+        .ncsPosBrandModalBody .ncsPosVariantPanel {
+          border-top:1px solid rgba(109,77,255,.08) !important;
+          background:
+            linear-gradient(rgba(71,59,148,.025) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(71,59,148,.025) 1px,transparent 1px),
+            linear-gradient(180deg,#f9faff,#f2f9fb) !important;
+          background-size:20px 20px,20px 20px,auto !important;
+        }
+        .ncsPosVariantPanel header {
+          border-bottom:1px solid rgba(109,77,255,.08) !important;
+          background:linear-gradient(90deg,#f4f0ff,#eefcff) !important;
+        }
+        .ncsPosVariantList {
+          gap:9px !important;
+          padding:11px !important;
+        }
+        .ncsPosVariantList button {
+          min-height:58px !important;
+          border:1px solid rgba(67,57,127,.10) !important;
+          border-radius:14px !important;
+          background:#fff !important;
+          box-shadow:0 6px 15px rgba(32,35,70,.045) !important;
+        }
+        .ncsPosVariantList button:hover:not(:disabled) {
+          transform:translateY(-1px);
+          border-color:rgba(22,184,212,.35) !important;
+          background:linear-gradient(145deg,#fff,#f0fdff) !important;
+          box-shadow:0 10px 23px rgba(22,184,212,.10) !important;
+        }
+
+        .ncsPosProductStyleTabs {
+          padding:9px 14px !important;
+          border-bottom:1px solid rgba(67,57,127,.08) !important;
+          background:rgba(255,255,255,.84) !important;
+          backdrop-filter:blur(12px);
+        }
+        .ncsPosProductStyleTabs button {
+          border-radius:999px !important;
+          border:1px solid rgba(76,61,155,.10) !important;
+          background:#f7f7fb !important;
+          color:#65627a !important;
+          font-size:7px !important;
+          font-weight:950 !important;
+        }
+        .ncsPosProductStyleTabs button.active {
+          background:linear-gradient(135deg,#6748ee,#2fa7c1) !important;
+          border-color:transparent !important;
+          color:#fff !important;
+          box-shadow:0 7px 16px rgba(91,70,220,.18) !important;
+        }
+
+        .ncsPosBrandModalFooter {
+          min-height:54px !important;
+          display:flex !important;
+          align-items:center !important;
+          justify-content:space-between !important;
+          gap:12px !important;
+          padding:9px 14px !important;
+          border-top:1px solid rgba(63,54,126,.08) !important;
+          background:rgba(255,255,255,.90) !important;
+          backdrop-filter:blur(14px);
+          color:#6b6d80 !important;
+        }
+        .ncsPosBrandModalFooter::before {
+          content:"● LIVE SELECTION ROUTE";
+          color:#10a77a;
+          font-size:5.7px;
+          font-weight:1000;
+          letter-spacing:.8px;
+        }
+        .ncsPosBrandModalFooter button {
+          border:0 !important;
+          border-radius:12px !important;
+          background:linear-gradient(135deg,#0a2e73,#6748ee) !important;
+          color:#fff !important;
+          box-shadow:0 8px 18px rgba(39,43,96,.16) !important;
+        }
+
+        /* ---------- ACTIVE BILL MATRIX ---------- */
+        .ncsPosBillPanel {
+          position:relative;
+          isolation:isolate;
+          overflow:hidden !important;
+          border:1px solid rgba(109,77,255,.16) !important;
+          border-radius:28px !important;
+          background:
+            linear-gradient(rgba(85,67,185,.020) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(85,67,185,.020) 1px,transparent 1px),
+            radial-gradient(circle at 100% 0%,rgba(22,184,212,.07),transparent 26%),
+            #fff !important;
+          background-size:22px 22px,22px 22px,auto,auto !important;
+          box-shadow:
+            0 30px 72px rgba(30,34,75,.16),
+            0 0 0 1px rgba(255,255,255,.85) inset !important;
+        }
+        .ncsPosBillPanel::before {
+          content:"";
+          position:absolute;
+          z-index:30;
+          top:0;
+          left:7%;
+          right:7%;
+          height:1px;
+          background:linear-gradient(90deg,transparent,#8a73ff,#2ad8d8,#f0c955,transparent);
+          box-shadow:0 0 16px rgba(47,205,212,.33);
+          pointer-events:none;
+        }
+
+        .ncsPosBillHeader {
+          position:relative !important;
+          min-height:96px !important;
+          display:grid !important;
+          grid-template-columns:minmax(125px,.7fr) minmax(130px,.56fr) auto !important;
+          align-items:center !important;
+          gap:12px !important;
+          padding:13px 14px !important;
+          border-radius:26px 26px 0 0 !important;
+          background:
+            radial-gradient(circle at 90% -20%,rgba(74,229,219,.24),transparent 34%),
+            radial-gradient(circle at 8% 120%,rgba(227,75,169,.22),transparent 37%),
+            linear-gradient(116deg,#21123d 0%,#5131b1 45%,#286294 78%,#0b7772 100%) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.08) !important;
+          overflow:hidden;
+        }
+        .ncsPosBillHeader::after {
+          content:"NCS LIVE BILL";
+          position:absolute;
+          right:12px;
+          bottom:3px;
+          color:rgba(255,255,255,.065);
+          font-size:22px;
+          font-weight:1000;
+          letter-spacing:1.7px;
+          pointer-events:none;
+        }
+        .ncsPosBillHeader > div:first-child span {
+          color:#79e8df !important;
+          font-size:6.7px !important;
+          letter-spacing:1.3px !important;
+          text-transform:uppercase;
+        }
+        .ncsPosBillHeader > div:first-child h2 {
+          margin-top:4px !important;
+          color:#fff !important;
+          font-size:22px !important;
+          line-height:1 !important;
+        }
+
+        .ncsPosBillLivePulse {
+          min-width:0;
+          padding:8px 10px;
+          border:1px solid rgba(255,255,255,.12);
+          border-radius:14px;
+          background:rgba(6,22,52,.20);
+          backdrop-filter:blur(12px);
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+        }
+        .ncsPosBillLivePulse span,
+        .ncsPosBillLivePulse strong,
+        .ncsPosBillLivePulse small { display:block; }
+        .ncsPosBillLivePulse span {
+          color:#85eee2 !important;
+          font-size:5.3px !important;
+          font-weight:1000;
+          letter-spacing:.9px;
+          white-space:nowrap;
+        }
+        .ncsPosBillLivePulse span i {
+          width:6px;
+          height:6px;
+          display:inline-block;
+          margin-right:5px;
+          border-radius:50%;
+          background:#35e69a;
+          box-shadow:0 0 0 4px rgba(53,230,154,.10),0 0 12px rgba(53,230,154,.45);
+          vertical-align:-1px;
+          animation:ncsBillPulse 1.8s ease-in-out infinite;
+        }
+        .ncsPosBillLivePulse strong {
+          margin-top:3px;
+          color:#fff !important;
+          font-size:15px;
+          font-weight:1000;
+          letter-spacing:-.25px;
+        }
+        .ncsPosBillLivePulse small {
+          margin-top:1px;
+          color:rgba(255,255,255,.46) !important;
+          font-size:5px !important;
+          font-weight:900;
+          letter-spacing:.75px;
+        }
+        @keyframes ncsBillPulse {
+          0%,100%{transform:scale(.88);opacity:.72}
+          50%{transform:scale(1.08);opacity:1}
+        }
+
+        .ncsPosBillHeaderActions {
+          position:relative;
+          z-index:2;
+          display:flex !important;
+          flex-wrap:wrap !important;
+          justify-content:flex-end !important;
+          gap:6px !important;
+        }
+        .ncsPosBillHeaderActions button {
+          min-height:38px !important;
+          padding:0 10px !important;
+          border:1px solid rgba(255,255,255,.16) !important;
+          border-radius:12px !important;
+          background:rgba(255,255,255,.075) !important;
+          color:#fff !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.05) !important;
+          backdrop-filter:blur(9px);
+        }
+        .ncsPosBillHeaderActions button:hover {
+          transform:translateY(-1px);
+          background:rgba(255,255,255,.13) !important;
+        }
+
+        .ncsPosCustomerCardCompact {
+          position:relative;
+          margin:10px 10px 0 !important;
+          border:1px solid rgba(233,80,165,.13) !important;
+          border-radius:18px !important;
+          background:
+            radial-gradient(circle at 0% 0%,rgba(233,80,165,.085),transparent 31%),
+            linear-gradient(135deg,#fff,#fff9fc 55%,#f5fbff) !important;
+          box-shadow:0 9px 23px rgba(42,38,85,.055) !important;
+          overflow:hidden;
+        }
+        .ncsPosCustomerCardCompact::before {
+          content:"CUSTOMER LINK";
+          position:absolute;
+          right:10px;
+          top:4px;
+          color:rgba(181,59,135,.34);
+          font-size:4.7px;
+          font-weight:1000;
+          letter-spacing:1px;
+          pointer-events:none;
+        }
+
+        .ncsPosCartTableHeader {
+          margin:10px 10px 0 !important;
+          border:1px solid rgba(76,63,153,.08) !important;
+          border-radius:13px 13px 0 0 !important;
+          background:linear-gradient(90deg,#f1edff 0%,#f9f8ff 48%,#eafaff 100%) !important;
+          color:#514979 !important;
+          overflow:hidden;
+        }
+        .ncsPosCartItems {
+          position:relative;
+          margin:0 10px !important;
+          border-left:1px solid rgba(76,63,153,.07);
+          border-right:1px solid rgba(76,63,153,.07);
+          background:rgba(252,253,255,.80);
+        }
+
+        .ncsPosEmptyCart {
+          position:relative;
+          min-height:244px !important;
+          overflow:hidden;
+          border:0 !important;
+          border-radius:0 !important;
+          background:
+            radial-gradient(circle at 50% 42%,rgba(109,77,255,.10),transparent 16%),
+            radial-gradient(circle at 50% 42%,rgba(22,184,212,.075),transparent 28%),
+            linear-gradient(rgba(83,69,157,.025) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(83,69,157,.025) 1px,transparent 1px),
+            linear-gradient(180deg,#fff,#f8faff) !important;
+          background-size:auto,auto,22px 22px,22px 22px,auto !important;
+        }
+        .ncsPosEmptyCart::before,
+        .ncsPosEmptyCart::after {
+          content:"";
+          position:absolute;
+          left:50%;
+          top:43%;
+          border:1px solid rgba(109,77,255,.11);
+          border-radius:50%;
+          transform:translate(-50%,-50%);
+          pointer-events:none;
+        }
+        .ncsPosEmptyCart::before { width:150px;height:150px; }
+        .ncsPosEmptyCart::after { width:210px;height:210px;border-color:rgba(22,184,212,.08); }
+        .ncsPosEmptyCart > div {
+          position:relative;
+          z-index:2;
+          width:66px !important;
+          height:66px !important;
+          border:1px solid rgba(109,77,255,.14) !important;
+          border-radius:22px !important;
+          background:
+            radial-gradient(circle at 30% 20%,rgba(255,255,255,.78),transparent 35%),
+            linear-gradient(145deg,#f3efff,#eafbff) !important;
+          box-shadow:0 13px 28px rgba(83,65,179,.13),inset 0 1px 0 #fff !important;
+          font-size:26px !important;
+        }
+        .ncsPosEmptyCart h3,
+        .ncsPosEmptyCart p { position:relative;z-index:2; }
+        .ncsPosEmptyCart h3 {
+          margin-top:13px !important;
+          color:#241a4a !important;
+          font-size:15px !important;
+          letter-spacing:-.2px;
+        }
+        .ncsPosEmptyCart p {
+          color:#8d91a2 !important;
+          font-size:8.5px !important;
+        }
+
+        .ncsPosSummary {
+          margin:0 10px !important;
+          border:1px solid rgba(76,63,153,.08) !important;
+          border-radius:0 0 18px 18px !important;
+          background:
+            radial-gradient(circle at 0% 100%,rgba(109,77,255,.055),transparent 31%),
+            linear-gradient(145deg,#fbfaff,#f2fbfd) !important;
+          box-shadow:0 12px 28px rgba(39,40,78,.05) !important;
+        }
+        .ncsPosCounterIntelligence {
+          margin:8px 10px 0 !important;
+          border-radius:14px !important;
+          overflow:hidden;
+          box-shadow:0 7px 18px rgba(37,39,77,.045) !important;
+        }
+        .ncsPosPaymentSection {
+          margin:8px 10px 10px !important;
+          border:1px solid rgba(22,184,212,.13) !important;
+          border-radius:20px !important;
+          background:
+            radial-gradient(circle at 100% 100%,rgba(22,184,212,.07),transparent 28%),
+            linear-gradient(145deg,#fff,#f4fcfd) !important;
+          box-shadow:0 13px 30px rgba(30,93,111,.07) !important;
+        }
+
+        /* ---------- NCS AI LIVE BILL COPILOT ---------- */
+        .ncsPosAiPanel .ncsPosAiMascotRunner.ncsPosAiRealCoupleLauncher {
+          right:22px !important;
+          bottom:20px !important;
+          min-width:236px !important;
+          z-index:18060 !important;
+        }
+
+        .ncsPosPremiumAiButton {
+          position:relative;
+          isolation:isolate;
+          min-width:236px !important;
+          min-height:70px !important;
+          display:grid !important;
+          grid-template-columns:54px minmax(0,1fr) auto auto !important;
+          align-items:center !important;
+          gap:9px !important;
+          padding:8px 10px 8px 8px !important;
+          border:1px solid rgba(132,236,228,.32) !important;
+          border-radius:24px !important;
+          background:
+            radial-gradient(circle at 10% 0%,rgba(246,211,85,.22),transparent 27%),
+            radial-gradient(circle at 100% 100%,rgba(22,184,212,.28),transparent 35%),
+            linear-gradient(122deg,#1d1239 0%,#5131b3 48%,#195d82 78%,#087267 100%) !important;
+          box-shadow:
+            0 22px 52px rgba(24,19,64,.34),
+            0 0 0 1px rgba(255,255,255,.06) inset !important;
+          overflow:hidden;
+          transform:translateZ(0);
+        }
+        .ncsPosPremiumAiButton::before {
+          content:"";
+          position:absolute;
+          z-index:-1;
+          inset:0;
+          background:linear-gradient(110deg,transparent 0 34%,rgba(255,255,255,.14) 44%,transparent 54%);
+          transform:translateX(-120%);
+          animation:ncsAiSweep 4.8s ease-in-out infinite;
+        }
+        .ncsPosPremiumAiButton::after {
+          content:"CONTEXT-AWARE";
+          position:absolute;
+          right:12px;
+          top:5px;
+          color:rgba(255,255,255,.20);
+          font-size:4.6px;
+          font-weight:1000;
+          letter-spacing:1.05px;
+        }
+        @keyframes ncsAiSweep {
+          0%,60%{transform:translateX(-120%);opacity:0}
+          68%{opacity:1}
+          84%,100%{transform:translateX(130%);opacity:0}
+        }
+
+        .ncsPosPremiumAiOrb {
+          position:relative;
+          width:54px;
+          height:54px;
+          display:grid;
+          place-items:center;
+          border-radius:18px;
+          background:
+            radial-gradient(circle at 30% 22%,#fff8c8 0 12%,transparent 13%),
+            linear-gradient(145deg,#f5d25b,#deaa2f 68%,#b77f12);
+          box-shadow:0 9px 22px rgba(231,184,57,.27),inset 0 1px 0 rgba(255,255,255,.55);
+        }
+        .ncsPosPremiumAiOrb > i {
+          position:absolute;
+          inset:-4px;
+          border:1px solid rgba(247,218,107,.30);
+          border-radius:20px;
+          animation:ncsAiOrbitRing 3.2s linear infinite;
+        }
+        .ncsPosPremiumAiOrb > i:nth-of-type(2) {
+          inset:-8px;
+          border-color:rgba(84,224,219,.18);
+          border-radius:23px;
+          animation-direction:reverse;
+          animation-duration:4.7s;
+        }
+        @keyframes ncsAiOrbitRing {
+          0%{transform:rotate(0deg) scale(.98)}
+          50%{transform:rotate(180deg) scale(1.035)}
+          100%{transform:rotate(360deg) scale(.98)}
+        }
+        .ncsPosPremiumAiSpark {
+          width:34px !important;
+          height:34px !important;
+          display:grid !important;
+          place-items:center !important;
+          border:0 !important;
+          border-radius:12px !important;
+          background:rgba(39,24,75,.92) !important;
+          color:#ffe875 !important;
+          box-shadow:0 6px 14px rgba(42,28,84,.24) !important;
+          font-size:17px !important;
+        }
+
+        .ncsPosPremiumAiCopy {
+          min-width:0;
+          display:flex !important;
+          flex-direction:column !important;
+          align-items:flex-start !important;
+        }
+        .ncsPosPremiumAiCopy em {
+          margin-bottom:2px;
+          color:#7ce8df;
+          font-size:4.8px;
+          font-style:normal;
+          font-weight:1000;
+          letter-spacing:1.15px;
+          white-space:nowrap;
+        }
+        .ncsPosPremiumAiCopy b {
+          color:#fff !important;
+          font-size:15px !important;
+          line-height:1 !important;
+          letter-spacing:-.15px !important;
+        }
+        .ncsPosPremiumAiCopy small {
+          margin-top:4px !important;
+          color:rgba(255,255,255,.60) !important;
+          font-size:7px !important;
+          font-weight:850 !important;
+          letter-spacing:.45px !important;
+          text-transform:uppercase;
+        }
+        .ncsPosPremiumAiLive {
+          align-self:end;
+          margin-bottom:4px;
+          display:inline-flex;
+          align-items:center;
+          gap:4px;
+          padding:4px 6px;
+          border:1px solid rgba(91,239,190,.20);
+          border-radius:999px;
+          background:rgba(21,181,124,.11);
+          color:#8cf0c8;
+          font-size:5px;
+          font-weight:1000;
+          letter-spacing:.7px;
+        }
+        .ncsPosPremiumAiLive i {
+          width:5px;
+          height:5px;
+          border-radius:50%;
+          background:#53efad;
+          box-shadow:0 0 9px rgba(83,239,173,.58);
+          animation:ncsBillPulse 1.8s ease-in-out infinite;
+        }
+        .ncsPosPremiumAiArrow {
+          width:28px;
+          height:36px;
+          display:grid;
+          place-items:center;
+          border:1px solid rgba(255,255,255,.11) !important;
+          border-radius:11px !important;
+          background:rgba(255,255,255,.06) !important;
+          color:#f5d45d !important;
+          font-size:22px !important;
+        }
+
+        .ncsPosAiPanel.expanded {
+          position:fixed !important;
+          z-index:18040 !important;
+          right:22px !important;
+          bottom:100px !important;
+          width:min(690px,calc(100vw - 340px)) !important;
+          max-height:min(72vh,660px) !important;
+          margin:0 !important;
+          padding:0 !important;
+          overflow:hidden !important;
+          border:1px solid rgba(123,103,235,.27) !important;
+          border-radius:26px !important;
+          background:
+            linear-gradient(rgba(83,69,157,.027) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(83,69,157,.027) 1px,transparent 1px),
+            radial-gradient(circle at 0% 0%,rgba(109,77,255,.10),transparent 30%),
+            radial-gradient(circle at 100% 100%,rgba(22,184,212,.09),transparent 30%),
+            rgba(250,251,255,.98) !important;
+          background-size:22px 22px,22px 22px,auto,auto,auto !important;
+          box-shadow:0 38px 110px rgba(10,12,40,.38),inset 0 1px 0 #fff !important;
+          backdrop-filter:blur(18px) saturate(118%) !important;
+        }
+        .ncsPosAiPanel.expanded::after {
+          content:"NCS AI COMMAND CORE";
+          position:absolute;
+          right:16px;
+          bottom:8px;
+          color:rgba(81,61,164,.075);
+          font-size:20px;
+          font-weight:1000;
+          letter-spacing:1.5px;
+          pointer-events:none;
+        }
+
+        .ncsPosAiPanel.expanded .ncsPosAiMascotRunner.ncsPosAiRealCoupleLauncher {
+          display:none !important;
+        }
+        .ncsPosAiCompactToggle {
+          position:relative !important;
+          z-index:2;
+          min-height:72px !important;
+          margin:0 !important;
+          padding:12px 14px !important;
+          border:0 !important;
+          border-bottom:1px solid rgba(255,255,255,.10) !important;
+          border-radius:25px 25px 0 0 !important;
+          background:
+            radial-gradient(circle at 88% -20%,rgba(72,224,219,.22),transparent 33%),
+            linear-gradient(116deg,#21123e,#5030ae 50%,#176a7b) !important;
+          color:#fff !important;
+        }
+        .ncsPosAiCompactToggle .ncsPosAiBadge {
+          width:44px !important;
+          height:44px !important;
+          border-radius:15px !important;
+          background:linear-gradient(145deg,#f3d45c,#dfad34) !important;
+          color:#2b1949 !important;
+          box-shadow:0 8px 18px rgba(232,185,54,.22) !important;
+        }
+        .ncsPosAiCompactToggle .ncsPosAiHeading strong { color:#fff !important; }
+        .ncsPosAiCompactToggle .ncsPosAiHeading small { color:rgba(255,255,255,.58) !important; }
+        .ncsPosAiCompactRight b,
+        .ncsPosAiCompactRight em { color:rgba(255,255,255,.76) !important; }
+
+        .ncsPosAiExpandableBody {
+          position:relative;
+          z-index:2;
+          max-height:calc(min(72vh,660px) - 72px);
+          overflow:auto;
+          padding:12px 13px 15px !important;
+          scrollbar-width:thin;
+          scrollbar-color:rgba(106,84,222,.35) transparent;
+        }
+        .ncsPosAiContextStrip {
+          display:grid;
+          grid-template-columns:minmax(0,1fr) auto auto auto;
+          align-items:center;
+          gap:8px;
+          margin-bottom:10px;
+          padding:8px 10px;
+          border:1px solid rgba(79,66,149,.09);
+          border-radius:13px;
+          background:linear-gradient(90deg,#f7f4ff,#f1fbfc);
+          box-shadow:inset 0 1px 0 #fff;
+        }
+        .ncsPosAiContextStrip span {
+          color:#5e49ce;
+          font-size:6px;
+          font-weight:1000;
+          letter-spacing:.95px;
+        }
+        .ncsPosAiContextStrip span i {
+          width:6px;
+          height:6px;
+          display:inline-block;
+          margin-right:5px;
+          border-radius:50%;
+          background:#1fd18d;
+          box-shadow:0 0 8px rgba(31,209,141,.42);
+          vertical-align:-1px;
+        }
+        .ncsPosAiContextStrip b {
+          color:#36304f;
+          font-size:8px;
+          font-weight:950;
+        }
+        .ncsPosAiContextStrip strong {
+          color:#0b8068;
+          font-size:11px;
+          font-weight:1000;
+        }
+        .ncsPosAiContextStrip small {
+          padding:4px 7px;
+          border-radius:999px;
+          background:#fff;
+          color:#8b8fa0;
+          font-size:5px;
+          font-weight:950;
+          letter-spacing:.55px;
+        }
+
+        .ncsPosAiCommandRow {
+          gap:9px !important;
+          padding:9px !important;
+          border:1px solid rgba(92,72,202,.10) !important;
+          border-radius:18px !important;
+          background:#fff !important;
+          box-shadow:0 10px 25px rgba(46,42,94,.065) !important;
+        }
+        .ncsPosAiInputShell {
+          min-height:48px !important;
+          border:1px solid rgba(91,72,203,.13) !important;
+          border-radius:14px !important;
+          background:linear-gradient(145deg,#faf9ff,#f3fbfd) !important;
+        }
+        .ncsPosAiInputShell:focus-within {
+          border-color:rgba(94,73,217,.38) !important;
+          box-shadow:0 0 0 4px rgba(94,73,217,.07),0 8px 20px rgba(72,60,154,.07) !important;
+        }
+        .ncsPosAiAddButton {
+          min-height:48px !important;
+          border-radius:14px !important;
+          background:linear-gradient(135deg,#5f43e3,#654fff 52%,#1ca7be) !important;
+          box-shadow:0 10px 22px rgba(83,67,205,.20) !important;
+        }
+        .ncsPosAiHintRow {
+          margin-top:8px !important;
+          padding:7px 8px !important;
+          border:1px solid rgba(76,63,151,.07) !important;
+          border-radius:12px !important;
+          background:rgba(255,255,255,.73) !important;
+        }
+        .ncsPosAiResults {
+          margin-top:10px !important;
+          border:1px solid rgba(22,184,212,.11) !important;
+          border-radius:17px !important;
+          background:rgba(255,255,255,.90) !important;
+          box-shadow:0 12px 26px rgba(36,39,80,.055) !important;
+          overflow:hidden;
+        }
+
+        @media (max-width:1180px) {
+          .ncsPosBrandModalHeader {
+            grid-template-columns:minmax(0,1fr) 48px !important;
+          }
+          .ncsPosBrandModalTelemetry { display:none; }
+          .ncsPosBrandModalBody { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          .ncsPosBillHeader {
+            grid-template-columns:minmax(120px,1fr) auto !important;
+          }
+          .ncsPosBillLivePulse { display:none; }
+          .ncsPosAiPanel.expanded {
+            width:min(650px,calc(100vw - 40px)) !important;
+            right:20px !important;
+          }
+        }
+        @media (max-width:760px) {
+          .ncsPosBrandModal {
+            width:calc(100vw - 14px) !important;
+            max-height:92vh !important;
+            border-radius:22px !important;
+          }
+          .ncsPosBrandModalHeader { min-height:86px !important; padding:12px !important; }
+          .ncsPosBrandModalTitle { grid-template-columns:46px minmax(0,1fr) !important; }
+          .ncsPosBrandModalTitle .ncsPosBrandCompactMark { width:46px !important;height:46px !important;border-radius:14px !important; }
+          .ncsPosBrandModalTitle h3 { font-size:19px !important; }
+          .ncsPosBrandModalBody { grid-template-columns:1fr !important; padding:9px !important; }
+          .ncsPosBrandModalFooter::before { display:none; }
+          .ncsPosBrandModalFooter span { font-size:7px !important; }
+
+          .ncsPosBillHeader { min-height:82px !important; padding:10px !important; }
+          .ncsPosBillHeader > div:first-child h2 { font-size:18px !important; }
+          .ncsPosBillHeaderActions button { min-height:34px !important;padding:0 8px !important; }
+
+          .ncsPosAiPanel .ncsPosAiMascotRunner.ncsPosAiRealCoupleLauncher {
+            right:12px !important;
+            bottom:12px !important;
+            min-width:196px !important;
+          }
+          .ncsPosPremiumAiButton {
+            min-width:196px !important;
+            min-height:62px !important;
+            grid-template-columns:46px minmax(0,1fr) auto !important;
+            gap:7px !important;
+            border-radius:20px !important;
+          }
+          .ncsPosPremiumAiOrb { width:46px;height:46px;border-radius:15px; }
+          .ncsPosPremiumAiCopy em,
+          .ncsPosPremiumAiLive { display:none; }
+          .ncsPosPremiumAiCopy b { font-size:13px !important; }
+          .ncsPosPremiumAiCopy small { font-size:6px !important; }
+          .ncsPosAiPanel.expanded {
+            left:8px !important;
+            right:8px !important;
+            bottom:82px !important;
+            width:auto !important;
+            max-height:76vh !important;
+            border-radius:22px !important;
+          }
+          .ncsPosAiContextStrip {
+            grid-template-columns:1fr auto !important;
+          }
+          .ncsPosAiContextStrip small,
+          .ncsPosAiContextStrip b { display:none; }
+        }
+
+
+        /* ============================================================
+           NCS POS 2036 • SCAN GATE + CATEGORY ORBIT + AI COMMAND LAYER
+           Visual/intelligence finishing pass only. Existing billing logic,
+           variants, stock, rewards, customer, payment, offline and AI actions
+           remain unchanged.
+           ============================================================ */
+
+        .ncsPosSearchPanel {
+          position:relative !important;
+          min-height:76px !important;
+          padding:13px 12px 10px 12px !important;
+          border:1px solid rgba(91,70,220,.14) !important;
+          border-radius:24px !important;
+          background:
+            linear-gradient(rgba(91,70,220,.022) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(91,70,220,.022) 1px,transparent 1px),
+            radial-gradient(circle at 4% 0%,rgba(109,77,255,.10),transparent 30%),
+            radial-gradient(circle at 96% 100%,rgba(22,184,212,.09),transparent 34%),
+            rgba(255,255,255,.97) !important;
+          background-size:18px 18px,18px 18px,auto,auto,auto !important;
+          box-shadow:0 16px 38px rgba(38,35,85,.09),inset 0 1px 0 #fff !important;
+          overflow:visible !important;
+        }
+        .ncsPosSearchPanel::before {
+          content:"";
+          position:absolute;
+          left:14px;
+          right:14px;
+          top:8px;
+          height:1px;
+          background:linear-gradient(90deg,transparent,#6d4dff 20%,#16b8d4 78%,transparent);
+          opacity:.38;
+          pointer-events:none;
+        }
+        .ncsPosSearchPanel::after {
+          content:"";
+          position:absolute;
+          z-index:0;
+          left:52px;
+          right:242px;
+          bottom:12px;
+          height:2px;
+          border-radius:999px;
+          background:linear-gradient(90deg,transparent,rgba(109,77,255,.55),rgba(22,184,212,.55),transparent);
+          opacity:.26;
+          animation:ncsScanGate2036 3.1s ease-in-out infinite;
+          pointer-events:none;
+        }
+        @keyframes ncsScanGate2036 {
+          0%,100%{transform:scaleX(.22);opacity:.12}
+          50%{transform:scaleX(1);opacity:.42}
+        }
+        .ncsPosSearchIcon {
+          width:48px !important;
+          height:48px !important;
+          flex:0 0 48px !important;
+          border:1px solid rgba(109,77,255,.18) !important;
+          border-radius:16px !important;
+          background:
+            radial-gradient(circle at 32% 28%,rgba(255,255,255,.92),transparent 32%),
+            linear-gradient(145deg,#f5f1ff,#eafcff) !important;
+          color:#6046e9 !important;
+          font-size:23px !important;
+          box-shadow:0 9px 20px rgba(91,70,220,.10),inset 0 1px 0 #fff !important;
+        }
+        .ncsPosSearchPanel input {
+          min-height:48px !important;
+          padding:0 14px !important;
+          border:1px solid rgba(60,55,105,.08) !important;
+          border-radius:15px !important;
+          background:rgba(255,255,255,.86) !important;
+          color:#282345 !important;
+          font-size:12px !important;
+          font-weight:850 !important;
+          box-shadow:inset 0 1px 0 #fff !important;
+        }
+        .ncsPosSearchPanel input:focus {
+          border-color:rgba(109,77,255,.34) !important;
+          box-shadow:0 0 0 4px rgba(109,77,255,.07),inset 0 1px 0 #fff !important;
+        }
+        .ncsPosSearchButton,
+        .ncsPosSearchQuickItemButton {
+          min-height:48px !important;
+          border-radius:15px !important;
+          font-size:10px !important;
+          font-weight:1000 !important;
+        }
+        .ncsPosSearchButton {
+          min-width:92px;
+          border:0 !important;
+          background:linear-gradient(135deg,#5d43e7,#6f55ff 48%,#18aeca) !important;
+          box-shadow:0 10px 22px rgba(91,70,220,.20) !important;
+        }
+        .ncsPosSearchQuickItemButton {
+          min-width:126px;
+          border:1px solid rgba(242,155,48,.25) !important;
+          background:linear-gradient(145deg,#fffdf8,#fff6e8) !important;
+          color:#985b08 !important;
+          box-shadow:0 8px 18px rgba(242,155,48,.08) !important;
+        }
+        .ncsPosSearchTelemetry {
+          position:absolute;
+          z-index:4;
+          top:-9px;
+          left:63px;
+          display:flex;
+          align-items:center;
+          gap:7px;
+          min-height:19px;
+          padding:0 7px;
+          border:1px solid rgba(109,77,255,.14);
+          border-radius:999px;
+          background:rgba(252,252,255,.94);
+          box-shadow:0 5px 14px rgba(45,39,94,.07);
+          backdrop-filter:blur(9px);
+          pointer-events:none;
+        }
+        .ncsPosSearchTelemetry span {
+          color:#6a56d9;
+          font-size:5.3px;
+          font-weight:1000;
+          letter-spacing:.9px;
+        }
+        .ncsPosSearchTelemetry b {
+          color:#079a79;
+          font-size:5.4px;
+          font-weight:1000;
+          letter-spacing:.55px;
+        }
+        .ncsPosSearchTelemetry small {
+          min-width:18px;
+          height:13px;
+          display:grid;
+          place-items:center;
+          border-radius:5px;
+          background:#23194b;
+          color:#fff;
+          font-size:5px;
+          font-weight:1000;
+        }
+
+        .ncsPosCategoryOrbit {
+          position:relative;
+          margin:12px 0 14px !important;
+          padding:29px 8px 8px !important;
+          overflow:hidden;
+          border:1px solid rgba(72,60,137,.10);
+          border-radius:22px;
+          background:
+            linear-gradient(rgba(91,70,220,.022) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(91,70,220,.022) 1px,transparent 1px),
+            radial-gradient(circle at 0% 50%,rgba(109,77,255,.08),transparent 30%),
+            radial-gradient(circle at 100% 50%,rgba(22,184,212,.07),transparent 30%),
+            rgba(255,255,255,.86);
+          background-size:20px 20px,20px 20px,auto,auto,auto;
+          box-shadow:0 11px 27px rgba(34,35,75,.06),inset 0 1px 0 #fff;
+        }
+        .ncsPosCategoryOrbit::after {
+          content:"";
+          position:absolute;
+          left:0;
+          right:0;
+          top:0;
+          height:2px;
+          background:linear-gradient(90deg,#6d4dff,#e950a5,#f29b30,#16b8d4,#00a67a);
+          opacity:.68;
+        }
+        .ncsPosCategoryOrbitLabel {
+          position:absolute;
+          top:7px;
+          left:12px;
+          right:12px;
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:12px;
+          pointer-events:none;
+        }
+        .ncsPosCategoryOrbitLabel span {
+          color:#27a6b6;
+          font-size:5.4px;
+          font-weight:1000;
+          letter-spacing:1.15px;
+        }
+        .ncsPosCategoryOrbitLabel b {
+          max-width:46%;
+          overflow:hidden;
+          color:#6450d6;
+          font-size:5.7px;
+          font-weight:1000;
+          letter-spacing:.65px;
+          text-overflow:ellipsis;
+          white-space:nowrap;
+        }
+        .ncsPosCategoryRow {
+          display:grid !important;
+          grid-auto-flow:column !important;
+          grid-auto-columns:minmax(112px,1fr) !important;
+          gap:7px !important;
+          min-height:62px !important;
+          padding:0 !important;
+          overflow-x:auto !important;
+          scroll-snap-type:x proximity;
+          scrollbar-width:none;
+        }
+        .ncsPosCategoryButton {
+          position:relative;
+          min-width:112px !important;
+          min-height:58px !important;
+          display:grid !important;
+          grid-template-columns:34px minmax(0,1fr) 5px !important;
+          align-items:center !important;
+          gap:7px !important;
+          padding:7px 8px !important;
+          scroll-snap-align:start;
+          border:1px solid rgba(69,61,122,.09) !important;
+          border-radius:16px !important;
+          background:linear-gradient(145deg,#fff,#f8f9fc) !important;
+          color:#40395e !important;
+          text-align:left !important;
+          box-shadow:0 7px 18px rgba(35,36,75,.045),inset 0 1px 0 #fff !important;
+          overflow:hidden;
+        }
+        .ncsPosCategoryButton::before {
+          content:"";
+          position:absolute;
+          left:0;
+          top:10px;
+          bottom:10px;
+          width:3px;
+          border-radius:0 4px 4px 0;
+          background:var(--cat,#6d4dff);
+          opacity:.62;
+        }
+        .ncsPosCategoryButton:hover {
+          transform:translateY(-2px) !important;
+          border-color:color-mix(in srgb,var(--cat,#6d4dff) 28%,transparent) !important;
+          box-shadow:0 12px 26px color-mix(in srgb,var(--cat,#6d4dff) 10%,rgba(35,36,75,.05)),inset 0 1px 0 #fff !important;
+        }
+        .ncsPosCategoryButton.ncsPosCategoryActive {
+          border-color:color-mix(in srgb,var(--cat,#6d4dff) 36%,transparent) !important;
+          background:
+            radial-gradient(circle at 10% 18%,color-mix(in srgb,var(--cat,#6d4dff) 15%,transparent),transparent 44%),
+            linear-gradient(145deg,#fff,#f7f8ff) !important;
+          color:#2f2851 !important;
+          box-shadow:0 13px 27px color-mix(in srgb,var(--cat,#6d4dff) 13%,transparent),inset 0 1px 0 #fff !important;
+        }
+        .ncsPosCategoryGlyph {
+          width:34px;
+          height:34px;
+          display:grid;
+          place-items:center;
+          border:1px solid color-mix(in srgb,var(--cat,#6d4dff) 16%,transparent);
+          border-radius:11px;
+          background:color-mix(in srgb,var(--cat,#6d4dff) 9%,#fff);
+          color:color-mix(in srgb,var(--cat,#6d4dff) 82%,#39354b);
+          font-size:8px;
+          font-weight:1000;
+          letter-spacing:.2px;
+        }
+        .ncsPosCategoryActive .ncsPosCategoryGlyph {
+          background:var(--cat,#6d4dff);
+          color:#fff;
+          box-shadow:0 7px 15px color-mix(in srgb,var(--cat,#6d4dff) 20%,transparent);
+        }
+        .ncsPosCategoryCopy {
+          min-width:0;
+          display:grid;
+          gap:2px;
+        }
+        .ncsPosCategoryCopy b {
+          overflow:hidden;
+          color:inherit;
+          font-size:8px;
+          font-weight:1000;
+          text-overflow:ellipsis;
+          white-space:nowrap;
+        }
+        .ncsPosCategoryCopy small {
+          overflow:hidden;
+          color:#969baa;
+          font-size:5.1px;
+          font-weight:800;
+          text-overflow:ellipsis;
+          white-space:nowrap;
+        }
+        .ncsPosCategoryButton > i {
+          width:5px;
+          height:5px;
+          border-radius:999px;
+          background:var(--cat,#6d4dff);
+          box-shadow:0 0 0 4px color-mix(in srgb,var(--cat,#6d4dff) 9%,transparent);
+          opacity:.52;
+        }
+        .ncsPosCategoryActive > i {
+          opacity:1;
+          animation:ncsCategoryPulse2036 1.9s ease-in-out infinite;
+        }
+        @keyframes ncsCategoryPulse2036 {
+          0%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--cat,#6d4dff) 7%,transparent)}
+          50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--cat,#6d4dff) 1%,transparent)}
+        }
+
+        .ncsPosCatalogueTop {
+          min-height:90px !important;
+          padding:15px 16px 14px 62px !important;
+          border:1px solid rgba(67,57,129,.10) !important;
+          border-radius:22px !important;
+          background:
+            radial-gradient(circle at 84% 10%,rgba(22,184,212,.16),transparent 31%),
+            radial-gradient(circle at 8% 110%,rgba(109,77,255,.18),transparent 34%),
+            linear-gradient(122deg,#29184c 0%,#46309c 52%,#176d7d 100%) !important;
+          box-shadow:0 16px 35px rgba(37,31,88,.15),inset 0 1px 0 rgba(255,255,255,.13) !important;
+          overflow:hidden;
+        }
+        .ncsPosCatalogueTop::before {
+          content:"◈" !important;
+          width:40px !important;
+          height:40px !important;
+          top:18px !important;
+          left:14px !important;
+          display:grid !important;
+          place-items:center !important;
+          border:1px solid rgba(255,255,255,.17) !important;
+          border-radius:13px !important;
+          background:linear-gradient(145deg,#6e5cf1,#2ba5c0) !important;
+          color:#fff !important;
+          font-size:15px !important;
+          box-shadow:0 8px 18px rgba(23,19,65,.20) !important;
+        }
+        .ncsPosFinderEyebrow {
+          display:block;
+          margin-bottom:2px;
+          color:#6de8e0;
+          font-size:5.5px;
+          font-weight:1000;
+          letter-spacing:1.15px;
+        }
+        .ncsPosCatalogueTop h2 {
+          margin:0 !important;
+          color:#fff !important;
+          font-size:20px !important;
+          letter-spacing:-.35px !important;
+        }
+        .ncsPosFinderTelemetry {
+          display:flex;
+          flex-wrap:wrap;
+          gap:5px;
+          margin-top:7px;
+        }
+        .ncsPosFinderTelemetry span {
+          display:inline-flex;
+          align-items:center;
+          gap:3px;
+          min-height:20px;
+          padding:0 7px;
+          border:1px solid rgba(255,255,255,.12);
+          border-radius:999px;
+          background:rgba(255,255,255,.07);
+          color:rgba(255,255,255,.66);
+          font-size:5.5px;
+          font-weight:850;
+          backdrop-filter:blur(7px);
+        }
+        .ncsPosFinderTelemetry b {
+          color:#ffe37a;
+          font-size:6px;
+          font-weight:1000;
+        }
+        .ncsPosCatalogueTop .ncsPosStatusBadge {
+          border-color:rgba(108,236,203,.22) !important;
+          background:rgba(10,84,72,.30) !important;
+          color:#9af5dd !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.08) !important;
+        }
+
+        .ncsPosFinderToolbar {
+          padding:7px !important;
+          border:1px solid rgba(67,57,129,.08) !important;
+          border-radius:18px !important;
+          background:linear-gradient(145deg,#fff,#f7f8fc) !important;
+          box-shadow:0 9px 23px rgba(35,36,75,.05),inset 0 1px 0 #fff !important;
+        }
+        .ncsPosFinderToolbar button {
+          min-height:39px !important;
+          border-radius:12px !important;
+          font-size:7px !important;
+          font-weight:950 !important;
+        }
+        .ncsPosFinderToolbar button.active {
+          background:linear-gradient(135deg,#6047e9,#7659ff 52%,#20a9c1) !important;
+          color:#fff !important;
+          box-shadow:0 8px 18px rgba(91,70,220,.17) !important;
+        }
+
+        .ncsPosAiQuickPrompts {
+          display:flex;
+          flex-wrap:wrap;
+          gap:6px;
+          margin:7px 0 1px;
+        }
+        .ncsPosAiQuickPrompts button {
+          min-height:30px;
+          display:inline-flex;
+          align-items:center;
+          gap:6px;
+          padding:0 9px;
+          border:1px solid rgba(91,70,220,.10);
+          border-radius:10px;
+          background:linear-gradient(145deg,#fff,#f7f9ff);
+          color:#514770;
+          font-size:6.5px;
+          font-weight:950;
+          cursor:pointer;
+          box-shadow:0 5px 12px rgba(31,33,72,.045);
+        }
+        .ncsPosAiQuickPrompts button:hover {
+          transform:translateY(-1px);
+          border-color:rgba(109,77,255,.24);
+          color:#5e45df;
+        }
+        .ncsPosAiQuickPrompts button span {
+          width:20px;
+          height:20px;
+          display:grid;
+          place-items:center;
+          border-radius:7px;
+          background:linear-gradient(145deg,#eee9ff,#e9fbff);
+          color:#6047e9;
+          font-size:8px;
+          font-weight:1000;
+        }
+
+        @media (max-width:1180px) {
+          .ncsPosSearchPanel { min-height:70px !important; }
+          .ncsPosSearchTelemetry { display:none; }
+          .ncsPosCategoryRow { grid-auto-columns:minmax(105px,1fr) !important; }
+          .ncsPosCatalogueTop { padding-left:58px !important; }
+        }
+        @media (max-width:720px) {
+          .ncsPosSearchPanel {
+            display:grid !important;
+            grid-template-columns:44px minmax(0,1fr) !important;
+            gap:7px !important;
+          }
+          .ncsPosSearchIcon { width:44px !important; height:44px !important; }
+          .ncsPosSearchPanel input { min-height:44px !important; }
+          .ncsPosSearchButton,
+          .ncsPosSearchQuickItemButton { min-height:42px !important; min-width:0 !important; }
+          .ncsPosSearchButton { grid-column:1 / 2; }
+          .ncsPosSearchQuickItemButton { grid-column:2 / 3; }
+          .ncsPosCategoryOrbit { padding-top:28px !important; }
+          .ncsPosCategoryRow { grid-auto-columns:132px !important; }
+          .ncsPosCatalogueTop { min-height:96px !important; }
+        }
+
+
+        /* ============================================================
+           NCS POS 2036 V5.1 • DENSITY + READABILITY POLISH
+           CSS-only finishing pass. No billing / stock / customer /
+           payment / rewards / offline / AI logic changes.
+           ============================================================ */
+
+        /* SCAN CORE — tighter, clearer, more terminal-like */
+        .ncsPosSearchPanel {
+          min-height:64px !important;
+          padding:8px 9px !important;
+          gap:8px !important;
+          border-radius:20px !important;
+          overflow:visible !important;
+        }
+        .ncsPosSearchIcon {
+          width:44px !important;
+          height:44px !important;
+          flex:0 0 44px !important;
+          border-radius:14px !important;
+          font-size:21px !important;
+        }
+        .ncsPosSearchPanel input {
+          min-width:0 !important;
+          min-height:44px !important;
+          padding:0 13px !important;
+          border-radius:13px !important;
+          font-size:11.5px !important;
+          letter-spacing:.05px !important;
+        }
+        .ncsPosSearchButton,
+        .ncsPosSearchQuickItemButton {
+          min-height:44px !important;
+          border-radius:13px !important;
+          font-size:9.4px !important;
+        }
+        .ncsPosSearchButton { min-width:88px !important; }
+        .ncsPosSearchQuickItemButton { min-width:120px !important; }
+        .ncsPosSearchTelemetry {
+          top:-8px !important;
+          left:auto !important;
+          right:12px !important;
+          min-height:18px !important;
+          gap:6px !important;
+          padding:0 7px !important;
+          border-color:rgba(93,69,231,.16) !important;
+          background:linear-gradient(90deg,rgba(255,255,255,.97),rgba(239,251,255,.97)) !important;
+        }
+        .ncsPosSearchTelemetry span,
+        .ncsPosSearchTelemetry b { font-size:5.6px !important; }
+        .ncsPosSearchTelemetry small { height:13px !important; font-size:5px !important; }
+        .ncsPosSearchPanel::after {
+          left:60px !important;
+          right:228px !important;
+          bottom:7px !important;
+          opacity:.20 !important;
+        }
+
+        /* CATEGORY MATRIX — all categories visible, no horizontal category scroll */
+        .ncsPosCategoryOrbit {
+          margin:10px 0 10px !important;
+          padding:25px 7px 7px !important;
+          border-radius:19px !important;
+        }
+        .ncsPosCategoryOrbitLabel { top:6px !important; left:10px !important; right:10px !important; }
+        .ncsPosCategoryOrbitLabel span { font-size:5.6px !important; }
+        .ncsPosCategoryOrbitLabel b { font-size:5.8px !important; }
+        .ncsPosCategoryRow {
+          display:grid !important;
+          grid-auto-flow:row !important;
+          grid-auto-columns:auto !important;
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          gap:6px !important;
+          min-height:0 !important;
+          overflow:visible !important;
+          scroll-snap-type:none !important;
+        }
+        .ncsPosCategoryButton {
+          min-width:0 !important;
+          min-height:46px !important;
+          grid-template-columns:27px minmax(0,1fr) 4px !important;
+          gap:6px !important;
+          padding:6px 7px !important;
+          border-radius:13px !important;
+        }
+        .ncsPosCategoryButton::before { top:8px !important; bottom:8px !important; width:2px !important; }
+        .ncsPosCategoryGlyph {
+          width:27px !important;
+          height:27px !important;
+          border-radius:9px !important;
+          font-size:6.8px !important;
+        }
+        .ncsPosCategoryCopy { gap:1px !important; }
+        .ncsPosCategoryCopy b {
+          font-size:7.2px !important;
+          line-height:1.05 !important;
+        }
+        .ncsPosCategoryCopy small {
+          font-size:4.7px !important;
+          line-height:1.05 !important;
+        }
+        .ncsPosCategoryButton > i { width:4px !important; height:4px !important; }
+
+        /* PRODUCT INTELLIGENCE — one-line command header instead of a tall card */
+        .ncsPosCatalogueTop {
+          min-height:68px !important;
+          display:flex !important;
+          align-items:center !important;
+          justify-content:space-between !important;
+          gap:12px !important;
+          padding:9px 12px 9px 56px !important;
+          border-radius:19px !important;
+        }
+        .ncsPosCatalogueTop::before {
+          width:34px !important;
+          height:34px !important;
+          top:16px !important;
+          left:12px !important;
+          border-radius:11px !important;
+          font-size:13px !important;
+        }
+        .ncsPosCatalogueTop > div:first-child {
+          min-width:0 !important;
+          width:auto !important;
+          max-width:none !important;
+          flex:1 1 auto !important;
+        }
+        .ncsPosFinderEyebrow {
+          margin-bottom:1px !important;
+          font-size:5.2px !important;
+          letter-spacing:1px !important;
+        }
+        .ncsPosCatalogueTop h2 {
+          margin:0 !important;
+          max-width:none !important;
+          color:#fff !important;
+          font-size:17.5px !important;
+          line-height:1.02 !important;
+          letter-spacing:-.25px !important;
+          white-space:nowrap !important;
+        }
+        .ncsPosFinderTelemetry {
+          display:flex !important;
+          flex-wrap:nowrap !important;
+          gap:4px !important;
+          margin-top:4px !important;
+        }
+        .ncsPosFinderTelemetry span {
+          min-height:16px !important;
+          padding:0 6px !important;
+          font-size:4.8px !important;
+          white-space:nowrap !important;
+        }
+        .ncsPosFinderTelemetry b { font-size:5.2px !important; }
+        .ncsPosCatalogueTop .ncsPosStatusBadge {
+          flex:0 0 auto !important;
+          min-height:34px !important;
+          padding:0 10px !important;
+          border-radius:12px !important;
+          font-size:7.2px !important;
+          white-space:nowrap !important;
+        }
+
+        /* Finder routing — compact portal strip */
+        .ncsPosFinderToolbar {
+          margin-top:8px !important;
+          padding:5px !important;
+          gap:5px !important;
+          border-radius:15px !important;
+        }
+        .ncsPosFinderToolbar button {
+          min-height:32px !important;
+          padding:0 8px !important;
+          border-radius:10px !important;
+          font-size:6.5px !important;
+        }
+        .ncsPosFinderToolbar > span {
+          padding-top:0 !important;
+          font-size:5.5px !important;
+        }
+
+        /* Bring the Brand Intelligence field higher into the first viewport. */
+        .ncsPosBrandMatrixShell {
+          margin-top:8px !important;
+        }
+
+        @media (max-width:1450px) {
+          .ncsPosCategoryRow { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+          .ncsPosCatalogueTop h2 { font-size:16.5px !important; }
+        }
+        @media (max-width:1180px) {
+          .ncsPosCategoryRow { grid-template-columns:repeat(4,minmax(0,1fr)) !important; }
+          .ncsPosSearchTelemetry { display:none !important; }
+          .ncsPosCatalogueTop { padding-left:52px !important; }
+        }
+        @media (max-width:720px) {
+          .ncsPosCategoryRow { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          .ncsPosCatalogueTop {
+            min-height:76px !important;
+            padding:10px 10px 10px 52px !important;
+          }
+          .ncsPosCatalogueTop h2 { white-space:normal !important; font-size:16px !important; }
+          .ncsPosCatalogueTop .ncsPosStatusBadge { display:none !important; }
+        }
+
+
+        /* ============================================================
+           NCS POS 2036 V5.2 • VIEWPORT OWNERSHIP + READABILITY
+           Visual-only. Keeps V5.1 Brand Matrix / Product Window / AI / billing logic.
+           ============================================================ */
+
+        /* Search core gets more useful typing width without becoming taller. */
+        .ncsPosSearchIcon {
+          width:40px !important;
+          height:40px !important;
+          flex:0 0 40px !important;
+          border-radius:13px !important;
+        }
+        .ncsPosSearchPanel input {
+          min-height:42px !important;
+          padding-left:14px !important;
+          padding-right:12px !important;
+          font-size:12px !important;
+        }
+        .ncsPosSearchButton {
+          min-width:74px !important;
+          min-height:42px !important;
+          padding:0 12px !important;
+        }
+        .ncsPosSearchQuickItemButton {
+          min-width:98px !important;
+          min-height:42px !important;
+          padding:0 11px !important;
+        }
+        .ncsPosSearchPanel::after {
+          left:54px !important;
+          right:190px !important;
+        }
+
+        /* Category data stays compact, but labels are readable at counter distance. */
+        .ncsPosCategoryCopy b {
+          font-size:7.9px !important;
+          letter-spacing:.02px !important;
+        }
+        .ncsPosCategoryCopy small {
+          font-size:5.15px !important;
+          line-height:1.12 !important;
+        }
+        .ncsPosCategoryGlyph {
+          font-size:7.2px !important;
+        }
+
+        /* The right bill owns the viewport while the product field scrolls.
+           This removes the large dead/blank right side seen after scrolling. */
+        @media (min-width:1181px) {
+          .ncsPosWorkspace {
+            align-items:start !important;
+          }
+          .ncsPosBillPanel {
+            position:sticky !important;
+            top:72px !important;
+            height:calc(100vh - 88px) !important;
+            max-height:calc(100vh - 88px) !important;
+            min-height:610px !important;
+            display:flex !important;
+            flex-direction:column !important;
+            overflow:hidden !important;
+            align-self:start !important;
+          }
+          .ncsPosBillHeader,
+          .ncsPosCustomerSection,
+          .ncsPosCartTableHeader,
+          .ncsPosSummary,
+          .ncsPosCounterIntelligence,
+          .ncsPosPaymentSection {
+            flex:0 0 auto !important;
+          }
+          .ncsPosCartItems {
+            flex:1 1 auto !important;
+            min-height:185px !important;
+            max-height:none !important;
+            overflow-y:auto !important;
+            overscroll-behavior:contain;
+            scrollbar-gutter:stable;
+          }
+          .ncsPosEmptyCart {
+            min-height:100% !important;
+            height:100% !important;
+          }
+        }
+
+        /* Slightly denser summary / payment ownership so all counter controls stay in view. */
+        .ncsPosSummary {
+          padding-top:9px !important;
+          padding-bottom:9px !important;
+        }
+        .ncsPosCounterIntelligence {
+          margin-top:0 !important;
+        }
+        .ncsPosPaymentSection {
+          padding-top:10px !important;
+          padding-bottom:12px !important;
+        }
+        .ncsPosPaymentButton {
+          min-height:50px !important;
+        }
+
+        @media (max-width:1450px) and (min-width:1181px) {
+          .ncsPosBillPanel {
+            min-height:580px !important;
+          }
+          .ncsPosCategoryCopy b { font-size:7.6px !important; }
+          .ncsPosCategoryCopy small { font-size:4.9px !important; }
+        }
+
+        /* ============================================================
+           NCS POS 2036 V5.3 • PAYMENT MATRIX + SPLIT / CREDIT ROUTER
+           Exact Cash / UPI / Card allocation. No automatic payment action.
+           ============================================================ */
+        .ncsPosPaymentSection {
+          position:relative !important;
+          z-index:75 !important;
+          display:flex !important;
+          flex-direction:column !important;
+          gap:9px !important;
+          max-height:none !important;
+          height:auto !important;
+          overflow:visible !important;
+          padding:11px 12px 13px !important;
+          border:1px solid rgba(24,178,198,.16) !important;
+          border-radius:22px !important;
+          background:
+            linear-gradient(rgba(71,63,153,.025) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(71,63,153,.025) 1px,transparent 1px),
+            radial-gradient(circle at 100% 0%,rgba(31,196,189,.09),transparent 28%),
+            linear-gradient(145deg,#fff,#f4fcfd) !important;
+          background-size:22px 22px,22px 22px,auto,auto !important;
+          box-shadow:0 14px 34px rgba(35,61,97,.08) !important;
+        }
+        .ncsPosPaymentHeading2036 {
+          order:0 !important;
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:12px;
+          min-height:34px;
+        }
+        .ncsPosPaymentHeading2036 > div span,
+        .ncsPosPaymentHeading2036 > div strong { display:block; }
+        .ncsPosPaymentHeading2036 > div span {
+          color:#12aebe;
+          font-size:5.4px;
+          font-weight:1000;
+          letter-spacing:1.15px;
+        }
+        .ncsPosPaymentHeading2036 > div strong {
+          margin-top:2px;
+          color:#261b4d;
+          font-size:10px;
+          font-weight:1000;
+        }
+        .ncsPosPaymentHeading2036 > small {
+          display:inline-flex;
+          align-items:center;
+          gap:6px;
+          padding:5px 8px;
+          border:1px solid rgba(26,178,151,.16);
+          border-radius:999px;
+          background:#effcf8;
+          color:#08765f;
+          font-size:5.7px;
+          font-weight:950;
+          white-space:nowrap;
+        }
+        .ncsPosPaymentHeading2036 > small i {
+          width:6px;height:6px;border-radius:50%;background:#1dd69d;
+          box-shadow:0 0 0 4px rgba(29,214,157,.10);
+        }
+        .ncsPosPaymentGrid2036 {
+          order:1 !important;
+          display:grid !important;
+          visibility:visible !important;
+          opacity:1 !important;
+          grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+          gap:7px !important;
+          min-height:58px !important;
+          height:auto !important;
+          overflow:visible !important;
+        }
+        .ncsPosPaymentGrid2036 .ncsPosPaymentButton {
+          display:grid !important;
+          grid-template-columns:27px minmax(0,1fr) !important;
+          grid-template-rows:auto auto !important;
+          align-items:center !important;
+          justify-content:stretch !important;
+          column-gap:7px !important;
+          row-gap:1px !important;
+          min-width:0 !important;
+          min-height:56px !important;
+          padding:7px 8px !important;
+          border-radius:14px !important;
+          text-align:left !important;
+          visibility:visible !important;
+          opacity:1 !important;
+        }
+        .ncsPosPaymentGrid2036 .ncsPosPaymentButton > span {
+          grid-row:1 / 3;
+          width:27px;height:27px;display:grid;place-items:center;
+          border-radius:9px;
+          background:rgba(109,77,255,.08);
+          font-size:12px !important;
+        }
+        .ncsPosPaymentGrid2036 .ncsPosPaymentButton > b {
+          color:inherit;
+          font-size:8px;
+          font-weight:1000;
+          line-height:1;
+        }
+        .ncsPosPaymentGrid2036 .ncsPosPaymentButton > small {
+          color:#9599a8;
+          font-size:5.1px;
+          font-weight:800;
+          line-height:1.1;
+          white-space:nowrap;
+          overflow:hidden;
+          text-overflow:ellipsis;
+        }
+        .ncsPosPaymentGrid2036 .ncsPosPaymentActive {
+          transform:translateY(-1px);
+          box-shadow:0 9px 20px rgba(77,60,189,.12) !important;
+        }
+        .ncsPosPaymentSplitMode { --pay:#e950a5 !important; }
+        .ncsPosPaymentCreditMode { --pay:#f29b30 !important; }
+
+        .ncsPosSplitPaymentPanel2036,
+        .ncsPosCreditPaidNowMatrix2036 {
+          order:2 !important;
+          padding:10px;
+          border:1px solid rgba(90,72,193,.11);
+          border-radius:17px;
+          background:
+            radial-gradient(circle at 0% 0%,rgba(109,77,255,.06),transparent 28%),
+            #fff;
+          box-shadow:inset 0 1px 0 #fff,0 8px 20px rgba(42,42,82,.045);
+        }
+        .ncsPosSplitPaymentHeader2036 {
+          display:flex;align-items:center;justify-content:space-between;gap:10px;
+          margin-bottom:8px;
+        }
+        .ncsPosSplitPaymentHeader2036 span,
+        .ncsPosSplitPaymentHeader2036 strong,
+        .ncsPosCreditPaidNowTitle2036 span,
+        .ncsPosCreditPaidNowTitle2036 strong,
+        .ncsPosCreditPaidNowTitle2036 small { display:block; }
+        .ncsPosSplitPaymentHeader2036 span,
+        .ncsPosCreditPaidNowTitle2036 span {
+          color:#6b50e6;font-size:5px;font-weight:1000;letter-spacing:1px;
+        }
+        .ncsPosSplitPaymentHeader2036 strong,
+        .ncsPosCreditPaidNowTitle2036 strong {
+          margin-top:2px;color:#2a214e;font-size:8.4px;font-weight:1000;
+        }
+        .ncsPosCreditPaidNowTitle2036 small {
+          margin-top:2px;color:#969aa8;font-size:5.6px;font-weight:750;
+        }
+        .ncsPosSplitPaymentHeader2036 > b {
+          padding:5px 8px;border-radius:999px;font-size:6px;font-weight:1000;
+        }
+        .ncsPosSplitPaymentHeader2036 > b.done {
+          border:1px solid rgba(0,166,122,.18);background:#ecfbf5;color:#08785c;
+        }
+        .ncsPosSplitPaymentHeader2036 > b.pending {
+          border:1px solid rgba(233,80,165,.18);background:#fff3f8;color:#b83c7a;
+        }
+        .ncsPosPaymentAllocationGrid2036 {
+          display:grid;
+          grid-template-columns:repeat(3,minmax(0,1fr));
+          gap:7px;
+        }
+        .ncsPosPaymentAllocationGrid2036 > label {
+          min-width:0;
+          padding:7px;
+          border:1px solid rgba(62,59,111,.09);
+          border-radius:13px;
+          background:#fbfcff;
+        }
+        .ncsPosPaymentAllocationGrid2036 > label > span {
+          display:flex;align-items:center;gap:5px;
+          color:#65697a;font-size:5.8px;font-weight:950;
+        }
+        .ncsPosPaymentAllocationGrid2036 > label > span i {
+          width:18px;height:18px;display:grid;place-items:center;
+          border-radius:6px;background:#f0edff;color:#664be8;
+          font-style:normal;font-size:8px;
+        }
+        .ncsPosPaymentAllocationGrid2036 > label > div {
+          display:grid;grid-template-columns:15px minmax(0,1fr);align-items:center;
+          margin-top:5px;border:1px solid rgba(91,73,180,.09);
+          border-radius:9px;background:#fff;overflow:hidden;
+        }
+        .ncsPosPaymentAllocationGrid2036 > label > div > b {
+          display:grid;place-items:center;height:31px;
+          color:#6b50e6;font-size:8px;
+        }
+        .ncsPosPaymentAllocationGrid2036 input {
+          width:100%;min-width:0;height:31px;border:0;outline:0;background:transparent;
+          color:#241c45;font-size:9px;font-weight:1000;
+        }
+        .ncsPosSplitPaymentSummary2036 {
+          display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:6px;
+          align-items:center;margin-top:8px;padding-top:8px;
+          border-top:1px solid rgba(72,62,139,.07);
+        }
+        .ncsPosSplitPaymentSummary2036 span {
+          color:#8d91a0;font-size:5.4px;font-weight:850;
+        }
+        .ncsPosSplitPaymentSummary2036 span b { color:#302551; }
+        .ncsPosSplitPaymentSummary2036 > strong {
+          color:#08785c;font-size:7px;font-weight:1000;white-space:nowrap;
+        }
+        .ncsPosCreditPaidNowMatrix2036 { margin-bottom:8px; }
+        .ncsPosCreditPaidNowTitle2036 { margin-bottom:8px; }
+        .ncsPosCreditAllocationGrid2036 {
+          grid-template-columns:repeat(4,minmax(0,1fr));
+        }
+        .ncsPosCreditDueDate2036 > div { grid-template-columns:1fr !important; padding:0 7px; }
+        .ncsPosCreditDueDate2036 input { font-size:7px !important; }
+
+        .ncsPosPaymentSection > .ncsPosTotalLine {
+          order:3 !important;
+          position:relative !important;
+          bottom:auto !important;
+          margin-top:0 !important;
+        }
+        .ncsPosPaymentSection > .ncsPosCreditPanel { order:2 !important; }
+        .ncsPosPaymentSection > .ncsPosCompleteButton:not(.ncsPosCompleteButtonInline) { order:5 !important; }
+
+        @media (min-width:1181px) {
+          .ncsPosBillPanel {
+            overflow-y:auto !important;
+            overflow-x:hidden !important;
+            scrollbar-gutter:stable;
+          }
+          .ncsPosCartItems { min-height:120px !important; }
+        }
+        @media (max-width:1450px) {
+          .ncsPosPaymentGrid2036 { grid-template-columns:repeat(5,minmax(78px,1fr)) !important; }
+          .ncsPosPaymentGrid2036 .ncsPosPaymentButton { padding:6px !important; }
+          .ncsPosPaymentGrid2036 .ncsPosPaymentButton > small { display:none; }
+        }
+        @media (max-width:900px) {
+          .ncsPosPaymentGrid2036 { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+          .ncsPosPaymentAllocationGrid2036,
+          .ncsPosCreditAllocationGrid2036 { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        }
+        /* ============================================================
+           NCS POS 2036 V5.4 — VIP CUSTOMER RECOGNITION
+           Uses existing customer lifetime spend; no automatic discount.
+           ============================================================ */
+        .ncsPosVipBackdrop {
+          position:fixed;
+          inset:0;
+          z-index:2147482500;
+          display:grid;
+          place-items:center;
+          padding:24px;
+          background:
+            radial-gradient(circle at 50% 42%,rgba(109,77,255,.20),transparent 32%),
+            rgba(7,11,30,.70);
+          backdrop-filter:blur(18px) saturate(1.15);
+          animation:ncsVipBackdropIn .22s ease-out both;
+        }
+        .ncsPosVipPortal {
+          position:relative;
+          width:min(720px,94vw);
+          overflow:hidden;
+          padding:34px 34px 28px;
+          border:1px solid rgba(255,220,104,.52);
+          border-radius:34px;
+          background:
+            linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px),
+            radial-gradient(circle at 18% 0%,rgba(255,209,84,.18),transparent 28%),
+            radial-gradient(circle at 100% 88%,rgba(23,198,194,.20),transparent 32%),
+            linear-gradient(135deg,#251039 0%,#3a1d78 44%,#0c6774 100%);
+          background-size:24px 24px,24px 24px,auto,auto,auto;
+          box-shadow:0 34px 90px rgba(3,8,28,.52),inset 0 1px 0 rgba(255,255,255,.14);
+          color:#fff;
+          text-align:center;
+          animation:ncsVipPortalIn .42s cubic-bezier(.2,.9,.2,1.08) both;
+        }
+        .ncsPosVipPortal::before {
+          content:"VIP";
+          position:absolute;
+          right:-10px;
+          top:42px;
+          color:rgba(255,255,255,.045);
+          font-size:118px;
+          line-height:.8;
+          font-weight:1000;
+          letter-spacing:-8px;
+          pointer-events:none;
+        }
+        .ncsPosVipPortal::after {
+          content:"";
+          position:absolute;
+          left:8%;right:8%;bottom:0;height:2px;
+          background:linear-gradient(90deg,transparent,#ffd95f,#38e5d2,transparent);
+          box-shadow:0 0 24px rgba(66,231,214,.55);
+        }
+        .ncsPosVipClose {
+          position:absolute;
+          right:18px;top:18px;
+          z-index:3;
+          width:40px;height:40px;
+          display:grid;place-items:center;
+          border:1px solid rgba(255,255,255,.18);
+          border-radius:14px;
+          background:rgba(255,255,255,.08);
+          color:#fff;
+          font-size:24px;
+          line-height:1;
+          cursor:pointer;
+          backdrop-filter:blur(10px);
+          transition:.18s ease;
+        }
+        .ncsPosVipClose:hover {
+          transform:translateY(-1px) scale(1.03);
+          background:rgba(255,255,255,.15);
+        }
+        .ncsPosVipHalo {
+          position:relative;
+          width:92px;height:92px;
+          margin:2px auto 18px;
+          display:grid;place-items:center;
+          border:1px solid rgba(255,221,92,.58);
+          border-radius:50%;
+          background:radial-gradient(circle at 34% 25%,#fff8c8 0 8%,#ffd94f 22%,#7b4cff 64%,#162b71 100%);
+          box-shadow:0 0 0 12px rgba(255,217,79,.06),0 0 0 24px rgba(109,77,255,.05),0 18px 44px rgba(0,0,0,.25);
+        }
+        .ncsPosVipHalo::before,.ncsPosVipHalo::after {
+          content:"";position:absolute;border-radius:50%;inset:-13px;border:1px solid rgba(255,255,255,.11);
+          animation:ncsVipRing 3.2s linear infinite;
+        }
+        .ncsPosVipHalo::after { inset:-25px;border-color:rgba(58,229,210,.13);animation-duration:5s;animation-direction:reverse; }
+        .ncsPosVipHalo span { font-size:38px;color:#27134e;filter:drop-shadow(0 2px 7px rgba(255,255,255,.5)); }
+        .ncsPosVipEyebrow {
+          display:inline-flex;align-items:center;gap:8px;
+          margin-bottom:10px;padding:6px 11px;
+          border:1px solid rgba(255,223,105,.22);
+          border-radius:999px;
+          background:rgba(9,12,36,.24);
+          color:#ffe36f;
+          font-size:9px;font-weight:1000;letter-spacing:1.35px;
+        }
+        .ncsPosVipEyebrow i { width:7px;height:7px;border-radius:50%;background:#35e6b4;box-shadow:0 0 0 5px rgba(53,230,180,.10); }
+        .ncsPosVipPortal h2 {
+          position:relative;z-index:1;
+          margin:0;
+          font-size:clamp(30px,4vw,48px);
+          line-height:1.02;
+          font-weight:1000;
+          letter-spacing:-1.8px;
+          text-shadow:0 10px 34px rgba(0,0,0,.20);
+        }
+        .ncsPosVipPortal h3 {
+          margin:9px 0 0;
+          color:#ffe16b;
+          font-size:12px;
+          font-weight:1000;
+          letter-spacing:2.2px;
+        }
+        .ncsPosVipMessage {
+          max-width:590px;
+          margin:18px auto 20px;
+          color:rgba(255,255,255,.88);
+          font-size:15px;
+          line-height:1.7;
+          font-weight:700;
+        }
+        .ncsPosVipMetrics {
+          display:grid;
+          grid-template-columns:repeat(3,minmax(0,1fr));
+          gap:10px;
+          margin:0 auto 20px;
+        }
+        .ncsPosVipMetrics article {
+          position:relative;
+          overflow:hidden;
+          padding:14px 12px;
+          border:1px solid rgba(255,255,255,.12);
+          border-radius:18px;
+          background:rgba(255,255,255,.075);
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+          backdrop-filter:blur(10px);
+        }
+        .ncsPosVipMetrics article::before {
+          content:"";position:absolute;left:0;right:0;top:0;height:2px;
+          background:linear-gradient(90deg,#ffd956,#7d5cff,#32dccc);
+        }
+        .ncsPosVipMetrics span { display:block;color:rgba(255,255,255,.58);font-size:8px;font-weight:950;letter-spacing:.9px; }
+        .ncsPosVipMetrics strong { display:block;margin-top:5px;color:#fff;font-size:21px;font-weight:1000; }
+        .ncsPosVipFooter {
+          display:flex;align-items:center;justify-content:space-between;gap:16px;
+          padding-top:17px;
+          border-top:1px solid rgba(255,255,255,.10);
+          text-align:left;
+        }
+        .ncsPosVipFooter > div span,.ncsPosVipFooter > div small { display:block; }
+        .ncsPosVipFooter > div span { color:#7ff7d6;font-size:9px;font-weight:1000;letter-spacing:1px; }
+        .ncsPosVipFooter > div small { margin-top:4px;color:rgba(255,255,255,.62);font-size:10px;font-weight:700; }
+        .ncsPosVipFooter button {
+          min-width:170px;height:48px;
+          display:flex;align-items:center;justify-content:center;gap:12px;
+          border:0;border-radius:16px;
+          background:linear-gradient(135deg,#ffe36a,#ffbd43);
+          color:#2d214c;
+          box-shadow:0 12px 28px rgba(255,194,58,.20);
+          font-size:12px;font-weight:1000;
+          cursor:pointer;
+          transition:.18s ease;
+        }
+        .ncsPosVipFooter button:hover { transform:translateY(-2px);box-shadow:0 15px 34px rgba(255,194,58,.28); }
+        .ncsPosVipFooter button b { font-size:18px; }
+        .ncsPosVipMiniBadge {
+          display:inline-flex;align-items:center;justify-content:center;
+          margin-left:4px;padding:3px 5px;
+          border:1px solid rgba(216,164,35,.20);
+          border-radius:999px;
+          background:linear-gradient(135deg,#fff9da,#ffe47f);
+          color:#78540a;
+          font-size:6px !important;
+          font-weight:1000 !important;
+          letter-spacing:.45px;
+          white-space:nowrap;
+        }
+        @keyframes ncsVipBackdropIn { from{opacity:0} to{opacity:1} }
+        @keyframes ncsVipPortalIn { from{opacity:0;transform:translateY(24px) scale(.96)} to{opacity:1;transform:translateY(0) scale(1)} }
+        @keyframes ncsVipRing { to{transform:rotate(360deg)} }
+
+        @media (max-width:560px) {
+          .ncsPosVipBackdrop { padding:12px; }
+          .ncsPosVipPortal { padding:28px 16px 18px;border-radius:24px; }
+          .ncsPosVipMetrics { grid-template-columns:1fr; }
+          .ncsPosVipFooter { flex-direction:column;align-items:stretch;text-align:center; }
+          .ncsPosVipFooter button { width:100%; }
+          .ncsPosPaymentGrid2036 { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          .ncsPosPaymentHeading2036 > small { display:none; }
+          .ncsPosPaymentAllocationGrid2036,
+          .ncsPosCreditAllocationGrid2036 { grid-template-columns:1fr; }
+          .ncsPosSplitPaymentSummary2036 { grid-template-columns:1fr 1fr; }
         }
 
       `}

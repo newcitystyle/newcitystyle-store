@@ -2032,6 +2032,539 @@ export default function AdminDashboardPage() {
         </div>
       </section>
 
+      <section className="ncsMatrixField" aria-label="NEW CITY STYLE business matrix navigation">
+        <div className="ncsMatrixBackdrop" aria-hidden="true">
+          <span className="ncsMatrixRing ncsMatrixRingOne" />
+          <span className="ncsMatrixRing ncsMatrixRingTwo" />
+          <span className="ncsMatrixAxis ncsMatrixAxisX" />
+          <span className="ncsMatrixAxis ncsMatrixAxisY" />
+        </div>
+
+        <div className="ncsMatrixHeader">
+          <div>
+            <span>NCS MATRIX • LIVE OPERATIONS</span>
+            <strong>Business Control Field</strong>
+          </div>
+          <small>Open a core space without losing the dashboard context</small>
+        </div>
+
+        <div className="ncsMatrixStage">
+          <Link href="/admin/pos" className="ncsMatrixNode ncsMatrixNodeSales">
+            <span className="ncsMatrixNodeIcon">₹</span>
+            <div>
+              <small>SALES CORE</small>
+              <strong>Billing / POS</strong>
+              <b>{formatCurrency(business.todaySales)} today</b>
+            </div>
+          </Link>
+
+          <Link href="/admin/stock-intelligence" className="ncsMatrixNode ncsMatrixNodeStock">
+            <span className="ncsMatrixNodeIcon">▦</span>
+            <div>
+              <small>STOCK CORE</small>
+              <strong>Inventory</strong>
+              <b>{dashboardStats.lowStockProducts} low-stock alert(s)</b>
+            </div>
+          </Link>
+
+          <Link href="/admin/customer-dues" className="ncsMatrixNode ncsMatrixNodeCustomer">
+            <span className="ncsMatrixNodeIcon">◎</span>
+            <div>
+              <small>CUSTOMER CORE</small>
+              <strong>Dues & Customers</strong>
+              <b>{formatCurrency(business.totalReceivable)} receivable</b>
+            </div>
+          </Link>
+
+          <div className="ncsMatrixCore">
+            <span className="ncsMatrixCorePulse" aria-hidden="true" />
+            <small>NEW CITY STYLE</small>
+            <strong>NCS CORE</strong>
+            <p>SALES • STOCK • CASH • WEB</p>
+            <div className="ncsMatrixCoreStatus">
+              <i /> LIVE
+            </div>
+          </div>
+
+          <Link href="/admin/cash-bank-book" className="ncsMatrixNode ncsMatrixNodeFinance">
+            <span className="ncsMatrixNodeIcon">◫</span>
+            <div>
+              <small>MONEY CORE</small>
+              <strong>Cash & Bank</strong>
+              <b>{formatCurrency(business.cashBalance + business.digitalBalance)} position</b>
+            </div>
+          </Link>
+
+          <Link href="/admin/profit-intelligence" className="ncsMatrixNode ncsMatrixNodeProfit">
+            <span className="ncsMatrixNodeIcon">↗</span>
+            <div>
+              <small>PROFIT CORE</small>
+              <strong>Profit Intelligence</strong>
+              <b>{formatCurrency(todayOwnerProfit.actualProfit)} tracked</b>
+            </div>
+          </Link>
+
+          <Link href="/admin/analytics/visitors" className="ncsMatrixNode ncsMatrixNodeWeb">
+            <span className="ncsMatrixNodeIcon">◇</span>
+            <div>
+              <small>WEB CORE</small>
+              <strong>Visitor Intelligence</strong>
+              <b>{todayTraffic.uniqueVisitors} visitor(s) today</b>
+            </div>
+          </Link>
+        </div>
+      </section>
+
+      <style jsx global>{`
+        /* ============================================================
+           NCS MATRIX DASHBOARD 1.0 • SPATIAL BUSINESS CONTROL FIELD
+           Existing business logic and every existing dashboard section
+           remain intact; this layer only adds a spatial navigation surface
+           and unifies motion/depth language.
+           ============================================================ */
+        .dashboardPage.ncsAdvancedDashboard {
+          --mx-ink:#1b1732;
+          --mx-violet:#6d4dff;
+          --mx-cyan:#18bed1;
+          --mx-pink:#e950a5;
+          --mx-gold:#e6b93d;
+          --mx-green:#00a67a;
+          position:relative;
+          background:transparent !important;
+        }
+
+        /* NCS OWNER COMMAND DECK — premium dark signal header */
+        .dashboardPage .hero {
+          position:relative;
+          min-height:168px;
+          display:flex;
+          align-items:center !important;
+          overflow:hidden;
+          padding:24px 28px !important;
+          border:1px solid rgba(230,185,61,.30) !important;
+          border-radius:26px !important;
+          background:
+            radial-gradient(circle at 82% 10%,rgba(24,190,209,.24),transparent 24%),
+            radial-gradient(circle at 13% 118%,rgba(233,80,165,.22),transparent 34%),
+            radial-gradient(circle at 58% -35%,rgba(109,77,255,.28),transparent 38%),
+            linear-gradient(118deg,#121026 0%,#251647 37%,#183d59 70%,#0b4d4a 100%) !important;
+          color:#fff !important;
+          box-shadow:
+            0 24px 60px rgba(25,20,58,.22),
+            inset 0 1px 0 rgba(255,255,255,.11),
+            inset 0 -1px 0 rgba(230,185,61,.08) !important;
+          isolation:isolate;
+        }
+
+        .dashboardPage .hero::before {
+          content:"";
+          position:absolute;
+          left:22px;
+          right:22px;
+          top:0;
+          height:2px;
+          pointer-events:none;
+          background:linear-gradient(90deg,transparent,rgba(230,185,61,.88),rgba(24,190,209,.76),transparent);
+          box-shadow:0 0 22px rgba(230,185,61,.18);
+          z-index:1;
+        }
+
+        .dashboardPage .hero::after {
+          content:"";
+          position:absolute;
+          inset:0;
+          pointer-events:none;
+          background:
+            linear-gradient(rgba(255,255,255,.032) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(255,255,255,.032) 1px,transparent 1px),
+            linear-gradient(105deg,transparent 0 62%,rgba(255,255,255,.035) 62% 63%,transparent 63% 100%);
+          background-size:30px 30px,30px 30px,100% 100%;
+          mask-image:linear-gradient(90deg,rgba(0,0,0,.88),rgba(0,0,0,.48) 66%,transparent 96%);
+          z-index:0;
+        }
+
+        .dashboardPage .hero > * { position:relative; z-index:2; }
+
+        .dashboardPage .hero > div:not(.heroMotion):not(.heroActions) {
+          max-width:730px;
+          padding-left:2px;
+        }
+
+        .dashboardPage .hero > div:not(.heroMotion):not(.heroActions) > span {
+          display:inline-flex;
+          align-items:center;
+          min-height:25px;
+          padding:0 10px;
+          border:1px solid rgba(230,185,61,.28);
+          border-radius:999px;
+          background:rgba(230,185,61,.09);
+          color:#f6d66f !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+          letter-spacing:1.15px !important;
+        }
+
+        .dashboardPage .hero h1 {
+          margin-top:10px !important;
+          color:#fff !important;
+          font-size:clamp(31px,3.5vw,46px) !important;
+          line-height:1.02 !important;
+          letter-spacing:-1.45px !important;
+          text-shadow:0 7px 28px rgba(3,8,28,.28);
+        }
+
+        .dashboardPage .hero p {
+          max-width:700px;
+          margin-top:9px !important;
+          color:rgba(255,255,255,.78) !important;
+          font-size:10px !important;
+          line-height:1.6 !important;
+        }
+
+        .dashboardPage .hero small {
+          margin-top:9px !important;
+          color:rgba(255,255,255,.52) !important;
+          font-size:8px !important;
+        }
+
+        .dashboardPage .heroMotion {
+          opacity:.82;
+        }
+
+        .dashboardPage .heroRupee {
+          color:rgba(246,214,111,.12) !important;
+          filter:drop-shadow(0 0 24px rgba(230,185,61,.12));
+        }
+
+        .dashboardPage .heroShopExit {
+          opacity:.78;
+          transform:scale(.91);
+          transform-origin:right bottom;
+        }
+
+        .dashboardPage .heroActions {
+          flex:0 0 auto;
+          display:flex;
+          align-items:center;
+          gap:7px;
+          padding:7px;
+          border:1px solid rgba(255,255,255,.12);
+          border-radius:17px;
+          background:rgba(9,12,35,.24);
+          box-shadow:
+            0 12px 34px rgba(5,7,28,.18),
+            inset 0 1px 0 rgba(255,255,255,.07);
+          backdrop-filter:blur(16px);
+        }
+
+        .dashboardPage .heroActions button,
+        .dashboardPage .heroActions a {
+          min-height:42px !important;
+          border-radius:11px !important;
+        }
+
+        .dashboardPage .heroActions button {
+          border-color:rgba(255,255,255,.17) !important;
+          background:rgba(255,255,255,.075) !important;
+          color:#fff !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+        }
+
+        .dashboardPage .heroActions button:hover {
+          background:rgba(255,255,255,.13) !important;
+          border-color:rgba(255,255,255,.24) !important;
+        }
+
+        .dashboardPage .heroActions a {
+          border:1px solid rgba(246,214,111,.88) !important;
+          background:linear-gradient(135deg,#ffe58c,#f2b643) !important;
+          color:#211539 !important;
+          box-shadow:0 9px 24px rgba(242,182,67,.24) !important;
+        }
+
+        .dashboardPage .heroActions .detailsToggleButton {
+          border-color:rgba(24,190,209,.28) !important;
+          background:rgba(24,190,209,.10) !important;
+        }
+
+        .dashboardPage .heroActions button:last-child {
+          border-color:rgba(233,80,165,.24) !important;
+          background:rgba(233,80,165,.09) !important;
+        }
+
+        @media (max-width:1180px) {
+          .dashboardPage .hero {
+            align-items:flex-start !important;
+            flex-direction:column;
+            gap:18px;
+          }
+
+          .dashboardPage .heroActions {
+            width:100%;
+            justify-content:flex-start;
+          }
+
+          .dashboardPage .heroShopExit {
+            opacity:.36;
+          }
+        }
+
+        .ncsMatrixField {
+          order:1;
+          position:relative;
+          min-height:330px;
+          margin:18px 0;
+          overflow:hidden;
+          border:1px solid rgba(255,255,255,.14);
+          border-radius:28px;
+          background:
+            radial-gradient(circle at 50% 47%,rgba(109,77,255,.31),transparent 24%),
+            radial-gradient(circle at 15% 18%,rgba(233,80,165,.18),transparent 23%),
+            radial-gradient(circle at 87% 80%,rgba(24,190,209,.17),transparent 25%),
+            linear-gradient(145deg,#17122f 0%,#25194f 48%,#173c56 100%);
+          box-shadow:
+            0 28px 70px rgba(29,20,73,.20),
+            inset 0 1px 0 rgba(255,255,255,.09);
+          color:#fff;
+          isolation:isolate;
+        }
+
+        .ncsMatrixBackdrop {
+          position:absolute;
+          inset:0;
+          z-index:-1;
+          overflow:hidden;
+          pointer-events:none;
+          background:
+            linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
+          background-size:28px 28px;
+        }
+
+        .ncsMatrixRing,
+        .ncsMatrixAxis {
+          position:absolute;
+          left:50%;
+          top:56%;
+          transform:translate(-50%,-50%);
+          pointer-events:none;
+        }
+
+        .ncsMatrixRing {
+          border:1px solid rgba(184,174,255,.20);
+          border-radius:50%;
+          box-shadow:0 0 44px rgba(109,77,255,.08) inset;
+        }
+        .ncsMatrixRingOne { width:300px; height:300px; animation:ncsMatrixBreath 6s ease-in-out infinite; }
+        .ncsMatrixRingTwo { width:430px; height:190px; opacity:.55; }
+        .ncsMatrixAxisX { width:72%; height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,.16),transparent); }
+        .ncsMatrixAxisY { width:1px; height:72%; background:linear-gradient(transparent,rgba(255,255,255,.13),transparent); }
+
+        .ncsMatrixHeader {
+          position:relative;
+          z-index:3;
+          display:flex;
+          align-items:flex-start;
+          justify-content:space-between;
+          gap:16px;
+          padding:18px 20px 0;
+        }
+        .ncsMatrixHeader > div { display:grid; gap:3px; }
+        .ncsMatrixHeader span {
+          color:#8cecff;
+          font-size:8px;
+          font-weight:950;
+          letter-spacing:1.35px;
+        }
+        .ncsMatrixHeader strong { font-size:18px; letter-spacing:-.35px; }
+        .ncsMatrixHeader small { color:rgba(255,255,255,.55); font-size:9px; font-weight:700; }
+
+        .ncsMatrixStage {
+          position:relative;
+          z-index:2;
+          width:min(920px,calc(100% - 34px));
+          height:255px;
+          margin:0 auto;
+        }
+
+        .ncsMatrixCore {
+          position:absolute;
+          left:50%;
+          top:51%;
+          width:166px;
+          height:166px;
+          transform:translate(-50%,-50%);
+          display:flex;
+          flex-direction:column;
+          align-items:center;
+          justify-content:center;
+          border:1px solid rgba(255,255,255,.28);
+          border-radius:50%;
+          background:
+            radial-gradient(circle at 50% 36%,rgba(255,255,255,.15),transparent 31%),
+            linear-gradient(145deg,rgba(109,77,255,.78),rgba(31,27,78,.96) 58%,rgba(24,190,209,.43));
+          box-shadow:
+            0 0 0 10px rgba(109,77,255,.06),
+            0 0 0 22px rgba(109,77,255,.035),
+            0 24px 55px rgba(7,5,35,.42),
+            inset 0 1px 0 rgba(255,255,255,.24);
+          text-align:center;
+        }
+        .ncsMatrixCorePulse {
+          position:absolute;
+          inset:-9px;
+          border:1px solid rgba(102,238,255,.28);
+          border-radius:50%;
+          animation:ncsMatrixPulse 2.8s ease-out infinite;
+        }
+        .ncsMatrixCore small { color:#a9f2ff; font-size:7px; font-weight:950; letter-spacing:1.5px; }
+        .ncsMatrixCore strong { margin-top:5px; font-size:25px; font-weight:950; letter-spacing:-1px; }
+        .ncsMatrixCore p { margin:5px 0 0; color:rgba(255,255,255,.62); font-size:7px; font-weight:850; letter-spacing:.75px; }
+        .ncsMatrixCoreStatus { margin-top:10px; display:flex; align-items:center; gap:5px; color:#aef8cf; font-size:7px; font-weight:950; letter-spacing:1px; }
+        .ncsMatrixCoreStatus i { width:7px; height:7px; border-radius:50%; background:#45e69c; box-shadow:0 0 12px #45e69c; }
+
+        .ncsMatrixNode {
+          position:absolute;
+          width:220px;
+          min-height:72px;
+          display:grid;
+          grid-template-columns:42px minmax(0,1fr);
+          align-items:center;
+          gap:10px;
+          padding:11px 13px;
+          border:1px solid rgba(255,255,255,.15);
+          border-radius:18px;
+          background:rgba(255,255,255,.075);
+          box-shadow:
+            0 14px 28px rgba(7,6,31,.18),
+            inset 0 1px 0 rgba(255,255,255,.08);
+          color:#fff !important;
+          text-decoration:none !important;
+          backdrop-filter:blur(15px);
+          transition:transform .22s ease,border-color .22s ease,background .22s ease,box-shadow .22s ease;
+        }
+        .ncsMatrixNode:hover {
+          transform:translateY(-4px) scale(1.015);
+          border-color:rgba(255,255,255,.36);
+          background:rgba(255,255,255,.12);
+          box-shadow:0 20px 40px rgba(7,6,31,.28),inset 0 1px 0 rgba(255,255,255,.13);
+        }
+        .ncsMatrixNodeIcon {
+          width:42px;
+          height:42px;
+          display:grid;
+          place-items:center;
+          border:1px solid rgba(255,255,255,.18);
+          border-radius:14px;
+          background:var(--node,rgba(109,77,255,.6));
+          color:#fff;
+          font-size:18px;
+          font-weight:950;
+          box-shadow:0 8px 20px color-mix(in srgb,var(--node,#6d4dff) 26%,transparent);
+        }
+        .ncsMatrixNode > div { min-width:0; display:grid; gap:2px; }
+        .ncsMatrixNode small { color:rgba(255,255,255,.48); font-size:6.5px; font-weight:950; letter-spacing:1px; }
+        .ncsMatrixNode strong { overflow:hidden; color:#fff; font-size:10px; font-weight:950; text-overflow:ellipsis; white-space:nowrap; }
+        .ncsMatrixNode b { overflow:hidden; color:rgba(255,255,255,.70); font-size:7px; font-weight:750; text-overflow:ellipsis; white-space:nowrap; }
+
+        .ncsMatrixNodeSales { --node:#6d4dff; left:1%; top:17%; }
+        .ncsMatrixNodeStock { --node:#00a67a; left:3%; bottom:8%; }
+        .ncsMatrixNodeCustomer { --node:#e950a5; left:50%; bottom:-1%; transform:translateX(-50%); }
+        .ncsMatrixNodeCustomer:hover { transform:translateX(-50%) translateY(-4px) scale(1.015); }
+        .ncsMatrixNodeFinance { --node:#f29b30; right:1%; top:17%; }
+        .ncsMatrixNodeProfit { --node:#18bed1; right:3%; bottom:8%; }
+        .ncsMatrixNodeWeb { --node:#5c6bc0; left:50%; top:-2%; transform:translateX(-50%); }
+        .ncsMatrixNodeWeb:hover { transform:translateX(-50%) translateY(-4px) scale(1.015); }
+
+        .dashboardPage .executivePulseStrip {
+          border:1px solid rgba(109,77,255,.14) !important;
+          border-radius:22px !important;
+          background:rgba(255,255,255,.74) !important;
+          box-shadow:0 14px 40px rgba(40,31,88,.07) !important;
+          backdrop-filter:blur(14px);
+        }
+
+        .dashboardPage .primaryKpis > *,
+        .dashboardPage .panel,
+        .dashboardPage .todayOwnerProfitPanel,
+        .dashboardPage .profitIntelligencePanel,
+        .dashboardPage .googleBusinessPanel,
+        .dashboardPage .quickActionsPanel,
+        .dashboardPage .visitorSummaryPanel {
+          border-color:rgba(92,76,151,.12) !important;
+          box-shadow:
+            0 14px 38px rgba(38,29,81,.065),
+            inset 0 1px 0 rgba(255,255,255,.85) !important;
+        }
+
+        .dashboardPage .primaryKpis > * {
+          transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease;
+        }
+        .dashboardPage .primaryKpis > *:hover {
+          transform:translateY(-4px);
+          border-color:rgba(109,77,255,.24) !important;
+          box-shadow:0 20px 45px rgba(50,37,102,.11) !important;
+        }
+
+        @keyframes ncsMatrixBreath {
+          0%,100% { transform:translate(-50%,-50%) scale(.97); opacity:.45; }
+          50% { transform:translate(-50%,-50%) scale(1.04); opacity:.82; }
+        }
+        @keyframes ncsMatrixPulse {
+          0% { transform:scale(.92); opacity:.65; }
+          75%,100% { transform:scale(1.16); opacity:0; }
+        }
+
+        @media (max-width:1100px) {
+          .ncsMatrixField { min-height:auto; padding-bottom:18px; }
+          .ncsMatrixStage {
+            width:auto;
+            height:auto;
+            display:grid;
+            grid-template-columns:repeat(3,minmax(0,1fr));
+            gap:10px;
+            margin:14px;
+          }
+          .ncsMatrixCore {
+            position:relative;
+            left:auto;
+            top:auto;
+            width:auto;
+            height:auto;
+            min-height:92px;
+            transform:none;
+            border-radius:20px;
+            grid-column:2;
+            grid-row:1 / span 2;
+          }
+          .ncsMatrixNode,
+          .ncsMatrixNodeSales,
+          .ncsMatrixNodeStock,
+          .ncsMatrixNodeCustomer,
+          .ncsMatrixNodeFinance,
+          .ncsMatrixNodeProfit,
+          .ncsMatrixNodeWeb {
+            position:relative;
+            left:auto;
+            right:auto;
+            top:auto;
+            bottom:auto;
+            width:auto;
+            transform:none;
+          }
+          .ncsMatrixNode:hover,
+          .ncsMatrixNodeCustomer:hover,
+          .ncsMatrixNodeWeb:hover { transform:translateY(-3px); }
+        }
+
+        @media (max-width:720px) {
+          .ncsMatrixHeader { flex-direction:column; }
+          .ncsMatrixStage { grid-template-columns:1fr; }
+          .ncsMatrixCore { grid-column:auto; grid-row:auto; min-height:110px; }
+          .ncsMatrixNode { min-height:66px; }
+        }
+
+      `}</style>
+
       <section className="executivePulseStrip">
         <div className="executivePulseLead">
           <span>OWNER EXECUTIVE PULSE</span>
@@ -9122,6 +9655,9 @@ function EmptyState({
         .dashboardPage .sectionHeader h2 {
           color:#293247 !important;
         }
+
+
+
 
       `}</style>
     </div>
