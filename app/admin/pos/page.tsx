@@ -1,6 +1,7 @@
-﻿"use client";
+"use client";
 
 import {
+  type CSSProperties,
   FormEvent,
   KeyboardEvent,
   useCallback,
@@ -137,7 +138,13 @@ type PosProductGroup = {
 type ProductViewMode = "smart" | "brands" | "products" | "all";
 type PosBrandMatrixMode = "popular" | "recent" | "az" | "all";
 
-const POS_BRAND_MATRIX_PAGE_SIZE = 8;
+type PosCategoryVisualRow = {
+  name?: string | null;
+  image_url?: string | null;
+  is_active?: boolean | null;
+};
+
+const POS_BRAND_MATRIX_PAGE_SIZE = 12;
 
 function getPosProductFamily(group: PosProductGroup) {
   const text = `${group.name} ${group.subcategory}`.toUpperCase().replace(/[^A-Z0-9]+/g, " ");
@@ -481,6 +488,8 @@ const CHARCOAL = "#2C2C2C";
 const HELD_BILLS_STORAGE_KEY = "ncs_pos_held_bills_v1";
 const HELD_BILLS_BACKUP_STORAGE_KEY = "ncs_pos_held_bills_backup_v1";
 const POS_ACTIVE_BILL_STORAGE_KEY = "ncs_pos_active_bill_v1";
+const POS_COUNTER_OS_STORAGE_KEY = "ncs_pos_counter_os_v1";
+const POS_V7_RUSH_STORAGE_KEY = "ncs_pos_v7_rush_mode_v1";
 const POS_RECENT_PRODUCTS_KEY = "ncs_pos_recent_products_v1";
 const POS_POPULAR_PRODUCTS_KEY = "ncs_pos_popular_products_v1";
 const POS_OVERVIEW_CACHE_KEY = "ncs_pos_overview_cache_v1";
@@ -1487,10 +1496,11 @@ const POS_FESTIVAL_OFFERS: PosFestivalOffer[] = [
 const POS_OFFER_CORNERS = ["topLeft", "topRight", "bottomLeft", "bottomRight"] as const;
 type PosOfferCorner = (typeof POS_OFFER_CORNERS)[number];
 
-const POS_VIP_SPEND_THRESHOLD = 10_000;
+const POS_VIP_SPEND_THRESHOLD = 5_000;
 
 export default function PosPage() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const cartItemsScrollRef = useRef<HTMLDivElement | null>(null);
   const quickItemNameInputRef = useRef<HTMLInputElement | null>(null);
   const customerNameInputRef = useRef<HTMLInputElement | null>(null);
   const customerPhoneInputRef = useRef<HTMLInputElement | null>(null);
@@ -1521,6 +1531,11 @@ export default function PosPage() {
   const [searchQuery, setSearchQuery] = useState("");
 const [selectedCategory, setSelectedCategory] =
   useState("All");
+const [showMorePosCategories, setShowMorePosCategories] = useState(false);
+const [categoryVisualImages, setCategoryVisualImages] =
+  useState<Record<string, string>>({});
+const [smartFashionCategory, setSmartFashionCategory] =
+  useState<string | null>(null);
 
 const [posAiCommand, setPosAiCommand] = useState("");
 const [posAiMatches, setPosAiMatches] = useState<PosAiMatch[]>([]);
@@ -1613,9 +1628,125 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
 
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [billFocusCollapsed, setBillFocusCollapsed] = useState(false);
+  const [counterOsMode, setCounterOsMode] = useState(true);
+  const [rushMode, setRushMode] = useState(false);
+  const [customerDeckOpen, setCustomerDeckOpen] = useState(false);
   const [festivalOffer, setFestivalOffer] = useState<PosFestivalOffer | null>(null);
   const [festivalOfferCorner, setFestivalOfferCorner] = useState<PosOfferCorner>("bottomRight");
   const festivalOfferHideTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCategoryVisuals() {
+      try {
+        if (!isBrowserOnline()) return;
+
+        const { data, error } = await supabase
+          .from("categories")
+          .select("name,image_url,is_active")
+          .eq("is_active", true);
+
+        if (error) {
+          console.info(
+            "Category artwork unavailable; POS will use product-image fallbacks:",
+            error.message
+          );
+          return;
+        }
+
+        const nextImages: Record<string, string> = {};
+
+        ((data || []) as PosCategoryVisualRow[]).forEach((category) => {
+          const name = cleanDisplayText(category.name, "");
+          const imageUrl = cleanDisplayText(category.image_url, "");
+
+          if (!name || !imageUrl) return;
+
+          nextImages[normalizeText(name)] = imageUrl;
+        });
+
+        if (!cancelled) {
+          setCategoryVisualImages(nextImages);
+        }
+      } catch (error) {
+        console.info(
+          "Unable to load ecommerce category artwork in POS:",
+          error
+        );
+      }
+    }
+
+    void loadCategoryVisuals();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // NCS POS V6 • COUNTER OS
+  // Default is ON for the fastest festival-counter flow. The cashier can
+  // switch back to the classic visual layout at any time (F3 / header button).
+  // Only presentation density changes; billing/stock/payment logic is untouched.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const savedMode = window.localStorage.getItem(POS_COUNTER_OS_STORAGE_KEY);
+      if (savedMode === "classic") {
+        setCounterOsMode(false);
+      } else if (savedMode === "counter") {
+        setCounterOsMode(true);
+      }
+    } catch {
+      // Private browsing/storage restrictions must never block POS.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      window.localStorage.setItem(
+        POS_COUNTER_OS_STORAGE_KEY,
+        counterOsMode ? "counter" : "classic",
+      );
+    } catch {
+      // Visual preference persistence is optional.
+    }
+  }, [counterOsMode]);
+
+  // NCS POS V7 • LIVING COUNTER OS
+  // Rush mode is a visual-performance layer only. It never changes sale,
+  // stock, reward, offline, design, payment or accounting behavior.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      setRushMode(window.localStorage.getItem(POS_V7_RUSH_STORAGE_KEY) === "rush");
+    } catch {
+      // Optional preference only.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      window.localStorage.setItem(
+        POS_V7_RUSH_STORAGE_KEY,
+        rushMode ? "rush" : "normal",
+      );
+    } catch {
+      // Optional preference only.
+    }
+  }, [rushMode]);
+
+  useEffect(() => {
+    if (paymentMethod === "credit") {
+      setCustomerDeckOpen(true);
+    }
+  }, [paymentMethod]);
 
   const [isCompletingSale, setIsCompletingSale] = useState(false);
   const [completedSale, setCompletedSale] =
@@ -1636,6 +1767,27 @@ const [ownerBusinessSettings, setOwnerBusinessSettings] =
   const [quickItemForm, setQuickItemForm] =
     useState<QuickItemForm>(EMPTY_QUICK_ITEM_FORM);
   const [quickDraftItems, setQuickDraftItems] = useState<CartItem[]>([]);
+
+  useEffect(() => {
+    if (!lastAddedItemKey) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      const cartScroller = cartItemsScrollRef.current;
+      if (!cartScroller) return;
+
+      const targetRow = Array.from(
+        cartScroller.querySelectorAll<HTMLElement>("[data-ncs-cart-item-key]"),
+      ).find((row) => row.dataset.ncsCartItemKey === lastAddedItemKey);
+
+      targetRow?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest",
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [lastAddedItemKey, cartItems.length]);
 
 
   useEffect(() => {
@@ -3403,6 +3555,68 @@ if (!variantsError) {
     ];
   }, [products]);
 
+  const posDisplayCategories = useMemo(() => {
+    const seen = new Set<string>();
+    const unique = categories.filter((category) => {
+      const key = category.trim().toLocaleLowerCase("en-IN");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    const findCategory = (wanted: string) =>
+      unique.find(
+        (category) =>
+          category.trim().toLocaleLowerCase("en-IN") === wanted.toLocaleLowerCase("en-IN")
+      );
+
+    const preferred = [
+      findCategory("All"),
+      findCategory("Men"),
+      findCategory("Women"),
+      findCategory("Kids"),
+      findCategory("Sarees"),
+    ].filter((category): category is string => Boolean(category));
+
+    const preferredKeys = new Set(
+      preferred.map((category) => category.trim().toLocaleLowerCase("en-IN"))
+    );
+
+    return [
+      ...preferred,
+      ...unique.filter(
+        (category) =>
+          !preferredKeys.has(category.trim().toLocaleLowerCase("en-IN"))
+      ),
+    ];
+  }, [categories]);
+
+  const posPrimaryCategories = useMemo(() => {
+    const wanted = ["All", "Men", "Women", "Kids", "Sarees"];
+    return wanted
+      .map((wantedName) =>
+        posDisplayCategories.find(
+          (category) =>
+            category.trim().toLocaleLowerCase("en-IN") ===
+            wantedName.toLocaleLowerCase("en-IN")
+        )
+      )
+      .filter((category): category is string => Boolean(category));
+  }, [posDisplayCategories]);
+
+  const posSecondaryCategories = useMemo(() => {
+    const primaryKeys = new Set(
+      posPrimaryCategories.map((category) =>
+        category.trim().toLocaleLowerCase("en-IN")
+      )
+    );
+
+    return posDisplayCategories.filter(
+      (category) =>
+        !primaryKeys.has(category.trim().toLocaleLowerCase("en-IN"))
+    );
+  }, [posDisplayCategories, posPrimaryCategories]);
+
   const categoryIntelligence = useMemo(() => {
     const stats: Record<string, { variants: number; stock: number }> = {
       All: { variants: 0, stock: 0 },
@@ -3426,6 +3640,49 @@ if (!variantsError) {
 
     return stats;
   }, [products]);
+
+  const categoryShowcaseImages = useMemo(() => {
+    const images: Record<string, string> = {};
+
+    for (const product of products) {
+      if (!product.imageUrl) continue;
+
+      if (!images.All) {
+        images.All = product.imageUrl;
+      }
+
+      const category = product.category || "Other";
+      if (!images[category]) {
+        images[category] = product.imageUrl;
+      }
+    }
+
+    return images;
+  }, [products]);
+
+  const smartFashionCategories = useMemo(() => {
+    const desired = ["Men", "Women", "Kids", "Sarees"];
+    const chosen: string[] = [];
+
+    desired.forEach((label) => {
+      const exact = categories.find(
+        (category) => category.toLocaleLowerCase("en-IN") === label.toLocaleLowerCase("en-IN")
+      );
+      const partial = categories.find((category) =>
+        category.toLocaleLowerCase("en-IN").includes(label.toLocaleLowerCase("en-IN"))
+      );
+      const match = exact || partial;
+      if (match && match !== "All" && !chosen.includes(match)) chosen.push(match);
+    });
+
+    categories.forEach((category) => {
+      if (category !== "All" && chosen.length < 4 && !chosen.includes(category)) {
+        chosen.push(category);
+      }
+    });
+
+    return chosen.slice(0, 4);
+  }, [categories]);
 
   const filteredProducts = useMemo(() => {
     const queryTokens = normalizeText(searchQuery)
@@ -4015,6 +4272,68 @@ if (!variantsError) {
     Number((finalPayable - splitPaidTotal).toFixed(2)),
   );
 
+  /*
+   * NCS POS 2036 V5.7 • FESTIVAL RUSH CHECKOUT
+   * ------------------------------------------------------------
+   * Split checkout is a high-speed counter workflow. As soon as the
+   * cashier selects Split, lift the payment router into the visible
+   * viewport and put the cursor in Cash. This is presentation/focus
+   * only: no payment amount is guessed and no sale is auto-completed.
+   */
+  useEffect(() => {
+    if (!splitPaymentActive || typeof window === "undefined") return;
+
+    const revealTimer = window.setTimeout(() => {
+      const splitPanel = document.querySelector<HTMLElement>(
+        ".ncsPosSplitPaymentPanel2036",
+      );
+
+      if (!splitPanel) return;
+
+      // Counter OS owns a fixed no-scroll checkout dock, so moving the whole
+      // bill would waste time. Classic mode keeps the old smooth reveal.
+      if (!counterOsMode) {
+        splitPanel.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+          inline: "nearest",
+        });
+      }
+
+      window.setTimeout(() => {
+        const cashInput = splitPanel.querySelector<HTMLInputElement>(
+          'input[data-split-method="cash"]',
+        );
+
+        if (cashInput) {
+          cashInput.focus({ preventScroll: true });
+          cashInput.select();
+        }
+      }, counterOsMode ? 80 : 260);
+    }, counterOsMode ? 20 : 70);
+
+    return () => window.clearTimeout(revealTimer);
+  }, [counterOsMode, splitPaymentActive]);
+
+  // V7.3 RUSH ENGINE: when Festival Rush is enabled, keep the counter
+  // focused on scanning. AI/customer surfaces remain available on demand,
+  // but they do not steal the cashier's next barcode.
+  useEffect(() => {
+    if (!counterOsMode || !rushMode) return;
+
+    setPosAiExpanded(false);
+    if (paymentMethod !== "credit") {
+      setCustomerDeckOpen(false);
+    }
+
+    const focusTimer = window.setTimeout(() => {
+      searchInputRef.current?.focus({ preventScroll: true });
+      searchInputRef.current?.select();
+    }, 90);
+
+    return () => window.clearTimeout(focusTimer);
+  }, [counterOsMode, rushMode]);
+
   const safeCreditPaidNow =
     paymentMethod === "credit"
       ? Math.min(
@@ -4050,6 +4369,45 @@ if (!variantsError) {
     if (method === "cash") setSplitCashAmount(clamped);
     if (method === "upi") setSplitUpiAmount(clamped);
     if (method === "card") setSplitCardAmount(clamped);
+  }
+
+  function fillSplitBalance(method: keyof PosPaymentBreakdown) {
+    const otherTotal =
+      method === "cash"
+        ? safeSplitUpiAmount + safeSplitCardAmount
+        : method === "upi"
+          ? safeSplitCashAmount + safeSplitCardAmount
+          : safeSplitCashAmount + safeSplitUpiAmount;
+
+    const exactBalance = Number(
+      Math.max(0, finalPayable - otherTotal).toFixed(2),
+    );
+
+    if (method === "cash") setSplitCashAmount(exactBalance);
+    if (method === "upi") setSplitUpiAmount(exactBalance);
+    if (method === "card") setSplitCardAmount(exactBalance);
+  }
+
+  function applyRushSplitPreset(
+    cashAmount: number,
+    restMethod: "upi" | "card",
+  ) {
+    const safeCash = Number(
+      Math.min(finalPayable, Math.max(0, cashAmount)).toFixed(2),
+    );
+    const balance = Number(
+      Math.max(0, finalPayable - safeCash).toFixed(2),
+    );
+
+    setSplitPaymentActive(true);
+    setPaymentMethod("cash");
+    setSplitCashAmount(safeCash);
+    setSplitUpiAmount(restMethod === "upi" ? balance : 0);
+    setSplitCardAmount(restMethod === "card" ? balance : 0);
+    setCreditPaidNow(0);
+    setCreditPaidCash(0);
+    setCreditPaidUpi(0);
+    setCreditPaidCard(0);
   }
 
   function updateCreditPaidPart(
@@ -4096,6 +4454,19 @@ if (!variantsError) {
       ),
     [cartItems]
   );
+
+  const livingLastItem = useMemo(() => {
+    if (cartItems.length === 0) return null;
+
+    if (lastAddedItemKey) {
+      return (
+        cartItems.find((item) => item.key === lastAddedItemKey) ||
+        cartItems[cartItems.length - 1]
+      );
+    }
+
+    return cartItems[cartItems.length - 1];
+  }, [cartItems, lastAddedItemKey]);
 
   function resetQuickItemForm() {
     setQuickItemForm(EMPTY_QUICK_ITEM_FORM);
@@ -5585,11 +5956,12 @@ if (!variantsError) {
     }
 
     holdCurrentBill();
-    setMobileCartOpen(true);
+    setMobileCartOpen(counterOsMode ? false : true);
 
     window.setTimeout(() => {
-      searchInputRef.current?.focus();
-    }, 80);
+      searchInputRef.current?.focus({ preventScroll: true });
+      searchInputRef.current?.select();
+    }, counterOsMode ? 40 : 80);
   }
 
   function resumeHeldBill(heldBill: HeldBill) {
@@ -5669,7 +6041,12 @@ if (!variantsError) {
     setActiveHeldBillId(heldBill.id);
 
     setShowHeldBills(false);
-    setMobileCartOpen(true);
+    setMobileCartOpen(counterOsMode ? false : true);
+
+    window.setTimeout(() => {
+      searchInputRef.current?.focus({ preventScroll: true });
+      searchInputRef.current?.select();
+    }, counterOsMode ? 40 : 80);
 
     showNotice(
       `${heldBill.holdNumber} resumed.`,
@@ -5703,14 +6080,28 @@ if (!variantsError) {
         return;
       }
 
+      if (event.key === "F3") {
+        event.preventDefault();
+        setCounterOsMode((current) => !current);
+        return;
+      }
+
       if (event.key === "F4") {
         event.preventDefault();
         openQuickItem();
         return;
       }
 
+      if (event.key === "F5") {
+        event.preventDefault();
+        setRushMode((current) => !current);
+        return;
+      }
+
       if (event.key === "F6") {
         event.preventDefault();
+        setCustomerDeckOpen(true);
+        window.setTimeout(() => customerNameInputRef.current?.focus(), 0);
         customerNameInputRef.current?.focus();
         customerNameInputRef.current?.select();
         return;
@@ -5718,6 +6109,8 @@ if (!variantsError) {
 
       if (event.key === "F7") {
         event.preventDefault();
+        setCustomerDeckOpen(true);
+        window.setTimeout(() => customerPhoneInputRef.current?.focus(), 0);
         customerPhoneInputRef.current?.focus();
         customerPhoneInputRef.current?.select();
         return;
@@ -8018,6 +8411,120 @@ if (!variantsError) {
         setActiveHeldBillId(null);
       }
 
+      /*
+       * V7.3 FESTIVAL RUSH HANDOFF
+       * ---------------------------
+       * The sale itself, split/credit breakup, exact-design status, customer
+       * sync and rewards are already safely committed above. In Rush mode,
+       * hand the counter back to the next customer immediately. Profit summary,
+       * WhatsApp and overview refresh continue in the background from the
+       * immutable saleSnapshot, so they cannot change the completed bill.
+       */
+      if (rushMode) {
+        const completedItems = saleSnapshot.items.map((item) => ({ ...item }));
+
+        // Optimistic local stock keeps the next scan honest while the fresh
+        // Supabase stock reload runs in the background.
+        setProducts((current) =>
+          current.map((product) => {
+            const soldQuantity = completedItems.reduce((sum, item) => {
+              if (
+                item.isQuickItem ||
+                item.productId !== product.productId ||
+                item.variantId !== product.variantId
+              ) {
+                return sum;
+              }
+              return sum + Math.max(0, item.quantity);
+            }, 0);
+
+            return soldQuantity > 0
+              ? { ...product, stock: Math.max(0, product.stock - soldQuantity) }
+              : product;
+          }),
+        );
+
+        setCartItems([]);
+        setBillDiscountPercent(0);
+        setRoundOffAmount(0);
+        setCustomerName("");
+        setCustomerPhone("");
+        setCustomerWhatsAppOptIn(false);
+        setRewardCustomerId(null);
+        setAvailableRewardPoints(0);
+        setRewardPointsToUse(0);
+        setRewardCustomerFound(false);
+        setPaymentMethod("cash");
+        clearPaymentAllocations();
+        setCreditDueDate(getDefaultCreditDueDate());
+        setCustomerDeckOpen(false);
+        setMobileCartOpen(false);
+        setSearchQuery("");
+        setLastAddedItemKey(null);
+
+        saleSubmissionLockRef.current = false;
+        setIsCompletingSale(false);
+
+        showNotice(
+          `${invoiceNumber} completed • RUSH READY for next customer.`,
+          "success",
+        );
+
+        window.setTimeout(() => {
+          searchInputRef.current?.focus({ preventScroll: true });
+          searchInputRef.current?.select();
+        }, 35);
+
+        // Keep the receipt actions available briefly without blocking scanning.
+        window.setTimeout(() => {
+          setCompletedSale((current) =>
+            current?.saleId === saleSnapshot.saleId ? null : current,
+          );
+        }, 5500);
+
+        void (async () => {
+          const backgroundWarnings: string[] = [];
+
+          try {
+            await saveCompletedBillProfitSummary(saleSnapshot);
+          } catch (profitError) {
+            console.error("Rush background profit summary failed:", profitError);
+            backgroundWarnings.push("profit summary pending");
+          }
+
+          if (saleSnapshot.customerPhone.trim()) {
+            try {
+              await sendInvoiceMessageViaWhatsApp(saleSnapshot);
+            } catch (whatsappError) {
+              console.error("Rush background WhatsApp failed:", whatsappError);
+              backgroundWarnings.push("WhatsApp pending");
+            }
+          }
+
+          const refreshResults = await Promise.allSettled([
+            loadProducts(),
+            loadPosOverview(),
+          ]);
+
+          if (refreshResults.some((result) => result.status === "rejected")) {
+            backgroundWarnings.push("live refresh pending");
+          }
+
+          if (designSyncWarning) backgroundWarnings.push("design warning");
+          if (customerSyncWarning) backgroundWarnings.push("customer warning");
+          if (rewardSyncWarning) backgroundWarnings.push("reward warning");
+
+          if (backgroundWarnings.length > 0) {
+            showNotice(
+              `${invoiceNumber} is saved. Background: ${backgroundWarnings.join(" • ")}.`,
+              "info",
+            );
+          }
+        })();
+
+        return;
+      }
+
       // Owner-only post-bill profit summary.
       // MRP is never used and Quick Items are excluded.
       await saveCompletedBillProfitSummary(saleSnapshot);
@@ -8115,9 +8622,17 @@ if (!variantsError) {
 
   return (
     <main
-      className={`ncsPosPage ${
+      className={`ncsPosPage ncsPosV7Living ${
         cartItems.length > 0 && !billFocusCollapsed
           ? "ncsPosBillingFocus"
+          : ""
+      } ${counterOsMode ? "ncsPosCounterOS" : "ncsPosClassicOS"} ${
+        rushMode ? "ncsPosRushMode" : "ncsPosNormalMode"
+      } ${
+        cartItems.length >= 5 ? "ncsPosDenseCart" : ""
+      } ${splitPaymentActive ? "ncsPosSplitActive" : ""} ${
+        !splitPaymentActive && paymentMethod === "credit"
+          ? "ncsPosCreditActive"
           : ""
       }`}
     >
@@ -8160,7 +8675,7 @@ if (!variantsError) {
 
               <p className="ncsPosVipMessage">
                 మీ నమ్మకానికి హృదయపూర్వక ధన్యవాదాలు. మీరు NEW CITY STYLEలో
-                ₹10,000+ shopping milestone పూర్తి చేశారు. మిమ్మల్ని మళ్లీ
+                ₹5,000+ shopping milestone పూర్తి చేశారు. మిమ్మల్ని మళ్లీ
                 స్వాగతించడం మా ఆనందం.
               </p>
 
@@ -8382,14 +8897,15 @@ if (!variantsError) {
                   : undefined
               }
             />
-            NEW CITY STYLE • PREMIUM POS
+            NEW CITY STYLE • LIVE COUNTER
           </span>
 
-          <h1>Billing Counter</h1>
+          <h1>{counterOsMode ? "NCS POS" : "Billing Counter"}</h1>
 
           <p>
-            Fast barcode billing, live stock and customer
-            rewards.
+            {counterOsMode
+              ? "Scan → confirm → pay → next customer. Everything else stays intelligently out of the way."
+              : "Fast barcode billing, live stock and customer rewards."}
           </p>
         </div>
 
@@ -8426,18 +8942,66 @@ if (!variantsError) {
           </video>
         </div>
 
-        <div className="ncsPosHeaderActions">
-          <button
-            type="button"
-            className="ncsPosNextCustomerButton"
-            onClick={startNextCustomerBill}
-            disabled={cartItems.length === 0}
-            title="Keep this customer bill safely and open a fresh bill"
-          >
-            <span>＋</span>
-            Next Customer
-          </button>
+            <form
+              className="ncsPosSearchPanel"
+              onSubmit={handleSearchSubmit}
+            >
+              <div className="ncsPosSearchIcon"><span>⌕</span><small>SMART SEARCH</small></div>
 
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
+                  setProductViewMode("brands");
+                  setExpandedProductId(null);
+                }}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Try: Poomex 80, black shirt, kids set — or scan barcode..."
+                autoComplete="off"
+                autoFocus
+              />
+
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="ncsPosClearSearch"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setProductViewMode("brands");
+                    setExpandedProductId(null);
+                    searchInputRef.current?.focus();
+                  }}
+                  aria-label="Clear search"
+                >
+                  ×
+                </button>
+              )}
+
+              <button
+                type="submit"
+                className="ncsPosSearchButton"
+              >
+                Search
+              </button>
+
+              <button
+                type="button"
+                className="ncsPosQuickItemButton ncsPosSearchQuickItemButton"
+                onClick={openQuickItem}
+              >
+                <span>＋</span>
+                Quick Item
+              </button>
+
+              <div className="ncsPosSearchTelemetry" aria-hidden="true">
+                <span>SCAN CORE 2036</span>
+                <b>{searchQuery.trim() ? `${filteredProducts.length} MATCH` : "READY"}</b>
+                <small>F2</small>
+              </div>
+        </form>
+
+        <div className="ncsPosHeaderActions">
           <button
             type="button"
             className="ncsPosSecondaryButton"
@@ -8461,6 +9025,20 @@ if (!variantsError) {
           >
             <span>◉</span>
             Owner Summary
+          </button>
+
+          <button
+            type="button"
+            className={`ncsPosHeaderAiButton ${posAiExpanded ? "active" : ""}`}
+            onClick={() => setPosAiExpanded((current) => !current)}
+            aria-expanded={posAiExpanded}
+            title="Open NCS AI Billing Assistant"
+          >
+            <span>✦</span>
+            <div>
+              <b>Ask NCS AI</b>
+              <small>Bill Copilot</small>
+            </div>
           </button>
 
           <button
@@ -8629,93 +9207,106 @@ if (!variantsError) {
         </article>
       </section>
 
-      <section className="ncsPosWorkspace">
-        <div className="ncsPosCatalogue">
-          <form
-            className="ncsPosSearchPanel"
-            onSubmit={handleSearchSubmit}
-          >
-            <div className="ncsPosSearchIcon">⌕</div>
-
-            <input
-              ref={searchInputRef}
-              value={searchQuery}
-              onChange={(event) => {
-                setSearchQuery(event.target.value);
-                setProductViewMode("brands");
-                setExpandedProductId(null);
-              }}
-              onKeyDown={handleSearchKeyDown}
-              placeholder="Scan barcode or search product, SKU, size, colour..."
-              autoComplete="off"
-              autoFocus
-            />
-
-            {searchQuery && (
-              <button
-                type="button"
-                className="ncsPosClearSearch"
-                onClick={() => {
-                  setSearchQuery("");
-                  setProductViewMode("brands");
-                  setExpandedProductId(null);
-                  searchInputRef.current?.focus();
-                }}
-                aria-label="Clear search"
-              >
-                ×
-              </button>
-            )}
-
-            <button
-              type="submit"
-              className="ncsPosSearchButton"
-            >
-              Search
-            </button>
-
+      {counterOsMode && (
+        <section className="ncsPosV7CommandDeck" aria-label="Live counter status">
+          <div className="ncsPosV7CommandIdentity">
+            <i className={isOnline ? "online" : "offline"} />
+            <span>{rushMode ? "FESTIVAL RUSH" : "LIVING COUNTER"}</span>
+            <strong>{rushMode ? "FAST PATH" : "SMART PATH"}</strong>
             <button
               type="button"
-              className="ncsPosQuickItemButton ncsPosSearchQuickItemButton"
-              onClick={openQuickItem}
+              className={`ncsPosRailModeButton ${rushMode ? "active" : ""}`}
+              onClick={() => setRushMode((current) => !current)}
+              title="F5 • Toggle Festival Rush mode"
             >
-              <span>＋</span>
-              Quick Item
+              {rushMode ? "⚡ RUSH" : "◌ NORMAL"}
             </button>
+            <button
+              type="button"
+              className="ncsPosRailNextButton"
+              onClick={startNextCustomerBill}
+              disabled={cartItems.length === 0}
+              title="Keep this bill safely and open a fresh bill"
+            >
+              ＋ NEXT
+            </button>
+          </div>
 
-            <div className="ncsPosSearchTelemetry" aria-hidden="true">
-              <span>SCAN CORE 2036</span>
-              <b>{searchQuery.trim() ? `${filteredProducts.length} MATCH` : "READY"}</b>
-              <small>F2</small>
+          <div className="ncsPosV7CommandSignals">
+            <button type="button" onClick={() => searchInputRef.current?.focus()}>
+              <small>SCAN</small><b>F2</b>
+            </button>
+            <span><small>ITEMS</small><b>{totalQuantity}</b></span>
+            <span className="money"><small>PAYABLE</small><b>{formatCurrency(finalPayable)}</b></span>
+            <span><small>PAY</small><b>{splitPaymentActive ? "SPLIT" : paymentMethod.toUpperCase()}</b></span>
+            <button type="button" onClick={() => setCustomerDeckOpen(true)}>
+              <small>CUSTOMER</small><b>{vipCustomerProfile ? "✦ VIP" : customerPhone ? "LINKED" : "+ ADD"}</b>
+            </button>
+          </div>
+        </section>
+      )}
+
+      <section
+        className={`ncsPosWorkspace ${
+          cartItems.length === 0
+            ? "ncsPosWorkspaceCatalogueOnly"
+            : ""
+        }`}
+      >
+        <div className="ncsPosCatalogue">
+
+
+      {smartFashionCategory && typeof document !== "undefined" &&
+        createPortal(
+          <div className="ncsPosSmartFashionPortal" role="dialog" aria-modal="true" aria-label={`${smartFashionCategory} collection`}>
+            <div className="ncsPosSmartFashionPortalPage">
+              <header className="ncsPosSmartFashionPortalHeader">
+                <button type="button" onClick={() => setSmartFashionCategory(null)}>← Back to POS</button>
+                <div>
+                  <small>NEW CITY STYLE • SMART FASHION</small>
+                  <h2>{smartFashionCategory}</h2>
+                </div>
+                <div className="ncsPosSmartFashionPortalStats">
+                  <span><small>VARIANTS</small><b>{categoryIntelligence[smartFashionCategory]?.variants || 0}</b></span>
+                  <span><small>LIVE STOCK</small><b>{categoryIntelligence[smartFashionCategory]?.stock || 0}</b></span>
+                </div>
+              </header>
+
+              <section
+                className="ncsPosSmartFashionPortalHero"
+                style={categoryShowcaseImages[smartFashionCategory] ? { backgroundImage: `linear-gradient(90deg, rgba(2,22,45,.94), rgba(4,62,70,.58)), url(${categoryShowcaseImages[smartFashionCategory]})` } : undefined}
+              >
+                <div>
+                  <span>LIVE COUNTER COLLECTION</span>
+                  <h3>{smartFashionCategory} styles, ready to bill.</h3>
+                  <p>Same live POS stock, shown like your ecommerce catalogue.</p>
+                </div>
+                <button type="button" onClick={() => searchInputRef.current?.focus()}>Search this collection</button>
+              </section>
+
+              <div className="ncsPosSmartFashionPortalBody">
+                {groupedProducts.length > 0 ? (
+                  groupedProducts.slice(0, 18).map((group) => (
+                    <GroupedProductCard
+                      key={`portal-${group.groupKey}`}
+                      group={group}
+                      expanded={expandedProductId === group.productId}
+                      onToggle={() => setExpandedProductId((current) => current === group.productId ? null : group.productId)}
+                      onAddVariant={addProductToCart}
+                    />
+                  ))
+                ) : (
+                  <div className="ncsPosSmartFashionEmpty">No live styles available in this collection.</div>
+                )}
+              </div>
             </div>
-      </form>
+          </div>,
+          document.body
+        )}
 
       <section
         className={`ncsPosAiPanel ${posAiExpanded ? "expanded" : "collapsed"}`}
       >
-        <button
-          type="button"
-          className="ncsPosAiMascotRunner ncsPosAiRealCoupleLauncher"
-          onClick={() => setPosAiExpanded((current) => !current)}
-          aria-label={posAiExpanded ? "Close NCS AI Billing Assistant" : "Open NCS AI Billing Assistant"}
-          aria-expanded={posAiExpanded}
-        >
-          <span className="ncsPosPremiumAiButton" aria-hidden="true">
-            <span className="ncsPosPremiumAiOrb">
-              <span className="ncsPosPremiumAiSpark">✦</span>
-              <i />
-              <i />
-            </span>
-            <span className="ncsPosPremiumAiCopy">
-              <em>NCS INTELLIGENCE</em>
-              <b>Ask NCS AI</b>
-              <small>Live Bill Copilot</small>
-            </span>
-            <span className="ncsPosPremiumAiLive"><i />LIVE</span>
-            <span className="ncsPosPremiumAiArrow">›</span>
-          </span>
-        </button>
-
         {posAiExpanded && (
           <button
             type="button"
@@ -8895,13 +9486,17 @@ if (!variantsError) {
       </section>
 
       <div className="ncsPosCategoryOrbit">
-        <div className="ncsPosCategoryOrbitLabel" aria-hidden="true">
-          <span>CATEGORY ORBIT</span>
+        <div className="ncsPosCategoryOrbitLabel">
+          <div>
+            <span>NEW CITY STYLE • LIVE CATALOGUE</span>
+            <strong>Shop by category</strong>
+            <small>Tap a collection to open the same live stock in a clean ecommerce-style view.</small>
+          </div>
           <b>{selectedCategory === "All" ? "ALL STOCK" : selectedCategory}</b>
         </div>
 
-        <div className="ncsPosCategoryRow">
-              {categories.map((category) => {
+        <div className="ncsPosCategoryPrimaryRow">
+{posPrimaryCategories.map((category) => {
                 const stats = categoryIntelligence[category] || { variants: 0, stock: 0 };
 
                 return (
@@ -8913,26 +9508,133 @@ if (!variantsError) {
                         ? "ncsPosCategoryButton ncsPosCategoryActive"
                         : "ncsPosCategoryButton"
                     }
+                    style={
+                      (
+                        categoryVisualImages[normalizeText(category)] ||
+                        categoryShowcaseImages[category]
+                      )
+                        ? ({
+                            "--ncs-category-image": `url("${categoryVisualImages[normalizeText(category)] || categoryShowcaseImages[category]}")`,
+                          } as CSSProperties)
+                        : undefined
+                    }
                     onClick={() => {
                       setSelectedCategory(category);
                       setProductViewMode("brands");
                       setExpandedBrand(null);
                       setExpandedProductFamily(null);
                       setExpandedProductId(null);
+                      if (category !== "All") {
+                        setSmartFashionCategory(category);
+                      } else {
+                        setSmartFashionCategory(null);
+                      }
                     }}
                   >
-                    <span className="ncsPosCategoryGlyph">
-                      {category === "All" ? "◎" : category.slice(0, 2).toUpperCase()}
+                    {(categoryVisualImages[normalizeText(category)] ||
+                      categoryShowcaseImages[category]) && (
+                      <img
+                        className="ncsPosCategoryArtwork"
+                        src={
+                          categoryVisualImages[normalizeText(category)] ||
+                          categoryShowcaseImages[category]
+                        }
+                        alt=""
+                        aria-hidden="true"
+                        loading="lazy"
+                      />
+                    )}
+                    <span className="ncsPosCategoryTopline">
+                      <span className="ncsPosCategoryGlyph">
+                        {category === "All" ? "◎" : category.slice(0, 2).toUpperCase()}
+                      </span>
+                      <em>LIVE</em>
                     </span>
                     <span className="ncsPosCategoryCopy">
                       <b>{category}</b>
                       <small>{stats.variants} variants • {stats.stock} stock</small>
                     </span>
-                    <i aria-hidden="true" />
+                    <i aria-hidden="true">→</i>
                   </button>
                 );
               })}
-            </div>
+          <button
+            type="button"
+            className={`ncsPosCategoryMoreButton ${showMorePosCategories ? "active" : ""}`}
+            onClick={() => setShowMorePosCategories((current) => !current)}
+          >
+            <span>＋</span>
+            <b>{showMorePosCategories ? "Less" : "More"}</b>
+            <small>{posSecondaryCategories.length} categories</small>
+          </button>
+        </div>
+
+        {showMorePosCategories && posSecondaryCategories.length > 0 && (
+          <div className="ncsPosCategorySecondaryRow">
+{posSecondaryCategories.map((category) => {
+                const stats = categoryIntelligence[category] || { variants: 0, stock: 0 };
+
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    className={
+                      selectedCategory === category
+                        ? "ncsPosCategoryButton ncsPosCategoryActive"
+                        : "ncsPosCategoryButton"
+                    }
+                    style={
+                      (
+                        categoryVisualImages[normalizeText(category)] ||
+                        categoryShowcaseImages[category]
+                      )
+                        ? ({
+                            "--ncs-category-image": `url("${categoryVisualImages[normalizeText(category)] || categoryShowcaseImages[category]}")`,
+                          } as CSSProperties)
+                        : undefined
+                    }
+                    onClick={() => {
+                      setSelectedCategory(category);
+                      setProductViewMode("brands");
+                      setExpandedBrand(null);
+                      setExpandedProductFamily(null);
+                      setExpandedProductId(null);
+                      if (category !== "All") {
+                        setSmartFashionCategory(category);
+                      } else {
+                        setSmartFashionCategory(null);
+                      }
+                    }}
+                  >
+                    {(categoryVisualImages[normalizeText(category)] ||
+                      categoryShowcaseImages[category]) && (
+                      <img
+                        className="ncsPosCategoryArtwork"
+                        src={
+                          categoryVisualImages[normalizeText(category)] ||
+                          categoryShowcaseImages[category]
+                        }
+                        alt=""
+                        aria-hidden="true"
+                        loading="lazy"
+                      />
+                    )}
+                    <span className="ncsPosCategoryTopline">
+                      <span className="ncsPosCategoryGlyph">
+                        {category === "All" ? "◎" : category.slice(0, 2).toUpperCase()}
+                      </span>
+                      <em>LIVE</em>
+                    </span>
+                    <span className="ncsPosCategoryCopy">
+                      <b>{category}</b>
+                      <small>{stats.variants} variants • {stats.stock} stock</small>
+                    </span>
+                    <i aria-hidden="true">→</i>
+                  </button>
+                );
+              })}
+          </div>
+        )}
           </div>
 
           <div className="ncsPosCatalogueTop">
@@ -9208,12 +9910,12 @@ if (!variantsError) {
 
                     <div className="ncsPosBrandMatrixMeta">
                       <div>
-                        <span>BRAND INTELLIGENCE MATRIX</span>
+                        <span>SHOP BY BRAND • LIVE STOCK</span>
                         <strong>
-                          {brandMatrixGroups.length} live brand node(s)
+                          {brandMatrixGroups.length} active brand{brandMatrixGroups.length === 1 ? "" : "s"}
                         </strong>
                       </div>
-                      <small>8 nodes per field • no long page scroll</small>
+                      <small>Tap a brand to open its live styles</small>
                     </div>
 
                     <div className="ncsPosBrandMatrixViewport">
@@ -9229,7 +9931,15 @@ if (!variantsError) {
                             }}
                           >
                             <span className="ncsPosBrandCompactMark">
-                              {brandGroup.brand.slice(0, 2).toUpperCase()}
+                              {brandGroup.groups.find((group) => group.imageUrl)?.imageUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={brandGroup.groups.find((group) => group.imageUrl)?.imageUrl}
+                                  alt=""
+                                />
+                              ) : (
+                                brandGroup.brand.slice(0, 2).toUpperCase()
+                              )}
                             </span>
                             <div>
                               <strong>{brandGroup.brand}</strong>
@@ -9591,6 +10301,7 @@ if (!variantsError) {
           )}
         </div>
 
+        {cartItems.length > 0 && (
         <aside
           className={`ncsPosBillPanel ${
             mobileCartOpen
@@ -9600,7 +10311,7 @@ if (!variantsError) {
         >
           <div className="ncsPosBillHeader">
             <div>
-              <span>Current Bill</span>
+              <span>{counterOsMode ? "LIVE BILL LANE" : "Current Bill"}</span>
               <h2>
                 {totalQuantity} Item
                 {totalQuantity === 1 ? "" : "s"}
@@ -9614,6 +10325,20 @@ if (!variantsError) {
             </div>
 
             <div className="ncsPosBillHeaderActions">
+              <button
+                type="button"
+                className={`ncsPosCounterModeToggle2036 ${
+                  counterOsMode ? "active" : ""
+                }`}
+                onClick={() => setCounterOsMode((current) => !current)}
+                aria-pressed={counterOsMode}
+                title="F3 • Toggle Counter OS / Classic layout"
+              >
+                <span>{counterOsMode ? "⚡" : "◌"}</span>
+                <b>{counterOsMode ? "LIVING OS" : "CLASSIC"}</b>
+                <small>F3</small>
+              </button>
+
               {cartItems.length > 0 && (
                 <>
                   <button
@@ -9693,7 +10418,26 @@ if (!variantsError) {
             </div>
           </div>
 
-          <div className="ncsPosCustomerCard ncsPosCustomerCardCompact">
+          {counterOsMode && (
+            <button
+              type="button"
+              className={`ncsPosV7CustomerTrigger ${customerDeckOpen ? "open" : ""} ${vipCustomerProfile ? "vip" : ""}`}
+              onClick={() => setCustomerDeckOpen((current) => !current)}
+              aria-expanded={customerDeckOpen}
+            >
+              <span>{vipCustomerProfile ? "✦" : "👤"}</span>
+              <div>
+                <small>{vipCustomerProfile ? "VIP CUSTOMER" : "CUSTOMER"}</small>
+                <strong>{customerName.trim() || customerPhone.trim() || "Quick cash bill • optional"}</strong>
+              </div>
+              {currentCustomerDue > 0 && <b>DUE {formatCurrency(currentCustomerDue)}</b>}
+              <i>{customerDeckOpen ? "⌃" : "⌄"}</i>
+            </button>
+          )}
+
+          <div className={`ncsPosCustomerCard ncsPosCustomerCardCompact ${
+            counterOsMode && !customerDeckOpen ? "ncsPosV7CustomerHidden" : ""
+          }`}>
             <div className="ncsPosCustomerCompactRow">
               <div className="ncsPosCustomerMiniLabel" title="Customer details">
                 <span>👤</span>
@@ -9808,6 +10552,39 @@ if (!variantsError) {
             )}
           </div>
 
+          {counterOsMode && livingLastItem && (
+            <section className={`ncsPosV7LastScanCore ${lastAddedItemKey ? "pulse" : ""}`}>
+              <div className="ncsPosV7LastScanMedia">
+                {livingLastItem.designImageUrl || livingLastItem.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={livingLastItem.designImageUrl || livingLastItem.imageUrl}
+                    alt={livingLastItem.name}
+                  />
+                ) : (
+                  <span>◈</span>
+                )}
+              </div>
+              <div className="ncsPosV7LastScanCopy">
+                <small>{lastAddedItemKey ? "JUST SCANNED" : "LAST ITEM"}</small>
+                <strong>{livingLastItem.name}</strong>
+                <span>
+                  {[livingLastItem.brand, livingLastItem.size, livingLastItem.color]
+                    .filter(Boolean)
+                    .join(" • ") || "Standard item"}
+                </span>
+              </div>
+              <div className="ncsPosV7LastScanSignals">
+                <span><small>SELL</small><b>{formatCurrency(livingLastItem.price)}</b></span>
+                <span><small>STOCK</small><b>{livingLastItem.isQuickItem ? "QUICK" : livingLastItem.stock}</b></span>
+                <span className={livingLastItem.designUnitId ? "onlineDesign" : "physical"}>
+                  <small>PIECE</small>
+                  <b>{livingLastItem.designUnitId ? "PHOTO LINKED" : "PHYSICAL"}</b>
+                </span>
+              </div>
+            </section>
+          )}
+
           <div className="ncsPosCartTableHeader" aria-hidden="true">
             <span>Item</span>
             <span>MRP</span>
@@ -9820,7 +10597,7 @@ if (!variantsError) {
             <span />
           </div>
 
-          <div className="ncsPosCartItems">
+          <div className="ncsPosCartItems" ref={cartItemsScrollRef}>
             {cartItems.length === 0 ? (
               <div className="ncsPosEmptyCart">
                 <div>🛍️</div>
@@ -9831,6 +10608,7 @@ if (!variantsError) {
               cartItems.map((item, itemIndex) => (
                 <article
                   key={item.key}
+                  data-ncs-cart-item-key={item.key}
                   className={`ncsPosCartItem ncsPosCartItemTableRow ${
                     lastAddedItemKey === item.key ? "ncsPosLastAddedItem" : ""
                   }`}
@@ -10156,7 +10934,9 @@ if (!variantsError) {
           <div className="ncsPosCounterIntelligence">
             <div className="ncsPosShortcutStrip">
               <span><b>F2</b> Search</span>
+              <span><b>F3</b> Counter OS</span>
               <span><b>F4</b> Quick Item</span>
+              <span><b>F5</b> Rush</span>
               <span><b>F6</b> Customer</span>
               <span><b>F7</b> Phone</span>
               <span><b>F8</b> Queue</span>
@@ -10280,6 +11060,16 @@ if (!variantsError) {
                   setCreditPaidUpi(0);
                   setCreditPaidCard(0);
                   setCreditDueDate(getDefaultCreditDueDate());
+                  if (counterOsMode) {
+                    setCustomerDeckOpen(true);
+                    window.setTimeout(() => {
+                      if (!customerName.trim()) {
+                        customerNameInputRef.current?.focus({ preventScroll: true });
+                      } else if (!customerPhone.trim()) {
+                        customerPhoneInputRef.current?.focus({ preventScroll: true });
+                      }
+                    }, 40);
+                  }
                 }}
               >
                 <span>◷</span>
@@ -10292,15 +11082,58 @@ if (!variantsError) {
               <div className="ncsPosSplitPaymentPanel2036">
                 <div className="ncsPosSplitPaymentHeader2036">
                   <div>
-                    <span>SPLIT PAYMENT ROUTER</span>
-                    <strong>Enter the amount received in each mode</strong>
+                    <span>SPLIT PAYMENT ROUTER • FESTIVAL RUSH</span>
+                    <strong>Enter one amount, then tap REST on the final payment mode</strong>
                   </div>
                   <b className={splitRemainingAmount <= 0.01 ? "done" : "pending"}>
                     {splitRemainingAmount <= 0.01
                       ? "READY"
                       : `${formatCurrency(splitRemainingAmount)} LEFT`}
                   </b>
+
+                  <button
+                    type="button"
+                    className="ncsPosSplitCompleteNow2036"
+                    onClick={handleCompleteSale}
+                    disabled={
+                      cartItems.length === 0 ||
+                      isCompletingSale ||
+                      splitPaidTotal <= 0 ||
+                      splitRemainingAmount > 0.01
+                    }
+                    title={
+                      splitRemainingAmount <= 0.01
+                        ? "Complete this split-payment sale now"
+                        : `Allocate ${formatCurrency(splitRemainingAmount)} more to complete the sale`
+                    }
+                  >
+                    <span>{isCompletingSale ? "…" : "✓"}</span>
+                    <strong>
+                      {isCompletingSale ? "SAVING..." : "COMPLETE SALE"}
+                    </strong>
+                    <small>{formatCurrency(finalPayable)}</small>
+                  </button>
                 </div>
+
+                {counterOsMode && rushMode && (
+                  <div className="ncsPosV73SplitPresets" aria-label="Festival rush split presets">
+                    <button type="button" onClick={() => applyRushSplitPreset(500, "upi")}>
+                      <b>₹500 CASH</b><span>REST UPI</span>
+                    </button>
+                    <button type="button" onClick={() => applyRushSplitPreset(1000, "upi")}>
+                      <b>₹1000 CASH</b><span>REST UPI</span>
+                    </button>
+                    <button type="button" onClick={() => applyRushSplitPreset(500, "card")}>
+                      <b>₹500 CASH</b><span>REST CARD</span>
+                    </button>
+                    <button type="button" onClick={() => applyRushSplitPreset(0, "upi")}>
+                      <b>FULL UPI</b><span>ONE TAP</span>
+                    </button>
+                    <button type="button" onClick={() => applyRushSplitPreset(0, "card")}>
+                      <b>FULL CARD</b><span>ONE TAP</span>
+                    </button>
+                  </div>
+                )}
 
                 <div className="ncsPosPaymentAllocationGrid2036">
                   {[
@@ -10317,6 +11150,7 @@ if (!variantsError) {
                           min="0"
                           max={finalPayable}
                           step="0.01"
+                          data-split-method={String(key)}
                           value={Number(value) === 0 ? "" : Number(value)}
                           onChange={(event) =>
                             updateSplitPaymentPart(
@@ -10327,6 +11161,18 @@ if (!variantsError) {
                           placeholder="0"
                           inputMode="decimal"
                         />
+                        <button
+                          type="button"
+                          className="ncsPosSplitRestButton2036"
+                          onClick={() =>
+                            fillSplitBalance(
+                              key as keyof PosPaymentBreakdown,
+                            )
+                          }
+                          title={`Put the exact remaining bill amount into ${String(label)}`}
+                        >
+                          REST
+                        </button>
                       </div>
                     </label>
                   ))}
@@ -10514,8 +11360,10 @@ if (!variantsError) {
             </button>
           </div>
         </aside>
+        )}
       </section>
 
+      {cartItems.length > 0 && (
       <button
         type="button"
         className="ncsPosMobileCartButton"
@@ -10539,6 +11387,7 @@ if (!variantsError) {
 
         <i>View →</i>
       </button>
+      )}
 
       {mobileCartOpen && (
         <button
@@ -23143,8 +23992,64 @@ if (!variantsError) {
           box-shadow:inset 0 1px 0 #fff,0 8px 20px rgba(42,42,82,.045);
         }
         .ncsPosSplitPaymentHeader2036 {
-          display:flex;align-items:center;justify-content:space-between;gap:10px;
+          display:flex;align-items:center;justify-content:space-between;gap:8px;
           margin-bottom:8px;
+          flex-wrap:wrap;
+        }
+        .ncsPosSplitPaymentHeader2036 > div:first-child {
+          flex:1 1 220px;
+          min-width:0;
+        }
+        .ncsPosSplitCompleteNow2036 {
+          min-height:34px;
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          gap:7px;
+          padding:7px 12px;
+          border:0;
+          border-radius:11px;
+          background:linear-gradient(135deg,#00a67a,#16b8d4);
+          color:#fff;
+          font:inherit;
+          cursor:pointer;
+          box-shadow:0 8px 18px rgba(0,166,122,.18);
+          transition:transform .16s ease,filter .16s ease,opacity .16s ease;
+          white-space:nowrap;
+        }
+        .ncsPosSplitCompleteNow2036 span {
+          width:20px;
+          height:20px;
+          display:grid;
+          place-items:center;
+          border-radius:7px;
+          background:rgba(255,255,255,.18);
+          color:#fff;
+          font-size:9px;
+          font-weight:1000;
+        }
+        .ncsPosSplitCompleteNow2036 strong {
+          margin:0 !important;
+          color:#fff !important;
+          font-size:7px !important;
+          font-weight:1000 !important;
+          letter-spacing:.02em;
+        }
+        .ncsPosSplitCompleteNow2036 small {
+          color:rgba(255,255,255,.86);
+          font-size:6px;
+          font-weight:900;
+        }
+        .ncsPosSplitCompleteNow2036:hover:not(:disabled) {
+          transform:translateY(-1px);
+          filter:brightness(1.04);
+        }
+        .ncsPosSplitCompleteNow2036:disabled {
+          cursor:not-allowed;
+          opacity:.42;
+          filter:grayscale(.18);
+          box-shadow:none;
+          transform:none;
         }
         .ncsPosSplitPaymentHeader2036 span,
         .ncsPosSplitPaymentHeader2036 strong,
@@ -23171,6 +24076,14 @@ if (!variantsError) {
         .ncsPosSplitPaymentHeader2036 > b.pending {
           border:1px solid rgba(233,80,165,.18);background:#fff3f8;color:#b83c7a;
         }
+        @media (max-width: 760px) {
+          .ncsPosSplitPaymentHeader2036 > b {
+            margin-left:auto;
+          }
+          .ncsPosSplitCompleteNow2036 {
+            width:100%;
+          }
+        }
         .ncsPosPaymentAllocationGrid2036 {
           display:grid;
           grid-template-columns:repeat(3,minmax(0,1fr));
@@ -23193,7 +24106,7 @@ if (!variantsError) {
           font-style:normal;font-size:8px;
         }
         .ncsPosPaymentAllocationGrid2036 > label > div {
-          display:grid;grid-template-columns:15px minmax(0,1fr);align-items:center;
+          display:grid;grid-template-columns:15px minmax(0,1fr) 36px;align-items:center;
           margin-top:5px;border:1px solid rgba(91,73,180,.09);
           border-radius:9px;background:#fff;overflow:hidden;
         }
@@ -23204,6 +24117,28 @@ if (!variantsError) {
         .ncsPosPaymentAllocationGrid2036 input {
           width:100%;min-width:0;height:31px;border:0;outline:0;background:transparent;
           color:#241c45;font-size:9px;font-weight:1000;
+        }
+        .ncsPosSplitRestButton2036 {
+          height:25px;
+          margin-right:4px;
+          border:1px solid rgba(0,166,122,.16);
+          border-radius:7px;
+          background:linear-gradient(135deg,#effcf8,#e9faff);
+          color:#08785c;
+          font:inherit;
+          font-size:5.7px;
+          font-weight:1000;
+          letter-spacing:.02em;
+          cursor:pointer;
+          transition:transform .14s ease,filter .14s ease,box-shadow .14s ease;
+        }
+        .ncsPosSplitRestButton2036:hover {
+          transform:translateY(-1px);
+          filter:brightness(1.02);
+          box-shadow:0 5px 12px rgba(0,166,122,.12);
+        }
+        .ncsPosSplitPaymentPanel2036 {
+          scroll-margin-top:84px;
         }
         .ncsPosSplitPaymentSummary2036 {
           display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:6px;
@@ -23448,6 +24383,10005 @@ if (!variantsError) {
           .ncsPosPaymentAllocationGrid2036,
           .ncsPosCreditAllocationGrid2036 { grid-template-columns:1fr; }
           .ncsPosSplitPaymentSummary2036 { grid-template-columns:1fr 1fr; }
+        }
+
+        /* ============================================================
+           NCS POS V6 • COUNTER OS • FESTIVAL RUSH 2036
+           ------------------------------------------------------------
+           Goal: one-screen counter workflow with ZERO page scrolling while
+           a bill is active. Product rows own the flexible scroll area; the
+           checkout dock always stays visible. Existing stock, exact-design,
+           customer, rewards, offline, owner guard, held-bill, WhatsApp,
+           print and payment logic are intentionally unchanged.
+           ============================================================ */
+        .ncsPosCounterModeToggle2036 {
+          min-height:38px;
+          display:inline-grid;
+          grid-template-columns:20px auto;
+          grid-template-rows:auto auto;
+          align-items:center;
+          column-gap:6px;
+          padding:5px 9px !important;
+          border:1px solid rgba(255,255,255,.24) !important;
+          border-radius:11px !important;
+          background:rgba(255,255,255,.09) !important;
+          color:#fff !important;
+          font:inherit;
+          cursor:pointer;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.10);
+        }
+        .ncsPosCounterModeToggle2036.active {
+          border-color:rgba(82,244,203,.38) !important;
+          background:linear-gradient(135deg,rgba(0,166,122,.30),rgba(22,184,212,.24)) !important;
+          box-shadow:0 8px 20px rgba(0,166,122,.13),inset 0 1px 0 rgba(255,255,255,.14);
+        }
+        .ncsPosCounterModeToggle2036 > span {
+          grid-row:1 / 3;
+          width:20px;height:20px;display:grid;place-items:center;
+          border-radius:7px;background:rgba(255,255,255,.13);
+          font-size:9px;
+        }
+        .ncsPosCounterModeToggle2036 > b {
+          font-size:6.4px;font-weight:1000;line-height:1;letter-spacing:.04em;
+        }
+        .ncsPosCounterModeToggle2036 > small {
+          color:rgba(255,255,255,.62);font-size:5px;font-weight:900;line-height:1;
+        }
+
+        @media (min-width:1081px) {
+          .ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            top:6px !important;
+            right:6px !important;
+            bottom:6px !important;
+            left:98px !important;
+            display:flex !important;
+            flex-direction:column !important;
+            overflow:hidden !important;
+            border-radius:20px !important;
+            box-shadow:-22px 28px 80px rgba(3,21,63,.24),0 12px 36px rgba(10,46,115,.16) !important;
+          }
+
+          /* During active billing, keep attention on the counter surface. */
+          .ncsPosCounterOS.ncsPosBillingFocus .ncsPosAiPanel,
+          .ncsPosCounterOS.ncsPosBillingFocus .ncsPosFestivalOffer {
+            display:none !important;
+          }
+
+          .ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+            min-height:68px !important;
+            padding:8px 12px !important;
+            gap:10px !important;
+            box-shadow:0 7px 18px rgba(3,21,63,.10) !important;
+          }
+          .ncsPosCounterOS .ncsPosBillHeader h2 {
+            margin-top:2px !important;
+            font-size:24px !important;
+            line-height:.95 !important;
+          }
+          .ncsPosCounterOS .ncsPosBillLivePulse {
+            min-height:46px !important;
+            padding:7px 11px !important;
+            border-radius:13px !important;
+          }
+          .ncsPosCounterOS .ncsPosBillLivePulse strong {
+            margin-top:2px !important;
+            font-size:16px !important;
+          }
+          .ncsPosCounterOS .ncsPosBillHeaderActions {
+            gap:6px !important;
+          }
+          .ncsPosCounterOS .ncsPosBillHeaderActions > button:not(.ncsPosCounterModeToggle2036) {
+            min-height:36px !important;
+          }
+
+          .ncsPosCounterOS .ncsPosCustomerCardCompact {
+            flex:0 0 auto !important;
+            padding:7px 10px !important;
+            border-radius:0 !important;
+          }
+          .ncsPosCounterOS .ncsPosCustomerCompactRow {
+            gap:7px !important;
+            min-height:40px !important;
+          }
+          .ncsPosCounterOS .ncsPosCustomerCompactName,
+          .ncsPosCounterOS .ncsPosCustomerCompactPhone {
+            min-height:36px !important;
+            height:36px !important;
+          }
+          .ncsPosCounterOS .ncsPosWhatsAppInline {
+            min-height:36px !important;
+            padding:0 9px !important;
+          }
+          .ncsPosCounterOS .ncsPosCustomerDueAlert {
+            margin-top:5px !important;
+            padding:5px 8px !important;
+          }
+
+          .ncsPosCounterOS .ncsPosCartTableHeader {
+            min-height:29px !important;
+            padding-top:5px !important;
+            padding-bottom:5px !important;
+          }
+          .ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex:1 1 auto !important;
+            min-height:92px !important;
+            max-height:none !important;
+            height:auto !important;
+            overflow-y:auto !important;
+            overflow-x:auto !important;
+            padding:7px 10px !important;
+            scroll-behavior:smooth !important;
+            scrollbar-gutter:stable;
+          }
+          .ncsPosCounterOS .ncsPosCartItemTableRow {
+            min-height:60px !important;
+            padding-top:6px !important;
+            padding-bottom:6px !important;
+            margin-bottom:6px !important;
+            border-radius:13px !important;
+          }
+          .ncsPosCounterOS.ncsPosDenseCart .ncsPosCartItemTableRow {
+            min-height:52px !important;
+            padding-top:4px !important;
+            padding-bottom:4px !important;
+            margin-bottom:4px !important;
+          }
+          .ncsPosCounterOS.ncsPosDenseCart .ncsPosCartProductImage {
+            width:40px !important;height:40px !important;
+          }
+
+          /* One compact finance strip; never steals the product viewport. */
+          .ncsPosCounterOS .ncsPosSummary {
+            flex:0 0 auto !important;
+            display:grid !important;
+            grid-template-columns:repeat(8,minmax(0,1fr)) !important;
+            gap:5px !important;
+            padding:6px 10px !important;
+            border-radius:0 !important;
+          }
+          .ncsPosCounterOS .ncsPosSummaryLine {
+            min-width:0 !important;
+            min-height:42px !important;
+            padding:5px 7px !important;
+            border-radius:10px !important;
+          }
+          .ncsPosCounterOS .ncsPosSummaryLine span {
+            font-size:5.2px !important;
+          }
+          .ncsPosCounterOS .ncsPosSummaryLine strong {
+            margin-top:2px !important;
+            font-size:9.5px !important;
+          }
+
+          .ncsPosCounterOS .ncsPosCounterIntelligence {
+            flex:0 0 auto !important;
+            gap:3px !important;
+            margin:0 !important;
+          }
+          .ncsPosCounterOS .ncsPosShortcutStrip {
+            min-height:22px !important;
+            padding:3px 8px !important;
+            border-radius:0 !important;
+            gap:9px !important;
+          }
+          .ncsPosCounterOS .ncsPosShortcutStrip span {
+            font-size:5.7px !important;
+          }
+          .ncsPosCounterOS .ncsPosOwnerGuardStrip,
+          .ncsPosCounterOS .ncsPosActiveQueueNotice {
+            padding:4px 8px !important;
+            border-radius:8px !important;
+          }
+          .ncsPosCounterOS .ncsPosOwnerGuardStrip > span,
+          .ncsPosCounterOS .ncsPosActiveQueueNotice > span {
+            width:24px !important;height:24px !important;
+          }
+
+          /* Persistent checkout dock: always visible, never page-scrolls. */
+          .ncsPosCounterOS .ncsPosPaymentSection {
+            flex:0 0 auto !important;
+            position:relative !important;
+            z-index:90 !important;
+            gap:5px !important;
+            padding:6px 9px 8px !important;
+            border-radius:15px 15px 18px 18px !important;
+            overflow:visible !important;
+            box-shadow:0 -10px 26px rgba(20,42,85,.09) !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentHeading2036 {
+            min-height:20px !important;
+            gap:8px !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentHeading2036 > div span {
+            font-size:4.8px !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentHeading2036 > div strong {
+            margin-top:0 !important;
+            font-size:7.8px !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentHeading2036 > small {
+            padding:3px 7px !important;
+            font-size:4.8px !important;
+          }
+
+          .ncsPosCounterOS .ncsPosPaymentGrid2036 {
+            grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+            min-height:42px !important;
+            gap:5px !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentGrid2036 .ncsPosPaymentButton {
+            min-height:40px !important;
+            grid-template-columns:22px minmax(0,1fr) !important;
+            padding:4px 6px !important;
+            column-gap:5px !important;
+            border-radius:10px !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentGrid2036 .ncsPosPaymentButton > span {
+            width:22px !important;height:22px !important;border-radius:7px !important;
+            font-size:9px !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentGrid2036 .ncsPosPaymentButton > b {
+            font-size:7px !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentGrid2036 .ncsPosPaymentButton > small {
+            display:none !important;
+          }
+
+          /* Split becomes a thin in-dock router instead of a tall second page. */
+          .ncsPosCounterOS .ncsPosSplitPaymentPanel2036 {
+            padding:5px 6px !important;
+            border-radius:11px !important;
+            scroll-margin:0 !important;
+          }
+          .ncsPosCounterOS .ncsPosSplitPaymentHeader2036 {
+            min-height:22px !important;
+            margin-bottom:4px !important;
+            flex-wrap:nowrap !important;
+          }
+          .ncsPosCounterOS .ncsPosSplitPaymentHeader2036 > div:first-child {
+            flex:1 1 auto !important;
+          }
+          .ncsPosCounterOS .ncsPosSplitPaymentHeader2036 > div:first-child strong {
+            font-size:7px !important;
+          }
+          .ncsPosCounterOS .ncsPosSplitCompleteNow2036 {
+            display:none !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentAllocationGrid2036 {
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+            gap:4px !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentAllocationGrid2036 > label {
+            padding:4px !important;
+            border-radius:9px !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentAllocationGrid2036 > label > span {
+            font-size:5px !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentAllocationGrid2036 > label > span i {
+            width:16px !important;height:16px !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentAllocationGrid2036 > label > div {
+            margin-top:3px !important;
+            grid-template-columns:13px minmax(0,1fr) 34px !important;
+            border-radius:7px !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentAllocationGrid2036 > label > div > b,
+          .ncsPosCounterOS .ncsPosPaymentAllocationGrid2036 input {
+            height:27px !important;
+          }
+          .ncsPosCounterOS .ncsPosSplitRestButton2036 {
+            height:22px !important;
+            font-size:5.2px !important;
+          }
+          .ncsPosCounterOS .ncsPosSplitPaymentSummary2036 {
+            margin-top:4px !important;
+            padding-top:4px !important;
+            gap:4px !important;
+          }
+
+          /* Total + one authoritative Complete button: permanent finish lane. */
+          .ncsPosCounterOS .ncsPosPaymentSection > .ncsPosTotalLine {
+            position:relative !important;
+            bottom:auto !important;
+            display:grid !important;
+            grid-template-columns:minmax(170px,.85fr) auto minmax(250px,.75fr) !important;
+            align-items:center !important;
+            gap:10px !important;
+            min-height:54px !important;
+            margin:0 !important;
+            padding:6px 9px !important;
+            border-radius:12px !important;
+            background:linear-gradient(135deg,#fff,#f8fbff 52%,#f2fffb) !important;
+          }
+          .ncsPosCounterOS .ncsPosTotalLine > div > small {
+            display:none !important;
+          }
+          .ncsPosCounterOS .ncsPosTotalLine > strong {
+            font-size:24px !important;
+            line-height:1 !important;
+          }
+          .ncsPosCounterOS .ncsPosCompleteButtonInline {
+            min-height:42px !important;
+            margin:0 !important;
+            padding:6px 10px !important;
+            border-radius:11px !important;
+          }
+          .ncsPosCounterOS .ncsPosCompleteButtonInline > span {
+            width:27px !important;height:27px !important;
+          }
+          .ncsPosCounterOS .ncsPosCompleteButtonInline strong {
+            font-size:9px !important;
+          }
+          .ncsPosCounterOS .ncsPosCompleteButtonInline small {
+            font-size:6px !important;
+          }
+          .ncsPosCounterOS .ncsPosPaymentSection > .ncsPosCompleteButton:not(.ncsPosCompleteButtonInline) {
+            display:none !important;
+          }
+
+          /* Credit remains full-featured but compact enough to stay on-screen. */
+          .ncsPosCounterOS .ncsPosCreditPanel {
+            max-height:154px !important;
+            overflow-y:auto !important;
+            padding:6px !important;
+            border-radius:11px !important;
+            scrollbar-width:thin;
+          }
+          .ncsPosCounterOS .ncsPosCreditTitle {
+            margin-bottom:4px !important;
+          }
+          .ncsPosCounterOS .ncsPosCreditPaidNowMatrix2036 {
+            padding:5px !important;
+            margin-bottom:5px !important;
+          }
+          .ncsPosCounterOS .ncsPosCreditPaidNowTitle2036 {
+            margin-bottom:4px !important;
+          }
+          .ncsPosCounterOS .ncsPosCreditAllocationGrid2036 {
+            grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          }
+          .ncsPosCounterOS .ncsPosCreditSummary {
+            gap:4px !important;
+          }
+        }
+
+        @media (min-width:1081px) and (max-height:820px) {
+          .ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader { min-height:62px !important;padding:6px 10px !important; }
+          .ncsPosCounterOS .ncsPosCustomerCardCompact { padding:5px 9px !important; }
+          .ncsPosCounterOS .ncsPosCustomerCompactRow { min-height:36px !important; }
+          .ncsPosCounterOS .ncsPosCustomerCompactName,
+          .ncsPosCounterOS .ncsPosCustomerCompactPhone,
+          .ncsPosCounterOS .ncsPosWhatsAppInline { min-height:32px !important;height:32px !important; }
+          .ncsPosCounterOS .ncsPosSummary { padding:4px 8px !important; }
+          .ncsPosCounterOS .ncsPosSummaryLine { min-height:36px !important;padding:4px 6px !important; }
+          .ncsPosCounterOS .ncsPosShortcutStrip { display:none !important; }
+          .ncsPosCounterOS .ncsPosPaymentSection { gap:4px !important;padding:5px 8px 6px !important; }
+          .ncsPosCounterOS .ncsPosPaymentHeading2036 { display:none !important; }
+          .ncsPosCounterOS .ncsPosPaymentGrid2036 { min-height:38px !important; }
+          .ncsPosCounterOS .ncsPosPaymentGrid2036 .ncsPosPaymentButton { min-height:36px !important; }
+          .ncsPosCounterOS .ncsPosPaymentSection > .ncsPosTotalLine { min-height:48px !important; }
+          .ncsPosCounterOS .ncsPosTotalLine > strong { font-size:21px !important; }
+          .ncsPosCounterOS .ncsPosSplitPaymentSummary2036 { display:none !important; }
+          .ncsPosCounterOS .ncsPosCreditPanel { max-height:132px !important; }
+        }
+
+        /* ============================================================
+           NCS POS 2036 V5.7 • FESTIVAL RUSH CHECKOUT
+           Split automatically lifts into view, focuses Cash, and gives
+           each payment lane a REST button for one-tap exact balance.
+           No automatic payment / no automatic completion.
+           ============================================================ */
+        .ncsPosSplitPaymentPanel2036 {
+          outline:1px solid rgba(109,77,255,.035);
+        }
+
+        /* ============================================================
+           NCS POS 2036 V5.5 • ACTIVE BILL CART VIEWPORT FIX
+           Keeps every product ABOVE summary/payment, gives only the
+           product rows the remaining viewport height, and makes the
+           newest row reveal smoothly. Existing POS logic is untouched.
+           ============================================================ */
+        @media (min-width:1081px) {
+          .ncsPosBillingFocus .ncsPosBillPanel {
+            display:flex !important;
+            flex-direction:column !important;
+            overflow:hidden !important;
+            overscroll-behavior:contain !important;
+          }
+
+          .ncsPosBillingFocus .ncsPosBillHeader,
+          .ncsPosBillingFocus .ncsPosCustomerCard,
+          .ncsPosBillingFocus .ncsPosCartTableHeader,
+          .ncsPosBillingFocus .ncsPosSummary,
+          .ncsPosBillingFocus .ncsPosCounterIntelligence,
+          .ncsPosBillingFocus .ncsPosPaymentSection {
+            flex:0 0 auto !important;
+          }
+
+          .ncsPosBillingFocus .ncsPosCartItems {
+            flex:1 1 auto !important;
+            min-height:110px !important;
+            max-height:none !important;
+            height:auto !important;
+            overflow-x:auto !important;
+            overflow-y:auto !important;
+            overscroll-behavior:contain !important;
+            scroll-behavior:smooth !important;
+            scrollbar-gutter:stable;
+            -webkit-overflow-scrolling:touch;
+          }
+
+          .ncsPosBillingFocus .ncsPosCartItem {
+            scroll-margin-block:10px;
+          }
+
+          .ncsPosBillingFocus .ncsPosPaymentSection {
+            position:relative !important;
+            inset:auto !important;
+            overflow:visible !important;
+          }
+
+          .ncsPosBillingFocus .ncsPosPaymentSection > .ncsPosTotalLine {
+            position:relative !important;
+            bottom:auto !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS V7 • LIVING COUNTER OS • 2036
+           Visual/state architecture only. Existing billing, stock,
+           exact-photo design, offline sync, rewards, credit, split,
+           owner guard, held bills, print and WhatsApp logic is preserved.
+           ============================================================ */
+        .ncsPosV7Living {
+          --v7-ink:#080d18;
+          --v7-shell:#0d1322;
+          --v7-shell-2:#121a2c;
+          --v7-line:rgba(145,166,214,.16);
+          --v7-text:#eef4ff;
+          --v7-muted:#8e9bb5;
+          --v7-cyan:#45e6f2;
+          --v7-violet:#8b6cff;
+          --v7-green:#42e6a4;
+          --v7-gold:#f3cb62;
+          --v7-pink:#ff70b7;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS {
+          min-height:100vh !important;
+          background:
+            radial-gradient(circle at 13% -10%,rgba(139,108,255,.18),transparent 28%),
+            radial-gradient(circle at 94% 0%,rgba(69,230,242,.12),transparent 30%),
+            linear-gradient(180deg,#080d18 0%,#0c1321 52%,#0a101c 100%) !important;
+          color:var(--v7-text);
+        }
+
+        @media (min-width:1081px) {
+          .ncsPosV7Living.ncsPosCounterOS {
+            height:100vh !important;
+            min-height:0 !important;
+            overflow:hidden !important;
+            padding:10px 12px !important;
+            display:grid !important;
+            grid-template-rows:auto auto minmax(0,1fr) !important;
+            gap:8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+            min-height:72px !important;
+            height:72px !important;
+            margin:0 !important;
+            padding:10px 14px !important;
+            display:grid !important;
+            grid-template-columns:minmax(330px,1fr) auto !important;
+            align-items:center !important;
+            border:1px solid rgba(139,108,255,.24) !important;
+            border-radius:20px !important;
+            background:
+              radial-gradient(circle at 75% -120%,rgba(69,230,242,.28),transparent 42%),
+              linear-gradient(115deg,#14172d,#2a2056 48%,#10394b 100%) !important;
+            box-shadow:0 15px 45px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.07) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader::after {
+            content:"NCS" !important;
+            top:-21px !important;
+            right:18% !important;
+            font-size:92px !important;
+            opacity:.035 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > div:first-child {
+            max-width:none !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1 {
+            margin:2px 0 0 !important;
+            color:#fff !important;
+            font-size:25px !important;
+            line-height:1 !important;
+            letter-spacing:-.7px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader p {
+            margin:4px 0 0 !important;
+            max-width:640px !important;
+            color:#9da9c1 !important;
+            font-size:9px !important;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosEyebrow {
+            padding:0 !important;
+            background:none !important;
+            border:0 !important;
+            color:var(--v7-cyan) !important;
+            font-size:8px !important;
+            letter-spacing:.14em !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCustomerQueue { display:none !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+            position:static !important;
+            display:flex !important;
+            align-items:center !important;
+            gap:6px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button {
+            min-height:39px !important;
+            padding:7px 10px !important;
+            border:1px solid rgba(255,255,255,.11) !important;
+            border-radius:12px !important;
+            background:rgba(255,255,255,.055) !important;
+            color:#dce7fb !important;
+            box-shadow:none !important;
+            font-size:9px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button:hover {
+            border-color:rgba(69,230,242,.42) !important;
+            background:rgba(69,230,242,.09) !important;
+            transform:translateY(-1px);
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7RushToggle {
+            display:flex !important;
+            align-items:center !important;
+            gap:7px !important;
+            min-width:84px;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7RushToggle > span {
+            width:25px;height:25px;display:grid;place-items:center;
+            border-radius:8px;background:rgba(139,108,255,.15);color:#b9a9ff;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7RushToggle div { text-align:left;line-height:1; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7RushToggle b,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7RushToggle small { display:block; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7RushToggle small { margin-top:3px;color:#8290aa;font-size:7px; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7RushToggle.active {
+            border-color:rgba(66,230,164,.42) !important;
+            background:rgba(66,230,164,.11) !important;
+            color:#81f0c1 !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7RushToggle.active > span {
+            background:rgba(66,230,164,.15);color:#71efbb;
+          }
+
+          /* Old dashboard cards are still available in Classic mode. Living OS
+             uses the compact signal rail instead of making the cashier scan cards. */
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosQuickStats { display:none !important; }
+
+          .ncsPosV7CommandDeck {
+            min-height:42px;
+            padding:5px 7px;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:8px;
+            border:1px solid var(--v7-line);
+            border-radius:15px;
+            background:linear-gradient(90deg,rgba(18,26,44,.96),rgba(12,20,34,.96));
+            box-shadow:0 10px 28px rgba(0,0,0,.18);
+          }
+          .ncsPosV7CommandIdentity {
+            min-width:190px;
+            display:flex;align-items:center;gap:8px;
+            padding:0 8px;
+          }
+          .ncsPosV7CommandIdentity > i {
+            width:8px;height:8px;border-radius:50%;background:#ff6565;box-shadow:0 0 0 4px rgba(255,101,101,.08);
+          }
+          .ncsPosV7CommandIdentity > i.online { background:var(--v7-green);box-shadow:0 0 0 4px rgba(66,230,164,.08),0 0 14px rgba(66,230,164,.36); }
+          .ncsPosV7CommandIdentity span { color:#edf4ff;font-size:8px;font-weight:1000;letter-spacing:.13em; }
+          .ncsPosV7CommandIdentity strong { margin-left:auto;color:#75829a;font-size:7px;letter-spacing:.10em; }
+          .ncsPosV7CommandSignals { display:flex;align-items:stretch;gap:5px; }
+          .ncsPosV7CommandSignals > span,
+          .ncsPosV7CommandSignals > button {
+            min-width:72px;
+            min-height:30px;
+            padding:4px 9px;
+            display:flex;flex-direction:column;justify-content:center;
+            border:1px solid rgba(147,165,208,.12);
+            border-radius:10px;
+            background:rgba(255,255,255,.035);
+            color:#dce6f8;
+            text-align:left;
+            font:inherit;
+          }
+          .ncsPosV7CommandSignals > button { cursor:pointer; }
+          .ncsPosV7CommandSignals small { color:#738199;font-size:6px;font-weight:900;letter-spacing:.12em; }
+          .ncsPosV7CommandSignals b { margin-top:2px;color:#edf5ff;font-size:9px;font-weight:1000; }
+          .ncsPosV7CommandSignals .money { min-width:120px;border-color:rgba(69,230,242,.18);background:rgba(69,230,242,.055); }
+          .ncsPosV7CommandSignals .money b { color:var(--v7-cyan);font-size:11px; }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosWorkspace {
+            min-height:0 !important;
+            height:100% !important;
+            margin:0 !important;
+            display:grid !important;
+            grid-template-columns:minmax(360px,.86fr) minmax(620px,1.14fr) !important;
+            gap:8px !important;
+            overflow:hidden !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosWorkspace {
+            grid-template-columns:minmax(330px,.68fr) minmax(680px,1.32fr) !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogue,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBillPanel {
+            min-height:0 !important;
+            height:100% !important;
+            border:1px solid var(--v7-line) !important;
+            border-radius:18px !important;
+            background:linear-gradient(180deg,rgba(16,24,41,.985),rgba(11,18,31,.985)) !important;
+            box-shadow:0 18px 48px rgba(0,0,0,.23) !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogue {
+            display:flex !important;
+            flex-direction:column !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchPanel {
+            flex:0 0 auto;
+            margin:0 !important;
+            padding:8px !important;
+            border:0 !important;
+            border-bottom:1px solid var(--v7-line) !important;
+            border-radius:0 !important;
+            background:rgba(8,14,25,.92) !important;
+            box-shadow:none !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchPanel input {
+            height:45px !important;
+            border:1px solid rgba(69,230,242,.20) !important;
+            border-radius:13px !important;
+            background:#0b1423 !important;
+            color:#f2f7ff !important;
+            font-size:13px !important;
+            box-shadow:inset 0 0 0 1px rgba(255,255,255,.025) !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchPanel input:focus {
+            border-color:rgba(69,230,242,.68) !important;
+            box-shadow:0 0 0 3px rgba(69,230,242,.08),0 0 28px rgba(69,230,242,.06) !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchButton,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchQuickItemButton {
+            min-height:45px !important;
+            border-radius:12px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchButton { background:linear-gradient(135deg,#7057e8,#3e8fd9) !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchQuickItemButton { background:linear-gradient(135deg,#10374b,#125c64) !important;color:#bffcff !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchTelemetry { color:#718099 !important; }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel { flex:0 0 auto; }
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosAiPanel:not(.expanded) {
+            width:auto !important;
+            min-height:0 !important;
+            padding:0 8px 6px !important;
+            background:transparent !important;
+            border:0 !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosAiPanel { display:none !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryRail,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosProductArea,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosProductsArea,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosProductGridWrap {
+            min-height:0 !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosProductGrid,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosGroupedProducts,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrix {
+            scrollbar-color:#394964 transparent;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosGroupedCard,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosProductCard,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCompactProduct,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPopularProduct {
+            border-color:rgba(142,161,204,.13) !important;
+            background:linear-gradient(180deg,#121d30,#0e1828) !important;
+            color:#e8f0ff !important;
+            box-shadow:none !important;
+          }
+
+          /* Bill lane */
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBillPanel {
+            display:flex !important;
+            flex-direction:column !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeader {
+            min-height:66px !important;
+            height:auto !important;
+            padding:8px 10px !important;
+            border-radius:0 !important;
+            border-bottom:1px solid rgba(139,108,255,.18) !important;
+            background:
+              radial-gradient(circle at 72% -140%,rgba(69,230,242,.24),transparent 45%),
+              linear-gradient(100deg,#17162c,#22204a 55%,#123344) !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeader > div:first-child span { color:#8e9bb5 !important;font-size:7px !important;letter-spacing:.13em; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeader h2 { color:#fff !important;font-size:18px !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBillLivePulse {
+            min-width:145px !important;
+            border:1px solid rgba(69,230,242,.15) !important;
+            background:rgba(7,18,30,.42) !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBillLivePulse strong { color:var(--v7-cyan) !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeaderActions button {
+            min-height:30px !important;
+            border-radius:9px !important;
+            border-color:rgba(255,255,255,.12) !important;
+            background:rgba(255,255,255,.055) !important;
+            color:#e6eeff !important;
+            box-shadow:none !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCounterModeToggle2036.active {
+            border-color:rgba(139,108,255,.45) !important;
+            background:rgba(139,108,255,.15) !important;
+          }
+
+          .ncsPosV7CustomerTrigger {
+            flex:0 0 auto;
+            min-height:38px;
+            margin:6px 8px 0;
+            padding:5px 8px;
+            display:grid;
+            grid-template-columns:28px minmax(0,1fr) auto 20px;
+            align-items:center;
+            gap:7px;
+            border:1px solid rgba(255,112,183,.16);
+            border-radius:11px;
+            background:linear-gradient(90deg,rgba(255,112,183,.055),rgba(139,108,255,.045));
+            color:#e9f0ff;
+            text-align:left;
+            font:inherit;
+            cursor:pointer;
+          }
+          .ncsPosV7CustomerTrigger > span { width:27px;height:27px;display:grid;place-items:center;border-radius:9px;background:rgba(255,112,183,.11);color:#ff93c7; }
+          .ncsPosV7CustomerTrigger div small,
+          .ncsPosV7CustomerTrigger div strong { display:block; }
+          .ncsPosV7CustomerTrigger div small { color:#8c98af;font-size:6px;font-weight:1000;letter-spacing:.12em; }
+          .ncsPosV7CustomerTrigger div strong { margin-top:2px;color:#f1f5ff;font-size:9px;font-weight:900; }
+          .ncsPosV7CustomerTrigger > b { padding:4px 7px;border-radius:7px;background:rgba(255,101,101,.09);color:#ff9999;font-size:7px; }
+          .ncsPosV7CustomerTrigger > i { color:#7d8ba6;font-style:normal;text-align:center; }
+          .ncsPosV7CustomerTrigger.vip { border-color:rgba(243,203,98,.25);background:linear-gradient(90deg,rgba(243,203,98,.08),rgba(139,108,255,.05)); }
+          .ncsPosV7CustomerTrigger.vip > span { background:rgba(243,203,98,.12);color:var(--v7-gold); }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CustomerHidden { display:none !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCustomerCardCompact {
+            flex:0 0 auto !important;
+            margin:5px 8px 0 !important;
+            padding:6px 8px !important;
+            border:1px solid rgba(255,112,183,.14) !important;
+            border-radius:11px !important;
+            background:#111a2a !important;
+            box-shadow:none !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCustomerCompactName,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCustomerCompactPhone,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosWhatsAppInline {
+            background:#0c1524 !important;
+            border-color:rgba(139,108,255,.15) !important;
+            color:#edf4ff !important;
+          }
+
+          .ncsPosV7LastScanCore {
+            flex:0 0 auto;
+            min-height:50px;
+            margin:6px 8px 0;
+            padding:5px 7px;
+            display:grid;
+            grid-template-columns:42px minmax(0,1fr) auto;
+            align-items:center;
+            gap:8px;
+            border:1px solid rgba(69,230,242,.13);
+            border-radius:12px;
+            background:
+              radial-gradient(circle at 0 50%,rgba(69,230,242,.08),transparent 22%),
+              linear-gradient(90deg,#0f1b2c,#101929);
+            overflow:hidden;
+          }
+          .ncsPosV7LastScanCore.pulse { animation:ncsV7ScanPulse .54s ease-out; }
+          @keyframes ncsV7ScanPulse {
+            0% { transform:scale(.985);border-color:rgba(66,230,164,.78);box-shadow:0 0 0 0 rgba(66,230,164,.35); }
+            55% { box-shadow:0 0 0 8px rgba(66,230,164,0); }
+            100% { transform:scale(1); }
+          }
+          .ncsPosV7LastScanMedia {
+            width:42px;height:42px;display:grid;place-items:center;overflow:hidden;
+            border-radius:10px;background:#08121f;color:#5fe9f0;
+          }
+          .ncsPosV7LastScanMedia img { width:100%;height:100%;object-fit:cover; }
+          .ncsPosV7LastScanCopy { min-width:0; }
+          .ncsPosV7LastScanCopy small { display:block;color:var(--v7-green);font-size:6px;font-weight:1000;letter-spacing:.13em; }
+          .ncsPosV7LastScanCopy strong { display:block;margin-top:2px;color:#f2f7ff;font-size:11px;font-weight:1000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+          .ncsPosV7LastScanCopy span { display:block;margin-top:2px;color:#7f8da7;font-size:7px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+          .ncsPosV7LastScanSignals { display:flex;gap:4px; }
+          .ncsPosV7LastScanSignals > span { min-width:62px;padding:5px 7px;border:1px solid rgba(145,164,207,.10);border-radius:9px;background:rgba(255,255,255,.025); }
+          .ncsPosV7LastScanSignals small,.ncsPosV7LastScanSignals b { display:block; }
+          .ncsPosV7LastScanSignals small { color:#748199;font-size:5px;font-weight:1000;letter-spacing:.11em; }
+          .ncsPosV7LastScanSignals b { margin-top:2px;color:#e8f0ff;font-size:8px;font-weight:1000; }
+          .ncsPosV7LastScanSignals .onlineDesign { border-color:rgba(139,108,255,.20);background:rgba(139,108,255,.07); }
+          .ncsPosV7LastScanSignals .onlineDesign b { color:#b8a9ff; }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCartTableHeader {
+            flex:0 0 auto !important;
+            margin:5px 8px 0 !important;
+            min-height:24px !important;
+            border:0 !important;
+            border-radius:8px !important;
+            background:#0b1422 !important;
+            color:#70809a !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItems {
+            flex:1 1 auto !important;
+            min-height:72px !important;
+            margin:0 4px 0 8px !important;
+            padding:5px 4px 5px 0 !important;
+            overflow-y:auto !important;
+            background:transparent !important;
+            scrollbar-color:#32435d transparent;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItemTableRow,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItem {
+            min-height:50px !important;
+            margin-bottom:4px !important;
+            border:1px solid rgba(143,160,200,.10) !important;
+            border-radius:11px !important;
+            background:#111a2a !important;
+            color:#edf4ff !important;
+            box-shadow:none !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCartProductInfo h3,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCartProductCell h3,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosItemLineTotal strong { color:#f2f7ff !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItem input {
+            background:#0b1422 !important;color:#eef4ff !important;border-color:rgba(130,149,191,.15) !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosDenseCart .ncsPosCartItemTableRow { min-height:43px !important; }
+
+          /* Summary becomes a compact transaction strip rather than a dashboard. */
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSummary {
+            flex:0 0 auto !important;
+            margin:5px 8px 0 !important;
+            padding:5px 6px !important;
+            display:grid !important;
+            grid-template-columns:132px repeat(4,minmax(0,1fr)) 132px !important;
+            gap:4px !important;
+            border:1px solid rgba(139,108,255,.13) !important;
+            border-radius:11px !important;
+            background:#0f1828 !important;
+            box-shadow:none !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSummaryLine,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosDiscountField,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosRoundOffField {
+            min-width:0 !important;min-height:34px !important;margin:0 !important;padding:4px 5px !important;
+            border:0 !important;border-radius:8px !important;background:rgba(255,255,255,.025) !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSummaryLine span,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosDiscountField > span,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosRoundOffField > span { color:#748299 !important;font-size:6px !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSummaryLine strong { color:#eef5ff !important;font-size:9px !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSummaryLine:nth-of-type(n+5) { display:none !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosRewardDiscountLine { display:none !important; }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCounterIntelligence {
+            flex:0 0 auto !important;
+            margin:4px 8px 0 !important;
+            gap:3px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosShortcutStrip {
+            padding:3px 5px !important;border-color:rgba(139,108,255,.10) !important;background:#0e1726 !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosShortcutStrip span { color:#77859c !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosShortcutStrip b { background:#2a2453 !important;color:#bcaeff !important; }
+
+          /* Persistent PAY DOCK */
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentSection {
+            flex:0 0 auto !important;
+            position:relative !important;
+            bottom:auto !important;
+            margin-top:5px !important;
+            padding:6px 8px 7px !important;
+            display:grid !important;
+            gap:5px !important;
+            border:0 !important;
+            border-top:1px solid rgba(69,230,242,.13) !important;
+            border-radius:0 !important;
+            background:
+              radial-gradient(circle at 90% 120%,rgba(69,230,242,.08),transparent 35%),
+              linear-gradient(180deg,#0d1727,#0a121f) !important;
+            box-shadow:0 -13px 34px rgba(0,0,0,.18) !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentHeading2036 { display:none !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentGrid2036 {
+            display:grid !important;
+            grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+            gap:5px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentGrid2036 .ncsPosPaymentButton {
+            min-height:38px !important;
+            padding:5px 7px !important;
+            display:grid !important;
+            grid-template-columns:25px 1fr !important;
+            grid-template-rows:auto auto !important;
+            align-items:center !important;
+            column-gap:6px !important;
+            border:1px solid rgba(143,161,203,.12) !important;
+            border-radius:10px !important;
+            background:#111b2c !important;
+            color:#cbd6ea !important;
+            box-shadow:none !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentGrid2036 .ncsPosPaymentButton > span { grid-row:1/3;width:25px;height:25px;display:grid;place-items:center;border-radius:8px;background:rgba(255,255,255,.05);font-size:12px !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentGrid2036 .ncsPosPaymentButton b { font-size:9px !important;text-align:left !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentGrid2036 .ncsPosPaymentButton small { font-size:6px !important;text-align:left !important;color:#6f7d95 !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentGrid2036 .ncsPosPaymentActive {
+            border-color:rgba(69,230,242,.42) !important;
+            background:linear-gradient(135deg,rgba(69,230,242,.12),rgba(139,108,255,.09)) !important;
+            color:#ecfbff !important;
+            box-shadow:inset 0 0 0 1px rgba(69,230,242,.06) !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentGrid2036 .ncsPosPaymentActive > span { background:rgba(69,230,242,.12);color:#73f3fb; }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSplitPaymentPanel2036 {
+            margin:0 !important;padding:5px !important;border:1px solid rgba(139,108,255,.16) !important;border-radius:10px !important;background:#10192a !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSplitPaymentHeader2036 { min-height:0 !important;margin:0 0 4px !important;padding:0 2px !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSplitPaymentHeader2036 > div strong { font-size:8px !important;color:#dce6f7 !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSplitPaymentHeader2036 > div span { font-size:6px !important;color:#8f7fff !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSplitCompleteNow2036 { display:none !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentAllocationGrid2036 { grid-template-columns:repeat(3,minmax(0,1fr)) !important;gap:4px !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentAllocationGrid2036 label { padding:4px !important;border-radius:8px !important;background:#0b1422 !important;border-color:rgba(143,161,203,.10) !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentAllocationGrid2036 label > span { font-size:6px !important;color:#718098 !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentAllocationGrid2036 input { min-height:28px !important;height:28px !important;background:#08111e !important;color:#eef5ff !important;border-color:rgba(69,230,242,.14) !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSplitRestButton2036 { min-height:25px !important;height:25px !important;background:#2b2458 !important;color:#bfb0ff !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSplitPaymentSummary2036 { padding:3px 4px !important;background:transparent !important;border:0 !important; }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentSection > .ncsPosTotalLine {
+            min-height:52px !important;
+            margin:0 !important;
+            padding:6px 7px !important;
+            display:grid !important;
+            grid-template-columns:minmax(110px,1fr) auto minmax(190px,240px) !important;
+            align-items:center !important;
+            gap:8px !important;
+            border:1px solid rgba(69,230,242,.16) !important;
+            border-radius:12px !important;
+            background:
+              radial-gradient(circle at 100% 50%,rgba(66,230,164,.13),transparent 30%),
+              linear-gradient(100deg,#132039,#17244a 60%,#123c43) !important;
+            color:#fff !important;
+            box-shadow:0 10px 22px rgba(0,0,0,.18) !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine > div span { color:#8da0bd !important;font-size:7px !important;letter-spacing:.08em; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine > div small { color:#60718d !important;font-size:6px !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine > strong { color:#fff !important;font-size:24px !important;letter-spacing:-.8px; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline {
+            min-height:39px !important;margin:0 !important;border-radius:10px !important;
+            background:linear-gradient(135deg,#23b984,#2fa6c5) !important;
+            color:#fff !important;box-shadow:0 8px 20px rgba(35,185,132,.18) !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentSection > .ncsPosCompleteButton { display:none !important; }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCreditPanel {
+            max-height:126px !important;
+            margin:0 !important;
+            padding:5px !important;
+            overflow:auto !important;
+            border:1px solid rgba(243,203,98,.15) !important;
+            border-radius:10px !important;
+            background:#17180f !important;
+          }
+
+          /* Rush mode: reduce visual work, preserve controls. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode *,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode *::before,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode *::after {
+            animation-duration:.001ms !important;
+            animation-iteration-count:1 !important;
+            transition-duration:.06s !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosFestivalOffer { display:none !important; }
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosShortcutStrip { display:none !important; }
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosV7LastScanCore { min-height:45px !important; }
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosV7LastScanSignals span:nth-child(3) { display:none !important; }
+        }
+
+        @media (min-width:1081px) and (max-height:790px) {
+          .ncsPosV7Living.ncsPosCounterOS { padding:7px 9px !important;gap:6px !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader { height:62px !important;min-height:62px !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader p { display:none !important; }
+          .ncsPosV7CommandDeck { min-height:36px;padding:3px 5px; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeader { min-height:55px !important;padding:5px 8px !important; }
+          .ncsPosV7CustomerTrigger { min-height:33px;margin-top:4px; }
+          .ncsPosV7LastScanCore { min-height:43px;margin-top:4px; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSummary { margin-top:3px !important;padding:3px 5px !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCounterIntelligence { display:none !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentSection { margin-top:3px !important;padding:4px 6px 5px !important; }
+        }
+
+        @media (max-width:1080px) {
+          .ncsPosV7CommandDeck { display:none !important; }
+          .ncsPosV7CustomerTrigger { display:none !important; }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CustomerHidden { display:block !important; }
+          .ncsPosV7LastScanCore { display:none !important; }
+          .ncsPosV7Living .ncsPosV7RushToggle { display:none !important; }
+        }
+
+
+        /* ============================================================
+           NCS POS V7.1 • VIEWPORT FIT + CATALOGUE SCROLL • 2036
+           Layout-only correction for nested Admin shell.
+           Keeps every V7 billing / stock / payment / AI function unchanged.
+           ============================================================ */
+        @media (min-width:1081px) {
+          /* The POS runs below the Admin LIVE BUSINESS ALERTS rail.
+             100vh made the Counter OS taller than the usable workspace,
+             which caused the bottom dock / names to be clipped and also
+             created an unwanted outer-page scroll. */
+          .ncsPosV7Living.ncsPosCounterOS {
+            box-sizing:border-box !important;
+            height:calc(100dvh - 88px) !important;
+            max-height:calc(100dvh - 88px) !important;
+            min-height:560px !important;
+            overflow:hidden !important;
+          }
+
+          /* Left Product Universe gets its own independent scroll lane.
+             Search stays visible; categories, Smart Product Finder and the
+             complete Brand Intelligence Matrix can move under it. */
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogue {
+            overflow-y:auto !important;
+            overflow-x:hidden !important;
+            overscroll-behavior:contain !important;
+            scrollbar-gutter:stable;
+            scrollbar-width:thin;
+            scrollbar-color:#465a78 transparent;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogue::-webkit-scrollbar {
+            width:7px;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogue::-webkit-scrollbar-track {
+            background:transparent;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogue::-webkit-scrollbar-thumb {
+            border:2px solid transparent;
+            border-radius:999px;
+            background:linear-gradient(#7867ee,#2e9cb0) padding-box;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogue > * {
+            flex-shrink:0 !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchPanel {
+            position:sticky !important;
+            top:0 !important;
+            z-index:90 !important;
+            box-shadow:0 8px 22px rgba(0,0,0,.24) !important;
+          }
+
+          /* Do not let the 8-node Brand Matrix shrink when the available
+             screen height is shorter. It remains complete and becomes
+             reachable through the catalogue's own scroll lane. */
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixShell {
+            flex:0 0 auto !important;
+            min-height:0 !important;
+            margin-bottom:18px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixViewport {
+            flex:0 0 314px !important;
+            height:314px !important;
+            min-height:314px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixPager {
+            position:relative !important;
+            z-index:3 !important;
+          }
+
+          /* Right Bill Lane stays fixed inside the fitted Counter OS.
+             Only its item lane scrolls, so Pay Dock / Complete remains visible. */
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBillPanel {
+            min-height:0 !important;
+            max-height:100% !important;
+            overflow:hidden !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItems {
+            min-height:58px !important;
+            overscroll-behavior:contain !important;
+          }
+
+          /* Keep headings / action names readable instead of allowing the
+             nested Admin shell to crop their text. */
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeader,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandDeck {
+            overflow:visible !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeader h2,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixCard strong {
+            line-height:1.16 !important;
+          }
+
+          /* Festival visual remains available, but becomes a compact corner
+             signal instead of covering the payment/bill workspace. */
+          .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosRushMode) .ncsPosFestivalOffer {
+            transform:scale(.72) !important;
+            transform-origin:bottom right !important;
+            right:10px !important;
+            bottom:10px !important;
+            margin:0 !important;
+            z-index:140 !important;
+          }
+        }
+
+        @media (min-width:1081px) and (max-height:760px) {
+          .ncsPosV7Living.ncsPosCounterOS {
+            height:calc(100dvh - 82px) !important;
+            max-height:calc(100dvh - 82px) !important;
+            min-height:520px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+            min-height:56px !important;
+            height:56px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1 {
+            font-size:21px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixViewport,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixGrid {
+            height:294px !important;
+            min-height:294px !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS V7.2 • COMPACT AI ORB / COPILOT DRAWER • 2036
+           Visual-only AI launcher refinement.
+           AI commands, billing, stock, payment and sale logic unchanged.
+           ============================================================ */
+
+        /* Tiny right-bottom AI orb instead of the old large launcher. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed {
+          position:fixed !important;
+          left:auto !important;
+          right:16px !important;
+          bottom:16px !important;
+          width:58px !important;
+          height:58px !important;
+          min-width:58px !important;
+          min-height:58px !important;
+          margin:0 !important;
+          padding:0 !important;
+          border:0 !important;
+          border-radius:19px !important;
+          background:transparent !important;
+          box-shadow:none !important;
+          overflow:visible !important;
+          z-index:18120 !important;
+          pointer-events:auto !important;
+          animation:none !important;
+          transform:none !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed::before,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed::after,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosAiMascotBubble {
+          display:none !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosAiMascotRunner.ncsPosAiRealCoupleLauncher {
+          position:absolute !important;
+          right:0 !important;
+          bottom:0 !important;
+          width:58px !important;
+          min-width:58px !important;
+          height:58px !important;
+          min-height:58px !important;
+          padding:0 !important;
+          margin:0 !important;
+          border:0 !important;
+          background:transparent !important;
+          box-shadow:none !important;
+          overflow:visible !important;
+          display:block !important;
+          opacity:1 !important;
+          visibility:visible !important;
+          pointer-events:auto !important;
+          transition:width .18s ease !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosPremiumAiButton {
+          position:absolute !important;
+          right:0 !important;
+          bottom:0 !important;
+          width:58px !important;
+          min-width:58px !important;
+          height:58px !important;
+          min-height:58px !important;
+          padding:6px !important;
+          display:grid !important;
+          grid-template-columns:46px 0 !important;
+          align-items:center !important;
+          gap:0 !important;
+          overflow:hidden !important;
+          border:1px solid rgba(111,232,239,.34) !important;
+          border-radius:19px !important;
+          background:
+            radial-gradient(circle at 78% 5%,rgba(81,231,225,.26),transparent 34%),
+            linear-gradient(145deg,#241542,#5132bd 58%,#0d8292) !important;
+          color:#fff !important;
+          box-shadow:0 14px 34px rgba(13,15,42,.34),inset 0 1px 0 rgba(255,255,255,.16) !important;
+          transition:width .18s ease,grid-template-columns .18s ease,box-shadow .18s ease,transform .18s ease !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosPremiumAiOrb {
+          width:46px !important;
+          height:46px !important;
+          border-radius:15px !important;
+          background:linear-gradient(145deg,#f5d75f,#dfad35) !important;
+          color:#251744 !important;
+          box-shadow:0 7px 18px rgba(232,188,56,.25),inset 0 1px 0 rgba(255,255,255,.60) !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosPremiumAiOrb::before {
+          content:"";
+          position:absolute;
+          inset:-5px;
+          border:1px solid rgba(74,231,225,.30);
+          border-radius:18px;
+          animation:ncsV72AiOrbit 2.4s ease-in-out infinite;
+        }
+        @keyframes ncsV72AiOrbit {
+          0%,100% { transform:scale(.92); opacity:.30; }
+          50% { transform:scale(1.08); opacity:.82; }
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosPremiumAiCopy,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosPremiumAiLive,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosPremiumAiArrow {
+          opacity:0 !important;
+          pointer-events:none !important;
+          white-space:nowrap !important;
+          transition:opacity .12s ease .04s !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed:hover .ncsPosAiMascotRunner.ncsPosAiRealCoupleLauncher,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed:focus-within .ncsPosAiMascotRunner.ncsPosAiRealCoupleLauncher {
+          width:178px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed:hover .ncsPosPremiumAiButton,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed:focus-within .ncsPosPremiumAiButton {
+          width:178px !important;
+          min-width:178px !important;
+          grid-template-columns:46px minmax(0,1fr) !important;
+          gap:8px !important;
+          transform:translateY(-2px) !important;
+          box-shadow:0 18px 40px rgba(13,15,42,.40),0 0 28px rgba(64,220,224,.12),inset 0 1px 0 rgba(255,255,255,.17) !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed:hover .ncsPosPremiumAiCopy,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed:focus-within .ncsPosPremiumAiCopy {
+          display:block !important;
+          opacity:1 !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosPremiumAiCopy em,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosPremiumAiCopy small,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosPremiumAiLive,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosPremiumAiArrow {
+          display:none !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosPremiumAiCopy b {
+          display:block !important;
+          margin:0 !important;
+          color:#fff !important;
+          font-size:12px !important;
+          font-weight:1000 !important;
+          letter-spacing:.01em !important;
+        }
+
+        /* Expanded AI becomes a compact command drawer rather than a huge window. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded {
+          position:fixed !important;
+          left:auto !important;
+          right:16px !important;
+          bottom:16px !important;
+          width:min(520px,calc(100vw - 330px)) !important;
+          max-width:520px !important;
+          max-height:min(54vh,470px) !important;
+          margin:0 !important;
+          border-radius:22px !important;
+          overflow:hidden !important;
+          z-index:18130 !important;
+          box-shadow:0 30px 90px rgba(5,8,25,.42),inset 0 1px 0 rgba(255,255,255,.70) !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded::after {
+          font-size:13px !important;
+          right:12px !important;
+          bottom:6px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded .ncsPosAiCompactToggle {
+          min-height:58px !important;
+          padding:9px 11px !important;
+          border-radius:21px 21px 0 0 !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded .ncsPosAiCompactToggle .ncsPosAiBadge {
+          width:38px !important;
+          height:38px !important;
+          border-radius:13px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded .ncsPosAiHeading strong {
+          font-size:14px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded .ncsPosAiHeading small {
+          font-size:7px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded .ncsPosAiExpandableBody {
+          max-height:calc(min(54vh,470px) - 58px) !important;
+          padding:9px 10px 11px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded .ncsPosAiContextStrip {
+          margin-bottom:7px !important;
+          padding:6px 8px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded .ncsPosAiCommandRow {
+          padding:7px !important;
+          border-radius:15px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded .ncsPosAiInputShell,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded .ncsPosAiAddButton {
+          min-height:42px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded .ncsPosAiHintRow {
+          margin-top:6px !important;
+          padding:5px 7px !important;
+        }
+
+        @media (max-width:760px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed {
+            right:10px !important;
+            bottom:10px !important;
+            width:54px !important;
+            height:54px !important;
+            min-width:54px !important;
+            min-height:54px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosAiMascotRunner.ncsPosAiRealCoupleLauncher,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosPremiumAiButton {
+            width:54px !important;
+            min-width:54px !important;
+            height:54px !important;
+            min-height:54px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed:hover .ncsPosAiMascotRunner.ncsPosAiRealCoupleLauncher,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed:focus-within .ncsPosAiMascotRunner.ncsPosAiRealCoupleLauncher,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed:hover .ncsPosPremiumAiButton,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed:focus-within .ncsPosPremiumAiButton {
+            width:54px !important;
+            min-width:54px !important;
+            grid-template-columns:42px 0 !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed .ncsPosPremiumAiOrb {
+            width:42px !important;
+            height:42px !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded {
+            left:8px !important;
+            right:8px !important;
+            bottom:8px !important;
+            width:auto !important;
+            max-width:none !important;
+            max-height:62vh !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.expanded .ncsPosAiExpandableBody {
+            max-height:calc(62vh - 58px) !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS V7.3 • FESTIVAL RUSH ENGINE • 2036
+           Speed layer only. Existing sale/stock/design/reward/payment logic
+           stays intact; Rush mode shortens cashier travel and post-sale wait.
+           ============================================================ */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV73SplitPresets {
+          display:grid;
+          grid-template-columns:repeat(5,minmax(0,1fr));
+          gap:4px;
+          margin:0 0 5px;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV73SplitPresets button {
+          min-height:31px;
+          padding:4px 6px;
+          border:1px solid rgba(69,230,242,.14);
+          border-radius:8px;
+          background:linear-gradient(135deg,#111d31,#172547);
+          color:#edf8ff;
+          font:inherit;
+          cursor:pointer;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          gap:5px;
+          white-space:nowrap;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV73SplitPresets button:hover {
+          border-color:rgba(69,230,242,.46);
+          background:linear-gradient(135deg,#163050,#213363);
+          transform:translateY(-1px);
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV73SplitPresets b {
+          color:#fff;
+          font-size:7px;
+          font-weight:950;
+        }
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV73SplitPresets span {
+          color:#75edf5;
+          font-size:6px;
+          font-weight:900;
+        }
+
+        /* The completed receipt becomes a small non-blocking dock in Rush mode.
+           Cashier can immediately scan the next customer while receipt actions
+           remain available for a few seconds. */
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessOverlay {
+          inset:auto 76px 12px auto !important;
+          width:360px !important;
+          height:auto !important;
+          padding:0 !important;
+          display:block !important;
+          background:transparent !important;
+          backdrop-filter:none !important;
+          pointer-events:none !important;
+          z-index:18080 !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessModal {
+          width:360px !important;
+          max-height:245px !important;
+          margin:0 !important;
+          padding:10px 12px 11px !important;
+          overflow:auto !important;
+          border-radius:16px !important;
+          text-align:left !important;
+          pointer-events:auto !important;
+          box-shadow:0 18px 55px rgba(0,0,0,.34) !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessIcon {
+          width:30px !important;height:30px !important;margin:0 8px 4px 0 !important;
+          float:left !important;font-size:15px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessEyebrow { font-size:7px !important; }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessModal h2 { margin:2px 0 !important;font-size:15px !important; }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessCustomer { display:none !important; }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessAmount {
+          clear:both !important;margin:6px 0 !important;padding:7px 9px !important;border-radius:10px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessAmount strong { font-size:20px !important; }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessSummary {
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;gap:4px !important;margin:0 0 6px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessSummary p { padding:5px !important;border-radius:8px !important; }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessSummary span { font-size:6px !important; }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessSummary strong { font-size:9px !important; }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessActions {
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;gap:4px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessActions button {
+          min-height:30px !important;padding:4px !important;font-size:7px !important;border-radius:8px !important;
+        }
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessWhatsApp { grid-column:auto !important; }
+
+        @media (max-width:760px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV73SplitPresets { grid-template-columns:repeat(2,minmax(0,1fr)); }
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessOverlay {
+            left:8px !important;right:8px !important;bottom:74px !important;width:auto !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosRushMode .ncsPosSuccessModal { width:100% !important;max-height:230px !important; }
+        }
+
+
+        /* ============================================================
+           NCS POS • BILLING WINDOW RESTORE + READABILITY POLISH
+           Base: original latest advanced POS supplied by Badri.
+           IMPORTANT: no logic/options/functions changed.
+           ============================================================ */
+
+        .ncsPosBillPanel {
+          border-color: rgba(212,175,55,.34) !important;
+          box-shadow:
+            0 20px 52px rgba(3,21,63,.16),
+            0 0 0 1px rgba(212,175,55,.05) !important;
+        }
+
+        .ncsPosBillHeader {
+          min-height: 86px !important;
+          padding: 17px 19px !important;
+          background:
+            radial-gradient(circle at 84% 0%,rgba(212,175,55,.26),transparent 32%),
+            linear-gradient(135deg,#03153f 0%,#0a2e73 58%,#164ca8 100%) !important;
+        }
+
+        .ncsPosBillHeader span {
+          font-size: 9px !important;
+          letter-spacing: 1.05px !important;
+        }
+
+        .ncsPosBillHeader h2 {
+          font-size: 22px !important;
+          letter-spacing: -.35px !important;
+        }
+
+        .ncsPosCustomerCardCompact {
+          border-bottom-color: #e6eaf0 !important;
+          background:
+            linear-gradient(180deg,#ffffff,#fbfcff) !important;
+        }
+
+        .ncsPosCustomerCompactName,
+        .ncsPosCustomerCompactPhone {
+          color: #172033 !important;
+          font-size: 10px !important;
+          font-weight: 700 !important;
+        }
+
+        .ncsPosCartTableHeader {
+          min-height: 39px !important;
+          background:
+            linear-gradient(180deg,#f7f9fc,#eef3f8) !important;
+          color: #4b5565 !important;
+          font-size: 7px !important;
+          letter-spacing: .7px !important;
+        }
+
+        .ncsPosCartItemTableRow {
+          min-height: 74px !important;
+          border-color: #e6eaf0 !important;
+          box-shadow: 0 4px 12px rgba(16,24,40,.035) !important;
+        }
+
+        .ncsPosCartProductInfo h3 {
+          color: #03153f !important;
+          font-size: 10.5px !important;
+          line-height: 1.28 !important;
+        }
+
+        .ncsPosCartBrandName,
+        .ncsPosCartProductInfo p,
+        .ncsPosCartProductInfo small {
+          font-size: 6.8px !important;
+        }
+
+        .ncsPosCartPriceField,
+        .ncsPosCartSizeField,
+        .ncsPosCartColourField,
+        .ncsPosItemDiscountField,
+        .ncsPosItemLineTotal {
+          color:#172033 !important;
+        }
+
+        .ncsPosQuantityControl span {
+          font-size: 12px !important;
+        }
+
+        @media (min-width:1081px) {
+          .ncsPosSummary {
+            gap: 8px !important;
+            padding: 11px 12px !important;
+          }
+
+          .ncsPosSummaryLine,
+          .ncsPosDiscountField,
+          .ncsPosRoundOffField {
+            min-height: 54px !important;
+            border-radius: 10px !important;
+          }
+
+          .ncsPosSummaryLine span,
+          .ncsPosDiscountField > span,
+          .ncsPosRoundOffField > span {
+            color:#596273 !important;
+            font-size: 7.4px !important;
+            font-weight: 850 !important;
+          }
+
+          .ncsPosSummaryLine strong {
+            font-size: 12px !important;
+          }
+        }
+
+        .ncsPosPaymentSection {
+          background:
+            linear-gradient(180deg,#ffffff,#fbfcff) !important;
+        }
+
+        .ncsPosPaymentLabel {
+          color:#03153f !important;
+          font-size: 10px !important;
+          letter-spacing: .75px !important;
+        }
+
+        .ncsPosPaymentButton {
+          min-height: 60px !important;
+          border-radius: 14px !important;
+        }
+
+        .ncsPosPaymentButton span {
+          font-size: 16px !important;
+        }
+
+        .ncsPosPaymentButton b,
+        .ncsPosPaymentButton strong {
+          font-size: 8.5px !important;
+        }
+
+        .ncsPosPaymentButton small {
+          font-size: 6.5px !important;
+        }
+
+        .ncsPosPaymentButton.ncsPosPaymentActive {
+          box-shadow:
+            0 12px 26px rgba(212,175,55,.34),
+            inset 0 1px 0 rgba(255,255,255,.55) !important;
+        }
+
+        .ncsPosTotalLine {
+          min-height: 72px !important;
+          border-radius: 15px !important;
+        }
+
+        .ncsPosTotalLine > div > span {
+          font-size: 11px !important;
+        }
+
+        .ncsPosTotalLine > strong {
+          font-size: 24px !important;
+        }
+
+        .ncsPosCompleteButtonInline {
+          min-height: 58px !important;
+          border-radius: 13px !important;
+          background:
+            linear-gradient(135deg,#f6dc68 0%,#d4af37 55%,#b9870e 100%) !important;
+          color:#03153f !important;
+          box-shadow:
+            0 10px 24px rgba(212,175,55,.28),
+            inset 0 1px 0 rgba(255,255,255,.6) !important;
+        }
+
+        .ncsPosCompleteButtonInline strong {
+          font-size: 11px !important;
+        }
+
+        .ncsPosCompleteButtonInline small {
+          font-size: 7px !important;
+        }
+
+        @media (max-width:980px) {
+          .ncsPosBillHeader {
+            min-height: 76px !important;
+          }
+
+          .ncsPosPaymentButton {
+            min-height: 56px !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • COUNTER HEADER CLEANUP • NO FUNCTION CHANGES
+           Fixes short-height desktop overlap only.
+           All billing options, actions and business logic stay intact.
+           ============================================================ */
+
+        @media (min-width:1081px) and (max-height:820px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+            height:96px !important;
+            min-height:96px !important;
+            display:grid !important;
+            grid-template-columns:minmax(300px,1fr) minmax(430px,520px) !important;
+            grid-template-rows:1fr !important;
+            align-items:center !important;
+            gap:18px !important;
+            padding:12px 16px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > div:first-child {
+            min-width:0 !important;
+            max-width:none !important;
+            align-self:center !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosEyebrow {
+            max-width:100% !important;
+            padding:4px 8px !important;
+            font-size:7px !important;
+            white-space:nowrap !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1 {
+            margin:5px 0 0 !important;
+            font-size:27px !important;
+            line-height:1.04 !important;
+            letter-spacing:-.8px !important;
+            white-space:nowrap !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader p {
+            display:none !important;
+          }
+
+          /* Decorative customer video is hidden only in short-height desktop
+             so the real actions and title never collide. */
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCustomerQueue {
+            display:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+            grid-column:2 !important;
+            grid-row:1 !important;
+            width:100% !important;
+            max-width:520px !important;
+            justify-self:end !important;
+            display:grid !important;
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+            gap:6px !important;
+            padding:6px !important;
+            border-radius:15px !important;
+            background:rgba(4,13,38,.22) !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions button {
+            min-width:0 !important;
+            min-height:34px !important;
+            height:34px !important;
+            padding:0 9px !important;
+            border-radius:10px !important;
+            font-size:8px !important;
+            line-height:1 !important;
+            white-space:nowrap !important;
+            overflow:hidden !important;
+            text-overflow:ellipsis !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions button > span {
+            width:19px !important;
+            height:19px !important;
+            margin-right:4px !important;
+            border-radius:6px !important;
+            font-size:10px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions button small {
+            font-size:5.5px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandDeck {
+            min-height:38px !important;
+            height:38px !important;
+            padding:4px 6px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandIdentity {
+            min-width:150px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandIdentity span,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandIdentity strong {
+            white-space:nowrap !important;
+          }
+        }
+
+        @media (min-width:1081px) and (max-width:1320px) and (max-height:820px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+            grid-template-columns:minmax(260px,1fr) minmax(390px,470px) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+            max-width:470px !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • SIGNATURE COMMERCE COUNTER UI
+           VISUAL SYSTEM ONLY — ALL EXISTING FUNCTIONS PRESERVED
+           Goal:
+           - light premium canvas
+           - clear functional boxes
+           - strong POS identity at first glance
+           - no overlap in short desktop windows
+           - same billing / stock / rewards / queue / AI / payment logic
+           ============================================================ */
+
+        .ncsPosV7Living.ncsPosCounterOS {
+          background:
+            radial-gradient(circle at 94% 2%,rgba(212,175,55,.07),transparent 20%),
+            linear-gradient(180deg,#f6f9fc 0%,#eef3f8 100%) !important;
+          color:#152033 !important;
+        }
+
+        /* ---------- TOP SIGNATURE HEADER ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+          min-height:122px !important;
+          height:auto !important;
+          display:grid !important;
+          grid-template-columns:minmax(300px,1fr) minmax(500px,620px) !important;
+          grid-template-rows:auto !important;
+          align-items:center !important;
+          gap:24px !important;
+          padding:18px 20px !important;
+          overflow:hidden !important;
+          border:1px solid rgba(10,46,115,.10) !important;
+          border-radius:22px !important;
+          background:
+            radial-gradient(circle at 88% -10%,rgba(212,175,55,.17),transparent 34%),
+            linear-gradient(135deg,#ffffff 0%,#f8fbff 58%,#eef4fb 100%) !important;
+          box-shadow:
+            0 18px 45px rgba(16,24,40,.08),
+            inset 0 1px 0 rgba(255,255,255,.95) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader::before {
+          content:"";
+          position:absolute;
+          top:0;
+          left:0;
+          width:7px;
+          height:100%;
+          border-radius:22px 0 0 22px;
+          background:
+            linear-gradient(180deg,#d4af37 0%,#efd878 32%,#0a2e73 100%);
+          opacity:1 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader::after {
+          content:"POS • 2036" !important;
+          position:absolute !important;
+          top:15px !important;
+          right:18px !important;
+          color:rgba(10,46,115,.055) !important;
+          font-size:54px !important;
+          font-weight:1000 !important;
+          letter-spacing:-2px !important;
+          pointer-events:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > div:first-child {
+          min-width:0 !important;
+          position:relative !important;
+          z-index:2 !important;
+          padding-left:4px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosEyebrow {
+          display:inline-flex !important;
+          align-items:center !important;
+          gap:7px !important;
+          min-height:26px !important;
+          padding:0 10px !important;
+          border:1px solid rgba(10,46,115,.08) !important;
+          border-radius:999px !important;
+          background:#f7f9fc !important;
+          color:#667085 !important;
+          font-size:7px !important;
+          font-weight:950 !important;
+          letter-spacing:.9px !important;
+          white-space:nowrap !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCloudDot.online {
+          background:#17b26a !important;
+          box-shadow:0 0 0 4px rgba(23,178,106,.10) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1 {
+          margin:9px 0 0 !important;
+          color:#0a2e73 !important;
+          font-size:34px !important;
+          line-height:1 !important;
+          letter-spacing:-1px !important;
+          white-space:nowrap !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader p {
+          display:block !important;
+          max-width:630px !important;
+          margin:10px 0 0 !important;
+          color:#667085 !important;
+          font-size:10px !important;
+          line-height:1.5 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCustomerQueue {
+          display:none !important;
+        }
+
+        /* ---------- ACTION MATRIX: CLEAR, SEPARATED, NO OVERLAP ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+          position:relative !important;
+          z-index:3 !important;
+          width:100% !important;
+          max-width:620px !important;
+          justify-self:end !important;
+          display:grid !important;
+          grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          gap:8px !important;
+          padding:0 !important;
+          border:0 !important;
+          background:transparent !important;
+          overflow:visible !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions button {
+          min-width:0 !important;
+          min-height:52px !important;
+          height:auto !important;
+          display:flex !important;
+          align-items:center !important;
+          justify-content:flex-start !important;
+          gap:8px !important;
+          padding:8px 10px !important;
+          border:1px solid #dfe6ee !important;
+          border-radius:13px !important;
+          background:#ffffff !important;
+          color:#24324a !important;
+          font-size:8px !important;
+          font-weight:900 !important;
+          line-height:1.15 !important;
+          white-space:normal !important;
+          overflow:visible !important;
+          text-overflow:clip !important;
+          box-shadow:0 6px 16px rgba(16,24,40,.045) !important;
+          transition:
+            transform .16s ease,
+            border-color .16s ease,
+            box-shadow .16s ease,
+            background .16s ease !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions button:hover:not(:disabled) {
+          transform:translateY(-1px) !important;
+          border-color:rgba(212,175,55,.55) !important;
+          background:#fffdf8 !important;
+          box-shadow:0 9px 20px rgba(16,24,40,.07) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions button > span {
+          width:32px !important;
+          height:32px !important;
+          display:grid !important;
+          place-items:center !important;
+          flex:0 0 32px !important;
+          margin:0 !important;
+          border:1px solid rgba(212,175,55,.22) !important;
+          border-radius:10px !important;
+          background:#fffaf0 !important;
+          color:#0a2e73 !important;
+          font-size:13px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions button b {
+          color:#0a2e73 !important;
+          font-size:8px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions button small {
+          color:#98a2b3 !important;
+          font-size:6px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7RushToggle.active {
+          border-color:#f0c65a !important;
+          background:linear-gradient(180deg,#fffaf0,#fff6da) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosNextCustomerButton {
+          border-color:rgba(10,46,115,.18) !important;
+          background:
+            linear-gradient(135deg,#0a2e73,#164b9d) !important;
+          color:#fff !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosNextCustomerButton > span {
+          border-color:rgba(255,255,255,.15) !important;
+          background:rgba(255,255,255,.08) !important;
+          color:#efd878 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosNextCustomerButton:disabled {
+          opacity:.38 !important;
+        }
+
+        /* ---------- SMART COUNTER BAR ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandDeck {
+          min-height:54px !important;
+          height:auto !important;
+          display:grid !important;
+          grid-template-columns:auto minmax(0,1fr) !important;
+          align-items:center !important;
+          gap:12px !important;
+          margin:10px 0 0 !important;
+          padding:8px 10px !important;
+          border:1px solid #dfe6ee !important;
+          border-radius:14px !important;
+          background:rgba(255,255,255,.96) !important;
+          box-shadow:0 7px 20px rgba(16,24,40,.045) !important;
+          overflow:visible !important;
+          backdrop-filter:blur(10px);
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandIdentity {
+          min-width:170px !important;
+          padding:4px 8px !important;
+          border-right:1px solid #e8ecf1 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandIdentity span {
+          color:#b18b15 !important;
+          font-size:6px !important;
+          font-weight:950 !important;
+          letter-spacing:.8px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandIdentity strong {
+          color:#0a2e73 !important;
+          font-size:9px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandSignals {
+          display:grid !important;
+          grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+          gap:7px !important;
+          min-width:0 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandSignals > span,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandSignals > button {
+          min-width:0 !important;
+          min-height:38px !important;
+          padding:6px 9px !important;
+          border:1px solid #e6eaf0 !important;
+          border-radius:10px !important;
+          background:#f8fafc !important;
+          color:#344054 !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandSignals small {
+          display:block !important;
+          color:#98a2b3 !important;
+          font-size:5.8px !important;
+          font-weight:850 !important;
+          letter-spacing:.45px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandSignals b {
+          display:block !important;
+          margin-top:2px !important;
+          color:#0a2e73 !important;
+          font-size:8.5px !important;
+          white-space:nowrap !important;
+          overflow:hidden !important;
+          text-overflow:ellipsis !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandSignals .money {
+          border-color:#ead99a !important;
+          background:#fffaf0 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandSignals .money b {
+          color:#8a6810 !important;
+        }
+
+        /* ---------- WORKSPACE ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosWorkspace {
+          display:grid !important;
+          grid-template-columns:minmax(0,1.08fr) minmax(500px,.92fr) !important;
+          gap:14px !important;
+          align-items:start !important;
+          margin-top:12px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogue,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBillPanel {
+          border:1px solid #dfe6ee !important;
+          border-radius:18px !important;
+          background:#fff !important;
+          box-shadow:0 12px 30px rgba(16,24,40,.055) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogue {
+          padding:12px !important;
+        }
+
+        /* ---------- SEARCH: POS FIRST IMPRESSION ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchPanel {
+          min-height:66px !important;
+          display:grid !important;
+          grid-template-columns:42px minmax(0,1fr) auto auto !important;
+          align-items:center !important;
+          gap:8px !important;
+          padding:9px !important;
+          border:1px solid #dfe6ee !important;
+          border-radius:14px !important;
+          background:
+            linear-gradient(180deg,#ffffff,#f9fbfd) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchIcon {
+          width:42px !important;
+          height:42px !important;
+          display:grid !important;
+          place-items:center !important;
+          border:1px solid rgba(212,175,55,.25) !important;
+          border-radius:11px !important;
+          background:#fffaf0 !important;
+          color:#0a2e73 !important;
+          font-size:17px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchPanel input {
+          min-width:0 !important;
+          height:44px !important;
+          padding:0 12px !important;
+          border:1px solid #e4e9ef !important;
+          border-radius:10px !important;
+          background:#fff !important;
+          color:#172033 !important;
+          font-size:11px !important;
+          font-weight:700 !important;
+          outline:0 !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchPanel input:focus {
+          border-color:#0a2e73 !important;
+          box-shadow:0 0 0 3px rgba(10,46,115,.06) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchButton {
+          min-width:92px !important;
+          min-height:44px !important;
+          border:1px solid #0a2e73 !important;
+          border-radius:10px !important;
+          background:linear-gradient(135deg,#0a2e73,#164b9d) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchQuickItemButton {
+          min-width:105px !important;
+          min-height:44px !important;
+          border:1px solid #d4af37 !important;
+          border-radius:10px !important;
+          background:#fffaf0 !important;
+          color:#7a5a06 !important;
+          box-shadow:none !important;
+        }
+
+        /* ---------- CATEGORY ORBIT ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryOrbit {
+          margin-top:10px !important;
+          padding:10px !important;
+          border:1px solid #e2e7ed !important;
+          border-radius:14px !important;
+          background:#fbfcfe !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryOrbit::after {
+          opacity:.18 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryOrbitLabel {
+          margin-bottom:8px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryOrbitLabel span {
+          color:#b18b15 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryOrbitLabel b {
+          color:#0a2e73 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryButton {
+          min-height:52px !important;
+          border:1px solid #e5eaf0 !important;
+          border-radius:11px !important;
+          background:#fff !important;
+          box-shadow:0 4px 12px rgba(16,24,40,.03) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryButton:hover {
+          transform:translateY(-1px) !important;
+          box-shadow:0 7px 16px rgba(16,24,40,.05) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryActive {
+          border-color:#6d4dff !important;
+          background:linear-gradient(180deg,#f8f5ff,#f3efff) !important;
+          box-shadow:0 8px 18px rgba(109,77,255,.08) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryCopy b {
+          color:#344054 !important;
+          font-size:8px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryCopy small {
+          color:#98a2b3 !important;
+          font-size:5.8px !important;
+        }
+
+        /* ---------- PRODUCT INTELLIGENCE / VIEW CONTROLS ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogueTop {
+          margin-top:10px !important;
+          border-radius:14px !important;
+          background:
+            radial-gradient(circle at 92% 10%,rgba(35,181,179,.18),transparent 28%),
+            linear-gradient(135deg,#2b1468,#5b43de 58%,#008c9e) !important;
+          box-shadow:0 10px 24px rgba(62,45,145,.12) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogueTop h2 {
+          color:#fff !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogueTop p,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogueTop span {
+          color:rgba(255,255,255,.68) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosViewTabs,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixTabs {
+          border:1px solid #e4e9ef !important;
+          border-radius:12px !important;
+          background:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosViewTabs button,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixTabs button {
+          min-height:38px !important;
+          border-radius:9px !important;
+          color:#667085 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosViewTabs button.active,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixTabs button.active {
+          background:linear-gradient(135deg,#6d4dff,#3aa7df) !important;
+          color:#fff !important;
+          box-shadow:0 7px 16px rgba(109,77,255,.16) !important;
+        }
+
+        /* ---------- BILL: WHITE BODY + STRONG LIVE HEADER ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBillPanel {
+          position:sticky !important;
+          top:8px !important;
+          overflow:hidden !important;
+          color:#172033 !important;
+          background:#fff !important;
+          box-shadow:
+            0 14px 36px rgba(16,24,40,.075),
+            0 0 0 1px rgba(212,175,55,.04) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeader {
+          min-height:78px !important;
+          padding:13px 14px !important;
+          border:0 !important;
+          border-radius:17px 17px 0 0 !important;
+          background:
+            radial-gradient(circle at 88% 10%,rgba(212,175,55,.18),transparent 30%),
+            linear-gradient(135deg,#06152f,#08265f 62%,#0a2e73) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeader span,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeader small {
+          color:rgba(255,255,255,.62) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeader h2,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeader strong {
+          color:#fff !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBillLivePulse {
+          border-color:rgba(255,255,255,.13) !important;
+          background:rgba(255,255,255,.06) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeaderActions button {
+          border-color:rgba(255,255,255,.14) !important;
+          background:rgba(255,255,255,.07) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBillHeaderActions button:hover {
+          border-color:rgba(212,175,55,.45) !important;
+          background:rgba(212,175,55,.10) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CustomerTrigger,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCustomerCardCompact {
+          border-color:#e5eaf0 !important;
+          background:#fbfcfe !important;
+          color:#172033 !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CustomerTrigger strong,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CustomerTrigger b {
+          color:#0a2e73 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartTableHeader {
+          background:linear-gradient(180deg,#f8fafc,#eef3f8) !important;
+          color:#667085 !important;
+          border-color:#e5eaf0 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItems {
+          background:#fff !important;
+          border-color:#e5eaf0 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItemTableRow {
+          background:#fff !important;
+          color:#172033 !important;
+          border-color:#edf0f4 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItemTableRow:hover {
+          background:#fbfcfe !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartProductInfo h3 {
+          color:#0a2e73 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartProductInfo p,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartProductInfo small,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartProductInfo span {
+          color:#667085 !important;
+        }
+
+        /* ---------- BILL SUMMARY ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSummary {
+          margin:8px 10px !important;
+          padding:8px !important;
+          gap:6px !important;
+          border:1px solid #e4e9ef !important;
+          border-radius:12px !important;
+          background:#f8fafc !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSummaryLine,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosDiscountField,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosRoundOffField {
+          min-height:54px !important;
+          padding:7px 8px !important;
+          border:1px solid #e7ebf0 !important;
+          border-radius:9px !important;
+          background:#fff !important;
+          color:#172033 !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSummaryLine span,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosDiscountField > span,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosRoundOffField > span {
+          color:#7b8494 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSummaryLine strong {
+          color:#0a2e73 !important;
+        }
+
+        /* ---------- PAYMENT MATRIX ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentSection {
+          margin:8px 10px 10px !important;
+          padding:11px !important;
+          border:1px solid #e3e8ef !important;
+          border-radius:13px !important;
+          background:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentLabel,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentHeading2036 strong {
+          color:#0a2e73 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentHeading2036 span {
+          color:#b18b15 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentGrid2036 {
+          gap:7px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentButton {
+          min-height:58px !important;
+          border:1px solid #e1e6ed !important;
+          border-radius:12px !important;
+          background:#f8fafc !important;
+          color:#475467 !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentButton:hover {
+          border-color:#cfd8e3 !important;
+          background:#f4f7fa !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentButton.ncsPosPaymentActive {
+          border-color:#23b58a !important;
+          background:linear-gradient(180deg,#ecfbf6,#e5f8f2) !important;
+          color:#065f46 !important;
+          box-shadow:0 8px 18px rgba(35,181,138,.10) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentSplitMode.ncsPosPaymentActive {
+          border-color:#6d4dff !important;
+          background:linear-gradient(180deg,#f5f2ff,#efebff) !important;
+          color:#4b32c3 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentCreditMode.ncsPosPaymentActive {
+          border-color:#d4af37 !important;
+          background:linear-gradient(180deg,#fffaf0,#fff4d8) !important;
+          color:#7a5a06 !important;
+        }
+
+        /* ---------- FINAL PAYABLE = PREMIUM SIGNATURE ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine {
+          min-height:76px !important;
+          margin:8px 10px 12px !important;
+          padding:11px 12px !important;
+          border:1px solid rgba(212,175,55,.26) !important;
+          border-radius:14px !important;
+          background:
+            radial-gradient(circle at 88% 10%,rgba(212,175,55,.18),transparent 28%),
+            linear-gradient(135deg,#06152f,#08265f 64%,#0a2e73) !important;
+          color:#fff !important;
+          box-shadow:0 10px 24px rgba(10,46,115,.12) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine > div > span {
+          color:rgba(255,255,255,.72) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine > div > small {
+          color:rgba(255,255,255,.42) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine > strong {
+          color:#efd878 !important;
+          font-size:24px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline {
+          min-height:56px !important;
+          border:1px solid #d4af37 !important;
+          border-radius:12px !important;
+          background:linear-gradient(135deg,#efd878,#d4af37 62%,#b98910) !important;
+          color:#06152f !important;
+          box-shadow:0 8px 18px rgba(212,175,55,.22) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline strong,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline small,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline span,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline b {
+          color:#06152f !important;
+        }
+
+        /* ---------- PRODUCT / BRAND CARDS ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixCard,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandCompactCard,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosGroupedCard {
+          border-color:#e3e8ef !important;
+          background:#fff !important;
+          box-shadow:0 5px 14px rgba(16,24,40,.035) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixCard:hover,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandCompactCard:hover,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosGroupedCard:hover {
+          transform:translateY(-1px) !important;
+          border-color:rgba(109,77,255,.30) !important;
+          box-shadow:0 9px 20px rgba(16,24,40,.055) !important;
+        }
+
+        /* ---------- AI BUTTON: KEEP ADVANCED, LESS OBTRUSIVE ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosAiPanel.collapsed {
+          filter:drop-shadow(0 12px 28px rgba(39,26,106,.18)) !important;
+        }
+
+        /* ---------- SMOOTHNESS ---------- */
+        .ncsPosV7Living.ncsPosCounterOS :is(
+          button,
+          a,
+          input,
+          select,
+          textarea
+        ) {
+          transition:
+            border-color .16s ease,
+            background .16s ease,
+            color .16s ease,
+            transform .16s ease,
+            box-shadow .16s ease !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS :is(
+          .ncsPosQuickGlow,
+          .ncsPosMoneyMotion,
+          .ncsPosCreditPulse,
+          .ncsPosCoinStack
+        ) {
+          animation:none !important;
+        }
+
+        /* ---------- SHORT DESKTOP: COMPACT WITHOUT COLLISION ---------- */
+        @media (min-width:1081px) and (max-height:820px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+            min-height:108px !important;
+            height:auto !important;
+            grid-template-columns:minmax(280px,1fr) minmax(470px,570px) !important;
+            padding:14px 16px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1 {
+            font-size:30px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader p {
+            display:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+            max-width:570px !important;
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+            gap:6px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions button {
+            min-height:44px !important;
+            padding:6px 8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions button > span {
+            width:27px !important;
+            height:27px !important;
+            flex-basis:27px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandDeck {
+            min-height:48px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosWorkspace {
+            grid-template-columns:minmax(0,1.04fr) minmax(500px,.96fr) !important;
+          }
+        }
+
+        @media (max-width:1320px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+            grid-template-columns:1fr !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+            max-width:none !important;
+            justify-self:stretch !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosWorkspace {
+            grid-template-columns:1fr !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBillPanel {
+            position:static !important;
+          }
+        }
+
+        @media (max-width:760px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+            padding:14px !important;
+            border-radius:17px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader::after {
+            display:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1 {
+            font-size:28px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandDeck {
+            grid-template-columns:1fr !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandIdentity {
+            border-right:0 !important;
+            border-bottom:1px solid #e8ecf1 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandSignals {
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchPanel {
+            grid-template-columns:40px minmax(0,1fr) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchButton,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSearchQuickItemButton {
+            grid-column:auto !important;
+            min-width:0 !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • ACTIVE BILL WINDOW RESTORE
+           CRITICAL:
+           This restores the ORIGINAL working behaviour:
+           when a product is added, the bill becomes a large independent
+           billing window. No billing function/state/handler is changed.
+           Only final CSS specificity is corrected so visual polish cannot
+           override ncsPosBillingFocus again.
+           ============================================================ */
+
+        @media (min-width:761px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            position:fixed !important;
+            z-index:8000 !important;
+            top:8px !important;
+            right:8px !important;
+            bottom:8px !important;
+            left:104px !important;
+            width:auto !important;
+            min-width:0 !important;
+            max-width:none !important;
+            height:auto !important;
+            min-height:0 !important;
+            max-height:none !important;
+            display:flex !important;
+            flex-direction:column !important;
+            overflow-x:hidden !important;
+            overflow-y:auto !important;
+            overscroll-behavior:contain !important;
+            scrollbar-width:thin !important;
+            scrollbar-color:rgba(10,46,115,.30) transparent !important;
+            border:1px solid rgba(212,175,55,.62) !important;
+            border-radius:20px !important;
+            background:#fff !important;
+            color:#172033 !important;
+            box-shadow:
+              -30px 34px 90px rgba(3,21,63,.24),
+              0 18px 48px rgba(10,46,115,.16),
+              0 0 0 1px rgba(255,255,255,.78) inset !important;
+            isolation:isolate !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel::after {
+            content:"" !important;
+            position:fixed !important;
+            z-index:-1 !important;
+            top:18px !important;
+            right:18px !important;
+            bottom:18px !important;
+            left:114px !important;
+            border-radius:28px !important;
+            background:rgba(3,21,63,.08) !important;
+            filter:blur(18px) !important;
+            pointer-events:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+            position:sticky !important;
+            top:0 !important;
+            z-index:40 !important;
+            min-height:82px !important;
+            flex:0 0 auto !important;
+            padding:12px 14px !important;
+            border-bottom:1px solid rgba(212,175,55,.22) !important;
+            border-radius:19px 19px 0 0 !important;
+            background:
+              radial-gradient(circle at 88% 10%,rgba(212,175,55,.18),transparent 30%),
+              linear-gradient(135deg,#06152f,#08265f 62%,#0a2e73) !important;
+            color:#fff !important;
+            box-shadow:0 10px 24px rgba(3,21,63,.13) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader h2,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader strong {
+            color:#fff !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader span,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader small {
+            color:rgba(255,255,255,.64) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse {
+            min-width:170px !important;
+            min-height:52px !important;
+            border-color:rgba(255,255,255,.13) !important;
+            background:rgba(255,255,255,.07) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse strong {
+            color:#efd878 !important;
+            font-size:22px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions {
+            display:flex !important;
+            flex-wrap:wrap !important;
+            align-items:center !important;
+            justify-content:flex-end !important;
+            gap:6px !important;
+            max-width:58% !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button {
+            min-height:38px !important;
+            padding:0 11px !important;
+            border:1px solid rgba(255,255,255,.14) !important;
+            border-radius:9px !important;
+            background:rgba(255,255,255,.075) !important;
+            color:#fff !important;
+            box-shadow:none !important;
+            white-space:nowrap !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button:hover:not(:disabled) {
+            border-color:rgba(212,175,55,.48) !important;
+            background:rgba(212,175,55,.11) !important;
+          }
+
+          /* Customer area stays full width and readable in big bill mode. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7CustomerTrigger {
+            flex:0 0 auto !important;
+            margin:10px 12px 0 !important;
+            min-height:46px !important;
+            border-color:#e4e9ef !important;
+            background:#fbfcfe !important;
+            color:#172033 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerCardCompact {
+            flex:0 0 auto !important;
+            margin:8px 12px 0 !important;
+            background:#fbfcfe !important;
+            border-color:#e4e9ef !important;
+          }
+
+          /* Product table gets the main working area of the large bill. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartTableHeader {
+            position:relative !important;
+            top:auto !important;
+            z-index:2 !important;
+            flex:0 0 auto !important;
+            margin:10px 12px 0 !important;
+            min-height:38px !important;
+            border:1px solid #e4e9ef !important;
+            border-radius:10px 10px 0 0 !important;
+            background:linear-gradient(180deg,#f8fafc,#eef3f8) !important;
+            color:#667085 !important;
+            box-shadow:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex:0 0 auto !important;
+            min-height:250px !important;
+            max-height:none !important;
+            margin:0 12px !important;
+            overflow:visible !important;
+            border-right:1px solid #e4e9ef !important;
+            border-bottom:1px solid #e4e9ef !important;
+            border-left:1px solid #e4e9ef !important;
+            border-radius:0 0 11px 11px !important;
+            background:#fff !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow {
+            min-height:78px !important;
+            padding:9px 10px !important;
+            border-bottom:1px solid #edf0f4 !important;
+            background:#fff !important;
+            color:#172033 !important;
+            box-shadow:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow:hover {
+            background:#fbfcfe !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartProductInfo h3 {
+            color:#0a2e73 !important;
+            font-size:11px !important;
+            line-height:1.3 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartProductInfo p,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartProductInfo small,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartProductInfo span {
+            color:#667085 !important;
+          }
+
+          /* Summary + payment remain full width under the products. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummary {
+            flex:0 0 auto !important;
+            margin:10px 12px 0 !important;
+            padding:8px !important;
+            gap:7px !important;
+            border:1px solid #e4e9ef !important;
+            border-radius:11px !important;
+            background:#f8fafc !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentSection {
+            flex:0 0 auto !important;
+            margin:10px 12px 0 !important;
+            padding:12px !important;
+            border:1px solid #e4e9ef !important;
+            border-radius:12px !important;
+            background:#fff !important;
+            box-shadow:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentGrid2036 {
+            grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+            gap:8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton {
+            min-height:58px !important;
+            border:1px solid #e1e6ed !important;
+            border-radius:11px !important;
+            background:#f8fafc !important;
+            color:#475467 !important;
+            box-shadow:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton.ncsPosPaymentActive {
+            border-color:#23b58a !important;
+            background:linear-gradient(180deg,#ecfbf6,#e5f8f2) !important;
+            color:#065f46 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine {
+            flex:0 0 auto !important;
+            min-height:76px !important;
+            margin:10px 12px 14px !important;
+            border:1px solid rgba(212,175,55,.28) !important;
+            border-radius:13px !important;
+            background:
+              radial-gradient(circle at 88% 10%,rgba(212,175,55,.18),transparent 28%),
+              linear-gradient(135deg,#06152f,#08265f 64%,#0a2e73) !important;
+            color:#fff !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine > strong {
+            color:#efd878 !important;
+            font-size:25px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCompleteButtonInline {
+            min-height:56px !important;
+            border:1px solid #d4af37 !important;
+            border-radius:11px !important;
+            background:linear-gradient(135deg,#efd878,#d4af37 62%,#b98910) !important;
+            color:#06152f !important;
+            box-shadow:0 8px 18px rgba(212,175,55,.20) !important;
+          }
+
+          /* Keep floating assistant away from the active billing workspace. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosAiPanel:not(.expanded),
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosFestivalOffer {
+            display:none !important;
+          }
+        }
+
+        @media (min-width:761px) and (max-width:1380px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            left:96px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel::after {
+            left:106px !important;
+          }
+        }
+
+        @media (max-width:760px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            position:fixed !important;
+            inset:8px !important;
+            z-index:8000 !important;
+            width:auto !important;
+            height:auto !important;
+            max-height:none !important;
+            overflow-y:auto !important;
+            border-radius:17px !important;
+            background:#fff !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentGrid2036 {
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • ACTIVE BILL HEADER SPACING FIX
+           CSS ONLY — NO FUNCTION / HANDLER / BILLING LOGIC CHANGED
+           ============================================================ */
+
+        @media (min-width:761px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+            min-height:118px !important;
+            display:grid !important;
+            grid-template-columns:190px minmax(270px,1fr) 520px !important;
+            align-items:center !important;
+            gap:18px !important;
+            padding:16px 18px !important;
+            overflow:visible !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader > div:first-child {
+            min-width:0 !important;
+            align-self:center !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader > div:first-child > span {
+            display:block !important;
+            color:rgba(255,255,255,.58) !important;
+            font-size:7px !important;
+            font-weight:950 !important;
+            letter-spacing:1px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader h2 {
+            margin:7px 0 0 !important;
+            color:#fff !important;
+            font-size:31px !important;
+            line-height:1 !important;
+            letter-spacing:-.7px !important;
+            white-space:nowrap !important;
+          }
+
+          /* Active amount becomes one clear independent block. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse {
+            width:100% !important;
+            max-width:430px !important;
+            min-width:0 !important;
+            min-height:70px !important;
+            justify-self:center !important;
+            display:flex !important;
+            flex-direction:column !important;
+            justify-content:center !important;
+            padding:11px 16px !important;
+            border:1px solid rgba(255,255,255,.14) !important;
+            border-radius:14px !important;
+            background:
+              linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.055)) !important;
+            box-shadow:inset 0 1px 0 rgba(255,255,255,.04) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse > span {
+            color:#8ff0c2 !important;
+            font-size:7px !important;
+            font-weight:950 !important;
+            letter-spacing:.9px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse > strong {
+            margin-top:5px !important;
+            color:#efd878 !important;
+            font-size:26px !important;
+            line-height:1 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse > small {
+            margin-top:5px !important;
+            color:rgba(255,255,255,.46) !important;
+            font-size:6px !important;
+            font-weight:850 !important;
+            letter-spacing:.6px !important;
+          }
+
+          /* Every action gets its own clearly separated tile. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions {
+            width:520px !important;
+            max-width:520px !important;
+            display:grid !important;
+            grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+            grid-auto-rows:43px !important;
+            align-items:stretch !important;
+            justify-items:stretch !important;
+            gap:7px !important;
+            justify-self:end !important;
+            overflow:visible !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button {
+            width:100% !important;
+            min-width:0 !important;
+            min-height:43px !important;
+            height:43px !important;
+            display:flex !important;
+            align-items:center !important;
+            justify-content:center !important;
+            gap:5px !important;
+            padding:0 8px !important;
+            border:1px solid rgba(255,255,255,.17) !important;
+            border-radius:10px !important;
+            background:rgba(255,255,255,.075) !important;
+            color:#fff !important;
+            font-size:7px !important;
+            font-weight:900 !important;
+            line-height:1.1 !important;
+            white-space:nowrap !important;
+            overflow:hidden !important;
+            text-overflow:ellipsis !important;
+            box-shadow:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button:hover:not(:disabled) {
+            transform:translateY(-1px) !important;
+            border-color:rgba(212,175,55,.56) !important;
+            background:rgba(212,175,55,.12) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCounterModeToggle2036 {
+            border-color:rgba(212,175,55,.34) !important;
+            background:rgba(212,175,55,.09) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillAddNextItem {
+            grid-column:span 2 !important;
+            border-color:rgba(109,77,255,.35) !important;
+            background:rgba(109,77,255,.13) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillQuickItem {
+            grid-column:span 2 !important;
+            border-color:rgba(212,175,55,.42) !important;
+            background:rgba(212,175,55,.11) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillNextCustomer {
+            border-color:rgba(99,179,237,.34) !important;
+            background:rgba(99,179,237,.10) !important;
+            color:#dceeff !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillQueueButton {
+            border-color:rgba(192,132,252,.35) !important;
+            background:rgba(192,132,252,.11) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCloseMobileCart {
+            display:none !important;
+          }
+        }
+
+        @media (min-width:761px) and (max-width:1300px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+            grid-template-columns:160px minmax(230px,1fr) 450px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions {
+            width:450px !important;
+            max-width:450px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button {
+            font-size:6.5px !important;
+            padding:0 6px !important;
+          }
+        }
+
+        @media (max-width:760px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+            display:grid !important;
+            grid-template-columns:1fr !important;
+            gap:10px !important;
+            padding:13px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse {
+            width:100% !important;
+            max-width:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions {
+            width:100% !important;
+            max-width:none !important;
+            display:grid !important;
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+            gap:6px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillAddNextItem,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillQuickItem {
+            grid-column:span 1 !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • ACTIVE BILL PRODUCT SCROLL RESTORE
+           ONLY fixes long-bill scrolling.
+           NO billing function, handler, payment, total, stock or option changed.
+           Products scroll inside the big bill so bottom controls stay reachable.
+           ============================================================ */
+
+        @media (min-width:761px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            height:calc(100dvh - 16px) !important;
+            max-height:calc(100dvh - 16px) !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7CustomerTrigger,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerCardCompact,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartTableHeader,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummary,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentSection,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCreditPanel {
+            flex-shrink:0 !important;
+          }
+
+          /* Product rows own the vertical scroll when the bill grows. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex:1 1 auto !important;
+            min-height:170px !important;
+            max-height:none !important;
+            overflow-x:hidden !important;
+            overflow-y:auto !important;
+            overscroll-behavior:contain !important;
+            touch-action:pan-y !important;
+            scrollbar-gutter:stable !important;
+            scrollbar-width:thin !important;
+            scrollbar-color:rgba(10,46,115,.34) transparent !important;
+            padding-bottom:10px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems::-webkit-scrollbar {
+            width:9px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems::-webkit-scrollbar-track {
+            background:#f2f5f8 !important;
+            border-radius:999px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems::-webkit-scrollbar-thumb {
+            background:linear-gradient(180deg,#d4af37,#0a2e73) !important;
+            border:2px solid #f2f5f8 !important;
+            border-radius:999px !important;
+          }
+
+          /* Keep totals/payment available below the scrolling product list. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummary {
+            margin-top:8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentSection {
+            margin-top:8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine {
+            margin-top:8px !important;
+            margin-bottom:10px !important;
+          }
+        }
+
+        @media (min-width:761px) and (max-height:760px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            min-height:120px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton {
+            min-height:50px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine {
+            min-height:64px !important;
+          }
+        }
+
+        @media (max-width:760px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            height:calc(100dvh - 16px) !important;
+            max-height:calc(100dvh - 16px) !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex:1 1 auto !important;
+            min-height:140px !important;
+            overflow-y:auto !important;
+            overscroll-behavior:contain !important;
+            touch-action:pan-y !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • FAST BILL WORKSPACE • 5-ROW VIEW
+           TARGETED UI FIX ONLY
+           - No billing logic changed
+           - No functions/options removed
+           - Compact top lane
+           - Clear coloured action boxes
+           - 5 product rows visible, then scroll
+           - Bottom payment/total controls stay in the same bill workspace
+           ============================================================ */
+
+        @media (min-width:761px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            position:fixed !important;
+            z-index:8000 !important;
+            top:8px !important;
+            right:8px !important;
+            bottom:8px !important;
+            left:104px !important;
+            height:calc(100dvh - 16px) !important;
+            max-height:calc(100dvh - 16px) !important;
+            display:flex !important;
+            flex-direction:column !important;
+            overflow:hidden !important;
+            border:1px solid rgba(212,175,55,.55) !important;
+            border-radius:18px !important;
+            background:#fff !important;
+            box-shadow:0 28px 80px rgba(3,21,63,.20) !important;
+          }
+
+          /* Compact command header: less wasted space, faster billing. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+            min-height:76px !important;
+            height:76px !important;
+            flex:0 0 76px !important;
+            display:grid !important;
+            grid-template-columns:170px minmax(250px,1fr) 500px !important;
+            align-items:center !important;
+            gap:12px !important;
+            padding:10px 14px !important;
+            overflow:hidden !important;
+            border-bottom:1px solid rgba(255,255,255,.12) !important;
+            background:
+              radial-gradient(circle at 88% 4%,rgba(212,175,55,.16),transparent 28%),
+              linear-gradient(135deg,#06152f,#08265f 62%,#0a2e73) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader > div:first-child > span {
+            color:rgba(255,255,255,.58) !important;
+            font-size:6.5px !important;
+            font-weight:950 !important;
+            letter-spacing:.9px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader h2 {
+            margin:4px 0 0 !important;
+            color:#fff !important;
+            font-size:25px !important;
+            line-height:1 !important;
+            white-space:nowrap !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse {
+            width:100% !important;
+            max-width:360px !important;
+            min-width:0 !important;
+            min-height:54px !important;
+            justify-self:center !important;
+            display:flex !important;
+            flex-direction:column !important;
+            justify-content:center !important;
+            padding:8px 12px !important;
+            border:1px solid rgba(255,255,255,.13) !important;
+            border-radius:11px !important;
+            background:rgba(255,255,255,.07) !important;
+            box-shadow:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse > span {
+            color:#8ff0c2 !important;
+            font-size:6.5px !important;
+            font-weight:950 !important;
+            letter-spacing:.7px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse > strong {
+            margin-top:3px !important;
+            color:#efd878 !important;
+            font-size:22px !important;
+            line-height:1 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse > small {
+            margin-top:3px !important;
+            color:rgba(255,255,255,.42) !important;
+            font-size:5.5px !important;
+          }
+
+          /* Coloured function boxes: every action is visually distinct. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions {
+            width:500px !important;
+            max-width:500px !important;
+            display:grid !important;
+            grid-template-columns:92px 126px 126px 42px 42px 42px !important;
+            gap:6px !important;
+            align-items:center !important;
+            justify-content:end !important;
+            overflow:visible !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button {
+            min-width:0 !important;
+            width:100% !important;
+            height:38px !important;
+            min-height:38px !important;
+            display:flex !important;
+            align-items:center !important;
+            justify-content:center !important;
+            gap:5px !important;
+            padding:0 7px !important;
+            border-radius:9px !important;
+            font-size:7px !important;
+            font-weight:950 !important;
+            white-space:nowrap !important;
+            overflow:hidden !important;
+            text-overflow:ellipsis !important;
+            box-shadow:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCounterModeToggle2036 {
+            border:1px solid rgba(145,122,255,.55) !important;
+            background:rgba(109,77,255,.18) !important;
+            color:#eee9ff !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillAddNextItem {
+            border:1px solid rgba(78,161,255,.55) !important;
+            background:rgba(53,124,230,.18) !important;
+            color:#e8f3ff !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillQuickItem {
+            border:1px solid rgba(240,194,76,.62) !important;
+            background:rgba(212,175,55,.17) !important;
+            color:#fff2b9 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillExpandButton {
+            border:1px solid rgba(45,212,191,.52) !important;
+            background:rgba(20,184,166,.16) !important;
+            color:#d8fff8 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillNextCustomer {
+            border:1px solid rgba(63,191,126,.55) !important;
+            background:rgba(22,163,74,.16) !important;
+            color:#dcffe9 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillQueueButton {
+            border:1px solid rgba(202,121,255,.55) !important;
+            background:rgba(168,85,247,.16) !important;
+            color:#f3e6ff !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button[title="Clear bill"] {
+            border:1px solid rgba(255,115,115,.58) !important;
+            background:rgba(220,38,38,.17) !important;
+            color:#ffe5e5 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCloseMobileCart {
+            display:none !important;
+          }
+
+          /* Customer row stays visible but compact. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7CustomerTrigger {
+            flex:0 0 38px !important;
+            min-height:38px !important;
+            height:38px !important;
+            margin:7px 10px 0 !important;
+            padding:5px 9px !important;
+            border-radius:9px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerCardCompact {
+            flex:0 0 auto !important;
+            margin:6px 10px 0 !important;
+            padding:7px 9px !important;
+          }
+
+          /* Last scanned item stays, but no longer wastes a full block. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7LastScanCore {
+            flex:0 0 38px !important;
+            min-height:38px !important;
+            height:38px !important;
+            margin:6px 10px 0 !important;
+            padding:4px 8px !important;
+            border-radius:9px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7LastScanMedia {
+            width:30px !important;
+            height:30px !important;
+            min-width:30px !important;
+            border-radius:7px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7LastScanCopy small {
+            font-size:5px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7LastScanCopy strong {
+            font-size:8.5px !important;
+            line-height:1 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7LastScanCopy span {
+            font-size:5.5px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7LastScanSignals span {
+            min-height:28px !important;
+            padding:3px 7px !important;
+          }
+
+          /* Compact table head. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartTableHeader {
+            flex:0 0 30px !important;
+            min-height:30px !important;
+            height:30px !important;
+            margin:6px 10px 0 !important;
+            padding:0 8px !important;
+            font-size:5.8px !important;
+          }
+
+          /* EXACT WORKFLOW TARGET:
+             5 rows visible; row 6+ scrolls inside this area. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex:0 0 300px !important;
+            height:300px !important;
+            min-height:300px !important;
+            max-height:300px !important;
+            margin:0 10px !important;
+            overflow-x:hidden !important;
+            overflow-y:auto !important;
+            overscroll-behavior:contain !important;
+            touch-action:pan-y !important;
+            scrollbar-gutter:stable !important;
+            scrollbar-width:thin !important;
+            scrollbar-color:#0a2e73 #eef2f6 !important;
+            background:#fff !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems::-webkit-scrollbar {
+            width:8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems::-webkit-scrollbar-track {
+            background:#eef2f6 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems::-webkit-scrollbar-thumb {
+            background:linear-gradient(180deg,#d4af37,#0a2e73) !important;
+            border:2px solid #eef2f6 !important;
+            border-radius:999px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow {
+            min-height:60px !important;
+            height:60px !important;
+            padding:5px 8px !important;
+            overflow:hidden !important;
+            border-bottom:1px solid #edf0f4 !important;
+            background:#fff !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartThumbnail {
+            width:40px !important;
+            height:46px !important;
+            border-radius:8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartProductInfo h3 {
+            font-size:9px !important;
+            line-height:1.1 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartProductInfo small,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartProductInfo span,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartProductInfo p {
+            font-size:5.5px !important;
+          }
+
+          /* Compact controls in each row so all 5 rows fit cleanly. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow input,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow button,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow select {
+            min-height:34px !important;
+            height:34px !important;
+          }
+
+          /* Bottom working controls stay compact and reachable. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummary {
+            flex:0 0 52px !important;
+            min-height:52px !important;
+            margin:7px 10px 0 !important;
+            padding:6px !important;
+            gap:5px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummaryLine,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosDiscountField,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosRoundOffField {
+            min-height:40px !important;
+            height:40px !important;
+            padding:5px 7px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentSection {
+            flex:0 0 58px !important;
+            min-height:58px !important;
+            margin:7px 10px 0 !important;
+            padding:6px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton {
+            min-height:44px !important;
+            height:44px !important;
+            border-radius:9px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine {
+            flex:0 0 58px !important;
+            min-height:58px !important;
+            margin:7px 10px 9px !important;
+            padding:7px 9px !important;
+            border-radius:11px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine > strong {
+            font-size:22px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCompleteButtonInline {
+            min-height:44px !important;
+            height:44px !important;
+          }
+        }
+
+        @media (min-width:761px) and (max-height:760px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex-basis:270px !important;
+            height:270px !important;
+            min-height:270px !important;
+            max-height:270px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow {
+            min-height:54px !important;
+            height:54px !important;
+          }
+        }
+
+        @media (max-width:760px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            position:fixed !important;
+            inset:6px !important;
+            z-index:8000 !important;
+            height:calc(100dvh - 12px) !important;
+            max-height:calc(100dvh - 12px) !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex:1 1 auto !important;
+            min-height:220px !important;
+            overflow-y:auto !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • FAST BILL V2
+           TARGETED LAYOUT FIX ONLY
+           - Header actions are clearly labelled
+           - 5 product rows remain visible
+           - Product list scrolls after row 5
+           - Payment + Total + Complete Sale stay visible at bottom
+           - No billing logic / handlers / options changed
+           ============================================================ */
+
+        @media (min-width:761px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            position:fixed !important;
+            z-index:8000 !important;
+            top:8px !important;
+            right:8px !important;
+            bottom:8px !important;
+            left:104px !important;
+            height:calc(100dvh - 16px) !important;
+            max-height:calc(100dvh - 16px) !important;
+            display:flex !important;
+            flex-direction:column !important;
+            overflow:hidden !important;
+          }
+
+          /* ---------- CLEAR TOP HEADER ---------- */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+            flex:0 0 84px !important;
+            min-height:84px !important;
+            height:84px !important;
+            display:grid !important;
+            grid-template-columns:170px minmax(250px,1fr) 510px !important;
+            align-items:center !important;
+            gap:12px !important;
+            padding:10px 14px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader h2 {
+            margin-top:4px !important;
+            font-size:25px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse {
+            max-width:380px !important;
+            min-height:56px !important;
+            padding:8px 12px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse > strong {
+            font-size:23px !important;
+          }
+
+          /* Header action matrix: all boxes have clear names. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions {
+            width:510px !important;
+            max-width:510px !important;
+            display:grid !important;
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+            grid-template-rows:repeat(2,31px) !important;
+            gap:6px !important;
+            align-items:stretch !important;
+            overflow:visible !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button {
+            width:100% !important;
+            min-width:0 !important;
+            min-height:31px !important;
+            height:31px !important;
+            display:flex !important;
+            align-items:center !important;
+            justify-content:center !important;
+            gap:5px !important;
+            padding:0 7px !important;
+            border-radius:8px !important;
+            font-size:7px !important;
+            font-weight:950 !important;
+            white-space:nowrap !important;
+            overflow:hidden !important;
+            text-overflow:ellipsis !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCounterModeToggle2036 {
+            grid-column:1 !important;
+            grid-row:1 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillAddNextItem {
+            grid-column:2 !important;
+            grid-row:1 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillQuickItem {
+            grid-column:3 !important;
+            grid-row:1 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillNextCustomer {
+            grid-column:1 !important;
+            grid-row:2 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillQueueButton {
+            grid-column:2 !important;
+            grid-row:2 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button[title="Clear bill"] {
+            grid-column:3 !important;
+            grid-row:2 !important;
+          }
+
+          /* Add readable text to icon-only actions without touching JSX. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillNextCustomer {
+            font-size:0 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillNextCustomer::after {
+            content:"＋ Next Customer";
+            font-size:7px;
+            font-weight:950;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillQueueButton {
+            font-size:0 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillQueueButton::after {
+            content:"👥 Queue";
+            font-size:7px;
+            font-weight:950;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button[title="Clear bill"] {
+            font-size:0 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button[title="Clear bill"]::after {
+            content:"⌫ Clear Bill";
+            font-size:7px;
+            font-weight:950;
+          }
+
+          /* ---------- COMPACT NON-PRODUCT AREA ---------- */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7CustomerTrigger {
+            flex:0 0 34px !important;
+            min-height:34px !important;
+            height:34px !important;
+            margin:6px 10px 0 !important;
+            padding:4px 8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerCardCompact {
+            flex:0 0 auto !important;
+            margin:5px 10px 0 !important;
+            padding:6px 8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7LastScanCore {
+            flex:0 0 34px !important;
+            min-height:34px !important;
+            height:34px !important;
+            margin:5px 10px 0 !important;
+            padding:3px 7px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartTableHeader {
+            flex:0 0 27px !important;
+            min-height:27px !important;
+            height:27px !important;
+            margin:5px 10px 0 !important;
+            padding:0 8px !important;
+          }
+
+          /* ---------- 5 VISIBLE ROWS, THEN SCROLL ---------- */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex:0 0 255px !important;
+            height:255px !important;
+            min-height:255px !important;
+            max-height:255px !important;
+            margin:0 10px !important;
+            overflow-y:auto !important;
+            overflow-x:hidden !important;
+            overscroll-behavior:contain !important;
+            touch-action:pan-y !important;
+            scrollbar-gutter:stable !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow {
+            min-height:51px !important;
+            height:51px !important;
+            padding:4px 8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartThumbnail {
+            width:36px !important;
+            height:41px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartProductInfo h3 {
+            font-size:8.5px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow input,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow button,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow select {
+            min-height:31px !important;
+            height:31px !important;
+          }
+
+          /* ---------- FIXED BOTTOM WORK AREA ---------- */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummary {
+            flex:0 0 48px !important;
+            min-height:48px !important;
+            height:48px !important;
+            margin:6px 10px 0 !important;
+            padding:5px !important;
+            gap:5px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummaryLine,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosDiscountField,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosRoundOffField {
+            min-height:36px !important;
+            height:36px !important;
+            padding:4px 6px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentSection {
+            flex:0 0 54px !important;
+            min-height:54px !important;
+            height:54px !important;
+            margin:6px 10px 0 !important;
+            padding:5px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentHeading2036 {
+            display:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentGrid2036 {
+            height:44px !important;
+            grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+            gap:6px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton {
+            min-height:44px !important;
+            height:44px !important;
+            padding:0 8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine {
+            flex:0 0 54px !important;
+            min-height:54px !important;
+            height:54px !important;
+            margin:6px 10px 8px !important;
+            padding:6px 9px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine > strong {
+            font-size:21px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCompleteButtonInline {
+            min-height:40px !important;
+            height:40px !important;
+          }
+        }
+
+        /* Short displays still show 5 rows by shrinking each row, not by
+           pushing payment controls below the screen. */
+        @media (min-width:761px) and (max-height:780px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+            flex-basis:74px !important;
+            min-height:74px !important;
+            height:74px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex-basis:225px !important;
+            height:225px !important;
+            min-height:225px !important;
+            max-height:225px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow {
+            min-height:45px !important;
+            height:45px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummary {
+            flex-basis:44px !important;
+            min-height:44px !important;
+            height:44px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentSection {
+            flex-basis:50px !important;
+            min-height:50px !important;
+            height:50px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine {
+            flex-basis:50px !important;
+            min-height:50px !important;
+            height:50px !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • FAST BILL V2.1 • FIXED PAYMENT + COMPLETE SALE
+           TARGETED CSS ONLY
+           - No handlers / billing logic / options changed
+           - Fixes hidden Complete Sale caused by over-constrained payment box
+           - Keeps 5 bill rows visible, then scroll
+           - Keeps payment + total + complete-sale visible
+           ============================================================ */
+
+        @media (min-width:761px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            height:calc(100dvh - 16px) !important;
+            max-height:calc(100dvh - 16px) !important;
+            display:flex !important;
+            flex-direction:column !important;
+            overflow:hidden !important;
+          }
+
+          /* Keep top lane compact and readable. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+            flex:0 0 78px !important;
+            min-height:78px !important;
+            height:78px !important;
+            grid-template-columns:160px minmax(230px,1fr) 510px !important;
+            gap:12px !important;
+            padding:9px 13px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader h2 {
+            font-size:24px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions {
+            width:510px !important;
+            max-width:510px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button {
+            font-size:7.5px !important;
+            font-weight:950 !important;
+          }
+
+          /* Customer section remains usable but doesn't steal bill space. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7CustomerTrigger {
+            flex:0 0 32px !important;
+            min-height:32px !important;
+            height:32px !important;
+            margin:5px 10px 0 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerCardCompact {
+            flex:0 0 auto !important;
+            margin:4px 10px 0 !important;
+            padding:5px 7px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerCompactRow {
+            min-height:38px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerCompactName,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerCompactPhone,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosWhatsAppInline {
+            min-height:34px !important;
+            height:34px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7LastScanCore {
+            flex:0 0 32px !important;
+            min-height:32px !important;
+            height:32px !important;
+            margin:4px 10px 0 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartTableHeader {
+            flex:0 0 26px !important;
+            min-height:26px !important;
+            height:26px !important;
+            margin:4px 10px 0 !important;
+          }
+
+          /* Five visible rows; sixth and later scroll here only. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex:0 0 235px !important;
+            height:235px !important;
+            min-height:235px !important;
+            max-height:235px !important;
+            margin:0 10px !important;
+            overflow-y:auto !important;
+            overflow-x:hidden !important;
+            overscroll-behavior:contain !important;
+            scrollbar-gutter:stable !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow {
+            min-height:47px !important;
+            height:47px !important;
+            padding:3px 8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartThumbnail {
+            width:34px !important;
+            height:38px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow input,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow button,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow select {
+            min-height:29px !important;
+            height:29px !important;
+          }
+
+          /* Summary remains directly below the scrolling products. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummary {
+            flex:0 0 44px !important;
+            min-height:44px !important;
+            height:44px !important;
+            margin:5px 10px 0 !important;
+            padding:4px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummaryLine,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosDiscountField,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosRoundOffField {
+            min-height:34px !important;
+            height:34px !important;
+            padding:3px 6px !important;
+          }
+
+          /* IMPORTANT:
+             paymentSection contains BOTH payment buttons AND Total/Complete Sale.
+             Do not give it a tiny fixed height. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentSection {
+            flex:0 0 auto !important;
+            height:auto !important;
+            min-height:0 !important;
+            max-height:none !important;
+            margin:5px 10px 8px !important;
+            padding:5px !important;
+            overflow:visible !important;
+            border-radius:11px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentHeading2036 {
+            display:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentGrid2036 {
+            height:42px !important;
+            min-height:42px !important;
+            grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+            gap:6px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton {
+            min-height:42px !important;
+            height:42px !important;
+            padding:0 8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton b {
+            font-size:8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton small {
+            display:none !important;
+          }
+
+          /* Total + Complete Sale now always visible under payment buttons. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine {
+            min-height:50px !important;
+            height:50px !important;
+            margin:5px 0 0 !important;
+            padding:5px 8px !important;
+            display:grid !important;
+            grid-template-columns:minmax(150px,1fr) 190px 260px !important;
+            align-items:center !important;
+            gap:10px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine > div > span {
+            font-size:7px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine > div > small {
+            font-size:5.5px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine > strong {
+            font-size:21px !important;
+            text-align:right !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCompleteButtonInline {
+            width:100% !important;
+            min-height:38px !important;
+            height:38px !important;
+            display:grid !important;
+            grid-template-columns:26px minmax(0,1fr) 18px !important;
+            align-items:center !important;
+            gap:6px !important;
+            padding:0 10px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCompleteButtonInline > span {
+            width:24px !important;
+            height:24px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCompleteButtonInline strong {
+            font-size:8.5px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCompleteButtonInline small {
+            font-size:6px !important;
+          }
+
+          /* If Split/Credit opens extra controls, the bill itself can scroll
+             without breaking the normal fast-bill layout. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSplitPaymentPanel2036,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCreditPanel {
+            max-height:180px !important;
+            overflow-y:auto !important;
+          }
+        }
+
+        @media (min-width:761px) and (max-height:780px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+            flex-basis:72px !important;
+            min-height:72px !important;
+            height:72px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex-basis:210px !important;
+            height:210px !important;
+            min-height:210px !important;
+            max-height:210px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow {
+            min-height:42px !important;
+            height:42px !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • CATALOGUE-FIRST HOME
+           FUNCTIONAL BEHAVIOUR:
+           - Empty bill: no bill window is rendered.
+           - Catalogue/brands use the full POS workspace.
+           - First scanned/selected/quick-added item creates cart data,
+             then the existing billing window opens automatically.
+           - Existing billing/payment/stock/customer logic is untouched.
+           ============================================================ */
+
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly {
+          grid-template-columns:minmax(0,1fr) !important;
+        }
+
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosCatalogue {
+          width:100% !important;
+          max-width:none !important;
+          min-width:0 !important;
+        }
+
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosSearchPanel {
+          max-width:none !important;
+        }
+
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosBrandMatrix,
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosBrandGrid,
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosBrandCompactGrid {
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          gap:10px !important;
+        }
+
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosBrandMatrixCard,
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosBrandCompactCard {
+          min-height:92px !important;
+        }
+
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosCategoryOrbit {
+          margin-bottom:10px !important;
+        }
+
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosCatalogueTop {
+          margin-top:10px !important;
+        }
+
+        /* Keep the empty state visually focused on selling, not billing. */
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly {
+          animation:ncsCatalogueReady .18s ease-out both;
+        }
+
+        @keyframes ncsCatalogueReady {
+          from { opacity:.96; transform:translateY(2px); }
+          to { opacity:1; transform:translateY(0); }
+        }
+
+        @media (max-width:1250px) {
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosBrandMatrix,
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosBrandGrid,
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosBrandCompactGrid {
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          }
+        }
+
+        @media (max-width:820px) {
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosBrandMatrix,
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosBrandGrid,
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly .ncsPosBrandCompactGrid {
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • CATALOGUE-FIRST HOME V2
+           ONE COHERENT EMPTY-BILL LAYOUT
+           IMPORTANT:
+           - No billing logic/functions removed
+           - Empty bill = full-width selling/catalogue workspace
+           - First item added = existing advanced billing window opens
+           - No blank right side
+           ============================================================ */
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly {
+          display:grid !important;
+          grid-template-columns:minmax(0,1fr) !important;
+          width:100% !important;
+          max-width:none !important;
+          min-width:0 !important;
+          gap:0 !important;
+          align-items:stretch !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCatalogue {
+          grid-column:1 / -1 !important;
+          width:100% !important;
+          max-width:none !important;
+          min-width:0 !important;
+          height:100% !important;
+          display:flex !important;
+          flex-direction:column !important;
+          padding:12px !important;
+          overflow-y:auto !important;
+          overflow-x:hidden !important;
+          border:1px solid #dfe6ee !important;
+          border-radius:18px !important;
+          background:
+            radial-gradient(circle at 93% 2%,rgba(212,175,55,.055),transparent 22%),
+            linear-gradient(180deg,#ffffff,#f8fafc) !important;
+          box-shadow:0 12px 30px rgba(16,24,40,.055) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchPanel {
+          width:100% !important;
+          max-width:none !important;
+          grid-template-columns:44px minmax(0,1fr) 110px 120px !important;
+          min-height:66px !important;
+          margin:0 !important;
+          padding:9px !important;
+          border:1px solid #dfe6ee !important;
+          border-radius:14px !important;
+          background:#fff !important;
+          box-shadow:0 6px 18px rgba(16,24,40,.035) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCategoryOrbit {
+          width:100% !important;
+          margin:10px 0 0 !important;
+          padding:11px !important;
+          border:1px solid #e2e7ed !important;
+          border-radius:14px !important;
+          background:#fbfcfe !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCategoryRow {
+          display:grid !important;
+          grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+          gap:8px !important;
+          width:100% !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCategoryButton {
+          width:100% !important;
+          min-height:58px !important;
+          border-radius:12px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCatalogueTop {
+          width:100% !important;
+          margin:10px 0 0 !important;
+          min-height:86px !important;
+          border-radius:15px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosViewTabs {
+          width:100% !important;
+          margin-top:9px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandMatrixShell {
+          width:100% !important;
+          max-width:none !important;
+          margin-top:9px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandMatrixViewport {
+          width:100% !important;
+          max-width:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+          width:100% !important;
+          display:grid !important;
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          gap:10px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard {
+          min-height:94px !important;
+          width:100% !important;
+          border:1px solid #e3e8ef !important;
+          border-radius:13px !important;
+          background:#fff !important;
+          box-shadow:0 5px 14px rgba(16,24,40,.035) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard:hover {
+          transform:translateY(-1px) !important;
+          border-color:rgba(109,77,255,.30) !important;
+          box-shadow:0 9px 20px rgba(16,24,40,.055) !important;
+        }
+
+        /* Keep the empty-bill home visually balanced instead of leaving
+           unused empty canvas on the right. */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly::after {
+          display:none !important;
+          content:none !important;
+        }
+
+        @media (max-width:1320px) {
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosCategoryRow {
+            grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          }
+        }
+
+        @media (max-width:900px) {
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosSearchPanel {
+            grid-template-columns:40px minmax(0,1fr) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosSearchButton,
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosSearchQuickItemButton {
+            grid-column:auto !important;
+            min-width:0 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosCategoryRow {
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • SIGNATURE SELLING DESKTOP
+           VISUAL POLISH ONLY — ALL CURRENT FUNCTIONS PRESERVED
+           Empty bill = premium selling/catalogue experience.
+           First item added = existing advanced billing window opens.
+           ============================================================ */
+
+        .ncsPosV7Living.ncsPosCounterOS {
+          --ncs-bg:#f4f7fb;
+          --ncs-surface:#ffffff;
+          --ncs-line:#dfe6ee;
+          --ncs-navy:#08265f;
+          --ncs-navy-2:#0a2e73;
+          --ncs-gold:#d4af37;
+          --ncs-gold-soft:#efd878;
+          --ncs-ink:#162033;
+          --ncs-muted:#6b7280;
+          --ncs-soft:#f8fafc;
+          background:
+            radial-gradient(circle at 92% 0%,rgba(212,175,55,.06),transparent 22%),
+            linear-gradient(180deg,#f7f9fc 0%,#eef3f8 100%) !important;
+        }
+
+        /* ====== HERO / COUNTER HEADER ====== */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+          min-height:118px !important;
+          padding:18px 20px !important;
+          border:1px solid rgba(10,46,115,.09) !important;
+          border-radius:22px !important;
+          background:
+            radial-gradient(circle at 90% -10%,rgba(212,175,55,.16),transparent 30%),
+            linear-gradient(135deg,#ffffff 0%,#fbfdff 58%,#eef4fb 100%) !important;
+          box-shadow:
+            0 18px 42px rgba(16,24,40,.075),
+            inset 0 1px 0 rgba(255,255,255,.94) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader::before {
+          content:"";
+          position:absolute;
+          inset:0 auto 0 0;
+          width:6px;
+          border-radius:22px 0 0 22px;
+          background:linear-gradient(180deg,#efd878,#d4af37 45%,#0a2e73);
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosEyebrow {
+          color:#667085 !important;
+          background:#f8fafc !important;
+          border-color:#e4e9ef !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1 {
+          color:#0a2e73 !important;
+          font-size:34px !important;
+          letter-spacing:-1px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader p {
+          color:#7b8494 !important;
+          max-width:660px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+          gap:8px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions button {
+          min-height:48px !important;
+          border:1px solid #dfe6ee !important;
+          border-radius:12px !important;
+          background:#fff !important;
+          color:#24324a !important;
+          box-shadow:0 6px 16px rgba(16,24,40,.045) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions button:hover:not(:disabled) {
+          transform:translateY(-1px);
+          border-color:rgba(212,175,55,.45) !important;
+          box-shadow:0 9px 20px rgba(16,24,40,.06) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions button > span {
+          background:#fffaf0 !important;
+          color:#0a2e73 !important;
+          border-color:rgba(212,175,55,.22) !important;
+        }
+
+        /* ====== STATUS RAIL ====== */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandDeck {
+          min-height:54px !important;
+          margin-top:10px !important;
+          padding:8px 10px !important;
+          border:1px solid #e1e7ee !important;
+          border-radius:14px !important;
+          background:rgba(255,255,255,.96) !important;
+          box-shadow:0 7px 18px rgba(16,24,40,.04) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandIdentity {
+          border-right:1px solid #e8ecf1 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandIdentity span {
+          color:#b18b15 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandIdentity strong,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandSignals b {
+          color:#0a2e73 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandSignals > span,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandSignals > button {
+          border-color:#e5eaf0 !important;
+          background:#f8fafc !important;
+          border-radius:10px !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandSignals .money {
+          border-color:#ead99f !important;
+          background:#fffaf0 !important;
+        }
+
+        /* ====== EMPTY BILL = FULL SELLING DESKTOP ====== */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly {
+          width:100% !important;
+          display:grid !important;
+          grid-template-columns:1fr !important;
+          gap:0 !important;
+          margin-top:12px !important;
+          overflow:visible !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCatalogue {
+          width:100% !important;
+          max-width:none !important;
+          min-width:0 !important;
+          padding:14px !important;
+          border:1px solid #dfe6ee !important;
+          border-radius:20px !important;
+          background:
+            radial-gradient(circle at 92% 0%,rgba(212,175,55,.035),transparent 22%),
+            #fff !important;
+          box-shadow:0 12px 28px rgba(16,24,40,.05) !important;
+        }
+
+        /* Search becomes the dominant POS command surface */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchPanel {
+          width:100% !important;
+          min-height:70px !important;
+          grid-template-columns:46px minmax(0,1fr) 112px 124px !important;
+          gap:9px !important;
+          padding:10px !important;
+          border:1px solid #dce3eb !important;
+          border-radius:15px !important;
+          background:
+            linear-gradient(180deg,#ffffff,#fafbfd) !important;
+          box-shadow:0 7px 18px rgba(16,24,40,.035) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchIcon {
+          width:46px !important;
+          height:46px !important;
+          border-radius:12px !important;
+          border-color:rgba(212,175,55,.26) !important;
+          background:#fffaf0 !important;
+          color:#0a2e73 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchPanel input {
+          height:46px !important;
+          padding:0 14px !important;
+          border:1px solid #e1e6ed !important;
+          border-radius:11px !important;
+          background:#fff !important;
+          color:#172033 !important;
+          font-size:12px !important;
+          font-weight:700 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchButton {
+          min-height:46px !important;
+          border-radius:11px !important;
+          background:linear-gradient(135deg,#0a2e73,#164b9d) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchQuickItemButton {
+          min-height:46px !important;
+          border-radius:11px !important;
+          border:1px solid #d4af37 !important;
+          background:linear-gradient(180deg,#fffdf6,#fff8e8) !important;
+          color:#7a5a06 !important;
+          box-shadow:none !important;
+        }
+
+        /* Category orbit = polished inventory navigation */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCategoryOrbit {
+          width:100% !important;
+          margin-top:11px !important;
+          padding:12px !important;
+          border:1px solid #e2e7ed !important;
+          border-radius:15px !important;
+          background:#f8fafc !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCategoryRow {
+          display:grid !important;
+          grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+          gap:9px !important;
+          width:100% !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCategoryButton {
+          min-height:62px !important;
+          border:1px solid #e2e7ed !important;
+          border-radius:12px !important;
+          background:#fff !important;
+          box-shadow:0 4px 12px rgba(16,24,40,.025) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCategoryButton:hover {
+          transform:translateY(-1px) !important;
+          border-color:rgba(109,77,255,.25) !important;
+          box-shadow:0 7px 16px rgba(16,24,40,.045) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCategoryActive {
+          border-color:#6d4dff !important;
+          background:
+            linear-gradient(180deg,#f8f5ff,#f1edff) !important;
+          box-shadow:0 8px 18px rgba(109,77,255,.08) !important;
+        }
+
+        /* Intelligence banner */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCatalogueTop {
+          width:100% !important;
+          min-height:92px !important;
+          margin-top:11px !important;
+          border-radius:16px !important;
+          background:
+            radial-gradient(circle at 88% 12%,rgba(26,197,196,.22),transparent 30%),
+            linear-gradient(135deg,#2c146a 0%,#5c43dd 56%,#008fa0 100%) !important;
+          box-shadow:0 12px 26px rgba(64,47,151,.13) !important;
+        }
+
+        /* View selector */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosViewTabs {
+          width:100% !important;
+          margin-top:10px !important;
+          padding:6px !important;
+          border:1px solid #e2e7ed !important;
+          border-radius:12px !important;
+          background:#fff !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosViewTabs button {
+          min-height:38px !important;
+          color:#667085 !important;
+          border-radius:9px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosViewTabs button.active {
+          background:linear-gradient(135deg,#6d4dff,#34a7df) !important;
+          color:#fff !important;
+          box-shadow:0 7px 15px rgba(109,77,255,.16) !important;
+        }
+
+        /* Brand grid uses the full width and feels like a real POS catalogue */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandMatrixShell,
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandMatrixViewport {
+          width:100% !important;
+          max-width:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+          width:100% !important;
+          display:grid !important;
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          gap:10px !important;
+          margin-top:10px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard {
+          min-height:104px !important;
+          border:1px solid #e2e7ed !important;
+          border-radius:14px !important;
+          background:
+            linear-gradient(180deg,#ffffff,#fbfcfe) !important;
+          box-shadow:0 6px 16px rgba(16,24,40,.035) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard:hover {
+          transform:translateY(-2px) !important;
+          border-color:rgba(109,77,255,.32) !important;
+          box-shadow:0 11px 24px rgba(16,24,40,.06) !important;
+        }
+
+        /* Product cards also get the same premium surface */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosGroupedCard {
+          border:1px solid #e2e7ed !important;
+          border-radius:14px !important;
+          background:#fff !important;
+          box-shadow:0 6px 16px rgba(16,24,40,.035) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosGroupedCard:hover {
+          transform:translateY(-1px) !important;
+          border-color:rgba(212,175,55,.34) !important;
+          box-shadow:0 10px 22px rgba(16,24,40,.055) !important;
+        }
+
+        /* Smooth and purposeful motion only */
+        .ncsPosV7Living.ncsPosCounterOS :is(
+          .ncsPosHeader,
+          .ncsPosV7CommandDeck,
+          .ncsPosCatalogue,
+          .ncsPosCategoryButton,
+          .ncsPosBrandMatrixCard,
+          .ncsPosGroupedCard,
+          button
+        ) {
+          transition:
+            transform .16s ease,
+            border-color .16s ease,
+            background .16s ease,
+            box-shadow .16s ease !important;
+        }
+
+        @media (max-width:1320px) {
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosCategoryRow {
+            grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          }
+        }
+
+        @media (max-width:900px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+            min-height:auto !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosCategoryRow,
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • WEB-LEVEL SIGNATURE COMMERCE UI
+           VISUAL / LAYOUT ONLY. CURRENT FUNCTIONS STAY UNCHANGED.
+           ============================================================ */
+
+        .ncsPosV7Living.ncsPosCounterOS {
+          --ncs-commerce-teal:#0d7377;
+          --ncs-commerce-teal-dark:#07555f;
+          --ncs-commerce-navy:#0a2e73;
+          --ncs-commerce-gold:#d6b34a;
+          --ncs-commerce-gold-soft:#f2da83;
+          --ncs-commerce-canvas:#f7f8fb;
+          --ncs-commerce-ink:#172033;
+          background:
+            radial-gradient(circle at 92% 0%,rgba(13,115,119,.07),transparent 22%),
+            radial-gradient(circle at 8% 100%,rgba(214,179,74,.06),transparent 28%),
+            linear-gradient(180deg,#fafbfd 0%,#f2f5f8 100%) !important;
+        }
+
+        /* ---------- TOP PAGE IDENTITY ---------- */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+          min-height:116px !important;
+          border:1px solid rgba(13,115,119,.12) !important;
+          background:
+            radial-gradient(circle at 89% -8%,rgba(214,179,74,.16),transparent 30%),
+            linear-gradient(135deg,#ffffff 0%,#fbfdfd 56%,#eef7f6 100%) !important;
+          box-shadow:0 18px 42px rgba(16,24,40,.07) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader::before {
+          background:linear-gradient(
+            180deg,
+            var(--ncs-commerce-gold-soft),
+            var(--ncs-commerce-gold) 42%,
+            var(--ncs-commerce-teal)
+          ) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1 {
+          color:var(--ncs-commerce-teal-dark) !important;
+          font-size:36px !important;
+          letter-spacing:-1.2px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosEyebrow {
+          color:#876c13 !important;
+          border-color:rgba(214,179,74,.25) !important;
+          background:#fffdf7 !important;
+        }
+
+        /* ---------- SELLING INTRO: WEBSITE-LIKE TYPOGRAPHY ---------- */
+        .ncsPosCommerceIntro {
+          position:relative;
+          display:grid;
+          grid-template-columns:minmax(0,1fr) auto;
+          align-items:end;
+          gap:20px;
+          margin-bottom:12px;
+          padding:18px 20px;
+          overflow:hidden;
+          border:1px solid rgba(13,115,119,.13);
+          border-radius:18px;
+          background:
+            radial-gradient(circle at 92% 16%,rgba(214,179,74,.12),transparent 28%),
+            linear-gradient(135deg,#ffffff,#f8fcfb 68%,#f5efe0);
+          box-shadow:0 10px 26px rgba(16,24,40,.045);
+        }
+
+        .ncsPosCommerceIntro::after {
+          content:"NCS • POS";
+          position:absolute;
+          right:22px;
+          top:-11px;
+          color:rgba(13,115,119,.045);
+          font-size:68px;
+          font-weight:1000;
+          letter-spacing:-4px;
+          pointer-events:none;
+        }
+
+        .ncsPosCommerceIntroCopy {
+          position:relative;
+          z-index:1;
+          max-width:840px;
+        }
+
+        .ncsPosCommerceIntroCopy > span {
+          color:#9b7a17;
+          font-size:8px;
+          font-weight:950;
+          letter-spacing:1.35px;
+        }
+
+        .ncsPosCommerceIntroCopy h2 {
+          margin:7px 0 0;
+          color:var(--ncs-commerce-teal-dark);
+          font-size:clamp(28px,3vw,44px);
+          line-height:1.02;
+          letter-spacing:-1.4px;
+        }
+
+        .ncsPosCommerceIntroCopy p {
+          max-width:720px;
+          margin:9px 0 0;
+          color:#667085;
+          font-size:10px;
+          line-height:1.55;
+        }
+
+        .ncsPosCommerceIntroSignals {
+          position:relative;
+          z-index:1;
+          display:flex;
+          flex-wrap:wrap;
+          justify-content:flex-end;
+          gap:6px;
+        }
+
+        .ncsPosCommerceIntroSignals span {
+          min-height:31px;
+          display:inline-flex;
+          align-items:center;
+          gap:6px;
+          padding:0 10px;
+          border:1px solid #e3e8ef;
+          border-radius:999px;
+          background:#fff;
+          color:#475467;
+          font-size:6.5px;
+          font-weight:950;
+          letter-spacing:.5px;
+        }
+
+        .ncsPosCommerceIntroSignals span:first-child {
+          border-color:#bcebd9;
+          background:#effaf5;
+          color:#087a5a;
+        }
+
+        .ncsPosCommerceIntroSignals i {
+          width:7px;
+          height:7px;
+          border-radius:50%;
+          background:#21b879;
+          box-shadow:0 0 0 4px rgba(33,184,121,.10);
+        }
+
+        /* ---------- POWER SEARCH ---------- */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchPanel {
+          min-height:78px !important;
+          grid-template-columns:70px minmax(0,1fr) 126px 142px !important;
+          gap:0 !important;
+          padding:0 !important;
+          overflow:visible !important;
+          border:1px solid rgba(13,115,119,.18) !important;
+          border-radius:17px !important;
+          background:#fff !important;
+          box-shadow:
+            0 13px 30px rgba(16,24,40,.06),
+            0 0 0 3px rgba(13,115,119,.025) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchIcon {
+          width:70px !important;
+          height:76px !important;
+          border:0 !important;
+          border-right:1px solid #e7ebf0 !important;
+          border-radius:16px 0 0 16px !important;
+          background:
+            linear-gradient(180deg,#fbfdfd,#f7fafb) !important;
+          color:var(--ncs-commerce-teal) !important;
+          font-size:22px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchPanel input {
+          height:76px !important;
+          padding:0 20px !important;
+          border:0 !important;
+          border-radius:0 !important;
+          background:#fff !important;
+          color:#172033 !important;
+          font-size:13px !important;
+          font-weight:700 !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchPanel input::placeholder {
+          color:#8b94a3 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchPanel input:focus {
+          box-shadow:inset 0 -2px 0 rgba(13,115,119,.50) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchButton {
+          min-height:78px !important;
+          height:78px !important;
+          border:0 !important;
+          border-radius:0 !important;
+          background:
+            linear-gradient(135deg,#f0d46d,#d7b54e) !important;
+          color:#07555f !important;
+          font-size:10px !important;
+          font-weight:1000 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchQuickItemButton {
+          min-height:78px !important;
+          height:78px !important;
+          border:0 !important;
+          border-radius:0 16px 16px 0 !important;
+          background:
+            linear-gradient(135deg,#0d7377,#0b8587) !important;
+          color:#fff !important;
+          font-size:9px !important;
+          font-weight:950 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchQuickItemButton span {
+          color:#f1d46c !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosSearchTelemetry {
+          top:-12px !important;
+          right:14px !important;
+          border-color:rgba(13,115,119,.14) !important;
+          background:#fff !important;
+          color:#596273 !important;
+          box-shadow:0 6px 16px rgba(16,24,40,.05) !important;
+        }
+
+        /* ---------- AI: INLINE INTELLIGENCE RAIL, NEVER BLOCKS PAGERS ---------- */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosAiPanel.collapsed {
+          position:relative !important;
+          inset:auto !important;
+          width:100% !important;
+          height:54px !important;
+          min-height:54px !important;
+          margin:10px 0 0 !important;
+          overflow:hidden !important;
+          border:1px solid rgba(109,77,255,.14) !important;
+          border-radius:14px !important;
+          background:
+            radial-gradient(circle at 94% 0%,rgba(25,178,181,.14),transparent 28%),
+            linear-gradient(135deg,#faf8ff,#f5fbfc) !important;
+          box-shadow:none !important;
+          z-index:3 !important;
+          transform:none !important;
+          animation:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosAiPanel.collapsed::before,
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosAiPanel.collapsed::after {
+          display:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosAiPanel.collapsed
+        .ncsPosAiMascotRunner {
+          position:relative !important;
+          inset:auto !important;
+          width:100% !important;
+          min-width:0 !important;
+          height:52px !important;
+          min-height:52px !important;
+          display:block !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosAiPanel.collapsed
+        .ncsPosPremiumAiButton {
+          width:100% !important;
+          height:52px !important;
+          min-height:52px !important;
+          display:grid !important;
+          grid-template-columns:42px minmax(0,1fr) auto 24px !important;
+          align-items:center !important;
+          gap:10px !important;
+          padding:0 12px !important;
+          border:0 !important;
+          border-radius:13px !important;
+          background:transparent !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosPremiumAiOrb {
+          width:36px !important;
+          height:36px !important;
+          border-radius:11px !important;
+          background:linear-gradient(135deg,#6548e6,#1a9ab0) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosPremiumAiCopy {
+          align-items:flex-start !important;
+          text-align:left !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosPremiumAiCopy em {
+          color:#6f60c8 !important;
+          font-size:5.5px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosPremiumAiCopy b {
+          color:#16314e !important;
+          font-size:9px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosPremiumAiCopy small {
+          color:#7c8594 !important;
+          font-size:6px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosPremiumAiLive {
+          border-color:#bee7d8 !important;
+          background:#edf9f4 !important;
+          color:#08795b !important;
+        }
+
+        /* ---------- CATEGORY DISCOVERY ---------- */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCategoryOrbit {
+          padding:14px !important;
+          background:
+            radial-gradient(circle at 96% 0%,rgba(214,179,74,.055),transparent 24%),
+            #fafbfd !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCategoryOrbitLabel span {
+          color:#9a7916 !important;
+          font-size:7px !important;
+          letter-spacing:1.05px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCategoryRow {
+          grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+          gap:10px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCategoryButton {
+          min-height:70px !important;
+          padding:10px !important;
+          border-radius:14px !important;
+          background:#fff !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCategoryActive {
+          border-color:var(--ncs-commerce-teal) !important;
+          background:
+            linear-gradient(180deg,#effafa,#eaf7f7) !important;
+          box-shadow:0 8px 20px rgba(13,115,119,.09) !important;
+        }
+
+        /* ---------- PRODUCT INTELLIGENCE BANNER ---------- */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCatalogueTop {
+          min-height:96px !important;
+          background:
+            radial-gradient(circle at 90% 8%,rgba(214,179,74,.19),transparent 31%),
+            linear-gradient(135deg,#073a55 0%,#0b6672 58%,#10948f 100%) !important;
+          box-shadow:0 13px 28px rgba(8,80,92,.15) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosCatalogueTop h2 {
+          font-size:24px !important;
+          letter-spacing:-.55px !important;
+        }
+
+        /* ---------- BRAND MATRIX: EDITORIAL COMMERCE CARDS ---------- */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandMatrixCommand {
+          padding:9px !important;
+          border:1px solid #e2e7ed !important;
+          border-radius:13px !important;
+          background:#fff !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandMatrixSearch {
+          border-color:#dfe5ec !important;
+          background:#fafbfd !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          gap:12px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard {
+          position:relative !important;
+          min-height:120px !important;
+          overflow:hidden !important;
+          border:1px solid #e1e6ed !important;
+          border-radius:16px !important;
+          background:
+            radial-gradient(circle at 96% 4%,rgba(13,115,119,.055),transparent 28%),
+            linear-gradient(180deg,#fff,#fbfcfe) !important;
+          box-shadow:0 7px 18px rgba(16,24,40,.04) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard::after {
+          content:"";
+          position:absolute;
+          right:-28px;
+          bottom:-28px;
+          width:80px;
+          height:80px;
+          border-radius:50%;
+          background:rgba(214,179,74,.055);
+          pointer-events:none;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard:hover {
+          transform:translateY(-2px) !important;
+          border-color:rgba(13,115,119,.28) !important;
+          box-shadow:0 13px 28px rgba(16,24,40,.07) !important;
+        }
+
+        /* Pagination must remain fully clickable and above all decoration. */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandMatrixPager {
+          position:relative !important;
+          z-index:20 !important;
+          min-height:48px !important;
+          margin-top:10px !important;
+          padding:6px 8px !important;
+          border:1px solid #e5eaf0 !important;
+          border-radius:12px !important;
+          background:#fff !important;
+          box-shadow:0 5px 14px rgba(16,24,40,.035) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandMatrixPager button {
+          position:relative !important;
+          z-index:21 !important;
+          pointer-events:auto !important;
+        }
+
+        @media (max-width:1320px) {
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosCategoryRow {
+            grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          }
+        }
+
+        @media (max-width:900px) {
+          .ncsPosCommerceIntro {
+            grid-template-columns:1fr;
+          }
+
+          .ncsPosCommerceIntroSignals {
+            justify-content:flex-start;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosSearchPanel {
+            grid-template-columns:54px minmax(0,1fr) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosSearchIcon {
+            width:54px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosSearchButton,
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosSearchQuickItemButton {
+            min-height:46px !important;
+            height:46px !important;
+            border-radius:10px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosCategoryRow,
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          }
+        }
+
+        /* ================================================================
+           NCS POS • PREMIUM WEB-LANGUAGE VISUAL PASS • 2036
+           VISUAL ONLY: search / AI launcher / category / brand surfaces.
+           Billing, stock, cart, payment, reward, offline and AI logic untouched.
+           ================================================================ */
+
+        /* Search first — same visual language as NEW CITY STYLE web header. */
+        .ncsPosCatalogue > .ncsPosSearchPanel {
+          margin-top:0 !important;
+          margin-bottom:12px !important;
+          min-height:78px !important;
+          display:grid !important;
+          grid-template-columns:118px minmax(280px,1fr) 142px 158px !important;
+          align-items:stretch !important;
+          overflow:visible !important;
+          border:1px solid rgba(9,54,74,.12) !important;
+          border-radius:22px !important;
+          background:#ffffff !important;
+          box-shadow:0 16px 42px rgba(2,28,55,.09) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel::before {
+          content:"";
+          position:absolute;
+          inset:-1px;
+          border-radius:22px;
+          padding:1px;
+          background:linear-gradient(100deg,rgba(21,128,128,.38),rgba(212,175,55,.48),rgba(12,86,105,.28));
+          -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
+          -webkit-mask-composite:xor;
+          mask-composite:exclude;
+          pointer-events:none;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchIcon {
+          width:auto !important;
+          min-width:118px !important;
+          height:100% !important;
+          display:flex !important;
+          flex-direction:column !important;
+          align-items:center !important;
+          justify-content:center !important;
+          gap:5px !important;
+          border-right:1px solid #e7edf1 !important;
+          border-radius:21px 0 0 21px !important;
+          background:linear-gradient(180deg,#fbfdfd,#f4f8f8) !important;
+          color:#0b6670 !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchIcon span {
+          font-size:23px !important;
+          line-height:1 !important;
+          font-weight:800 !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchIcon small {
+          display:block !important;
+          font-size:8px !important;
+          line-height:1 !important;
+          letter-spacing:1.35px !important;
+          font-weight:900 !important;
+          color:#71869a !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel input {
+          min-width:0 !important;
+          height:78px !important;
+          padding:0 56px 0 24px !important;
+          border:0 !important;
+          outline:0 !important;
+          background:#fff !important;
+          color:#092f45 !important;
+          font-size:15px !important;
+          font-weight:700 !important;
+          letter-spacing:.01em !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel input::placeholder {
+          color:#8492a3 !important;
+          opacity:1 !important;
+          font-weight:600 !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchButton {
+          min-width:142px !important;
+          height:78px !important;
+          border:0 !important;
+          border-left:1px solid rgba(130,111,42,.12) !important;
+          border-radius:0 !important;
+          background:linear-gradient(135deg,#f1d467,#dfb94d) !important;
+          color:#063447 !important;
+          font-size:13px !important;
+          font-weight:950 !important;
+          letter-spacing:.02em !important;
+          box-shadow:inset 0 1px rgba(255,255,255,.45) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+          min-width:158px !important;
+          height:78px !important;
+          margin:0 !important;
+          border:0 !important;
+          border-radius:0 21px 21px 0 !important;
+          background:linear-gradient(135deg,#0f7f83,#087078) !important;
+          color:#fff !important;
+          font-size:13px !important;
+          font-weight:900 !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchQuickItemButton span {
+          color:#f2d36b !important;
+          font-size:18px !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosClearSearch {
+          right:318px !important;
+          top:50% !important;
+          transform:translateY(-50%) !important;
+          width:30px !important;
+          height:30px !important;
+          border-radius:50% !important;
+          border:1px solid #e0e8ec !important;
+          background:#f7fafb !important;
+          color:#607788 !important;
+          z-index:6 !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchTelemetry {
+          position:absolute !important;
+          right:320px !important;
+          top:-15px !important;
+          display:flex !important;
+          align-items:center !important;
+          gap:6px !important;
+          min-height:28px !important;
+          padding:5px 9px !important;
+          border:1px solid rgba(9,90,104,.12) !important;
+          border-radius:999px !important;
+          background:#fff !important;
+          box-shadow:0 8px 20px rgba(2,31,50,.08) !important;
+          white-space:nowrap !important;
+          z-index:5 !important;
+        }
+
+        /* AI stays visible in its own rail — never floats over billing controls. */
+        .ncsPosCatalogue > .ncsPosAiPanel {
+          position:relative !important;
+          inset:auto !important;
+          width:100% !important;
+          max-width:none !important;
+          margin:0 0 12px !important;
+          z-index:3 !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel.collapsed {
+          min-height:64px !important;
+          padding:0 !important;
+          overflow:visible !important;
+          border:1px solid rgba(8,86,102,.12) !important;
+          border-radius:18px !important;
+          background:linear-gradient(100deg,#f9fcfc 0%,#ffffff 56%,#f7fbf6 100%) !important;
+          box-shadow:0 9px 24px rgba(2,30,49,.055) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel.collapsed::before {
+          content:"NCS AI • BILLING COPILOT" !important;
+          position:absolute !important;
+          left:20px !important;
+          top:50% !important;
+          transform:translateY(-50%) !important;
+          color:#567282 !important;
+          font-size:9px !important;
+          font-weight:950 !important;
+          letter-spacing:1.35px !important;
+          pointer-events:none !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel .ncsPosAiMascotRunner {
+          position:absolute !important;
+          left:auto !important;
+          right:8px !important;
+          top:7px !important;
+          bottom:auto !important;
+          width:auto !important;
+          height:50px !important;
+          margin:0 !important;
+          transform:none !important;
+          border:0 !important;
+          background:transparent !important;
+          z-index:4 !important;
+          overflow:visible !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel .ncsPosPremiumAiButton {
+          min-width:250px !important;
+          height:50px !important;
+          padding:6px 12px 6px 7px !important;
+          display:grid !important;
+          grid-template-columns:38px minmax(120px,1fr) auto auto !important;
+          align-items:center !important;
+          gap:9px !important;
+          border:1px solid rgba(226,190,72,.48) !important;
+          border-radius:999px !important;
+          background:linear-gradient(135deg,#062d58 0%,#0a4470 58%,#087d7d 100%) !important;
+          box-shadow:0 10px 24px rgba(4,46,77,.20) !important;
+          color:#fff !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel .ncsPosPremiumAiOrb {
+          width:38px !important;
+          height:38px !important;
+          border-radius:50% !important;
+          background:linear-gradient(145deg,#f6da6f,#dcae34) !important;
+          box-shadow:0 0 0 4px rgba(255,255,255,.08) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel .ncsPosPremiumAiCopy {
+          display:flex !important;
+          flex-direction:column !important;
+          align-items:flex-start !important;
+          gap:1px !important;
+          min-width:0 !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel .ncsPosPremiumAiCopy em {
+          font-size:7px !important;
+          letter-spacing:1.15px !important;
+          color:#efd36d !important;
+          font-weight:950 !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel .ncsPosPremiumAiCopy b {
+          font-size:13px !important;
+          color:#fff !important;
+          line-height:1.1 !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel .ncsPosPremiumAiCopy small {
+          font-size:8px !important;
+          color:#c8d9e6 !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel.expanded {
+          border:1px solid rgba(9,91,108,.15) !important;
+          border-radius:20px !important;
+          background:linear-gradient(180deg,#ffffff,#f8fbfb) !important;
+          box-shadow:0 18px 44px rgba(2,35,55,.10) !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel.expanded .ncsPosAiMascotRunner {
+          display:none !important;
+        }
+
+        /* Commerce intro now reads like a premium web merchandising strip. */
+        .ncsPosCommerceIntro {
+          border:1px solid rgba(8,72,93,.12) !important;
+          border-radius:20px !important;
+          background:
+            radial-gradient(circle at 90% 18%,rgba(214,179,74,.12),transparent 26%),
+            linear-gradient(110deg,#ffffff 0%,#f8fbfb 58%,#f6f8ef 100%) !important;
+          box-shadow:0 10px 28px rgba(3,33,52,.055) !important;
+        }
+
+        /* Category orbit — cleaner premium navigation, not dashboard boxes. */
+        .ncsPosCatalogue > .ncsPosCategoryOrbit {
+          margin:0 0 14px !important;
+          padding:14px !important;
+          border:1px solid rgba(9,74,91,.12) !important;
+          border-radius:20px !important;
+          background:linear-gradient(135deg,#062c51 0%,#083c5d 58%,#0a666b 100%) !important;
+          box-shadow:0 14px 34px rgba(3,35,58,.12) !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryOrbitLabel {
+          display:flex !important;
+          align-items:center !important;
+          justify-content:space-between !important;
+          margin:0 2px 11px !important;
+          padding:0 !important;
+          color:#fff !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryOrbitLabel span {
+          color:#efd36b !important;
+          font-size:9px !important;
+          font-weight:950 !important;
+          letter-spacing:1.35px !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryOrbitLabel b {
+          color:#d9e9ec !important;
+          font-size:9px !important;
+          letter-spacing:.9px !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryRow {
+          display:grid !important;
+          grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+          gap:9px !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryButton {
+          position:relative !important;
+          min-height:68px !important;
+          padding:10px 12px !important;
+          display:grid !important;
+          grid-template-columns:38px minmax(0,1fr) 6px !important;
+          align-items:center !important;
+          gap:9px !important;
+          border:1px solid rgba(255,255,255,.16) !important;
+          border-radius:14px !important;
+          background:rgba(255,255,255,.97) !important;
+          box-shadow:0 6px 15px rgba(0,18,33,.10) !important;
+          color:#0a3550 !important;
+          text-align:left !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryButton:hover {
+          transform:translateY(-2px) !important;
+          border-color:rgba(232,199,83,.72) !important;
+          box-shadow:0 10px 20px rgba(0,22,40,.15) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryGlyph {
+          width:38px !important;
+          height:38px !important;
+          border-radius:12px !important;
+          display:grid !important;
+          place-items:center !important;
+          background:#eef7f6 !important;
+          border:1px solid #d5ece9 !important;
+          color:#08737a !important;
+          font-size:10px !important;
+          font-weight:950 !important;
+          letter-spacing:.04em !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryCopy b {
+          color:#0a3550 !important;
+          font-size:12px !important;
+          font-weight:950 !important;
+          line-height:1.1 !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryCopy small {
+          margin-top:4px !important;
+          color:#7b8e9b !important;
+          font-size:8px !important;
+          font-weight:700 !important;
+          white-space:nowrap !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryButton > i {
+          width:6px !important;
+          height:6px !important;
+          border-radius:50% !important;
+          background:#71d8ca !important;
+          box-shadow:0 0 0 4px rgba(113,216,202,.12) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryButton.ncsPosCategoryActive {
+          border-color:#e7c651 !important;
+          background:linear-gradient(135deg,#fff9e7,#ffffff 62%) !important;
+          box-shadow:0 0 0 2px rgba(231,198,81,.18),0 10px 22px rgba(0,20,37,.14) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryButton.ncsPosCategoryActive::before {
+          content:"";
+          position:absolute;
+          left:0;
+          top:0;
+          bottom:0;
+          width:4px;
+          background:linear-gradient(#f0d569,#d4af37);
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryButton.ncsPosCategoryActive .ncsPosCategoryGlyph {
+          background:linear-gradient(145deg,#0b5770,#073b5f) !important;
+          border-color:transparent !important;
+          color:#f2d56d !important;
+        }
+
+        /* Finder heading gets a restrained web-store premium header. */
+        .ncsPosCatalogueTop {
+          border-radius:18px !important;
+          background:linear-gradient(105deg,#07334f 0%,#0b6b6f 64%,#188b7f 100%) !important;
+          border:1px solid rgba(8,77,91,.20) !important;
+          box-shadow:0 12px 30px rgba(3,45,61,.12) !important;
+        }
+
+        .ncsPosCatalogueTop h2,
+        .ncsPosCatalogueTop .ncsPosFinderEyebrow,
+        .ncsPosCatalogueTop .ncsPosFinderTelemetry,
+        .ncsPosCatalogueTop .ncsPosFinderTelemetry span,
+        .ncsPosCatalogueTop .ncsPosFinderTelemetry b {
+          color:#fff !important;
+        }
+
+        .ncsPosCatalogueTop .ncsPosFinderEyebrow {
+          color:#f0d56a !important;
+        }
+
+        /* Brand intelligence — premium catalogue tiles instead of plain matrix boxes. */
+        .ncsPosBrandMatrixShell {
+          padding:14px !important;
+          border:1px solid rgba(8,74,92,.12) !important;
+          border-radius:20px !important;
+          background:linear-gradient(180deg,#ffffff 0%,#f8fbfb 100%) !important;
+          box-shadow:0 14px 36px rgba(3,35,54,.07) !important;
+        }
+
+        .ncsPosBrandMatrixCommand {
+          padding:10px !important;
+          border-radius:15px !important;
+          background:linear-gradient(110deg,#062d52,#0a4b68 70%,#0a6f71) !important;
+          border:1px solid rgba(255,255,255,.10) !important;
+        }
+
+        .ncsPosBrandMatrixSearch {
+          background:#fff !important;
+          border:1px solid rgba(255,255,255,.65) !important;
+          border-radius:12px !important;
+          box-shadow:0 5px 14px rgba(0,22,40,.12) !important;
+        }
+
+        .ncsPosBrandMatrixModes button {
+          border:1px solid rgba(255,255,255,.20) !important;
+          background:rgba(255,255,255,.08) !important;
+          color:#d8e7eb !important;
+          font-weight:850 !important;
+        }
+
+        .ncsPosBrandMatrixModes button.active {
+          border-color:#e7c85b !important;
+          background:#f0d267 !important;
+          color:#07364f !important;
+          box-shadow:0 5px 12px rgba(0,0,0,.12) !important;
+        }
+
+        .ncsPosBrandMatrixMeta {
+          margin-top:10px !important;
+          padding:0 2px 9px !important;
+          border-bottom:1px solid #e6edef !important;
+        }
+
+        .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          gap:10px !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard {
+          position:relative !important;
+          min-height:112px !important;
+          padding:15px 13px !important;
+          border:1px solid #e0e8eb !important;
+          border-radius:16px !important;
+          background:linear-gradient(155deg,#ffffff 0%,#fbfdfd 70%,#f4faf7 100%) !important;
+          box-shadow:0 7px 18px rgba(3,33,51,.055) !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard::before {
+          content:"";
+          position:absolute;
+          left:0;
+          right:0;
+          top:0;
+          height:3px;
+          background:linear-gradient(90deg,#d4af37,#eed66f 45%,#0c8b85 100%);
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard:hover {
+          transform:translateY(-3px) !important;
+          border-color:rgba(12,124,126,.32) !important;
+          box-shadow:0 15px 30px rgba(3,39,57,.10) !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard .ncsPosBrandCompactMark {
+          width:44px !important;
+          height:44px !important;
+          border-radius:14px !important;
+          background:linear-gradient(145deg,#073557,#0a6370) !important;
+          color:#f0d46b !important;
+          border:1px solid rgba(212,175,55,.26) !important;
+          box-shadow:0 7px 16px rgba(4,58,76,.18) !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard strong {
+          color:#082f48 !important;
+          font-size:12px !important;
+          font-weight:950 !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard small {
+          color:#7b8d98 !important;
+          font-size:8px !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard em {
+          color:#0b7a73 !important;
+          font-size:8px !important;
+          font-weight:950 !important;
+          letter-spacing:.55px !important;
+        }
+
+        .ncsPosBrandNodeLive {
+          border:1px solid #d8ece7 !important;
+          background:#f0fbf7 !important;
+          color:#0b876f !important;
+        }
+
+        .ncsPosBrandMatrixPager {
+          border-color:#e2e9ec !important;
+          background:#fff !important;
+          border-radius:14px !important;
+        }
+
+        @media (max-width:1320px) {
+          .ncsPosCatalogue > .ncsPosSearchPanel {
+            grid-template-columns:104px minmax(220px,1fr) 126px 140px !important;
+          }
+
+          .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosClearSearch,
+          .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchTelemetry {
+            right:274px !important;
+          }
+
+          .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryRow {
+            grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          }
+
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          }
+        }
+
+        @media (max-width:900px) {
+          .ncsPosCatalogue > .ncsPosSearchPanel {
+            grid-template-columns:82px minmax(0,1fr) !important;
+            min-height:auto !important;
+          }
+
+          .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchIcon {
+            min-width:82px !important;
+            border-radius:18px 0 0 0 !important;
+          }
+
+          .ncsPosCatalogue > .ncsPosSearchPanel input {
+            height:66px !important;
+            padding-right:42px !important;
+          }
+
+          .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchButton,
+          .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+            width:100% !important;
+            min-width:0 !important;
+            height:48px !important;
+            min-height:48px !important;
+            border-radius:0 !important;
+          }
+
+          .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+            border-radius:0 0 18px 0 !important;
+          }
+
+          .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchTelemetry {
+            display:none !important;
+          }
+
+          .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosClearSearch {
+            right:12px !important;
+            top:34px !important;
+          }
+
+          .ncsPosCatalogue > .ncsPosAiPanel.collapsed::before {
+            display:none !important;
+          }
+
+          .ncsPosCatalogue > .ncsPosAiPanel .ncsPosAiMascotRunner {
+            left:8px !important;
+            right:8px !important;
+          }
+
+          .ncsPosCatalogue > .ncsPosAiPanel .ncsPosPremiumAiButton {
+            width:100% !important;
+            min-width:0 !important;
+          }
+
+          .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryRow,
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          }
+        }
+
+
+        /* NCS POS • WEBSITE-LANGUAGE UNIFIED SHELL • 2036 */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+          min-height:118px !important;
+          padding:18px 22px !important;
+          display:grid !important;
+          grid-template-columns:minmax(255px,0.72fr) minmax(0,1.85fr) !important;
+          align-items:center !important;
+          gap:18px !important;
+          background:linear-gradient(115deg,#073d48 0%,#0b7075 58%,#1c8688 100%) !important;
+          border:1px solid rgba(218,181,72,.42) !important;
+          border-radius:22px !important;
+          box-shadow:0 18px 44px rgba(1,35,48,.16) !important;
+          overflow:visible !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader::before {
+          content:"" !important;
+          position:absolute !important;
+          inset:auto auto -1px 22px !important;
+          width:160px !important;
+          height:3px !important;
+          background:linear-gradient(90deg,#e1b93f,transparent) !important;
+          border-radius:999px !important;
+          opacity:1 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > div:first-child {
+          min-width:0 !important;
+          position:relative !important;
+          padding-left:64px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > div:first-child::before {
+          content:"NCS" !important;
+          position:absolute !important;
+          left:0 !important;
+          top:50% !important;
+          transform:translateY(-50%) !important;
+          width:50px !important;
+          height:50px !important;
+          display:grid !important;
+          place-items:center !important;
+          border-radius:15px !important;
+          font-size:16px !important;
+          font-weight:1000 !important;
+          letter-spacing:.08em !important;
+          color:#063d4b !important;
+          background:linear-gradient(145deg,#f8dd79,#d7ae38) !important;
+          border:1px solid rgba(255,255,255,.56) !important;
+          box-shadow:0 10px 22px rgba(0,0,0,.18) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosEyebrow {
+          color:#f6d66d !important;
+          font-size:9px !important;
+          letter-spacing:.17em !important;
+          margin:0 0 4px !important;
+          white-space:nowrap !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1 {
+          margin:0 !important;
+          color:#fff !important;
+          font-size:29px !important;
+          line-height:1 !important;
+          letter-spacing:-.045em !important;
+          text-shadow:0 1px 1px rgba(0,0,0,.08) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > div:first-child > p {
+          display:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCustomerQueue {
+          display:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+          position:static !important;
+          width:100% !important;
+          display:grid !important;
+          grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+          gap:9px !important;
+          align-items:stretch !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button {
+          min-width:0 !important;
+          min-height:64px !important;
+          padding:10px 11px !important;
+          border-radius:15px !important;
+          border:1px solid rgba(255,255,255,.16) !important;
+          color:#fff !important;
+          background:rgba(1,52,67,.27) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.1) !important;
+          backdrop-filter:blur(10px) !important;
+          justify-content:center !important;
+          transition:transform .18s ease,border-color .18s ease,background .18s ease !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button:hover {
+          transform:translateY(-2px) !important;
+          background:rgba(2,42,63,.48) !important;
+          border-color:rgba(231,193,73,.62) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button span {
+          color:#f4cb4e !important;
+          font-size:18px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button b {
+          font-size:10px !important;
+          font-weight:950 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button small {
+          color:rgba(255,255,255,.64) !important;
+          font-size:8px !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel {
+          margin-top:10px !important;
+          border:1px solid rgba(212,175,55,.38) !important;
+          background:#fff !important;
+          box-shadow:0 13px 32px rgba(4,53,73,.11) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchIcon {
+          color:#0a6470 !important;
+          background:linear-gradient(180deg,#fbfaf5,#f6f3ea) !important;
+          border-right:1px solid #e8edf0 !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchButton {
+          background:linear-gradient(135deg,#f3d76e,#ddb83f) !important;
+          color:#064b5c !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+          background:linear-gradient(135deg,#0a777d,#0b9189) !important;
+          color:#fff !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel.collapsed {
+          min-height:56px !important;
+          margin-top:9px !important;
+          border-radius:18px !important;
+          border:1px solid rgba(220,177,50,.34) !important;
+          background:linear-gradient(90deg,#08244b 0%,#0a5267 58%,#0f7a79 100%) !important;
+          box-shadow:0 10px 24px rgba(4,39,61,.11) !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel.collapsed::before {
+          content:"AI BILLING COPILOT • ENGLISH + తెలుగు • SMART PRODUCT + CART COMMANDS" !important;
+          color:rgba(255,255,255,.68) !important;
+          font-size:9px !important;
+          letter-spacing:.08em !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosAiPanel .ncsPosPremiumAiButton {
+          min-width:178px !important;
+          background:rgba(5,24,58,.9) !important;
+          border:1px solid rgba(231,191,66,.6) !important;
+          box-shadow:0 8px 18px rgba(0,0,0,.18) !important;
+        }
+
+        .ncsPosCommerceIntro {
+          min-height:98px !important;
+          padding:17px 20px !important;
+          margin-top:9px !important;
+          background:linear-gradient(110deg,#073e49 0%,#0b7075 72%,#237f7a 100%) !important;
+          border:1px solid rgba(219,180,61,.36) !important;
+          border-radius:20px !important;
+          box-shadow:0 14px 30px rgba(2,48,62,.12) !important;
+        }
+
+        .ncsPosCommerceIntroCopy > span { color:#f2cf5a !important; }
+        .ncsPosCommerceIntroCopy h2 { color:#fff !important; font-size:29px !important; }
+        .ncsPosCommerceIntroCopy p { color:rgba(255,255,255,.72) !important; }
+        .ncsPosCommerceIntroSignals span {
+          color:#fff !important;
+          border-color:rgba(255,255,255,.18) !important;
+          background:rgba(4,44,60,.26) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit {
+          padding:14px !important;
+          margin-top:10px !important;
+          border-radius:22px !important;
+          border:1px solid rgba(11,99,111,.17) !important;
+          background:linear-gradient(180deg,#f8faf9,#f3f7f6) !important;
+          box-shadow:0 12px 28px rgba(4,58,72,.08) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryOrbitLabel {
+          margin-bottom:11px !important;
+          padding:0 2px !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryOrbitLabel span {
+          color:#b48918 !important;
+          letter-spacing:.16em !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryOrbitLabel b {
+          color:#075e6e !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryRow {
+          display:grid !important;
+          grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+          gap:10px !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryButton {
+          position:relative !important;
+          min-height:136px !important;
+          padding:12px !important;
+          display:flex !important;
+          flex-direction:column !important;
+          align-items:stretch !important;
+          justify-content:space-between !important;
+          gap:8px !important;
+          overflow:hidden !important;
+          text-align:left !important;
+          border-radius:17px !important;
+          border:1px solid rgba(5,91,108,.2) !important;
+          background-color:#0a5967 !important;
+          background-size:cover !important;
+          background-position:center !important;
+          box-shadow:0 10px 22px rgba(2,42,57,.13) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryButton::after {
+          content:"" !important;
+          position:absolute !important;
+          inset:0 !important;
+          background:linear-gradient(180deg,rgba(1,31,52,.02),rgba(2,24,42,.84)) !important;
+          pointer-events:none !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryButton > * {
+          position:relative !important;
+          z-index:1 !important;
+        }
+
+        .ncsPosCategoryTopline {
+          display:flex !important;
+          align-items:center !important;
+          justify-content:space-between !important;
+          width:100% !important;
+        }
+
+        .ncsPosCategoryTopline em {
+          padding:4px 7px !important;
+          border-radius:999px !important;
+          font-style:normal !important;
+          font-size:7px !important;
+          font-weight:1000 !important;
+          letter-spacing:.13em !important;
+          color:#f9d85f !important;
+          background:rgba(4,33,51,.62) !important;
+          border:1px solid rgba(247,211,92,.35) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryGlyph {
+          width:36px !important;
+          height:36px !important;
+          display:grid !important;
+          place-items:center !important;
+          border-radius:11px !important;
+          color:#083d4c !important;
+          background:linear-gradient(145deg,#f8da6e,#dbb53f) !important;
+          border:1px solid rgba(255,255,255,.36) !important;
+          box-shadow:0 6px 14px rgba(0,0,0,.15) !important;
+          font-weight:1000 !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryCopy {
+          margin-top:auto !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryCopy b {
+          color:#fff !important;
+          font-size:16px !important;
+          line-height:1.1 !important;
+          text-shadow:0 1px 3px rgba(0,0,0,.32) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryCopy small {
+          margin-top:3px !important;
+          color:rgba(255,255,255,.72) !important;
+          font-size:8px !important;
+          font-weight:800 !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryButton > i {
+          align-self:flex-end !important;
+          width:auto !important;
+          height:auto !important;
+          color:#f4cb51 !important;
+          font-style:normal !important;
+          font-size:18px !important;
+          background:none !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryButton.ncsPosCategoryActive {
+          outline:2px solid #e5bd42 !important;
+          outline-offset:2px !important;
+          transform:translateY(-1px) !important;
+          border-color:rgba(255,255,255,.5) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryButton.ncsPosCategoryActive::before {
+          content:"SELECTED" !important;
+          position:absolute !important;
+          right:10px !important;
+          bottom:10px !important;
+          z-index:2 !important;
+          font-size:7px !important;
+          font-weight:1000 !important;
+          letter-spacing:.12em !important;
+          color:#082e3f !important;
+          background:#f3ce56 !important;
+          padding:4px 7px !important;
+          border-radius:999px !important;
+        }
+
+        .ncsPosCatalogueTop {
+          margin-top:12px !important;
+          padding:15px 18px !important;
+          border-radius:20px 20px 0 0 !important;
+          background:linear-gradient(110deg,#083f4d 0%,#0d6f74 70%,#258b82 100%) !important;
+          border-color:rgba(221,183,64,.32) !important;
+        }
+
+        .ncsPosCatalogueTop h2,
+        .ncsPosCatalogueTop .ncsPosFinderEyebrow,
+        .ncsPosCatalogueTop .ncsPosFinderTelemetry,
+        .ncsPosCatalogueTop .ncsPosFinderTelemetry span,
+        .ncsPosCatalogueTop .ncsPosFinderTelemetry b,
+        .ncsPosCatalogueTop .ncsPosStatusBadge {
+          color:#fff !important;
+        }
+
+        .ncsPosCatalogueTop .ncsPosFinderEyebrow { color:#f4ce5d !important; }
+
+        .ncsPosBrandMatrixShell {
+          margin-top:0 !important;
+          padding:14px !important;
+          border-radius:0 0 22px 22px !important;
+          border:1px solid rgba(9,94,107,.14) !important;
+          border-top:0 !important;
+          background:#fff !important;
+          box-shadow:0 14px 30px rgba(3,48,62,.08) !important;
+        }
+
+        .ncsPosBrandMatrixCommand {
+          display:grid !important;
+          grid-template-columns:minmax(240px,1fr) auto !important;
+          gap:12px !important;
+          align-items:center !important;
+          margin-bottom:10px !important;
+        }
+
+        .ncsPosBrandMatrixSearch {
+          min-height:48px !important;
+          border-radius:14px !important;
+          border:1px solid #d7e5e6 !important;
+          background:#f8fbfb !important;
+        }
+
+        .ncsPosBrandMatrixModes button {
+          min-height:36px !important;
+          border-radius:10px !important;
+        }
+
+        .ncsPosBrandMatrixModes button.active {
+          color:#063f4d !important;
+          background:linear-gradient(145deg,#f2d368,#dcb73e) !important;
+          border-color:#dfbc4b !important;
+        }
+
+        .ncsPosBrandMatrixMeta {
+          padding:10px 12px !important;
+          margin-bottom:10px !important;
+          border-radius:13px !important;
+          background:linear-gradient(90deg,#f8faf7,#f5f7ef) !important;
+          border:1px solid rgba(213,177,56,.22) !important;
+        }
+
+        .ncsPosBrandMatrixMeta span { color:#b08213 !important; }
+        .ncsPosBrandMatrixMeta strong { color:#075a68 !important; }
+
+        .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+          display:grid !important;
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          gap:10px !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard {
+          min-height:126px !important;
+          position:relative !important;
+          overflow:hidden !important;
+          padding:11px 12px !important;
+          grid-template-columns:70px minmax(0,1fr) auto !important;
+          border-radius:16px !important;
+          border:1px solid rgba(6,90,105,.16) !important;
+          background:linear-gradient(135deg,#ffffff 0%,#f7fbfa 72%,#f7f2df 100%) !important;
+          box-shadow:0 10px 22px rgba(5,55,69,.08) !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard::after {
+          content:"" !important;
+          position:absolute !important;
+          left:0 !important;
+          top:0 !important;
+          bottom:0 !important;
+          width:4px !important;
+          background:linear-gradient(180deg,#0a7e7a,#e4bd44) !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard:hover {
+          transform:translateY(-2px) !important;
+          border-color:rgba(216,177,55,.6) !important;
+          box-shadow:0 14px 28px rgba(4,52,66,.13) !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard .ncsPosBrandCompactMark {
+          width:64px !important;
+          height:84px !important;
+          overflow:hidden !important;
+          display:grid !important;
+          place-items:center !important;
+          border-radius:12px !important;
+          color:#fff !important;
+          background:linear-gradient(150deg,#0a6971,#0b3b56) !important;
+          border:1px solid rgba(218,179,55,.28) !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard .ncsPosBrandCompactMark img {
+          width:100% !important;
+          height:100% !important;
+          object-fit:cover !important;
+          display:block !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard strong {
+          color:#073f50 !important;
+          font-size:13px !important;
+          line-height:1.15 !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard small {
+          color:#6d7f86 !important;
+          font-size:8px !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard em {
+          width:max-content !important;
+          margin-top:5px !important;
+          padding:4px 7px !important;
+          border-radius:999px !important;
+          color:#087064 !important;
+          background:#e8f7f0 !important;
+          border:1px solid #c9eee2 !important;
+          font-style:normal !important;
+          font-size:7px !important;
+          font-weight:1000 !important;
+        }
+
+        .ncsPosBrandNodeLive {
+          top:9px !important;
+          right:9px !important;
+          color:#087465 !important;
+          background:#e9f8f1 !important;
+          border-color:#c3ebde !important;
+        }
+
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard > b {
+          color:#d0a62b !important;
+          font-size:21px !important;
+        }
+
+        @media (max-width:1250px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+            grid-template-columns:1fr !important;
+          }
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+            grid-template-columns:repeat(5,minmax(115px,1fr)) !important;
+            overflow-x:auto !important;
+          }
+          .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryRow {
+            grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          }
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          }
+        }
+
+        @media (max-width:900px) {
+          .ncsPosCatalogue > .ncsPosCategoryOrbit .ncsPosCategoryRow,
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          }
+          .ncsPosBrandMatrixCommand {
+            grid-template-columns:1fr !important;
+          }
+        }
+
+
+        /* ================================================================
+           NCS POS • COMMERCE COMMAND HEADER 2036
+           Visual-only consolidation: less vertical waste, web-store family,
+           AI in the command header, compact scan/search, image-first catalogue.
+           ================================================================ */
+        .ncsPosPage {
+          --ncs-commerce-navy:#062b46;
+          --ncs-commerce-deep:#041f35;
+          --ncs-commerce-teal:#08777c;
+          --ncs-commerce-teal2:#0f8f8d;
+          --ncs-commerce-gold:#e2bd54;
+          --ncs-commerce-ivory:#fbfaf6;
+          --ncs-commerce-line:rgba(13,88,102,.13);
+        }
+
+        .ncsPosHeader {
+          min-height:104px !important;
+          padding:18px 24px !important;
+          display:grid !important;
+          grid-template-columns:minmax(320px,.9fr) minmax(650px,1.35fr) !important;
+          align-items:center !important;
+          gap:20px !important;
+          border-radius:26px !important;
+          overflow:hidden !important;
+          background:
+            radial-gradient(circle at 82% 18%,rgba(226,189,84,.16),transparent 26%),
+            linear-gradient(112deg,var(--ncs-commerce-deep) 0%,#075b65 48%,var(--ncs-commerce-teal2) 100%) !important;
+          border:1px solid rgba(226,189,84,.30) !important;
+          box-shadow:0 18px 44px rgba(4,40,58,.15) !important;
+        }
+        .ncsPosHeader::before {
+          content:"" !important;
+          position:absolute !important;
+          left:24px !important; bottom:0 !important; width:132px !important; height:3px !important;
+          background:linear-gradient(90deg,var(--ncs-commerce-gold),transparent) !important;
+          border-radius:999px !important;
+        }
+        .ncsPosHeader > div:first-child { min-width:0 !important; }
+        .ncsPosHeader .ncsPosEyebrow {
+          display:inline-flex !important; width:max-content !important; max-width:100% !important;
+          background:rgba(255,255,255,.94) !important; color:#b98f24 !important;
+          border:1px solid rgba(226,189,84,.45) !important;
+          padding:6px 10px !important; border-radius:999px !important;
+          font-size:9px !important; letter-spacing:1.8px !important;
+        }
+        .ncsPosHeader h1 {
+          margin:7px 0 0 !important; color:#fff !important; font-size:32px !important;
+          line-height:1 !important; letter-spacing:-1.3px !important; font-weight:950 !important;
+        }
+        .ncsPosHeader > div:first-child > p { display:none !important; }
+        .ncsPosCustomerQueue { display:none !important; }
+
+        .ncsPosHeaderActions {
+          display:grid !important;
+          grid-template-columns:.9fr 1.03fr 1.12fr 1.08fr 1.08fr .9fr !important;
+          gap:8px !important; width:100% !important; align-items:stretch !important;
+        }
+        .ncsPosHeaderActions > button,
+        .ncsPosHeaderAiButton {
+          min-width:0 !important; min-height:62px !important; height:62px !important;
+          padding:9px 10px !important; border-radius:16px !important;
+          border:1px solid rgba(255,255,255,.16) !important;
+          background:rgba(2,49,63,.28) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.09) !important;
+          color:#fff !important; font-size:11px !important; font-weight:900 !important;
+          display:flex !important; align-items:center !important; justify-content:center !important; gap:8px !important;
+        }
+        .ncsPosHeaderActions > button:hover, .ncsPosHeaderAiButton:hover {
+          transform:translateY(-1px) !important; background:rgba(255,255,255,.12) !important;
+        }
+        .ncsPosHeaderActions > button > span, .ncsPosHeaderAiButton > span {
+          width:31px !important; min-width:31px !important; height:31px !important; border-radius:11px !important;
+          display:grid !important; place-items:center !important; background:#fff !important; color:#0b6770 !important;
+          border:1px solid rgba(226,189,84,.34) !important; font-size:14px !important;
+        }
+        .ncsPosHeaderActions button b, .ncsPosHeaderActions button small { color:inherit !important; }
+        .ncsPosHeaderAiButton {
+          cursor:pointer !important; font:inherit !important;
+        }
+        .ncsPosHeaderAiButton > div { display:flex !important; flex-direction:column !important; align-items:flex-start !important; line-height:1.02 !important; }
+        .ncsPosHeaderAiButton b { font-size:11px !important; white-space:nowrap !important; }
+        .ncsPosHeaderAiButton small { font-size:7px !important; opacity:.68 !important; letter-spacing:.6px !important; text-transform:uppercase !important; }
+        .ncsPosHeaderAiButton.active {
+          background:linear-gradient(135deg,#173a70,#0c5d73) !important;
+          border-color:rgba(226,189,84,.62) !important;
+          box-shadow:0 0 0 2px rgba(226,189,84,.12),inset 0 1px 0 rgba(255,255,255,.12) !important;
+        }
+        .ncsPosHeaderAiButton.active > span { background:var(--ncs-commerce-gold) !important; color:#062b46 !important; }
+
+        .ncsPosV7CommandDeck {
+          min-height:48px !important; height:48px !important; padding:5px 9px 5px 14px !important; margin-top:10px !important;
+          border-radius:17px !important; background:#fff !important; border:1px solid var(--ncs-commerce-line) !important;
+          box-shadow:0 8px 22px rgba(12,50,76,.06) !important;
+        }
+        .ncsPosV7CommandIdentity { min-width:180px !important; }
+        .ncsPosV7CommandSignals { gap:6px !important; }
+        .ncsPosV7CommandSignals > * { min-height:36px !important; border-radius:11px !important; padding:5px 10px !important; }
+
+        .ncsPosWorkspace { margin-top:10px !important; }
+        .ncsPosCatalogue { gap:8px !important; }
+        .ncsPosSearchPanel {
+          min-height:58px !important; height:58px !important; padding:5px !important;
+          display:grid !important; grid-template-columns:54px minmax(220px,1fr) 104px 126px !important;
+          gap:4px !important; border-radius:18px !important; overflow:visible !important;
+          border:1px solid rgba(6,85,99,.14) !important; background:#fff !important;
+          box-shadow:0 10px 26px rgba(17,58,77,.07) !important;
+        }
+        .ncsPosSearchPanel::before, .ncsPosSearchPanel::after { display:none !important; }
+        .ncsPosSearchIcon {
+          width:48px !important; height:48px !important; min-width:48px !important; border-radius:13px !important;
+          border:0 !important; background:linear-gradient(145deg,#f7fbfb,#edf7f4) !important; color:#0a737a !important;
+        }
+        .ncsPosSearchIcon span { font-size:23px !important; line-height:1 !important; }
+        .ncsPosSearchIcon small { display:none !important; }
+        .ncsPosSearchPanel input {
+          min-height:48px !important; height:48px !important; padding:0 14px !important;
+          border:0 !important; background:transparent !important; font-size:14px !important; font-weight:750 !important; color:#173b4d !important;
+        }
+        .ncsPosSearchButton, .ncsPosSearchQuickItemButton {
+          min-height:48px !important; height:48px !important; border-radius:12px !important;
+          min-width:0 !important; padding:0 12px !important; font-size:11px !important;
+        }
+        .ncsPosSearchButton {
+          background:linear-gradient(135deg,#efd271,var(--ncs-commerce-gold)) !important; color:#06374a !important; box-shadow:none !important;
+        }
+        .ncsPosSearchQuickItemButton {
+          background:linear-gradient(135deg,#08777c,#0b9290) !important; color:#fff !important; border:0 !important;
+        }
+        .ncsPosSearchTelemetry { display:none !important; }
+        .ncsPosClearSearch { right:242px !important; top:50% !important; transform:translateY(-50%) !important; }
+
+        .ncsPosAiPanel {
+          margin:0 !important; border-radius:18px !important; border:0 !important; box-shadow:none !important; background:transparent !important;
+        }
+        .ncsPosAiPanel.collapsed { display:none !important; min-height:0 !important; height:0 !important; overflow:hidden !important; }
+        .ncsPosAiPanel.expanded {
+          padding:10px !important;
+          background:linear-gradient(135deg,#061f3f,#075f6b 60%,#087f7f) !important;
+          border:1px solid rgba(226,189,84,.30) !important; box-shadow:0 16px 34px rgba(3,35,57,.14) !important;
+        }
+        .ncsPosAiCompactToggle { margin:0 0 8px !important; min-height:46px !important; padding:7px 10px !important; border-radius:13px !important; }
+        .ncsPosAiExpandableBody { padding:0 !important; }
+        .ncsPosAiContextStrip { min-height:34px !important; margin-bottom:7px !important; }
+        .ncsPosAiCommandRow { gap:7px !important; }
+        .ncsPosAiInputShell, .ncsPosAiAddButton { min-height:46px !important; height:46px !important; }
+        .ncsPosAiHintRow { margin-top:6px !important; }
+        .ncsPosAiQuickPrompts { margin-top:6px !important; }
+
+        .ncsPosCommerceIntro { display:none !important; }
+        .ncsPosCategoryOrbit {
+          margin-top:0 !important; padding:9px !important; border-radius:20px !important;
+          background:linear-gradient(180deg,#fff,#fbfcfa) !important; border:1px solid var(--ncs-commerce-line) !important;
+          box-shadow:0 10px 26px rgba(17,58,77,.05) !important;
+        }
+        .ncsPosCategoryOrbitLabel { padding:1px 4px 8px !important; }
+        .ncsPosCategoryOrbitLabel span { color:#b48720 !important; letter-spacing:1.3px !important; font-size:8px !important; }
+        .ncsPosCategoryOrbitLabel b { color:#0b5b65 !important; font-size:9px !important; letter-spacing:1px !important; }
+        .ncsPosCategoryRow {
+          display:grid !important; grid-template-columns:repeat(5,minmax(0,1fr)) !important; gap:8px !important; overflow:visible !important;
+        }
+        .ncsPosCategoryButton {
+          min-width:0 !important; min-height:88px !important; height:88px !important; padding:10px !important;
+          border-radius:16px !important; background-size:cover !important; background-position:center !important; overflow:hidden !important;
+          border:1px solid rgba(7,78,96,.13) !important; box-shadow:0 7px 18px rgba(19,57,69,.06) !important;
+        }
+        .ncsPosCategoryButton:not([style]) {
+          background:linear-gradient(140deg,#f7fbf9,#e8f4f2) !important;
+        }
+        .ncsPosCategoryButton[style] .ncsPosCategoryCopy b,
+        .ncsPosCategoryButton[style] .ncsPosCategoryCopy small { color:#fff !important; text-shadow:0 2px 8px rgba(0,0,0,.4) !important; }
+        .ncsPosCategoryButton[style] .ncsPosCategoryGlyph { background:rgba(255,255,255,.92) !important; color:#08777c !important; }
+        .ncsPosCategoryButton[style] > i { color:#f7d568 !important; }
+        .ncsPosCategoryButton .ncsPosCategoryCopy b { font-size:13px !important; }
+        .ncsPosCategoryButton .ncsPosCategoryCopy small { font-size:8px !important; }
+        .ncsPosCategoryButton.ncsPosCategoryActive {
+          border-color:var(--ncs-commerce-gold) !important; box-shadow:0 0 0 2px rgba(226,189,84,.18),0 9px 22px rgba(9,54,69,.10) !important;
+        }
+
+        .ncsPosCatalogueTop {
+          margin-top:8px !important; min-height:62px !important; padding:10px 14px !important; border-radius:18px !important;
+          background:linear-gradient(110deg,var(--ncs-commerce-deep),#08646d 62%,#138e83) !important;
+          border:1px solid rgba(226,189,84,.20) !important; color:#fff !important;
+        }
+        .ncsPosCatalogueTop h2 { margin:1px 0 0 !important; font-size:22px !important; color:#fff !important; }
+        .ncsPosFinderEyebrow { color:#f1cb62 !important; }
+        .ncsPosFinderTelemetry span, .ncsPosStatusBadge { color:#fff !important; border-color:rgba(255,255,255,.16) !important; background:rgba(255,255,255,.07) !important; }
+
+        .ncsPosBrandMatrixHero { margin-top:8px !important; border-radius:18px !important; }
+        .ncsPosBrandMatrixGrid { gap:8px !important; }
+        .ncsPosBrandMatrixCard {
+          border-radius:17px !important; border:1px solid rgba(8,93,102,.13) !important; box-shadow:0 7px 18px rgba(16,56,73,.06) !important;
+          overflow:hidden !important;
+        }
+
+        @media (max-width:1380px) {
+          .ncsPosHeader { grid-template-columns:300px minmax(580px,1fr) !important; }
+          .ncsPosHeaderActions { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+          .ncsPosHeaderActions > button,.ncsPosHeaderAiButton { min-height:44px !important; height:44px !important; }
+          .ncsPosHeader { min-height:126px !important; }
+        }
+        @media (max-width:980px) {
+          .ncsPosHeader { grid-template-columns:1fr !important; min-height:unset !important; }
+          .ncsPosHeaderActions { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+          .ncsPosSearchPanel { grid-template-columns:48px minmax(0,1fr) 86px 108px !important; }
+          .ncsPosCategoryRow { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+        }
+        @media (max-width:700px) {
+          .ncsPosHeaderActions { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          .ncsPosSearchPanel { height:auto !important; min-height:108px !important; grid-template-columns:44px minmax(0,1fr) !important; }
+          .ncsPosSearchIcon { width:42px !important; height:42px !important; min-width:42px !important; }
+          .ncsPosSearchPanel input { height:42px !important; min-height:42px !important; }
+          .ncsPosSearchButton,.ncsPosSearchQuickItemButton { height:42px !important; min-height:42px !important; }
+          .ncsPosCategoryRow { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+        }
+
+        /* NCS POS • WEBSITE FEEL REDESIGN • SAFE VISUAL OVERRIDES */
+        .ncsPosPage {
+          --ncs-web-deep:#063446; --ncs-web-navy:#082a4a; --ncs-web-teal:#0e7f86; --ncs-web-gold:#e7c75c;
+          --ncs-web-ink:#0c4450; --ncs-web-soft:#f5f8f8;
+        }
+
+        .ncsPosHeader {
+          min-height:92px !important; padding:14px 18px 14px 20px !important; border-radius:22px !important;
+          grid-template-columns:minmax(330px,.82fr) minmax(680px,1.65fr) !important; align-items:center !important; gap:18px !important;
+          background:linear-gradient(104deg,#07384a 0%,#0a5e68 47%,#13857f 100%) !important;
+          border:1px solid rgba(231,199,92,.34) !important; box-shadow:0 18px 44px rgba(5,43,58,.15) !important; overflow:hidden !important;
+        }
+        .ncsPosHeader::before {
+          content:"" !important; position:absolute !important; inset:0 !important; pointer-events:none !important;
+          background:radial-gradient(circle at 86% 0%,rgba(255,255,255,.13),transparent 27%),linear-gradient(90deg,transparent 0 70%,rgba(255,255,255,.035) 70% 71%,transparent 71%) !important;
+        }
+        .ncsPosHeader::after {
+          content:"NCS" !important; top:50% !important; right:28px !important; transform:translateY(-52%) !important;
+          font-size:82px !important; letter-spacing:-7px !important; color:rgba(255,255,255,.045) !important;
+        }
+        .ncsPosHeader > div:first-child { max-width:none !important; display:grid !important; grid-template-columns:auto 1fr !important; column-gap:12px !important; align-items:center !important; }
+        .ncsPosHeader > div:first-child::before {
+          content:"NCS"; grid-row:1 / span 2; display:grid; place-items:center; width:58px; height:58px; border-radius:17px;
+          background:linear-gradient(145deg,#f6dd7a,#d9ab37); color:#083b4a; font-weight:1000; font-size:18px; letter-spacing:1px;
+          border:1px solid rgba(255,255,255,.55); box-shadow:0 10px 24px rgba(0,0,0,.14);
+        }
+        .ncsPosEyebrow { grid-column:2 !important; margin:0 0 2px !important; color:#f6da78 !important; font-size:9px !important; letter-spacing:1.8px !important; }
+        .ncsPosHeader h1 { grid-column:2 !important; margin:0 !important; color:#fff !important; font-size:30px !important; line-height:1 !important; letter-spacing:-1.05px !important; white-space:nowrap !important; }
+        .ncsPosHeader p,.ncsPosCustomerQueue { display:none !important; }
+
+        .ncsPosHeaderActions {
+          display:grid !important; grid-template-columns:.86fr 1fr 1.12fr 1.08fr 1.25fr .92fr !important; gap:8px !important; align-items:center !important;
+          width:100% !important; padding:0 !important; background:transparent !important;
+        }
+        .ncsPosHeaderActions > button,.ncsPosHeaderAiButton {
+          min-height:54px !important; height:54px !important; padding:7px 9px !important; border-radius:14px !important;
+          border:1px solid rgba(255,255,255,.16) !important; background:rgba(1,45,58,.22) !important; color:#fff !important;
+          box-shadow:none !important; backdrop-filter:blur(8px) !important; font-size:10px !important; font-weight:900 !important; line-height:1.05 !important;
+        }
+        .ncsPosHeaderActions > button:hover { background:rgba(255,255,255,.13) !important; transform:translateY(-1px) !important; }
+        .ncsPosHeaderActions button > span { width:30px !important; height:30px !important; min-width:30px !important; border-radius:10px !important; background:#fff8de !important; color:#bd8d18 !important; display:grid !important; place-items:center !important; }
+        .ncsPosHeaderAiButton { border-color:rgba(231,199,92,.55) !important; background:linear-gradient(135deg,rgba(231,199,92,.18),rgba(255,255,255,.08)) !important; }
+        .ncsPosHeaderAiButton b { color:#fff6ce !important; }
+        .ncsPosHeaderAiButton small { color:rgba(255,255,255,.62) !important; }
+
+        .ncsPosCounterRail {
+          min-height:50px !important; margin:8px 0 !important; padding:7px 10px !important; border-radius:16px !important; background:#fff !important;
+          border:1px solid rgba(9,84,98,.10) !important; box-shadow:0 8px 20px rgba(9,53,67,.055) !important;
+        }
+
+        .ncsPosSearchPanel {
+          height:62px !important; min-height:62px !important; margin:0 0 8px !important; padding:0 !important;
+          grid-template-columns:72px minmax(0,1fr) 116px 142px !important; border-radius:18px !important; overflow:hidden !important;
+          border:1px solid rgba(7,92,104,.14) !important; background:#fff !important; box-shadow:0 10px 26px rgba(7,61,76,.07) !important;
+        }
+        .ncsPosSearchIcon { width:72px !important; height:62px !important; border-radius:0 !important; background:#f7faf9 !important; border-right:1px solid rgba(8,84,97,.08) !important; color:#0a7880 !important; }
+        .ncsPosSearchIcon::after { content:"SCAN"; display:block; margin-top:2px; font-size:7px; letter-spacing:1.3px; font-weight:900; color:#7a8795; }
+        .ncsPosSearchPanel input { height:62px !important; min-height:62px !important; font-size:15px !important; font-weight:750 !important; color:#164b56 !important; padding:0 18px !important; }
+        .ncsPosSearchButton,.ncsPosSearchQuickItemButton { height:62px !important; min-height:62px !important; border-radius:0 !important; box-shadow:none !important; }
+        .ncsPosSearchButton { background:linear-gradient(135deg,#f4da78,#dfb846) !important; color:#073c4b !important; }
+        .ncsPosSearchQuickItemButton { background:linear-gradient(135deg,#0a6b73,#118d88) !important; color:#fff !important; border:0 !important; }
+
+        .ncsPosCategoryOrbit {
+          margin-top:0 !important; padding:12px !important; border-radius:22px !important;
+          background:linear-gradient(135deg,#08384a 0%,#0a5966 58%,#0f7774 100%) !important;
+          border:1px solid rgba(231,199,92,.24) !important; box-shadow:0 16px 38px rgba(6,49,64,.12) !important;
+        }
+        .ncsPosCategoryOrbitLabel { padding:0 4px 10px !important; }
+        .ncsPosCategoryOrbitLabel span { color:#f1cf64 !important; font-size:9px !important; letter-spacing:1.7px !important; }
+        .ncsPosCategoryOrbitLabel b { color:#fff !important; font-size:9px !important; letter-spacing:1.3px !important; opacity:.78 !important; }
+        .ncsPosCategoryRow { display:grid !important; grid-template-columns:repeat(5,minmax(0,1fr)) !important; gap:10px !important; }
+        .ncsPosCategoryButton {
+          position:relative !important; min-width:0 !important; height:112px !important; min-height:112px !important; padding:12px !important; border-radius:18px !important; overflow:hidden !important;
+          background-position:center !important; background-size:cover !important; border:1px solid rgba(255,255,255,.18) !important; box-shadow:0 10px 26px rgba(0,0,0,.13) !important;
+          color:#fff !important; transform:none !important;
+        }
+        .ncsPosCategoryButton:not([style]) { background:linear-gradient(145deg,#0f6f78,#07394f) !important; }
+        .ncsPosCategoryButton::before { content:"" !important; position:absolute !important; inset:0 !important; background:linear-gradient(180deg,rgba(4,24,39,.04),rgba(3,28,43,.12) 36%,rgba(2,25,40,.88) 100%) !important; z-index:0 !important; }
+        .ncsPosCategoryButton > * { position:relative !important; z-index:1 !important; }
+        .ncsPosCategoryTopline { width:100% !important; display:flex !important; align-items:flex-start !important; justify-content:space-between !important; }
+        .ncsPosCategoryGlyph { width:34px !important; height:34px !important; border-radius:11px !important; display:grid !important; place-items:center !important; background:rgba(255,255,255,.92) !important; color:#0b5964 !important; font-size:10px !important; box-shadow:0 7px 18px rgba(0,0,0,.16) !important; }
+        .ncsPosCategoryTopline em { padding:5px 7px !important; border-radius:999px !important; background:rgba(3,40,50,.72) !important; border:1px solid rgba(231,199,92,.42) !important; color:#f3d36c !important; font-size:7px !important; letter-spacing:1px !important; }
+        .ncsPosCategoryCopy { margin-top:auto !important; align-self:flex-start !important; text-align:left !important; }
+        .ncsPosCategoryCopy b { color:#fff !important; font-size:17px !important; letter-spacing:-.3px !important; text-shadow:0 2px 8px rgba(0,0,0,.28) !important; }
+        .ncsPosCategoryCopy small { color:rgba(255,255,255,.77) !important; font-size:8px !important; text-shadow:0 2px 8px rgba(0,0,0,.28) !important; }
+        .ncsPosCategoryButton > i { color:#f4d36b !important; right:12px !important; bottom:10px !important; }
+        .ncsPosCategoryButton:hover { transform:translateY(-2px) !important; border-color:rgba(244,211,107,.72) !important; }
+        .ncsPosCategoryButton.ncsPosCategoryActive { border-color:#f4d36b !important; box-shadow:0 0 0 2px rgba(244,211,107,.24),0 12px 30px rgba(0,0,0,.18) !important; }
+
+        .ncsPosCatalogueTop { display:none !important; }
+        .ncsPosBrandMatrixShell { margin-top:10px !important; padding:12px !important; border-radius:22px !important; background:#fff !important; border:1px solid rgba(8,84,97,.11) !important; box-shadow:0 14px 34px rgba(8,55,70,.07) !important; }
+        .ncsPosBrandMatrixCommand { gap:10px !important; }
+        .ncsPosBrandMatrixSearch { min-height:42px !important; border-radius:13px !important; background:#f6f9f8 !important; border:1px solid rgba(8,84,97,.10) !important; }
+        .ncsPosBrandMatrixModes { padding:4px !important; border-radius:13px !important; background:#eef5f4 !important; }
+        .ncsPosBrandMatrixModes button { min-height:34px !important; border-radius:10px !important; }
+        .ncsPosBrandMatrixModes button.active { background:#0c6c73 !important; color:#fff !important; }
+        .ncsPosBrandMatrixMeta { padding:10px 2px 8px !important; }
+        .ncsPosBrandMatrixMeta span { color:#b1841f !important; letter-spacing:1.35px !important; }
+        .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid { grid-template-columns:repeat(4,minmax(0,1fr)) !important; gap:10px !important; }
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard { min-height:94px !important; border-radius:17px !important; border:1px solid rgba(8,85,97,.11) !important; background:linear-gradient(180deg,#fff,#f9fbfa) !important; box-shadow:0 8px 20px rgba(8,55,70,.055) !important; }
+        .ncsPosBrandCompactMark { width:66px !important; height:66px !important; min-width:66px !important; border-radius:14px !important; overflow:hidden !important; background:linear-gradient(145deg,#0c6d75,#073b50) !important; color:#fff !important; }
+        .ncsPosBrandCompactMark img { width:100% !important; height:100% !important; object-fit:cover !important; }
+        .ncsPosBrandMatrixCard strong { color:#0b4552 !important; font-size:14px !important; }
+        .ncsPosBrandMatrixCard small { color:#73808c !important; }
+        .ncsPosBrandMatrixCard em { color:#0a776e !important; background:#e8f7f2 !important; border:1px solid #c9ebdf !important; }
+        .ncsPosBrandNodeLive { color:#0b7a70 !important; background:#edfaf6 !important; border-color:#c6ebe0 !important; }
+
+        @media (max-width:1380px) {
+          .ncsPosHeader { grid-template-columns:310px 1fr !important; }
+          .ncsPosHeaderActions { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+          .ncsPosHeader { min-height:132px !important; }
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+        }
+        @media (max-width:980px) {
+          .ncsPosHeader { grid-template-columns:1fr !important; }
+          .ncsPosHeaderActions { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+          .ncsPosCategoryRow { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+        }
+        @media (max-width:700px) {
+          .ncsPosHeader h1 { font-size:25px !important; }
+          .ncsPosHeaderActions { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          .ncsPosSearchPanel { height:auto !important; min-height:104px !important; grid-template-columns:52px minmax(0,1fr) !important; }
+          .ncsPosSearchIcon,.ncsPosSearchPanel input { height:48px !important; min-height:48px !important; }
+          .ncsPosSearchButton,.ncsPosSearchQuickItemButton { height:44px !important; min-height:44px !important; }
+          .ncsPosCategoryRow { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid { grid-template-columns:1fr !important; }
+        }
+
+        /* NCS POS • SMART FASHION COMMERCE HUB */
+        .ncsPosSearchPanel {
+          height:66px !important; min-height:66px !important;
+          grid-template-columns:76px minmax(0,1fr) 126px 150px !important;
+          border-radius:18px !important; border:1px solid rgba(6,75,86,.12) !important;
+          background:#fff !important; box-shadow:0 12px 28px rgba(7,52,64,.08) !important;
+          overflow:hidden !important;
+        }
+        .ncsPosSearchIcon,.ncsPosSearchPanel input,.ncsPosSearchButton,.ncsPosSearchQuickItemButton {
+          height:64px !important; min-height:64px !important;
+        }
+        .ncsPosSearchIcon { background:#f8faf9 !important; border-right:1px solid #edf1ef !important; }
+        .ncsPosSearchIcon small { font-size:7px !important; letter-spacing:1.5px !important; }
+        .ncsPosSearchPanel input { font-size:15px !important; padding:0 18px !important; }
+        .ncsPosSearchTelemetry { top:-8px !important; right:12px !important; transform:scale(.88); transform-origin:right top; }
+
+        .ncsPosSmartFashionHub {
+          margin-top:10px; padding:14px; border-radius:24px;
+          background:linear-gradient(135deg,#06384a 0%,#0a6670 62%,#0d7f79 100%);
+          border:1px solid rgba(232,196,83,.28);
+          box-shadow:0 18px 40px rgba(5,47,61,.12);
+        }
+        .ncsPosSmartFashionIntro {
+          display:flex; align-items:end; justify-content:space-between; gap:18px; padding:2px 4px 12px; color:#fff;
+        }
+        .ncsPosSmartFashionIntro > span {
+          color:#f1cb5f; font-size:9px; font-weight:1000; letter-spacing:1.7px; white-space:nowrap;
+        }
+        .ncsPosSmartFashionIntro > div { text-align:right; }
+        .ncsPosSmartFashionIntro h2 { margin:0; color:#fff; font-size:21px; line-height:1.05; letter-spacing:-.5px; }
+        .ncsPosSmartFashionIntro p { margin:4px 0 0; color:rgba(255,255,255,.70); font-size:10px; }
+        .ncsPosSmartFashionGrid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+        .ncsPosSmartFashionCard {
+          position:relative; min-height:148px; border:1px solid rgba(255,255,255,.18); border-radius:20px; overflow:hidden;
+          background-size:cover; background-position:center; text-align:left; padding:14px; cursor:pointer; color:#fff;
+          box-shadow:0 12px 28px rgba(0,0,0,.16); transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;
+        }
+        .ncsPosSmartFashionCard:not([style]) { background:linear-gradient(145deg,#0d6470,#062f46); }
+        .ncsPosSmartFashionCard:hover { transform:translateY(-3px); border-color:rgba(241,203,95,.72); box-shadow:0 18px 34px rgba(0,0,0,.22); }
+        .ncsPosSmartFashionNumber {
+          position:absolute; top:12px; left:12px; display:grid; place-items:center; width:34px; height:30px; border-radius:10px;
+          background:rgba(4,28,44,.78); border:1px solid rgba(255,255,255,.18); font-size:9px; font-weight:1000;
+        }
+        .ncsPosSmartFashionLive {
+          position:absolute; top:12px; right:12px; padding:5px 8px; border-radius:999px; background:rgba(4,35,44,.74);
+          border:1px solid rgba(241,203,95,.46); color:#f4d36b; font-size:7px; font-weight:1000; letter-spacing:.9px;
+        }
+        .ncsPosSmartFashionCopy { position:absolute; left:14px; right:14px; bottom:13px; display:grid; gap:2px; }
+        .ncsPosSmartFashionCopy small { color:#f2ce62; font-size:7px; font-weight:1000; letter-spacing:1.2px; }
+        .ncsPosSmartFashionCopy b { font-size:24px; line-height:1; color:#fff; text-shadow:0 3px 12px rgba(0,0,0,.28); }
+        .ncsPosSmartFashionCopy em { color:rgba(255,255,255,.75); font-size:8px; font-style:normal; }
+        .ncsPosSmartFashionCopy strong { margin-top:6px; color:#fff; font-size:9px; }
+
+        .ncsPosSmartFashionPortal {
+          position:fixed; inset:0; z-index:999999; overflow:auto; background:#f5f7f8;
+        }
+        .ncsPosSmartFashionPortalPage { min-height:100vh; background:linear-gradient(180deg,#f8fafb,#eef4f5); }
+        .ncsPosSmartFashionPortalHeader {
+          position:sticky; top:0; z-index:5; display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:18px;
+          padding:14px 22px; background:linear-gradient(135deg,#06384a,#0a6870 65%,#0b7d78); color:#fff;
+          border-bottom:1px solid rgba(240,200,76,.32); box-shadow:0 10px 30px rgba(4,40,54,.18);
+        }
+        .ncsPosSmartFashionPortalHeader > button {
+          min-height:42px; padding:0 14px; border-radius:12px; border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.10); color:#fff; font-weight:900; cursor:pointer;
+        }
+        .ncsPosSmartFashionPortalHeader small { color:#f0cd63; font-size:8px; font-weight:1000; letter-spacing:1.5px; }
+        .ncsPosSmartFashionPortalHeader h2 { margin:2px 0 0; font-size:26px; color:#fff; }
+        .ncsPosSmartFashionPortalStats { display:flex; gap:8px; }
+        .ncsPosSmartFashionPortalStats span { min-width:92px; padding:8px 10px; border-radius:12px; background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.14); display:grid; gap:1px; }
+        .ncsPosSmartFashionPortalStats small { color:rgba(255,255,255,.64); font-size:7px; }
+        .ncsPosSmartFashionPortalStats b { color:#fff; font-size:15px; }
+        .ncsPosSmartFashionPortalHero {
+          min-height:240px; margin:18px 20px 0; border-radius:26px; background-size:cover; background-position:center;
+          display:flex; align-items:end; justify-content:space-between; gap:20px; padding:26px; overflow:hidden; box-shadow:0 18px 44px rgba(5,47,61,.14);
+        }
+        .ncsPosSmartFashionPortalHero span { color:#f1cc5e; font-size:9px; font-weight:1000; letter-spacing:1.8px; }
+        .ncsPosSmartFashionPortalHero h3 { margin:6px 0; max-width:680px; color:#fff; font-size:40px; line-height:1; letter-spacing:-1.2px; }
+        .ncsPosSmartFashionPortalHero p { margin:0; color:rgba(255,255,255,.76); font-size:13px; }
+        .ncsPosSmartFashionPortalHero button { min-height:46px; padding:0 18px; border:0; border-radius:13px; background:linear-gradient(135deg,#f2d16b,#ddb244); color:#073d4d; font-weight:1000; cursor:pointer; }
+        .ncsPosSmartFashionPortalBody { padding:18px 20px 36px; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+        .ncsPosSmartFashionEmpty { grid-column:1/-1; padding:40px; text-align:center; border-radius:18px; background:#fff; color:#50606c; }
+
+        @media(max-width:1100px){
+          .ncsPosSmartFashionGrid{grid-template-columns:repeat(2,minmax(0,1fr));}
+          .ncsPosSmartFashionPortalBody{grid-template-columns:repeat(2,minmax(0,1fr));}
+        }
+        @media(max-width:700px){
+          .ncsPosSmartFashionIntro{display:block;} .ncsPosSmartFashionIntro>div{text-align:left;margin-top:6px;}
+          .ncsPosSmartFashionGrid{grid-template-columns:1fr 1fr;}
+          .ncsPosSmartFashionCard{min-height:132px;}
+          .ncsPosSmartFashionPortalHeader{grid-template-columns:1fr;gap:8px;} .ncsPosSmartFashionPortalStats{display:none;}
+          .ncsPosSmartFashionPortalHero{min-height:210px;margin:10px;border-radius:20px;padding:18px;}
+          .ncsPosSmartFashionPortalHero h3{font-size:30px;} .ncsPosSmartFashionPortalHero button{display:none;}
+          .ncsPosSmartFashionPortalBody{grid-template-columns:1fr;padding:12px;}
+        }
+
+
+        /* NCS POS • ECOMMERCE COUNTER NAV • 2036 */
+        .ncsPosHeader {
+          display:grid !important;
+          grid-template-columns:minmax(220px,285px) minmax(430px,1fr) minmax(390px,520px) !important;
+          align-items:center !important;
+          gap:14px !important;
+          min-height:102px !important;
+          padding:13px 15px !important;
+          border-radius:22px !important;
+          overflow:visible !important;
+          background:linear-gradient(110deg,#07364a 0%,#0a6670 57%,#11877f 100%) !important;
+          border:1px solid rgba(230,193,79,.30) !important;
+          box-shadow:0 16px 38px rgba(5,46,60,.13) !important;
+        }
+        .ncsPosHeader::after { display:none !important; }
+        .ncsPosHeader > div:first-child { max-width:none !important; min-width:0 !important; }
+        .ncsPosHeader .ncsPosEyebrow {
+          width:max-content !important;
+          max-width:100% !important;
+          margin:0 0 5px !important;
+          padding:6px 10px !important;
+          border-radius:999px !important;
+          background:rgba(255,255,255,.95) !important;
+          color:#b68510 !important;
+          font-size:7px !important;
+          letter-spacing:1.35px !important;
+        }
+        .ncsPosHeader h1 {
+          margin:0 !important;
+          color:#fff !important;
+          font-size:26px !important;
+          line-height:1 !important;
+          letter-spacing:-.7px !important;
+        }
+        .ncsPosHeader p,.ncsPosCustomerQueue { display:none !important; }
+
+        .ncsPosHeader > .ncsPosSearchPanel {
+          position:relative !important;
+          inset:auto !important;
+          z-index:5 !important;
+          width:100% !important;
+          margin:0 !important;
+          height:58px !important;
+          min-height:58px !important;
+          display:grid !important;
+          grid-template-columns:72px minmax(0,1fr) 104px 118px !important;
+          border-radius:16px !important;
+          overflow:hidden !important;
+          border:1px solid rgba(255,255,255,.40) !important;
+          background:#fff !important;
+          box-shadow:0 10px 25px rgba(1,38,52,.14) !important;
+        }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon,
+        .ncsPosHeader > .ncsPosSearchPanel input,
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchButton,
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+          height:56px !important; min-height:56px !important;
+        }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon {
+          background:#f7faf9 !important; border-right:1px solid #e8efed !important;
+        }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon span { color:#0b7780 !important; font-size:20px !important; }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon small { color:#667b8b !important; font-size:6px !important; }
+        .ncsPosHeader > .ncsPosSearchPanel input {
+          min-width:0 !important; border:0 !important; background:#fff !important;
+          color:#153d4d !important; font-size:13px !important; font-weight:700 !important; padding:0 14px !important;
+        }
+        .ncsPosHeader > .ncsPosSearchPanel input::placeholder { color:#7d8997 !important; opacity:1 !important; }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchButton {
+          border:0 !important; background:linear-gradient(135deg,#f0d16d,#dfb841) !important;
+          color:#06475a !important; font-size:11px !important; font-weight:1000 !important;
+        }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+          border:0 !important; background:linear-gradient(135deg,#08747a,#0f918d) !important;
+          color:#fff !important; font-size:10px !important; font-weight:1000 !important;
+        }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchTelemetry { display:none !important; }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosClearSearch {
+          right:222px !important; top:50% !important; transform:translateY(-50%) !important;
+        }
+
+        .ncsPosHeaderActions {
+          display:grid !important;
+          grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          gap:7px !important;
+          align-content:center !important;
+          min-width:0 !important;
+        }
+        .ncsPosHeaderActions > button {
+          min-height:40px !important;
+          padding:7px 8px !important;
+          border-radius:13px !important;
+          border:1px solid rgba(255,255,255,.16) !important;
+          background:rgba(3,50,62,.22) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+          font-size:9px !important;
+          line-height:1.05 !important;
+        }
+        .ncsPosHeaderActions > button span {
+          width:28px !important; height:28px !important; min-width:28px !important;
+          border-radius:9px !important; background:#fff8e6 !important; color:#9a7512 !important;
+        }
+        .ncsPosHeaderActions .ncsPosHeaderAiButton {
+          border-color:rgba(231,194,76,.46) !important;
+          background:linear-gradient(135deg,rgba(226,188,78,.18),rgba(5,55,70,.30)) !important;
+        }
+
+        .ncsPosCatalogue > .ncsPosSearchPanel { display:none !important; }
+
+        .ncsPosV7CommandDeck {
+          margin-top:9px !important;
+          min-height:52px !important;
+          padding:7px 10px !important;
+          border-radius:16px !important;
+          background:#fff !important;
+          border:1px solid rgba(8,77,91,.10) !important;
+          box-shadow:0 7px 18px rgba(6,50,64,.055) !important;
+        }
+
+        .ncsPosCategoryOrbit {
+          margin-top:10px !important;
+          padding:16px !important;
+          border-radius:24px !important;
+          background:linear-gradient(135deg,#07384a 0%,#0a6971 60%,#0f837e 100%) !important;
+          border:1px solid rgba(231,194,76,.30) !important;
+          box-shadow:0 18px 42px rgba(5,46,60,.13) !important;
+        }
+        .ncsPosCategoryOrbitLabel {
+          display:flex !important;
+          align-items:flex-end !important;
+          justify-content:space-between !important;
+          gap:18px !important;
+          margin:0 0 14px !important;
+          padding:0 2px !important;
+          color:#fff !important;
+        }
+        .ncsPosCategoryOrbitLabel > div { display:grid !important; gap:3px !important; min-width:0 !important; }
+        .ncsPosCategoryOrbitLabel span {
+          color:#efc957 !important; font-size:8px !important; font-weight:1000 !important; letter-spacing:1.6px !important;
+        }
+        .ncsPosCategoryOrbitLabel strong {
+          color:#fff !important; font-size:24px !important; line-height:1 !important; letter-spacing:-.5px !important;
+        }
+        .ncsPosCategoryOrbitLabel small { color:rgba(255,255,255,.68) !important; font-size:9px !important; }
+        .ncsPosCategoryOrbitLabel > b {
+          flex:0 0 auto !important; padding:7px 10px !important; border-radius:999px !important;
+          border:1px solid rgba(239,201,87,.42) !important; background:rgba(2,44,57,.36) !important;
+          color:#f4d36c !important; font-size:8px !important; letter-spacing:1.1px !important;
+        }
+        .ncsPosCategoryRow {
+          display:grid !important;
+          grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+          gap:10px !important;
+        }
+        .ncsPosCategoryButton {
+          position:relative !important;
+          min-height:156px !important;
+          padding:13px !important;
+          border-radius:19px !important;
+          overflow:hidden !important;
+          background-color:#0a4f5e !important;
+          background-size:cover !important;
+          background-position:center !important;
+          border:1px solid rgba(255,255,255,.17) !important;
+          box-shadow:0 12px 26px rgba(1,28,40,.16) !important;
+          text-align:left !important;
+          color:#fff !important;
+        }
+        .ncsPosCategoryButton:hover {
+          transform:translateY(-3px) !important;
+          border-color:rgba(239,201,87,.70) !important;
+          box-shadow:0 17px 32px rgba(0,0,0,.23) !important;
+        }
+        .ncsPosCategoryButton.ncsPosCategoryActive {
+          outline:2px solid #efc957 !important; outline-offset:2px !important;
+        }
+        .ncsPosCategoryTopline {
+          position:absolute !important; top:12px !important; left:12px !important; right:12px !important;
+          display:flex !important; justify-content:space-between !important; align-items:center !important;
+        }
+        .ncsPosCategoryGlyph {
+          width:36px !important; height:34px !important; display:grid !important; place-items:center !important;
+          border-radius:10px !important; background:rgba(255,255,255,.92) !important;
+          color:#0a6f76 !important; font-size:9px !important; font-weight:1000 !important;
+        }
+        .ncsPosCategoryTopline em {
+          padding:5px 8px !important; border-radius:999px !important; background:rgba(4,40,49,.72) !important;
+          border:1px solid rgba(239,201,87,.48) !important; color:#f5d36b !important; font-size:7px !important;
+        }
+        .ncsPosCategoryCopy {
+          position:absolute !important; left:13px !important; right:13px !important; bottom:14px !important;
+          display:grid !important; gap:3px !important;
+        }
+        .ncsPosCategoryCopy b {
+          color:#fff !important; font-size:20px !important; line-height:1 !important;
+          text-shadow:0 3px 10px rgba(0,0,0,.35) !important;
+        }
+        .ncsPosCategoryCopy small { color:rgba(255,255,255,.76) !important; font-size:8px !important; }
+        .ncsPosCategoryButton > i {
+          position:absolute !important; right:13px !important; bottom:12px !important;
+          color:#f1cb5f !important; font-size:20px !important; font-style:normal !important;
+        }
+
+        .ncsPosCatalogueTop { display:none !important; }
+
+        .ncsPosSmartFashionPortal {
+          position:fixed !important; inset:0 !important; z-index:2147483000 !important;
+          overflow:auto !important; background:#f4f7f6 !important; padding:0 !important;
+        }
+        .ncsPosSmartFashionPortalPage {
+          width:100% !important; max-width:none !important; min-height:100vh !important;
+          margin:0 !important; border-radius:0 !important; background:#f7f8f6 !important; box-shadow:none !important;
+        }
+        .ncsPosSmartFashionPortalHeader {
+          position:sticky !important; top:0 !important; z-index:20 !important;
+          min-height:82px !important; padding:12px 28px !important;
+          border-bottom:1px solid rgba(255,255,255,.14) !important;
+          background:linear-gradient(110deg,#07364a,#0b6f76 62%,#10867f) !important;
+          box-shadow:0 8px 26px rgba(3,42,56,.16) !important;
+        }
+        .ncsPosSmartFashionPortalHero {
+          min-height:270px !important; margin:18px 28px 0 !important; border-radius:24px !important;
+          padding:28px !important; background-size:cover !important; background-position:center !important;
+          box-shadow:0 20px 48px rgba(4,43,57,.16) !important;
+        }
+        .ncsPosSmartFashionPortalHero h3 {
+          max-width:720px !important; font-size:44px !important; line-height:1.02 !important; letter-spacing:-1.6px !important;
+        }
+        .ncsPosSmartFashionPortalBody {
+          padding:20px 28px 48px !important;
+          display:grid !important; grid-template-columns:repeat(3,minmax(0,1fr)) !important; gap:14px !important;
+        }
+
+        @media (max-width:1320px) {
+          .ncsPosHeader { grid-template-columns:minmax(190px,235px) minmax(360px,1fr) minmax(320px,440px) !important; }
+          .ncsPosHeaderActions { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          .ncsPosCategoryRow { grid-template-columns:repeat(4,minmax(0,1fr)) !important; }
+        }
+        @media (max-width:1050px) {
+          .ncsPosHeader { grid-template-columns:1fr !important; }
+          .ncsPosHeaderActions { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+          .ncsPosCategoryRow { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+          .ncsPosSmartFashionPortalBody { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+        }
+        @media (max-width:720px) {
+          .ncsPosHeader > .ncsPosSearchPanel {
+            height:auto !important; min-height:108px !important; grid-template-columns:52px minmax(0,1fr) !important;
+          }
+          .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchButton,
+          .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchQuickItemButton { height:42px !important; min-height:42px !important; }
+          .ncsPosHeaderActions { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          .ncsPosCategoryRow { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          .ncsPosCategoryButton { min-height:132px !important; }
+          .ncsPosSmartFashionPortalBody { grid-template-columns:1fr !important; padding:12px 10px 30px !important; }
+        }
+
+
+        /* NCS POS • SLIM ECOMMERCE SHELL • 2036
+           FINAL visual layer only: no billing, stock, payment, AI or cart logic changed. */
+
+        .ncsPosHeader {
+          display:grid !important;
+          grid-template-columns:240px minmax(480px,1fr) minmax(390px,500px) !important;
+          grid-template-rows:72px !important;
+          align-items:center !important;
+          gap:12px !important;
+          min-height:72px !important;
+          max-height:72px !important;
+          padding:0 12px !important;
+          margin:0 !important;
+          border-radius:17px !important;
+          overflow:visible !important;
+          background:linear-gradient(105deg,#07505e 0%,#0b7078 55%,#168982 100%) !important;
+          border:1px solid rgba(224,185,63,.34) !important;
+          box-shadow:0 10px 25px rgba(4,45,57,.10) !important;
+        }
+
+        .ncsPosHeader > div:first-child {
+          grid-column:1 !important;
+          grid-row:1 !important;
+          align-self:center !important;
+          min-width:0 !important;
+          max-width:none !important;
+          padding:0 2px !important;
+        }
+
+        .ncsPosHeader .ncsPosEyebrow {
+          margin:0 0 3px !important;
+          padding:0 !important;
+          background:transparent !important;
+          color:#f2ce64 !important;
+          font-size:7px !important;
+          letter-spacing:1.1px !important;
+          border-radius:0 !important;
+        }
+
+        .ncsPosHeader h1 {
+          margin:0 !important;
+          color:#fff !important;
+          font-size:22px !important;
+          line-height:1 !important;
+          letter-spacing:-.5px !important;
+          white-space:nowrap !important;
+        }
+
+        .ncsPosHeader p,
+        .ncsPosCustomerQueue,
+        .ncsPosHeader::before,
+        .ncsPosHeader::after {
+          display:none !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel {
+          grid-column:2 !important;
+          grid-row:1 !important;
+          align-self:center !important;
+          justify-self:stretch !important;
+          position:relative !important;
+          inset:auto !important;
+          width:100% !important;
+          max-width:none !important;
+          min-width:0 !important;
+          height:52px !important;
+          min-height:52px !important;
+          margin:0 !important;
+          padding:0 !important;
+          display:grid !important;
+          grid-template-columns:86px minmax(0,1fr) 92px 104px !important;
+          border-radius:14px !important;
+          overflow:hidden !important;
+          border:1px solid rgba(4,57,72,.09) !important;
+          background:#fff !important;
+          box-shadow:0 7px 18px rgba(0,39,53,.10) !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon,
+        .ncsPosHeader > .ncsPosSearchPanel input,
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchButton,
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+          height:50px !important;
+          min-height:50px !important;
+          max-height:50px !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon {
+          display:grid !important;
+          place-content:center !important;
+          gap:1px !important;
+          border-right:1px solid #e8efed !important;
+          background:#f8faf9 !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon span {
+          font-size:16px !important;
+          line-height:1 !important;
+          color:#0c6e79 !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon small {
+          font-size:5.5px !important;
+          line-height:1 !important;
+          letter-spacing:1px !important;
+          color:#60788a !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel input {
+          width:100% !important;
+          min-width:0 !important;
+          padding:0 14px !important;
+          border:0 !important;
+          outline:0 !important;
+          background:#fff !important;
+          color:#173e4d !important;
+          font-size:12.5px !important;
+          font-weight:650 !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel input::placeholder {
+          color:#7c8795 !important;
+          opacity:1 !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchButton {
+          border:0 !important;
+          border-left:1px solid rgba(168,127,15,.10) !important;
+          background:linear-gradient(135deg,#efd06a,#dfb640) !important;
+          color:#06465a !important;
+          font-size:10px !important;
+          font-weight:1000 !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+          display:flex !important;
+          align-items:center !important;
+          justify-content:center !important;
+          gap:4px !important;
+          border:0 !important;
+          background:#087d80 !important;
+          color:#fff !important;
+          font-size:9px !important;
+          font-weight:1000 !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchQuickItemButton span {
+          font-size:13px !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchTelemetry {
+          display:none !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosClearSearch {
+          top:50% !important;
+          right:202px !important;
+          transform:translateY(-50%) !important;
+        }
+
+        .ncsPosHeaderActions {
+          grid-column:3 !important;
+          grid-row:1 !important;
+          align-self:center !important;
+          display:grid !important;
+          grid-template-columns:repeat(6,minmax(0,1fr)) !important;
+          gap:5px !important;
+          width:100% !important;
+          min-width:0 !important;
+          padding:0 !important;
+          margin:0 !important;
+        }
+
+        .ncsPosHeaderActions > button {
+          min-width:0 !important;
+          min-height:46px !important;
+          max-height:46px !important;
+          padding:5px 4px !important;
+          border-radius:11px !important;
+          border:1px solid rgba(255,255,255,.16) !important;
+          background:rgba(5,55,66,.25) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+          display:flex !important;
+          align-items:center !important;
+          justify-content:center !important;
+          gap:4px !important;
+          font-size:7.5px !important;
+          line-height:1.02 !important;
+          text-align:center !important;
+        }
+
+        .ncsPosHeaderActions > button span {
+          width:22px !important;
+          height:22px !important;
+          min-width:22px !important;
+          border-radius:7px !important;
+          display:grid !important;
+          place-items:center !important;
+          background:#fff8e5 !important;
+          color:#9d7710 !important;
+          font-size:11px !important;
+        }
+
+        .ncsPosHeaderActions > button b {
+          font-size:7.5px !important;
+          line-height:1 !important;
+        }
+
+        .ncsPosHeaderActions > button small {
+          display:none !important;
+        }
+
+        .ncsPosHeaderActions > button:hover {
+          background:rgba(255,255,255,.12) !important;
+          border-color:rgba(234,196,83,.50) !important;
+        }
+
+        .ncsPosHeaderActions .ncsPosHeaderAiButton {
+          background:linear-gradient(135deg,rgba(232,194,73,.20),rgba(4,55,68,.34)) !important;
+          border-color:rgba(232,194,73,.46) !important;
+        }
+
+        .ncsPosV7CommandDeck {
+          min-height:44px !important;
+          max-height:44px !important;
+          margin:7px 0 0 !important;
+          padding:5px 8px !important;
+          border-radius:13px !important;
+          background:#fff !important;
+          border:1px solid rgba(6,69,84,.09) !important;
+          box-shadow:0 5px 14px rgba(5,49,62,.045) !important;
+        }
+
+        .ncsPosV7CommandIdentity {
+          min-width:154px !important;
+          gap:6px !important;
+        }
+
+        .ncsPosV7CommandIdentity span,
+        .ncsPosV7CommandIdentity strong {
+          font-size:7px !important;
+        }
+
+        .ncsPosV7CommandSignals {
+          gap:6px !important;
+        }
+
+        .ncsPosV7CommandSignals > * {
+          min-height:31px !important;
+          height:31px !important;
+          padding:4px 9px !important;
+          border-radius:9px !important;
+        }
+
+        .ncsPosV7CommandSignals small {
+          font-size:5.5px !important;
+        }
+
+        .ncsPosV7CommandSignals b {
+          font-size:9px !important;
+        }
+
+        /* Only one search bar exists: the navbar search above. */
+        .ncsPosCatalogue > .ncsPosSearchPanel {
+          display:none !important;
+        }
+
+        /* Compact ecommerce category strip — visible stock, but no giant dashboard blocks. */
+        .ncsPosCategoryOrbit {
+          margin:8px 0 0 !important;
+          padding:11px !important;
+          border-radius:18px !important;
+          background:#fff !important;
+          border:1px solid rgba(7,75,90,.10) !important;
+          box-shadow:0 8px 22px rgba(5,48,61,.055) !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosCategoryOrbitLabel {
+          display:flex !important;
+          align-items:center !important;
+          justify-content:space-between !important;
+          gap:12px !important;
+          margin:0 0 9px !important;
+          padding:0 2px !important;
+          color:#0a5563 !important;
+        }
+
+        .ncsPosCategoryOrbitLabel > div {
+          display:grid !important;
+          gap:1px !important;
+          min-width:0 !important;
+        }
+
+        .ncsPosCategoryOrbitLabel span {
+          color:#aa8219 !important;
+          font-size:6.5px !important;
+          letter-spacing:1.35px !important;
+          font-weight:1000 !important;
+        }
+
+        .ncsPosCategoryOrbitLabel strong {
+          color:#075563 !important;
+          font-size:17px !important;
+          line-height:1.05 !important;
+          letter-spacing:-.3px !important;
+        }
+
+        .ncsPosCategoryOrbitLabel small {
+          color:#71818d !important;
+          font-size:7px !important;
+          line-height:1.2 !important;
+        }
+
+        .ncsPosCategoryOrbitLabel > b {
+          padding:5px 8px !important;
+          border-radius:999px !important;
+          background:#f7f2df !important;
+          border:1px solid rgba(216,176,55,.32) !important;
+          color:#98720c !important;
+          font-size:6.5px !important;
+          letter-spacing:.7px !important;
+        }
+
+        .ncsPosCategoryRow {
+          display:flex !important;
+          gap:8px !important;
+          overflow-x:auto !important;
+          overflow-y:hidden !important;
+          padding:2px 2px 5px !important;
+          scrollbar-width:thin !important;
+          scroll-snap-type:x proximity !important;
+        }
+
+        .ncsPosCategoryButton {
+          flex:0 0 178px !important;
+          width:178px !important;
+          min-width:178px !important;
+          min-height:104px !important;
+          height:104px !important;
+          padding:10px !important;
+          border-radius:15px !important;
+          overflow:hidden !important;
+          scroll-snap-align:start !important;
+          background-color:#0b5866 !important;
+          background-size:cover !important;
+          background-position:center !important;
+          border:1px solid rgba(7,76,91,.10) !important;
+          box-shadow:0 7px 18px rgba(2,37,49,.09) !important;
+          color:#fff !important;
+          transform:none !important;
+        }
+
+        .ncsPosCategoryButton::before {
+          content:"" !important;
+          position:absolute !important;
+          inset:0 !important;
+          z-index:0 !important;
+          background:linear-gradient(180deg,rgba(2,26,38,.03) 15%,rgba(3,31,45,.85) 100%) !important;
+          pointer-events:none !important;
+        }
+
+        .ncsPosCategoryButton > * {
+          position:relative !important;
+          z-index:1 !important;
+        }
+
+        .ncsPosCategoryButton:hover {
+          transform:translateY(-1px) !important;
+          border-color:rgba(223,183,57,.60) !important;
+          box-shadow:0 10px 22px rgba(2,37,49,.14) !important;
+        }
+
+        .ncsPosCategoryButton.ncsPosCategoryActive {
+          outline:2px solid #e3bd4f !important;
+          outline-offset:1px !important;
+        }
+
+        .ncsPosCategoryTopline {
+          position:absolute !important;
+          top:8px !important;
+          left:8px !important;
+          right:8px !important;
+          display:flex !important;
+          align-items:center !important;
+          justify-content:space-between !important;
+        }
+
+        .ncsPosCategoryGlyph {
+          width:28px !important;
+          height:27px !important;
+          min-width:28px !important;
+          border-radius:8px !important;
+          background:rgba(255,255,255,.94) !important;
+          color:#0a6972 !important;
+          font-size:7.5px !important;
+          font-weight:1000 !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosCategoryTopline em {
+          padding:4px 6px !important;
+          border-radius:999px !important;
+          background:rgba(5,45,53,.66) !important;
+          border:1px solid rgba(228,190,73,.46) !important;
+          color:#f1ce62 !important;
+          font-size:5.5px !important;
+          letter-spacing:.7px !important;
+        }
+
+        .ncsPosCategoryCopy {
+          position:absolute !important;
+          left:10px !important;
+          right:10px !important;
+          bottom:9px !important;
+          display:grid !important;
+          gap:2px !important;
+        }
+
+        .ncsPosCategoryCopy b {
+          color:#fff !important;
+          font-size:15px !important;
+          line-height:1 !important;
+          text-shadow:0 2px 6px rgba(0,0,0,.25) !important;
+        }
+
+        .ncsPosCategoryCopy small {
+          color:rgba(255,255,255,.78) !important;
+          font-size:6.5px !important;
+        }
+
+        .ncsPosCategoryButton > i {
+          display:none !important;
+        }
+
+        /* Keep the catalogue/product tools directly below categories, without a marketing hero. */
+        .ncsPosCatalogueTop {
+          display:none !important;
+        }
+
+        @media (max-width:1350px) {
+          .ncsPosHeader {
+            grid-template-columns:205px minmax(380px,1fr) minmax(340px,430px) !important;
+          }
+          .ncsPosHeaderActions {
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          }
+        }
+
+        @media (max-width:1080px) {
+          .ncsPosHeader {
+            grid-template-columns:1fr !important;
+            grid-template-rows:auto auto auto !important;
+            max-height:none !important;
+            min-height:0 !important;
+            padding:10px !important;
+          }
+          .ncsPosHeader > div:first-child,
+          .ncsPosHeader > .ncsPosSearchPanel,
+          .ncsPosHeaderActions {
+            grid-column:1 !important;
+            grid-row:auto !important;
+          }
+          .ncsPosHeaderActions {
+            grid-template-columns:repeat(6,minmax(0,1fr)) !important;
+          }
+        }
+
+
+        /* NCS POS • SLIM HEADER FIX • 2036 */
+        .ncsPosHeader {
+          display:grid !important;
+          grid-template-columns:250px minmax(460px,1fr) 410px !important;
+          grid-template-rows:64px !important;
+          align-items:center !important;
+          column-gap:10px !important;
+          min-height:64px !important;
+          max-height:64px !important;
+          padding:0 10px !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosHeader > div:first-child,
+        .ncsPosHeader > .ncsPosSearchPanel,
+        .ncsPosHeaderActions {
+          position:static !important;
+          inset:auto !important;
+          transform:none !important;
+          margin:0 !important;
+          align-self:center !important;
+          top:auto !important;
+          right:auto !important;
+          bottom:auto !important;
+          left:auto !important;
+        }
+
+        .ncsPosHeader > div:first-child {
+          grid-column:1 !important;
+          grid-row:1 !important;
+          min-width:0 !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel {
+          grid-column:2 !important;
+          grid-row:1 !important;
+          width:100% !important;
+          max-width:none !important;
+          min-width:0 !important;
+          height:46px !important;
+          min-height:46px !important;
+          max-height:46px !important;
+          display:grid !important;
+          grid-template-columns:68px minmax(0,1fr) 88px 98px !important;
+          border-radius:13px !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon,
+        .ncsPosHeader > .ncsPosSearchPanel input,
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchButton,
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+          height:44px !important;
+          min-height:44px !important;
+          max-height:44px !important;
+        }
+
+        .ncsPosHeader > .ncsPosSearchPanel input {
+          padding:0 12px !important;
+          font-size:12px !important;
+        }
+
+        .ncsPosHeaderActions {
+          grid-column:3 !important;
+          grid-row:1 !important;
+          width:100% !important;
+          min-width:0 !important;
+          display:grid !important;
+          grid-template-columns:repeat(6,minmax(0,1fr)) !important;
+          gap:4px !important;
+          padding:0 !important;
+          background:transparent !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosHeaderActions > button {
+          min-height:42px !important;
+          max-height:42px !important;
+          padding:4px 3px !important;
+          border-radius:10px !important;
+          overflow:hidden !important;
+          white-space:normal !important;
+        }
+
+        .ncsPosHeaderActions > button span {
+          width:20px !important;
+          height:20px !important;
+          min-width:20px !important;
+          border-radius:6px !important;
+          font-size:10px !important;
+        }
+
+        .ncsPosHeaderActions > button b {
+          font-size:6.8px !important;
+          line-height:1 !important;
+        }
+
+        .ncsPosV7CommandDeck {
+          min-height:40px !important;
+          max-height:40px !important;
+          margin-top:6px !important;
+          padding:4px 7px !important;
+        }
+
+        .ncsPosCategoryOrbit {
+          margin-top:7px !important;
+          padding:10px 10px 8px !important;
+          border-radius:16px !important;
+        }
+
+        .ncsPosCategoryOrbitLabel {
+          margin-bottom:7px !important;
+          align-items:center !important;
+        }
+
+        .ncsPosCategoryOrbitLabel strong {
+          font-size:15px !important;
+        }
+
+        .ncsPosCategoryOrbitLabel small {
+          display:none !important;
+        }
+
+        .ncsPosCategoryRow {
+          display:flex !important;
+          flex-wrap:nowrap !important;
+          gap:7px !important;
+          overflow-x:auto !important;
+          overflow-y:hidden !important;
+          padding:1px 1px 4px !important;
+          margin:0 !important;
+        }
+
+        .ncsPosCategoryButton {
+          flex:0 0 150px !important;
+          width:150px !important;
+          min-width:150px !important;
+          max-width:150px !important;
+          height:88px !important;
+          min-height:88px !important;
+          max-height:88px !important;
+          padding:8px !important;
+          border-radius:13px !important;
+        }
+
+        .ncsPosCategoryGlyph {
+          width:24px !important;
+          height:24px !important;
+          min-width:24px !important;
+          border-radius:7px !important;
+          font-size:7px !important;
+        }
+
+        .ncsPosCategoryTopline {
+          top:7px !important;
+          left:7px !important;
+          right:7px !important;
+        }
+
+        .ncsPosCategoryTopline em {
+          padding:3px 5px !important;
+          font-size:5px !important;
+        }
+
+        .ncsPosCategoryCopy {
+          left:8px !important;
+          right:8px !important;
+          bottom:8px !important;
+        }
+
+        .ncsPosCategoryCopy b {
+          font-size:13px !important;
+        }
+
+        .ncsPosCategoryCopy small {
+          font-size:5.8px !important;
+        }
+
+        @media (max-width:1380px) {
+          .ncsPosHeader {
+            grid-template-columns:220px minmax(420px,1fr) 360px !important;
+          }
+          .ncsPosHeaderActions > button b {
+            font-size:6.3px !important;
+          }
+        }
+
+
+        /* NCS POS • CLEAN WEBSITE-LIKE COUNTER HEADER • 2036 */
+        .ncsPosHeader {
+          display:grid !important;
+          grid-template-columns:230px minmax(420px,1fr) 330px !important;
+          grid-template-rows:58px !important;
+          align-items:center !important;
+          gap:10px !important;
+          min-height:58px !important;
+          max-height:58px !important;
+          padding:0 10px !important;
+          border-radius:15px !important;
+          overflow:hidden !important;
+          background:linear-gradient(105deg,#075260 0%,#0a7178 56%,#168a83 100%) !important;
+          border:1px solid rgba(226,188,70,.32) !important;
+          box-shadow:0 8px 20px rgba(4,45,57,.08) !important;
+        }
+        .ncsPosHeader > div:first-child {
+          grid-column:1 !important; grid-row:1 !important; min-width:0 !important; padding:0 !important;
+        }
+        .ncsPosHeader .ncsPosEyebrow {
+          margin:0 0 2px !important; padding:0 !important; background:none !important;
+          color:#f2ce63 !important; font-size:6px !important; line-height:1 !important; letter-spacing:1px !important;
+        }
+        .ncsPosHeader h1 {
+          margin:0 !important; color:#fff !important; font-size:19px !important;
+          line-height:1 !important; white-space:nowrap !important; letter-spacing:-.4px !important;
+        }
+        .ncsPosHeader p,.ncsPosCustomerQueue,.ncsPosHeader::before,.ncsPosHeader::after { display:none !important; }
+
+        .ncsPosHeader > .ncsPosSearchPanel {
+          grid-column:2 !important; grid-row:1 !important;
+          position:static !important; inset:auto !important; transform:none !important;
+          width:100% !important; max-width:none !important; min-width:0 !important;
+          height:42px !important; min-height:42px !important; max-height:42px !important;
+          margin:0 !important; padding:0 !important;
+          display:grid !important; grid-template-columns:64px minmax(0,1fr) 82px 92px !important;
+          border-radius:12px !important; overflow:hidden !important; background:#fff !important;
+          border:1px solid rgba(6,58,72,.08) !important; box-shadow:0 5px 13px rgba(1,39,53,.08) !important;
+          z-index:auto !important;
+        }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon,
+        .ncsPosHeader > .ncsPosSearchPanel input,
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchButton,
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+          height:40px !important; min-height:40px !important; max-height:40px !important;
+        }
+        .ncsPosHeader > .ncsPosSearchPanel input {
+          padding:0 10px !important; font-size:11.5px !important; border:0 !important; outline:0 !important; min-width:0 !important;
+        }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon {
+          display:grid !important; place-content:center !important; gap:0 !important;
+          background:#f8faf9 !important; border-right:1px solid #e8efed !important;
+        }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon span { font-size:14px !important; color:#0a6e78 !important; }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon small { font-size:5px !important; color:#657a89 !important; }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchButton {
+          border:0 !important; background:linear-gradient(135deg,#efd06a,#dfb640) !important;
+          color:#06475a !important; font-size:9px !important; font-weight:1000 !important;
+        }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+          border:0 !important; background:#087d80 !important; color:#fff !important;
+          font-size:8px !important; font-weight:1000 !important; gap:2px !important;
+        }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchTelemetry { display:none !important; }
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosClearSearch {
+          top:50% !important; right:176px !important; transform:translateY(-50%) !important;
+        }
+
+        .ncsPosHeaderActions {
+          grid-column:3 !important; grid-row:1 !important;
+          position:static !important; inset:auto !important; transform:none !important;
+          width:100% !important; min-width:0 !important;
+          display:grid !important; grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          gap:4px !important; padding:0 !important; margin:0 !important;
+          background:none !important; box-shadow:none !important; z-index:auto !important;
+        }
+        .ncsPosHeaderActions > button {
+          min-width:0 !important; min-height:40px !important; max-height:40px !important;
+          padding:4px 3px !important; border-radius:10px !important;
+          border:1px solid rgba(255,255,255,.15) !important; background:rgba(4,53,64,.22) !important;
+          color:#fff !important; box-shadow:none !important; display:flex !important;
+          align-items:center !important; justify-content:center !important; gap:3px !important;
+          font-size:6.8px !important; line-height:1 !important; overflow:hidden !important; text-align:center !important;
+        }
+        .ncsPosHeaderActions > button span {
+          width:18px !important; height:18px !important; min-width:18px !important;
+          border-radius:6px !important; font-size:9px !important; background:#fff8e5 !important; color:#9c7610 !important;
+        }
+        .ncsPosHeaderActions > button b { font-size:6.8px !important; line-height:1 !important; }
+        .ncsPosHeaderActions > button small { display:none !important; }
+
+        .ncsPosV7CommandDeck {
+          min-height:38px !important; max-height:38px !important; margin-top:5px !important;
+          padding:4px 6px !important; border-radius:12px !important;
+        }
+        .ncsPosV7CommandIdentity {
+          min-width:235px !important; display:flex !important; align-items:center !important; gap:5px !important; white-space:nowrap !important;
+        }
+        .ncsPosV7CommandIdentity > span,.ncsPosV7CommandIdentity > strong { font-size:6px !important; }
+        .ncsPosRailModeButton,.ncsPosRailNextButton {
+          height:27px !important; min-height:27px !important; padding:0 7px !important;
+          border-radius:8px !important; border:1px solid rgba(7,82,95,.10) !important;
+          background:#f8faf9 !important; color:#0a5664 !important; font-size:6.5px !important;
+          font-weight:1000 !important; cursor:pointer !important;
+        }
+        .ncsPosRailModeButton.active { background:#fff3cd !important; border-color:rgba(221,176,43,.35) !important; color:#8c6705 !important; }
+        .ncsPosRailNextButton:disabled { opacity:.42 !important; cursor:not-allowed !important; }
+        .ncsPosV7CommandSignals { gap:5px !important; }
+        .ncsPosV7CommandSignals > * { height:28px !important; min-height:28px !important; padding:3px 7px !important; border-radius:8px !important; }
+        .ncsPosV7CommandSignals small { font-size:5px !important; }
+        .ncsPosV7CommandSignals b { font-size:8px !important; }
+
+        .ncsPosCategoryOrbit {
+          margin-top:6px !important; padding:9px !important; border-radius:15px !important;
+          background:#fff !important; border:1px solid rgba(7,75,90,.09) !important;
+          box-shadow:0 6px 16px rgba(5,48,61,.045) !important;
+        }
+        .ncsPosCategoryOrbitLabel { margin:0 0 7px !important; min-height:26px !important; }
+        .ncsPosCategoryOrbitLabel strong { font-size:14px !important; }
+        .ncsPosCategoryOrbitLabel small { display:none !important; }
+
+        .ncsPosCategoryPrimaryRow,.ncsPosCategorySecondaryRow {
+          display:flex !important; flex-wrap:nowrap !important; gap:7px !important;
+          overflow-x:auto !important; overflow-y:hidden !important;
+          padding:1px 1px 4px !important; margin:0 !important; scroll-snap-type:x proximity !important;
+        }
+        .ncsPosCategorySecondaryRow {
+          margin-top:7px !important; padding-top:7px !important; border-top:1px solid rgba(7,75,90,.08) !important;
+        }
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryButton,
+        .ncsPosCategorySecondaryRow .ncsPosCategoryButton {
+          flex:0 0 138px !important; width:138px !important; min-width:138px !important; max-width:138px !important;
+          height:78px !important; min-height:78px !important; max-height:78px !important;
+          padding:7px !important; border-radius:12px !important; scroll-snap-align:start !important; transform:none !important;
+        }
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryCopy b,
+        .ncsPosCategorySecondaryRow .ncsPosCategoryCopy b { font-size:12px !important; }
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryCopy small,
+        .ncsPosCategorySecondaryRow .ncsPosCategoryCopy small { font-size:5.4px !important; }
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryGlyph,
+        .ncsPosCategorySecondaryRow .ncsPosCategoryGlyph {
+          width:22px !important; height:22px !important; min-width:22px !important; border-radius:6px !important; font-size:6.5px !important;
+        }
+
+        .ncsPosCategoryMoreButton {
+          flex:0 0 104px !important; width:104px !important; min-width:104px !important; height:78px !important;
+          border-radius:12px !important; border:1px dashed rgba(8,93,105,.24) !important;
+          background:linear-gradient(180deg,#fbfcfb,#f3f7f6) !important; color:#0a5966 !important;
+          display:grid !important; place-content:center !important; gap:2px !important; cursor:pointer !important;
+        }
+        .ncsPosCategoryMoreButton span { font-size:15px !important; line-height:1 !important; color:#b58b15 !important; }
+        .ncsPosCategoryMoreButton b { font-size:9px !important; }
+        .ncsPosCategoryMoreButton small { font-size:5.5px !important; color:#7b8a92 !important; }
+        .ncsPosCategoryMoreButton.active { background:#fff7dc !important; border-color:rgba(221,176,43,.38) !important; }
+
+        @media (max-width:1320px) {
+          .ncsPosHeader { grid-template-columns:200px minmax(390px,1fr) 300px !important; }
+        }
+
+
+        /* NCS POS • HIGH-SPECIFICITY HEADER LOCK • 2036
+           This wins over older CounterOS rules without touching any function. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+          display:grid !important;
+          grid-template-columns:230px minmax(420px,1fr) 330px !important;
+          grid-template-rows:58px !important;
+          align-items:center !important;
+          gap:10px !important;
+          min-height:58px !important;
+          max-height:58px !important;
+          padding:0 10px !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > div:first-child {
+          grid-column:1 !important;
+          grid-row:1 !important;
+          position:static !important;
+          inset:auto !important;
+          transform:none !important;
+          min-width:0 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > .ncsPosSearchPanel {
+          grid-column:2 !important;
+          grid-row:1 !important;
+          position:static !important;
+          inset:auto !important;
+          transform:none !important;
+          justify-self:stretch !important;
+          width:100% !important;
+          max-width:none !important;
+          min-width:0 !important;
+          height:42px !important;
+          min-height:42px !important;
+          max-height:42px !important;
+          margin:0 !important;
+          z-index:1 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+          grid-column:3 !important;
+          grid-row:1 !important;
+          position:static !important;
+          inset:auto !important;
+          transform:none !important;
+          justify-self:stretch !important;
+          align-self:center !important;
+          width:100% !important;
+          max-width:none !important;
+          min-width:0 !important;
+          display:grid !important;
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          gap:4px !important;
+          margin:0 !important;
+          padding:0 !important;
+          background:transparent !important;
+          box-shadow:none !important;
+          z-index:2 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button {
+          display:flex !important;
+          min-width:0 !important;
+          width:100% !important;
+          min-height:40px !important;
+          height:40px !important;
+          max-height:40px !important;
+          padding:4px 3px !important;
+          border-radius:10px !important;
+          overflow:hidden !important;
+          font-size:6.8px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button span {
+          width:18px !important;
+          height:18px !important;
+          min-width:18px !important;
+          font-size:9px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button small {
+          display:none !important;
+        }
+
+        @media (max-width:1320px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+            grid-template-columns:205px minmax(380px,1fr) 300px !important;
+          }
+        }
+
+
+        /* NCS POS • BRAND MATRIX 3-ROW FILL • 2036
+           Visual/catalogue density only. Brand open/product/billing functions unchanged. */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandMatrixViewport {
+          height:auto !important;
+          min-height:0 !important;
+          max-height:none !important;
+          overflow:visible !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+          display:grid !important;
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          grid-template-rows:repeat(3,minmax(94px,auto)) !important;
+          gap:10px !important;
+          width:100% !important;
+          height:auto !important;
+          min-height:0 !important;
+          align-content:start !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard {
+          min-height:94px !important;
+          height:94px !important;
+          width:100% !important;
+          margin:0 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+        .ncsPosBrandMatrixPager {
+          margin-top:8px !important;
+        }
+
+        @media (max-width:1320px) {
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+            grid-template-rows:none !important;
+          }
+        }
+
+        @media (max-width:900px) {
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          }
+        }
+
+        @media (max-width:650px) {
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosWorkspace.ncsPosWorkspaceCatalogueOnly
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:1fr !important;
+          }
+        }
+
+
+        /* NCS POS • PREMIUM SEARCH + REAL CATEGORY ART • 2036
+           Visual polish + category image binding only.
+           Billing, stock, payment, cart, AI, rewards and offline logic unchanged. */
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+          grid-template-columns:220px minmax(500px,1fr) 330px !important;
+          grid-template-rows:70px !important;
+          min-height:70px !important;
+          max-height:70px !important;
+          padding:0 12px !important;
+          gap:12px !important;
+          border-radius:18px !important;
+          background:
+            radial-gradient(circle at 82% 0%, rgba(255,255,255,.12), transparent 24%),
+            linear-gradient(105deg,#064356 0%,#0a6972 54%,#148780 100%) !important;
+          border:1px solid rgba(229,192,77,.34) !important;
+          box-shadow:
+            0 12px 28px rgba(4,44,57,.11),
+            inset 0 1px 0 rgba(255,255,255,.07) !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > div:first-child {
+          min-width:0 !important;
+          overflow:hidden !important;
+          padding-left:2px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader .ncsPosEyebrow {
+          margin:0 0 4px !important;
+          padding:0 !important;
+          background:transparent !important;
+          color:#f1ce65 !important;
+          font-size:6.5px !important;
+          letter-spacing:1.15px !important;
+          white-space:nowrap !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1 {
+          margin:0 !important;
+          max-width:205px !important;
+          overflow:hidden !important;
+          text-overflow:ellipsis !important;
+          white-space:nowrap !important;
+          color:#fff !important;
+          font-size:18px !important;
+          line-height:1 !important;
+          letter-spacing:-.3px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > .ncsPosSearchPanel {
+          height:52px !important;
+          min-height:52px !important;
+          max-height:52px !important;
+          grid-template-columns:76px minmax(0,1fr) 96px 108px !important;
+          border-radius:15px !important;
+          border:1px solid rgba(255,255,255,.55) !important;
+          background:#fff !important;
+          box-shadow:
+            0 8px 20px rgba(1,37,50,.12),
+            inset 0 0 0 1px rgba(7,74,88,.04) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon,
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel input,
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchButton,
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+          height:50px !important;
+          min-height:50px !important;
+          max-height:50px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon {
+          background:
+            linear-gradient(180deg,#fbfcfb,#f4f8f7) !important;
+          border-right:1px solid #e4ecea !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon span {
+          color:#0a7179 !important;
+          font-size:16px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon small {
+          color:#647987 !important;
+          font-size:5.5px !important;
+          letter-spacing:1.1px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel input {
+          padding:0 16px !important;
+          border:0 !important;
+          outline:0 !important;
+          background:#fff !important;
+          color:#173d4c !important;
+          font-size:12.5px !important;
+          font-weight:700 !important;
+          letter-spacing:.02px !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel input:focus {
+          box-shadow:
+            inset 0 0 0 2px rgba(9,112,120,.12) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel input::placeholder {
+          color:#7b8793 !important;
+          opacity:1 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchButton {
+          border:0 !important;
+          background:
+            linear-gradient(135deg,#f1d36e 0%,#dfb43d 100%) !important;
+          color:#06475a !important;
+          font-size:9.5px !important;
+          font-weight:1000 !important;
+          box-shadow:
+            inset 1px 0 0 rgba(149,110,5,.10) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+          border:0 !important;
+          background:
+            linear-gradient(135deg,#08767b,#0e8d89) !important;
+          color:#fff !important;
+          font-size:8.5px !important;
+          font-weight:1000 !important;
+          box-shadow:
+            inset 1px 0 0 rgba(255,255,255,.09) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          gap:5px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button {
+          min-height:44px !important;
+          height:44px !important;
+          max-height:44px !important;
+          border-radius:11px !important;
+          background:rgba(3,54,66,.24) !important;
+          border:1px solid rgba(255,255,255,.15) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button:hover {
+          background:rgba(255,255,255,.12) !important;
+          border-color:rgba(229,192,77,.55) !important;
+        }
+
+        /* Slightly more breathing room under the header; still compact. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosV7CommandDeck {
+          margin-top:7px !important;
+          margin-bottom:7px !important;
+        }
+
+        /* Real image-first category cards, using website category image_url first. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryOrbit {
+          padding:11px !important;
+          border-radius:18px !important;
+          background:
+            linear-gradient(180deg,#ffffff 0%,#fbfcfa 100%) !important;
+          border:1px solid rgba(7,75,90,.09) !important;
+          box-shadow:
+            0 8px 20px rgba(4,47,60,.055),
+            inset 0 1px 0 rgba(255,255,255,.9) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryOrbitLabel {
+          min-height:30px !important;
+          margin-bottom:8px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryOrbitLabel strong {
+          font-size:15px !important;
+          color:#075663 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryPrimaryRow {
+          gap:9px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryButton {
+          flex:0 0 168px !important;
+          width:168px !important;
+          min-width:168px !important;
+          max-width:168px !important;
+          height:104px !important;
+          min-height:104px !important;
+          max-height:104px !important;
+          border-radius:15px !important;
+          border:1px solid rgba(7,76,91,.10) !important;
+          background-color:#0a5966 !important;
+          background-size:cover !important;
+          background-position:center !important;
+          box-shadow:
+            0 8px 18px rgba(2,37,49,.11) !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryButton::before {
+          content:"" !important;
+          position:absolute !important;
+          inset:0 !important;
+          z-index:0 !important;
+          background:
+            linear-gradient(
+              180deg,
+              rgba(3,25,39,.02) 0%,
+              rgba(3,25,39,.10) 40%,
+              rgba(3,25,39,.86) 100%
+            ) !important;
+          pointer-events:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryButton:hover {
+          transform:translateY(-2px) !important;
+          border-color:rgba(229,192,77,.58) !important;
+          box-shadow:
+            0 13px 26px rgba(2,37,49,.16) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryButton.ncsPosCategoryActive {
+          outline:2px solid #e5bd4e !important;
+          outline-offset:2px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryCopy {
+          left:10px !important;
+          right:10px !important;
+          bottom:10px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryCopy b {
+          color:#fff !important;
+          font-size:15px !important;
+          text-shadow:0 2px 8px rgba(0,0,0,.35) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryCopy small {
+          color:rgba(255,255,255,.78) !important;
+          font-size:6px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryGlyph {
+          background:rgba(255,255,255,.94) !important;
+          color:#0a6972 !important;
+          box-shadow:0 4px 10px rgba(0,0,0,.12) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryMoreButton {
+          height:104px !important;
+          min-height:104px !important;
+          border-radius:15px !important;
+          background:
+            linear-gradient(180deg,#fffdf8,#f7f9f7) !important;
+          border:1px dashed rgba(9,105,113,.25) !important;
+        }
+
+        @media (max-width:1320px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+            grid-template-columns:200px minmax(430px,1fr) 300px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS
+          .ncsPosCategoryPrimaryRow .ncsPosCategoryButton {
+            flex-basis:150px !important;
+            width:150px !important;
+            min-width:150px !important;
+            max-width:150px !important;
+          }
+        }
+
+
+        /* NCS POS • CATEGORY IMAGE CASCADE FIX • 2036
+           Previous legacy !important background shorthands were masking the real image.
+           The image now enters through a CSS variable and wins safely. */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryButton,
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategorySecondaryRow .ncsPosCategoryButton {
+          background-image:
+            linear-gradient(
+              180deg,
+              rgba(3, 26, 42, 0.02) 0%,
+              rgba(3, 26, 42, 0.10) 38%,
+              rgba(3, 26, 42, 0.88) 100%
+            ),
+            var(--ncs-category-image, linear-gradient(135deg,#0a5a66,#0b7480)) !important;
+          background-size:cover !important;
+          background-position:center !important;
+          background-repeat:no-repeat !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryButton::before,
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategorySecondaryRow .ncsPosCategoryButton::before {
+          background:linear-gradient(
+            180deg,
+            rgba(1,20,32,0.00) 0%,
+            rgba(1,20,32,0.05) 40%,
+            rgba(1,20,32,0.56) 100%
+          ) !important;
+        }
+
+
+        /* NCS POS • HEADER + CATEGORY ART FINAL POLISH • 2036
+           Visual-only pass. Existing billing/search/cart/stock/payment/AI logic is preserved. */
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+          display:grid !important;
+          grid-template-columns:180px minmax(520px,1fr) 350px !important;
+          grid-template-rows:74px !important;
+          align-items:center !important;
+          gap:12px !important;
+          min-height:74px !important;
+          max-height:74px !important;
+          padding:0 12px !important;
+          overflow:hidden !important;
+          border-radius:19px !important;
+          background:
+            radial-gradient(circle at 78% -20%,rgba(255,255,255,.16),transparent 30%),
+            linear-gradient(105deg,#063e52 0%,#08656f 54%,#12877f 100%) !important;
+          border:1px solid rgba(229,191,73,.34) !important;
+          box-shadow:
+            0 13px 30px rgba(4,43,56,.11),
+            inset 0 1px 0 rgba(255,255,255,.08) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > div:first-child {
+          grid-column:1 !important;
+          grid-row:1 !important;
+          position:static !important;
+          min-width:0 !important;
+          width:100% !important;
+          overflow:hidden !important;
+          padding:0 4px !important;
+          display:flex !important;
+          flex-direction:column !important;
+          justify-content:center !important;
+          align-items:flex-start !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader .ncsPosEyebrow {
+          display:block !important;
+          width:100% !important;
+          max-width:166px !important;
+          overflow:hidden !important;
+          text-overflow:ellipsis !important;
+          white-space:nowrap !important;
+          margin:0 0 5px !important;
+          padding:0 !important;
+          background:none !important;
+          color:#f0cc63 !important;
+          font-size:6px !important;
+          line-height:1 !important;
+          letter-spacing:1.05px !important;
+          font-weight:1000 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1 {
+          width:100% !important;
+          max-width:166px !important;
+          overflow:hidden !important;
+          text-overflow:ellipsis !important;
+          white-space:nowrap !important;
+          margin:0 !important;
+          color:#fff !important;
+          font-size:21px !important;
+          line-height:1 !important;
+          letter-spacing:-.55px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > .ncsPosSearchPanel {
+          grid-column:2 !important;
+          grid-row:1 !important;
+          position:static !important;
+          inset:auto !important;
+          transform:none !important;
+          width:100% !important;
+          max-width:none !important;
+          min-width:0 !important;
+          height:56px !important;
+          min-height:56px !important;
+          max-height:56px !important;
+          margin:0 !important;
+          display:grid !important;
+          grid-template-columns:72px minmax(0,1fr) 98px 112px !important;
+          align-items:stretch !important;
+          border-radius:16px !important;
+          overflow:hidden !important;
+          background:#fff !important;
+          border:1px solid rgba(255,255,255,.60) !important;
+          box-shadow:
+            0 9px 22px rgba(1,38,51,.13),
+            inset 0 0 0 1px rgba(7,78,91,.035) !important;
+          z-index:2 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon,
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel input,
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchButton,
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+          height:54px !important;
+          min-height:54px !important;
+          max-height:54px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel input {
+          width:100% !important;
+          min-width:0 !important;
+          padding:0 17px !important;
+          border:0 !important;
+          outline:0 !important;
+          background:#fff !important;
+          color:#163d4c !important;
+          font-size:12.5px !important;
+          font-weight:700 !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel input:focus {
+          box-shadow:inset 0 0 0 2px rgba(9,114,120,.11) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchIcon {
+          background:linear-gradient(180deg,#fbfcfb,#f3f8f6) !important;
+          border-right:1px solid #e5eeeb !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchButton {
+          border:0 !important;
+          background:linear-gradient(135deg,#f1d36f,#dfb33d) !important;
+          color:#06475a !important;
+          font-size:9.5px !important;
+          font-weight:1000 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosHeader > .ncsPosSearchPanel .ncsPosSearchQuickItemButton {
+          border:0 !important;
+          background:linear-gradient(135deg,#08767c,#0f8f89) !important;
+          color:#fff !important;
+          font-size:8.5px !important;
+          font-weight:1000 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+          grid-column:3 !important;
+          grid-row:1 !important;
+          position:static !important;
+          inset:auto !important;
+          transform:none !important;
+          width:100% !important;
+          min-width:0 !important;
+          display:grid !important;
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          gap:5px !important;
+          align-items:center !important;
+          z-index:1 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button {
+          min-width:0 !important;
+          width:100% !important;
+          height:46px !important;
+          min-height:46px !important;
+          max-height:46px !important;
+          padding:4px !important;
+          border-radius:11px !important;
+          overflow:hidden !important;
+          background:rgba(3,53,65,.24) !important;
+          border:1px solid rgba(255,255,255,.15) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions > button:hover {
+          background:rgba(255,255,255,.12) !important;
+          border-color:rgba(229,191,73,.52) !important;
+        }
+
+        /* Photo is now a real image layer inside the card, so it is visible
+           immediately without waiting for a category open state. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryButton {
+          position:relative !important;
+          isolation:isolate !important;
+          background:#0a5966 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryArtwork {
+          position:absolute !important;
+          inset:0 !important;
+          z-index:0 !important;
+          width:100% !important;
+          height:100% !important;
+          display:block !important;
+          object-fit:cover !important;
+          object-position:center !important;
+          pointer-events:none !important;
+          user-select:none !important;
+          transform:scale(1.015) !important;
+          transition:transform .28s ease !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryButton::before {
+          content:"" !important;
+          position:absolute !important;
+          inset:0 !important;
+          z-index:1 !important;
+          pointer-events:none !important;
+          background:
+            linear-gradient(
+              180deg,
+              rgba(2,22,35,.02) 0%,
+              rgba(2,22,35,.07) 38%,
+              rgba(2,22,35,.82) 100%
+            ) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryButton > *:not(.ncsPosCategoryArtwork) {
+          position:relative !important;
+          z-index:2 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCategoryButton:hover .ncsPosCategoryArtwork {
+          transform:scale(1.055) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryButton {
+          flex:0 0 174px !important;
+          width:174px !important;
+          min-width:174px !important;
+          max-width:174px !important;
+          height:108px !important;
+          min-height:108px !important;
+          max-height:108px !important;
+          border-radius:16px !important;
+          overflow:hidden !important;
+          box-shadow:0 9px 21px rgba(2,37,49,.12) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryCopy b {
+          font-size:15px !important;
+          color:#fff !important;
+          text-shadow:0 2px 8px rgba(0,0,0,.40) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryCopy small {
+          color:rgba(255,255,255,.82) !important;
+          text-shadow:0 1px 5px rgba(0,0,0,.34) !important;
+        }
+
+        @media (max-width:1320px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+            grid-template-columns:165px minmax(450px,1fr) 310px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader .ncsPosEyebrow {
+            max-width:150px !important;
+          }
+        }
+
+
+        /* NCS POS • IDENTITY OVERLAP + BRAND FILTER READABILITY FIX • 2036
+           Visual-only. No billing/search/cart/stock/payment/AI logic changed. */
+
+        /* Kill every legacy decorative NCS pseudo badge that can sit on top of the title. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader::before,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader::after,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > div:first-child::before,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > div:first-child::after {
+          content:none !important;
+          display:none !important;
+        }
+
+        /* Give identity its own clean lane and keep it away from search. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+          grid-template-columns:170px minmax(540px,1fr) 350px !important;
+          gap:14px !important;
+          padding-left:16px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > div:first-child {
+          padding:0 !important;
+          margin:0 !important;
+          overflow:visible !important;
+          min-width:0 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader .ncsPosEyebrow {
+          display:flex !important;
+          align-items:center !important;
+          gap:5px !important;
+          max-width:160px !important;
+          margin:0 0 4px !important;
+          color:#f0cc63 !important;
+          font-size:5.9px !important;
+          line-height:1 !important;
+          letter-spacing:.95px !important;
+          overflow:hidden !important;
+          text-overflow:ellipsis !important;
+          white-space:nowrap !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1 {
+          display:block !important;
+          width:auto !important;
+          max-width:160px !important;
+          margin:0 !important;
+          padding:0 !important;
+          color:#fff !important;
+          font-size:20px !important;
+          line-height:1 !important;
+          letter-spacing:-.45px !important;
+          overflow:hidden !important;
+          text-overflow:ellipsis !important;
+          white-space:nowrap !important;
+        }
+
+        /* Keep search visually centered and separated from identity/actions. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > .ncsPosSearchPanel {
+          margin:0 !important;
+          min-width:0 !important;
+          border-radius:16px !important;
+          box-shadow:
+            0 8px 20px rgba(1,38,51,.11),
+            inset 0 0 0 1px rgba(7,78,91,.035) !important;
+        }
+
+        /* Make POPULAR / RECENT / A-Z / ALL clearly readable, like ecommerce filter pills. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixModes {
+          display:grid !important;
+          grid-template-columns:repeat(4,minmax(66px,1fr)) !important;
+          gap:4px !important;
+          padding:4px !important;
+          border-radius:12px !important;
+          background:#f1f6f4 !important;
+          border:1px solid rgba(7,79,91,.10) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixModes button {
+          min-height:34px !important;
+          padding:0 10px !important;
+          border-radius:9px !important;
+          border:1px solid transparent !important;
+          background:#ffffff !important;
+          color:#315466 !important;
+          font-size:7.5px !important;
+          line-height:1 !important;
+          font-weight:900 !important;
+          letter-spacing:.25px !important;
+          opacity:1 !important;
+          text-shadow:none !important;
+          box-shadow:0 2px 6px rgba(4,49,62,.04) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixModes button:hover {
+          color:#075a66 !important;
+          border-color:rgba(11,112,118,.16) !important;
+          background:#f7fbfa !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixModes button.active {
+          background:linear-gradient(135deg,#08777c,#0d8e88) !important;
+          border-color:rgba(225,188,73,.42) !important;
+          color:#ffffff !important;
+          box-shadow:0 6px 14px rgba(8,113,117,.18) !important;
+        }
+
+        /* Improve brand card name hierarchy. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixCard strong,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandCompactCard strong {
+          color:#073f50 !important;
+          font-size:13px !important;
+          line-height:1.08 !important;
+          font-weight:1000 !important;
+          letter-spacing:.05px !important;
+          opacity:1 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixCard small,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandCompactCard small {
+          color:#617784 !important;
+          opacity:1 !important;
+        }
+
+        @media (max-width:1320px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+            grid-template-columns:155px minmax(470px,1fr) 315px !important;
+            gap:10px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader .ncsPosEyebrow,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader h1 {
+            max-width:145px !important;
+          }
+        }
+
+
+        /* NCS POS • FINAL FINISHING POLISH • 2036
+           Visual-only polish. No billing/search/cart/payment/stock/AI logic changes. */
+
+        /* 1) Slightly tighter, better-centered top commerce header */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader {
+          grid-template-rows:68px !important;
+          min-height:68px !important;
+          max-height:68px !important;
+          padding-top:0 !important;
+          padding-bottom:0 !important;
+          align-items:center !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > div:first-child,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeader > .ncsPosSearchPanel,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosHeaderActions {
+          align-self:center !important;
+        }
+
+        /* 2) Make the ALL card calmer and more premium than the photo-heavy look */
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryButton:first-child {
+          background:
+            radial-gradient(circle at 85% 18%, rgba(229,191,73,.18), transparent 34%),
+            linear-gradient(135deg,#083d50 0%,#0b6670 58%,#0f817b 100%) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryButton:first-child .ncsPosCategoryArtwork {
+          opacity:.14 !important;
+          filter:saturate(.75) contrast(.94) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS
+        .ncsPosCategoryPrimaryRow .ncsPosCategoryButton:first-child::before {
+          background:
+            linear-gradient(
+              180deg,
+              rgba(2,24,37,.02) 0%,
+              rgba(2,24,37,.08) 38%,
+              rgba(2,24,37,.58) 100%
+            ) !important;
+        }
+
+        /* 3) Compact the Quick/Brands/Products/All mode row into one centered pill group */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogueModes {
+          width:max-content !important;
+          max-width:100% !important;
+          margin:8px auto 0 !important;
+          padding:4px !important;
+          display:grid !important;
+          grid-template-columns:repeat(4,minmax(118px,1fr)) !important;
+          gap:4px !important;
+          border-radius:13px !important;
+          background:#f1f6f4 !important;
+          border:1px solid rgba(7,79,91,.09) !important;
+          box-shadow:0 5px 14px rgba(4,49,62,.045) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogueModes button {
+          min-height:32px !important;
+          padding:0 13px !important;
+          border-radius:9px !important;
+          border:1px solid transparent !important;
+          background:#fff !important;
+          color:#355565 !important;
+          font-size:7.5px !important;
+          line-height:1 !important;
+          font-weight:900 !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogueModes button:hover {
+          color:#075a66 !important;
+          background:#f8fbfa !important;
+          border-color:rgba(10,111,117,.13) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogueModes button.active {
+          color:#fff !important;
+          background:linear-gradient(135deg,#08777c,#0d8e88) !important;
+          border-color:rgba(225,188,73,.34) !important;
+          box-shadow:0 5px 12px rgba(8,113,117,.15) !important;
+        }
+
+        /* 4) Reduce brand search/tabs vertical height so brand cards rise upward */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixControls {
+          padding:7px 9px !important;
+          border-radius:14px !important;
+          gap:8px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixSearch {
+          min-height:42px !important;
+          height:42px !important;
+          border-radius:11px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixSearch input {
+          height:40px !important;
+          min-height:40px !important;
+          padding-top:0 !important;
+          padding-bottom:0 !important;
+          font-size:11px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixModes {
+          min-height:42px !important;
+          height:42px !important;
+          padding:3px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixModes button {
+          min-height:34px !important;
+          height:34px !important;
+          padding-top:0 !important;
+          padding-bottom:0 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixHeader {
+          min-height:44px !important;
+          padding-top:7px !important;
+          padding-bottom:7px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+          margin-top:6px !important;
+        }
+
+        @media (max-width:1320px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogueModes {
+            grid-template-columns:repeat(4,minmax(98px,1fr)) !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • BILL WORKSPACE STABILITY + WEB FEEL • 2036
+           VISUAL/LAYOUT ONLY.
+           Billing, cart, stock, payment, customer, rewards, AI,
+           quick-item, held-bill and sale-completion logic are unchanged.
+           ============================================================ */
+
+        /* ------------------------------------------------------------
+           A. COLLAPSED BILL / RETURN-TO-PRODUCTS MODE
+           Keep catalogue usable and brand names readable.
+           ------------------------------------------------------------ */
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosWorkspace:not(.ncsPosWorkspaceCatalogueOnly) {
+          grid-template-columns:minmax(520px,1.08fr) minmax(560px,.92fr) !important;
+          gap:14px !important;
+          align-items:start !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosWorkspace:not(.ncsPosWorkspaceCatalogueOnly)
+        .ncsPosCatalogue {
+          min-width:0 !important;
+          overflow:hidden !important;
+        }
+
+        /* In the narrower catalogue lane, use 3 readable brand columns
+           instead of squeezing 4 cards and hiding brand names. */
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosWorkspace:not(.ncsPosWorkspaceCatalogueOnly)
+        .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+          grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          grid-template-rows:none !important;
+          gap:8px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosWorkspace:not(.ncsPosWorkspaceCatalogueOnly)
+        .ncsPosBrandCompactCard.ncsPosBrandMatrixCard {
+          min-width:0 !important;
+          width:100% !important;
+          height:84px !important;
+          min-height:84px !important;
+          padding:8px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosWorkspace:not(.ncsPosWorkspaceCatalogueOnly)
+        .ncsPosBrandMatrixCard > div {
+          min-width:0 !important;
+          overflow:visible !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosWorkspace:not(.ncsPosWorkspaceCatalogueOnly)
+        .ncsPosBrandMatrixCard strong {
+          display:-webkit-box !important;
+          -webkit-box-orient:vertical !important;
+          -webkit-line-clamp:2 !important;
+          white-space:normal !important;
+          overflow:hidden !important;
+          text-overflow:ellipsis !important;
+          color:#073f50 !important;
+          font-size:11px !important;
+          line-height:1.05 !important;
+          font-weight:1000 !important;
+          max-height:24px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosWorkspace:not(.ncsPosWorkspaceCatalogueOnly)
+        .ncsPosBrandMatrixCard small {
+          display:block !important;
+          margin-top:2px !important;
+          color:#667b87 !important;
+          font-size:6.2px !important;
+          line-height:1.05 !important;
+          white-space:nowrap !important;
+          overflow:hidden !important;
+          text-overflow:ellipsis !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosWorkspace:not(.ncsPosWorkspaceCatalogueOnly)
+        .ncsPosBrandMatrixCard em {
+          margin-top:4px !important;
+          font-size:6.3px !important;
+        }
+
+        /* ------------------------------------------------------------
+           B. SIDE BILL: NO PAGE SCROLL FOR NORMAL / LARGE CARTS
+           Only the item rows scroll. All billing/payment actions stay visible.
+           ------------------------------------------------------------ */
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosWorkspace:not(.ncsPosWorkspaceCatalogueOnly)
+        .ncsPosBillPanel {
+          position:sticky !important;
+          top:8px !important;
+          height:calc(100vh - 220px) !important;
+          min-height:510px !important;
+          max-height:calc(100vh - 220px) !important;
+          display:flex !important;
+          flex-direction:column !important;
+          overflow:hidden !important;
+          border:1px solid rgba(7,83,96,.13) !important;
+          border-radius:20px !important;
+          background:#fff !important;
+          box-shadow:0 16px 38px rgba(4,43,56,.12) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosBillHeader {
+          flex:0 0 auto !important;
+          min-height:94px !important;
+          padding:12px 13px !important;
+          border-radius:19px 19px 0 0 !important;
+          background:
+            radial-gradient(circle at 88% 0%,rgba(255,255,255,.12),transparent 28%),
+            linear-gradient(112deg,#062e49 0%,#075768 52%,#0b7a79 100%) !important;
+          border-bottom:1px solid rgba(228,190,73,.25) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosBillHeader h2 {
+          font-size:23px !important;
+          line-height:1 !important;
+          color:#fff !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosBillHeader > div:first-child > span {
+          color:#efcc63 !important;
+          font-size:6.5px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosBillLivePulse {
+          min-height:58px !important;
+          padding:8px 10px !important;
+          border-radius:12px !important;
+          background:rgba(255,255,255,.075) !important;
+          border:1px solid rgba(255,255,255,.13) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosBillLivePulse strong {
+          font-size:20px !important;
+          color:#fff !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosBillHeaderActions {
+          gap:5px !important;
+          flex-wrap:wrap !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosBillHeaderActions button {
+          min-height:34px !important;
+          padding:5px 8px !important;
+          border-radius:9px !important;
+          font-size:7px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosV7CustomerTrigger {
+          flex:0 0 40px !important;
+          min-height:40px !important;
+          margin:7px 8px 5px !important;
+          padding:6px 9px !important;
+          border-radius:10px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosV7LastScanCore {
+          flex:0 0 54px !important;
+          min-height:54px !important;
+          margin:0 8px 5px !important;
+          padding:6px 8px !important;
+          border-radius:11px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosCartTableHeader {
+          flex:0 0 28px !important;
+          min-height:28px !important;
+          padding:5px 8px !important;
+          font-size:6px !important;
+          position:static !important;
+        }
+
+        /* This is the only scrolling area when products grow. */
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosCartItems {
+          flex:1 1 auto !important;
+          min-height:74px !important;
+          max-height:none !important;
+          overflow-y:auto !important;
+          overflow-x:hidden !important;
+          overscroll-behavior:contain !important;
+          padding:6px 7px 7px !important;
+          scrollbar-width:thin !important;
+          scrollbar-color:rgba(8,111,117,.35) transparent !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosCartItemTableRow {
+          min-height:54px !important;
+          padding:5px !important;
+          border-radius:10px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosSummary {
+          flex:0 0 auto !important;
+          margin:5px 7px !important;
+          padding:7px !important;
+          border-radius:11px !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosSummaryLine,
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosDiscountField,
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosRoundOffField {
+          min-height:32px !important;
+          padding:4px 6px !important;
+        }
+
+        /* The shortcut strip duplicates keyboard hints and consumes vertical space.
+           Functional controls remain elsewhere; warnings/queue notices remain visible. */
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosShortcutStrip {
+          display:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosCounterIntelligence {
+          flex:0 0 auto !important;
+          margin:0 7px 5px !important;
+          gap:4px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosOwnerGuardStrip,
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosActiveQueueNotice {
+          min-height:34px !important;
+          padding:5px 7px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosPaymentSection {
+          flex:0 0 auto !important;
+          margin:0 7px 6px !important;
+          padding:7px !important;
+          border-radius:12px !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosPaymentHeading2036 {
+          display:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosPaymentGrid2036 {
+          grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+          gap:5px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosPaymentButton {
+          min-height:42px !important;
+          height:42px !important;
+          padding:4px 6px !important;
+          border-radius:9px !important;
+          font-size:7px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosTotalLine {
+          position:static !important;
+          flex:0 0 50px !important;
+          min-height:50px !important;
+          margin:0 7px 7px !important;
+          padding:7px 9px !important;
+          border-radius:11px !important;
+          background:
+            linear-gradient(110deg,#062e49 0%,#075868 56%,#0b7b79 100%) !important;
+          box-shadow:0 -5px 15px rgba(4,43,56,.08) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+        .ncsPosCompleteButtonInline {
+          min-height:38px !important;
+          height:38px !important;
+          border-radius:10px !important;
+          background:linear-gradient(135deg,#efcd65,#dcae35) !important;
+          color:#073b4c !important;
+          box-shadow:none !important;
+        }
+
+        /* ------------------------------------------------------------
+           C. EXPANDED BILL
+           Stay inside the admin content area, never cover the sidebar,
+           and use item-only scrolling so bottom controls are always visible.
+           ------------------------------------------------------------ */
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+          position:fixed !important;
+          top:10px !important;
+          right:10px !important;
+          bottom:10px !important;
+          left:max(96px,min(312px,19vw)) !important;
+          width:auto !important;
+          height:auto !important;
+          min-width:0 !important;
+          min-height:0 !important;
+          max-width:none !important;
+          max-height:none !important;
+          display:flex !important;
+          flex-direction:column !important;
+          overflow:hidden !important;
+          border-radius:22px !important;
+          border:1px solid rgba(228,190,73,.50) !important;
+          background:#fff !important;
+          box-shadow:
+            -18px 24px 60px rgba(3,38,50,.20),
+            0 0 0 1px rgba(255,255,255,.74) inset !important;
+          animation:ncsBillSmoothOpen .24s cubic-bezier(.2,.82,.22,1) !important;
+        }
+
+        @keyframes ncsBillSmoothOpen {
+          from { opacity:.90; transform:translateY(6px) scale(.992); }
+          to   { opacity:1; transform:translateY(0) scale(1); }
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel::after {
+          display:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+          position:static !important;
+          flex:0 0 96px !important;
+          min-height:96px !important;
+          padding:11px 14px !important;
+          border-radius:21px 21px 0 0 !important;
+          background:
+            radial-gradient(circle at 88% 0%,rgba(255,255,255,.13),transparent 28%),
+            linear-gradient(112deg,#062d49 0%,#07576a 54%,#0b7c79 100%) !important;
+          border-bottom:1px solid rgba(228,190,73,.26) !important;
+          box-shadow:0 8px 20px rgba(3,41,53,.10) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader h2,
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse strong {
+          color:#fff !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader > div:first-child > span {
+          color:#efcc63 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions {
+          gap:6px !important;
+          flex-wrap:nowrap !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button {
+          min-height:34px !important;
+          padding:5px 10px !important;
+          border-radius:9px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7CustomerTrigger {
+          flex:0 0 40px !important;
+          min-height:40px !important;
+          margin:6px 10px 4px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7LastScanCore {
+          flex:0 0 52px !important;
+          min-height:52px !important;
+          margin:0 10px 4px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartTableHeader {
+          position:static !important;
+          flex:0 0 28px !important;
+          min-height:28px !important;
+          padding:5px 10px !important;
+          font-size:6px !important;
+        }
+
+        /* Expanded bill: item rows alone scroll. */
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+          flex:1 1 auto !important;
+          min-height:90px !important;
+          max-height:none !important;
+          overflow-y:auto !important;
+          overflow-x:hidden !important;
+          padding:6px 9px 8px !important;
+          overscroll-behavior:contain !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummary {
+          flex:0 0 auto !important;
+          margin:5px 9px !important;
+          padding:7px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosShortcutStrip {
+          display:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCounterIntelligence {
+          flex:0 0 auto !important;
+          margin:0 9px 4px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentSection {
+          flex:0 0 auto !important;
+          margin:0 9px 5px !important;
+          padding:7px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentHeading2036 {
+          display:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentGrid2036 {
+          grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+          gap:6px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton {
+          min-height:42px !important;
+          height:42px !important;
+          padding:4px 7px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosTotalLine {
+          position:static !important;
+          flex:0 0 50px !important;
+          min-height:50px !important;
+          margin:0 9px 9px !important;
+          padding:7px 10px !important;
+          border-radius:12px !important;
+          background:
+            linear-gradient(110deg,#062e49 0%,#075868 56%,#0b7b79 100%) !important;
+          box-shadow:0 -5px 16px rgba(4,43,56,.09) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCompleteButtonInline {
+          min-height:38px !important;
+          height:38px !important;
+          background:linear-gradient(135deg,#efcd65,#dcae35) !important;
+          color:#073b4c !important;
+          box-shadow:none !important;
+        }
+
+        /* Dense carts still retain the same fixed controls; only item rows get denser. */
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosDenseCart .ncsPosCartItemTableRow {
+          min-height:48px !important;
+          padding-top:4px !important;
+          padding-bottom:4px !important;
+        }
+
+        /* Keep split/credit detail panels from pushing the Complete Sale footer away.
+           They get their own compact scroll only when expanded. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSplitPaymentPanel2036,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCreditPanel {
+          max-height:150px !important;
+          overflow-y:auto !important;
+          overscroll-behavior:contain !important;
+        }
+
+        @media (max-width:1320px) {
+          .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+          .ncsPosWorkspace:not(.ncsPosWorkspaceCatalogueOnly) {
+            grid-template-columns:minmax(480px,1fr) minmax(520px,.95fr) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+          .ncsPosWorkspace:not(.ncsPosWorkspaceCatalogueOnly)
+          .ncsPosBrandCompactGrid.ncsPosBrandMatrixGrid {
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            left:max(90px,min(286px,19vw)) !important;
+          }
+        }
+
+        @media (max-width:1050px) {
+          .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+          .ncsPosWorkspace:not(.ncsPosWorkspaceCatalogueOnly) {
+            grid-template-columns:1fr !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus)
+          .ncsPosBillPanel {
+            position:relative !important;
+            top:auto !important;
+            height:auto !important;
+            min-height:0 !important;
+            max-height:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            left:10px !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • BILL ROW SPACING + HEADER ACTION FIT FIX • 2036
+           Visual/layout only. No billing/cart/payment/stock logic changed.
+           ============================================================ */
+
+        /* EXPANDED BILL HEADER:
+           Fit all top action buttons inside the header with no button hanging below. */
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+          flex:0 0 118px !important;
+          min-height:118px !important;
+          max-height:118px !important;
+          display:grid !important;
+          grid-template-columns:minmax(300px,1fr) minmax(480px,560px) !important;
+          align-items:center !important;
+          gap:14px !important;
+          padding:12px 14px !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader > div:first-child {
+          min-width:0 !important;
+          align-self:center !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions {
+          width:100% !important;
+          min-width:0 !important;
+          display:grid !important;
+          grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          grid-template-rows:repeat(2,38px) !important;
+          gap:6px !important;
+          align-content:center !important;
+          align-items:stretch !important;
+          overflow:hidden !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button {
+          width:100% !important;
+          min-width:0 !important;
+          min-height:38px !important;
+          height:38px !important;
+          max-height:38px !important;
+          padding:5px 8px !important;
+          margin:0 !important;
+          border-radius:10px !important;
+          overflow:hidden !important;
+          white-space:nowrap !important;
+          text-overflow:ellipsis !important;
+          font-size:7.2px !important;
+          line-height:1 !important;
+        }
+
+        /* CART ROWS:
+           Give every product its own clear lane. No visual touching/overlap. */
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+          padding:8px 10px 10px !important;
+          display:flex !important;
+          flex-direction:column !important;
+          gap:7px !important;
+          overflow-y:auto !important;
+          overflow-x:hidden !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow,
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosDenseCart .ncsPosCartItemTableRow {
+          flex:0 0 auto !important;
+          min-height:64px !important;
+          height:auto !important;
+          margin:0 !important;
+          padding:7px 8px !important;
+          border-radius:12px !important;
+          border:1px solid rgba(7,78,93,.10) !important;
+          background:#fff !important;
+          box-shadow:0 3px 9px rgba(4,48,61,.045) !important;
+          overflow:visible !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow > * {
+          min-width:0 !important;
+          align-self:center !important;
+        }
+
+        /* Keep quantity / sell / discount controls inside their row height. */
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow input,
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow button,
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItemTableRow select {
+          max-height:40px !important;
+        }
+
+        /* Header labels remain separate from first product row. */
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartTableHeader {
+          flex:0 0 32px !important;
+          min-height:32px !important;
+          max-height:32px !important;
+          margin:0 10px !important;
+          padding:6px 8px !important;
+          border-radius:9px !important;
+          background:#f3f7f8 !important;
+          border:1px solid rgba(7,78,93,.07) !important;
+        }
+
+        /* SIDE BILL uses same clean row separation. */
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus) .ncsPosCartItems {
+          padding:7px 7px 9px !important;
+          display:flex !important;
+          flex-direction:column !important;
+          gap:6px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus) .ncsPosCartItemTableRow,
+        .ncsPosV7Living.ncsPosCounterOS:not(.ncsPosBillingFocus).ncsPosDenseCart .ncsPosCartItemTableRow {
+          flex:0 0 auto !important;
+          min-height:60px !important;
+          height:auto !important;
+          margin:0 !important;
+          padding:6px 7px !important;
+          border-radius:11px !important;
+          border:1px solid rgba(7,78,93,.09) !important;
+          background:#fff !important;
+          box-shadow:0 2px 7px rgba(4,48,61,.04) !important;
+        }
+
+        /* Preserve fixed footer/payment visibility even with taller rows. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSummary,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosPaymentSection,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine {
+          position:relative !important;
+          z-index:3 !important;
+          background-clip:padding-box !important;
+        }
+
+        @media (max-width:1250px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+            grid-template-columns:minmax(260px,1fr) minmax(420px,500px) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button {
+            font-size:6.7px !important;
+            padding-left:6px !important;
+            padding-right:6px !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • BILL VISUAL FINISHING LOCK • 2036
+           Visual-only polish on the confirmed stable bill workspace.
+           No billing/cart/payment/stock/customer/AI logic changed.
+           ============================================================ */
+
+        /* 1) Align top bill identity, actions and total on one clean baseline */
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+          grid-template-columns:250px minmax(420px,1fr) 340px !important;
+          grid-template-rows:1fr !important;
+          align-items:center !important;
+          column-gap:16px !important;
+          min-height:108px !important;
+          max-height:108px !important;
+          padding:12px 16px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader > div:first-child {
+          align-self:center !important;
+          justify-self:start !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions {
+          grid-column:2 !important;
+          grid-row:1 !important;
+          width:100% !important;
+          max-width:620px !important;
+          justify-self:center !important;
+          display:grid !important;
+          grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          grid-template-rows:repeat(2,36px) !important;
+          gap:6px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse {
+          grid-column:3 !important;
+          grid-row:1 !important;
+          justify-self:end !important;
+          align-self:center !important;
+          width:100% !important;
+          max-width:340px !important;
+          min-height:66px !important;
+          margin:0 !important;
+          padding:10px 14px !important;
+          border-radius:14px !important;
+          background:rgba(255,255,255,.085) !important;
+          border:1px solid rgba(255,255,255,.14) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillLivePulse strong {
+          font-size:24px !important;
+          line-height:1 !important;
+          letter-spacing:-.5px !important;
+        }
+
+        /* 2) Compact info/delete controls so rows feel cleaner */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItemTableRow .ncsPosItemInfoButton,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItemTableRow .ncsPosRemoveButton,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItemTableRow button[title*="Remove"],
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItemTableRow button[aria-label*="Remove"] {
+          width:44px !important;
+          min-width:44px !important;
+          max-width:44px !important;
+          height:36px !important;
+          min-height:36px !important;
+          max-height:36px !important;
+          padding:0 !important;
+          border-radius:10px !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItemTableRow .ncsPosItemInfoButton {
+          background:#fffaf0 !important;
+          border:1px solid rgba(222,178,48,.45) !important;
+          color:#0a4f62 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItemTableRow .ncsPosRemoveButton,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItemTableRow button[title*="Remove"],
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCartItemTableRow button[aria-label*="Remove"] {
+          background:#c92626 !important;
+          border:1px solid #b31e1e !important;
+          color:#fff !important;
+        }
+
+        /* 3) Group summary metrics into larger, calmer premium blocks */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSummary {
+          display:grid !important;
+          grid-template-columns:1.1fr 1fr 1fr 1fr !important;
+          gap:7px !important;
+          align-items:stretch !important;
+          background:#f8faf9 !important;
+          border:1px solid rgba(7,80,94,.08) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSummary > * {
+          min-width:0 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosDiscountField {
+          grid-column:1 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSummaryLine {
+          min-height:48px !important;
+          padding:7px 9px !important;
+          border-radius:10px !important;
+          background:#fff !important;
+          border:1px solid rgba(7,80,94,.08) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSummaryLine span,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosDiscountField label,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosRoundOffField label {
+          color:#6a7d88 !important;
+          font-size:6px !important;
+          letter-spacing:.45px !important;
+          font-weight:900 !important;
+          text-transform:uppercase !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSummaryLine strong {
+          color:#073f50 !important;
+          font-size:10px !important;
+          font-weight:1000 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosRoundOffField {
+          min-height:48px !important;
+          border-radius:10px !important;
+          background:#fff !important;
+          border:1px solid rgba(7,80,94,.08) !important;
+        }
+
+        /* If there are more summary children, let them wrap into a second neat row */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosSummary {
+          grid-auto-rows:minmax(48px,auto) !important;
+        }
+
+        /* 4) Remove unnecessary red from payable emphasis.
+           Reserve red for destructive/delete states. */
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine {
+          background:
+            linear-gradient(110deg,#062e49 0%,#075868 58%,#0b7b79 100%) !important;
+          border:1px solid rgba(225,188,73,.24) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine .ncsPosPayableAmount,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine strong,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine b {
+          color:#f2cf66 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine > div:nth-last-child(2),
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosTotalLine .ncsPosPayablePill {
+          background:
+            linear-gradient(135deg,rgba(226,188,73,.20),rgba(255,255,255,.06)) !important;
+          border:1px solid rgba(231,195,82,.34) !important;
+          color:#f4d46f !important;
+          box-shadow:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline {
+          background:linear-gradient(135deg,#efcf68,#dcae35) !important;
+          color:#073a4b !important;
+          border:1px solid rgba(166,127,21,.25) !important;
+          box-shadow:0 7px 16px rgba(194,146,24,.16) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline:hover {
+          transform:translateY(-1px) !important;
+          box-shadow:0 9px 20px rgba(194,146,24,.20) !important;
+        }
+
+        @media (max-width:1250px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+            grid-template-columns:210px minmax(380px,1fr) 290px !important;
+            column-gap:10px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosSummary {
+            grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+          }
+        }
+
+
+        /* NCS POS • COMPLETE SALE READABILITY FIX • 2036
+           Visual-only. No sale/payment/billing logic changed. */
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline {
+          background:
+            linear-gradient(135deg,#f6d86f 0%,#e8bb3f 55%,#dba92d 100%) !important;
+          color:#07394a !important;
+          border:1px solid rgba(151,111,9,.28) !important;
+          box-shadow:
+            0 8px 18px rgba(183,137,22,.18),
+            inset 0 1px 0 rgba(255,255,255,.38) !important;
+          opacity:1 !important;
+          filter:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline *,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline span,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline strong,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline b,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline small {
+          color:#07394a !important;
+          opacity:1 !important;
+          text-shadow:none !important;
+          filter:none !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline strong,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline b {
+          font-size:10px !important;
+          font-weight:1000 !important;
+          letter-spacing:.05px !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline small {
+          font-size:6.5px !important;
+          font-weight:900 !important;
+          color:#284b55 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline::before,
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline::after {
+          opacity:1 !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline:hover {
+          background:
+            linear-gradient(135deg,#f9df7b 0%,#edc24b 55%,#e0af34 100%) !important;
+          transform:translateY(-1px) !important;
+          box-shadow:
+            0 10px 22px rgba(183,137,22,.22),
+            inset 0 1px 0 rgba(255,255,255,.45) !important;
+        }
+
+        .ncsPosV7Living.ncsPosCounterOS .ncsPosCompleteButtonInline:disabled {
+          opacity:.48 !important;
+          filter:saturate(.55) !important;
+          cursor:not-allowed !important;
         }
 
       `}

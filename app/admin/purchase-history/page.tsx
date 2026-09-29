@@ -238,6 +238,18 @@ export default function PurchaseHistoryPage() {
     useState("");
   const [deletionReason, setDeletionReason] =
     useState("");
+
+  // PER-ITEM SAFE DELETE • 2036
+  // Removes only the selected mistaken purchase row. The backend RPC reverses
+  // that row's physical stock and recalculates purchase/supplier totals atomically.
+  const [showItemDeleteModal, setShowItemDeleteModal] = useState(false);
+  const [itemPendingDelete, setItemPendingDelete] =
+    useState<PurchaseItemRow | null>(null);
+  const [deletingItem, setDeletingItem] = useState(false);
+  const [itemDeletionReason, setItemDeletionReason] = useState(
+    "Duplicate item entered by mistake",
+  );
+
   const [itemEditForm, setItemEditForm] =
     useState<PurchaseItemEditForm>({
       productName: "",
@@ -285,6 +297,8 @@ export default function PurchaseHistoryPage() {
       const { data: purchaseData, error: purchaseError } = await supabase
         .from("purchases")
         .select("*")
+        .is("deleted_at", null)
+        .neq("purchase_status", "deleted")
         .order("purchase_date", { ascending: false })
         .order("created_at", { ascending: false });
 
@@ -297,14 +311,68 @@ export default function PurchaseHistoryPage() {
 
       if (itemError) throw itemError;
 
-      const purchaseRows = (
+      const rawPurchaseRows = (
         (purchaseData || []) as unknown as PurchaseRow[]
-      ).filter((purchase) => !purchase.deleted_at);
-      const itemRows = (itemData || []) as unknown as PurchaseItemRow[];
+      ).filter(
+        (purchase) =>
+          !purchase.deleted_at &&
+          normalize(purchase.purchase_status) !== "deleted",
+      );
 
+      /*
+       * SAME-INVOICE HISTORY GUARD
+       * --------------------------
+       * Backend now enforces one ACTIVE row for
+       * supplier_id + supplier_invoice_number.
+       *
+       * This small UI guard also removes any stale/legacy duplicate card
+       * that might still arrive from an old cached response. Blank invoice
+       * numbers are never grouped because they may be separate purchases.
+       *
+       * We intentionally keep the first row from the server order
+       * (newest purchase first). The database repair remains the source of
+       * truth; this is only a visual safety net.
+       */
+      const seenInvoiceKeys = new Set<string>();
+      const purchaseRows = rawPurchaseRows.filter((purchase) => {
+        const invoice = normalize(purchase.supplier_invoice_number);
+
+        if (!invoice) return true;
+
+        const supplierIdentity =
+          purchase.supplier_id != null
+            ? `id:${purchase.supplier_id}`
+            : `name:${normalize(purchase.supplier_name)}`;
+
+        const key = `${supplierIdentity}::${invoice}`;
+
+        if (seenInvoiceKeys.has(key)) {
+          return false;
+        }
+
+        seenInvoiceKeys.add(key);
+        return true;
+      });
+
+      const visiblePurchaseIds = new Set(
+        purchaseRows.map((purchase) => purchase.id),
+      );
+
+      const itemRows = (itemData || []) as unknown as PurchaseItemRow[];
       const grouped: Record<string, PurchaseItemRow[]> = {};
 
       itemRows.forEach((item) => {
+        if (!visiblePurchaseIds.has(item.purchase_id)) {
+          return;
+        }
+
+        // Keep deleted correction rows in the database for audit/history, but
+        // never show them as active purchase items again. Legacy NULL status
+        // remains visible because those rows pre-date item_status tracking.
+        if (normalize(item.item_status) === "deleted") {
+          return;
+        }
+
         if (!grouped[item.purchase_id]) {
           grouped[item.purchase_id] = [];
         }
@@ -554,6 +622,138 @@ export default function PurchaseHistoryPage() {
       window.setTimeout(() => setNotice(""), 6000);
     } finally {
       setDeletingPurchase(false);
+    }
+  }
+
+  function openItemDeleteModal(item: PurchaseItemRow) {
+    setItemPendingDelete(item);
+    setItemDeletionReason("Duplicate item entered by mistake");
+    setShowItemDeleteModal(true);
+  }
+
+  function closeItemDeleteModal() {
+    if (deletingItem) return;
+    setShowItemDeleteModal(false);
+    setItemPendingDelete(null);
+    setItemDeletionReason("Duplicate item entered by mistake");
+  }
+
+  async function deletePurchaseItemSafely(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!selectedPurchase || !itemPendingDelete || deletingItem) {
+      return;
+    }
+
+    const reason = itemDeletionReason.trim();
+    if (reason.length < 3) {
+      setNotice("Enter a short reason for deleting this item.");
+      window.setTimeout(() => setNotice(""), 3500);
+      return;
+    }
+
+    const purchaseId = selectedPurchase.id;
+    const itemId = itemPendingDelete.id;
+    const deletedProductName = itemPendingDelete.product_name || "Purchase item";
+
+    setDeletingItem(true);
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "ncs_delete_purchase_item_v1",
+        {
+          p_purchase_id: purchaseId,
+          p_item_id: itemId,
+          p_reason: reason,
+        },
+      );
+
+      if (error) throw error;
+
+      const result = (data || {}) as {
+        success?: boolean;
+        message?: string;
+        new_subtotal?: number;
+        new_tax_amount?: number;
+        new_cgst_amount?: number;
+        new_sgst_amount?: number;
+        new_igst_amount?: number;
+        new_cess_amount?: number;
+        new_total_amount?: number;
+        new_due_amount?: number;
+        new_closing_supplier_balance?: number;
+        payment_status?: string;
+      };
+
+      if (result.success === false) {
+        throw new Error(result.message || "Unable to delete purchase item.");
+      }
+
+      // Remove the row instantly from the open details window so the operator
+      // can see the correction without closing/reopening the purchase.
+      setItemsByPurchase((current) => ({
+        ...current,
+        [purchaseId]: (current[purchaseId] || []).filter(
+          (item) => item.id !== itemId,
+        ),
+      }));
+
+      // Keep the currently-open totals live. loadData() below remains the final
+      // source-of-truth refresh from Supabase.
+      setSelectedPurchase((current) => {
+        if (!current || current.id !== purchaseId) return current;
+
+        return {
+          ...current,
+          subtotal:
+            result.new_subtotal ?? current.subtotal,
+          taxable_amount:
+            result.new_subtotal ?? current.taxable_amount,
+          tax_amount:
+            result.new_tax_amount ?? current.tax_amount,
+          cgst_amount:
+            result.new_cgst_amount ?? current.cgst_amount,
+          sgst_amount:
+            result.new_sgst_amount ?? current.sgst_amount,
+          igst_amount:
+            result.new_igst_amount ?? current.igst_amount,
+          cess_amount:
+            result.new_cess_amount ?? current.cess_amount,
+          total_amount:
+            result.new_total_amount ?? current.total_amount,
+          due_amount:
+            result.new_due_amount ?? current.due_amount,
+          closing_supplier_balance:
+            result.new_closing_supplier_balance ??
+            current.closing_supplier_balance,
+          payment_status:
+            result.payment_status ?? current.payment_status,
+        };
+      });
+
+      setShowItemDeleteModal(false);
+      setItemPendingDelete(null);
+      setItemDeletionReason("Duplicate item entered by mistake");
+
+      setNotice(
+        result.message ||
+          `${deletedProductName} deleted. Stock and purchase totals were corrected.`,
+      );
+      window.setTimeout(() => setNotice(""), 4500);
+
+      await loadData(true);
+    } catch (error) {
+      console.error("Purchase item delete error:", error);
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete this purchase item.",
+      );
+      window.setTimeout(() => setNotice(""), 6000);
+    } finally {
+      setDeletingItem(false);
     }
   }
 
@@ -810,6 +1010,41 @@ export default function PurchaseHistoryPage() {
         if (brandMoveError) throw brandMoveError;
       }
 
+      const sizeChanged =
+        normalize(itemEditForm.size) !== normalize(editingItem.size);
+      const colorChanged =
+        normalize(itemEditForm.color) !== normalize(editingItem.color);
+
+      /*
+       * SAFE SIZE / COLOUR CORRECTION
+       * -----------------------------
+       * The old edit RPC changes the linked variant itself. That is unsafe
+       * when the target size already exists (for example XXL -> XL), because
+       * the existing XL variant must receive the stock instead.
+       *
+       * This correction RPC moves the purchase quantity from the old variant
+       * to the already-existing target variant, relinks this purchase item,
+       * preserves total product stock and does not change purchase totals.
+       */
+      if (sizeChanged || colorChanged) {
+        const { error: variantCorrectionError } = await supabase.rpc(
+          "ncs_correct_purchase_item_variant_v1",
+          {
+            p_purchase_id: selectedPurchase.id,
+            p_item_id: editingItem.id,
+            p_new_size: itemEditForm.size.trim() || null,
+            p_new_color: itemEditForm.color.trim() || null,
+          },
+        );
+
+        if (variantCorrectionError) {
+          throw new Error(
+            variantCorrectionError.message ||
+              "Unable to correct purchase item size/colour.",
+          );
+        }
+      }
+
       const { error } = await supabase.rpc(
         "ncs_edit_purchase_item_v2",
         {
@@ -869,7 +1104,14 @@ window.setTimeout(() => setNotice(""), 4500);
       const message =
         error instanceof Error
           ? error.message
-          : "Unable to update purchase item.";
+          : error &&
+              typeof error === "object" &&
+              "message" in error
+            ? String(
+                (error as { message?: unknown }).message ||
+                  "Unable to update purchase item.",
+              )
+            : "Unable to update purchase item.";
       setItemEditError(message);
       setNotice(message);
       window.setTimeout(() => setNotice(""), 4500);
@@ -1718,13 +1960,23 @@ window.setTimeout(() => setNotice(""), 4500);
                     </span>
                   </div>
 
-                  <button
-                    type="button"
-                    className="editItemButton"
-                    onClick={() => openItemEditModal(item)}
-                  >
-                    Edit Item
-                  </button>
+                  <div className="detailsItemActions">
+                    <button
+                      type="button"
+                      className="editItemButton"
+                      onClick={() => openItemEditModal(item)}
+                    >
+                      Edit Item
+                    </button>
+
+                    <button
+                      type="button"
+                      className="deleteItemButton"
+                      onClick={() => openItemDeleteModal(item)}
+                    >
+                      Delete Item
+                    </button>
+                  </div>
 
                   <div className="detailsItemNumbers">
                     <p>
@@ -2005,6 +2257,96 @@ window.setTimeout(() => setNotice(""), 4500);
           </form>
         </div>
       )}
+
+      {showItemDeleteModal &&
+        itemPendingDelete &&
+        selectedPurchase && (
+          <div className="modalOverlay">
+            <form
+              className="deletePurchaseModal itemDeleteModal"
+              onSubmit={deletePurchaseItemSafely}
+            >
+              <button
+                type="button"
+                className="closeButton"
+                onClick={closeItemDeleteModal}
+                disabled={deletingItem}
+                aria-label="Close delete purchase item dialog"
+              >
+                ✕
+              </button>
+
+              <span>DELETE PURCHASE ITEM</span>
+              <h2>{itemPendingDelete.product_name || "Purchase Item"}</h2>
+
+              <div className="itemDeleteSummary">
+                <div>
+                  <span>Size / Colour</span>
+                  <strong>
+                    {[itemPendingDelete.size, itemPendingDelete.color]
+                      .filter(Boolean)
+                      .join(" • ") || "Standard"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Quantity to reverse</span>
+                  <strong>{toNumber(itemPendingDelete.quantity)}</strong>
+                </div>
+                <div>
+                  <span>Line Total</span>
+                  <strong>
+                    {formatCurrency(toNumber(itemPendingDelete.line_total))}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="deleteWarningBox">
+                <strong>Only this selected row will be removed.</strong>
+                <p>
+                  Its physical stock is reversed and this purchase's subtotal,
+                  GST, total, due and supplier outstanding are recalculated in
+                  one database transaction. If any of this stock has already
+                  been sold/moved, deletion is blocked instead of creating a
+                  stock mismatch.
+                </p>
+              </div>
+
+              <label className="deleteField">
+                <span>Reason *</span>
+                <textarea
+                  value={itemDeletionReason}
+                  onChange={(event) =>
+                    setItemDeletionReason(event.target.value)
+                  }
+                  placeholder="Duplicate item entered by mistake"
+                  disabled={deletingItem}
+                />
+              </label>
+
+              <div className="editModalActions">
+                <button
+                  type="button"
+                  onClick={closeItemDeleteModal}
+                  disabled={deletingItem}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="confirmDeleteButton"
+                  disabled={
+                    deletingItem || itemDeletionReason.trim().length < 3
+                  }
+                >
+                  {deletingItem
+                    ? "Deleting Item..."
+                    : "Delete Item & Reverse Stock"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
 
       {showAddItemModal && addingItemPurchase && (
         <div className="modalOverlay">
@@ -3400,8 +3742,15 @@ window.setTimeout(() => setNotice(""), 4500);
           font-size: 7px !important;
         }
 
-        .editItemButton {
+        .detailsItemActions {
           grid-area: edit;
+          display: grid;
+          gap: 6px;
+          width: 100%;
+          align-self: center;
+        }
+
+        .editItemButton {
           width: 100%;
           min-height: 38px;
           align-self: center;
@@ -3457,6 +3806,60 @@ window.setTimeout(() => setNotice(""), 4500);
           transform: translateY(-1px);
           background: ${ROYAL_BLUE};
           color: #ffffff;
+        }
+
+        .deleteItemButton {
+          width: 100%;
+          min-height: 36px;
+          padding: 0 12px;
+          border: 1px solid #f3b7b2;
+          border-radius: 9px;
+          background: #fff6f5;
+          color: #b42318;
+          font-size: 8px;
+          font-weight: 950;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+
+        .deleteItemButton:hover {
+          transform: translateY(-1px);
+          border-color: #b42318;
+          background: #b42318;
+          color: #ffffff;
+        }
+
+        .itemDeleteSummary {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+          margin-top: 13px;
+        }
+
+        .itemDeleteSummary > div {
+          padding: 10px 11px;
+          border: 1px solid #e4e7ec;
+          border-radius: 10px;
+          background: #f8fafc;
+        }
+
+        .itemDeleteSummary span,
+        .itemDeleteSummary strong {
+          display: block;
+        }
+
+        .itemDeleteSummary span {
+          color: #98a2b3;
+          font-size: 8px;
+          font-weight: 850;
+          text-transform: uppercase;
+        }
+
+        .itemDeleteSummary strong {
+          margin-top: 5px;
+          color: ${ROYAL_BLUE};
+          font-size: 10px;
+          font-weight: 900;
         }
 
         .purchaseTotalsDetailed {
@@ -4113,6 +4516,10 @@ window.setTimeout(() => setNotice(""), 4500);
           .detailsItemNumbers {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
+
+          .itemDeleteSummary {
+            grid-template-columns: 1fr;
+          }
         }
         @media (max-width: 760px) {
           .addItemPurchaseSummary,
@@ -4718,6 +5125,24 @@ window.setTimeout(() => setNotice(""), 4500);
           border-radius:10px !important;
           background:#e9f6f8 !important;
           color:#3f7f8b !important;
+        }
+
+        .deleteItemButton {
+          border:1px solid #edc2c9 !important;
+          border-radius:10px !important;
+          background:#fff0f2 !important;
+          color:#a74f60 !important;
+        }
+
+        .deleteItemButton:hover {
+          border-color:#a74f60 !important;
+          background:#a74f60 !important;
+          color:#fff !important;
+        }
+
+        .itemDeleteSummary > div {
+          border:1px solid #e4e7ec !important;
+          background:#fafbfc !important;
         }
 
         .purchaseTotalsDetailed,

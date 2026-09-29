@@ -1479,64 +1479,147 @@ export default function PaymentPage() {
   }
 
   if (loading) {
-    return <div className="loadingPage">Loading Payment...</div>;
+    return (
+      <main className="loadingPage">
+        <div className="loader" />
+        <span>NEW CITY STYLE</span>
+        <h2>Preparing Payment</h2>
+        <p>Loading your order, offers and secure payment options…</p>
+
+        <style jsx>{`
+          .loadingPage {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 30px;
+            background:
+              radial-gradient(circle at 82% 14%, rgba(212,175,55,.12), transparent 25%),
+              #f7f9fc;
+            color: #0a2e73;
+            text-align: center;
+          }
+
+          .loader {
+            width: 50px;
+            height: 50px;
+            margin-bottom: 18px;
+            border: 4px solid #e6eaf0;
+            border-top-color: #d4af37;
+            border-radius: 50%;
+            animation: spin .8s linear infinite;
+          }
+
+          .loadingPage > span {
+            color: #b18b15;
+            font-size: 9px;
+            font-weight: 950;
+            letter-spacing: 1.5px;
+          }
+
+          .loadingPage h2 {
+            margin: 8px 0 0;
+            font-size: 28px;
+          }
+
+          .loadingPage p {
+            margin: 8px 0 0;
+            color: #667085;
+            font-size: 12px;
+          }
+
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
+      </main>
+    );
   }
 
   if (!checkoutDetails) {
     return (
       <main className="missingPage">
         <section>
-          <div>📍</div>
-          <h1>Shipping Details Required</h1>
+          <div>⌂</div>
+          <span>CHECKOUT DETAILS REQUIRED</span>
+          <h1>Complete Delivery Details First</h1>
+
           <p>
-            Please complete your shipping address before selecting a
-            payment method.
+            Return to checkout and complete your delivery information before
+            selecting a payment method.
           </p>
+
           <button onClick={() => router.push("/checkout")}>
-            Return to Checkout
+            Return to Checkout →
           </button>
         </section>
 
         <style jsx>{`
           .missingPage {
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            display: grid;
+            place-items: center;
             padding: 20px;
-            background: #f8f4ec;
+            background:
+              radial-gradient(circle at 82% 14%, rgba(212,175,55,.12), transparent 25%),
+              #f7f9fc;
           }
 
           section {
-            width: 100%;
-            max-width: 520px;
-            padding: 40px;
-            border-radius: 18px;
+            width: min(520px, 100%);
+            padding: 38px;
+            border: 1px solid rgba(10,46,115,.08);
+            border-radius: 22px;
             background: white;
             text-align: center;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 18px 48px rgba(16,24,40,.08);
           }
 
           section > div {
-            font-size: 52px;
+            width: 62px;
+            height: 62px;
+            display: grid;
+            place-items: center;
+            margin: 0 auto;
+            border-radius: 18px;
+            background: #f8f3df;
+            color: #0a2e73;
+            font-size: 28px;
+          }
+
+          section > span {
+            display: block;
+            margin-top: 16px;
+            color: #b18b15;
+            font-size: 8px;
+            font-weight: 950;
+            letter-spacing: 1.2px;
           }
 
           h1 {
+            margin: 7px 0 0;
             color: #0a2e73;
+            font-size: 30px;
           }
 
           p {
+            margin: 10px 0 0;
             color: #667085;
-            line-height: 1.7;
+            font-size: 11px;
+            line-height: 1.65;
           }
 
           button {
-            padding: 14px 24px;
-            border: 0;
+            min-height: 43px;
+            margin-top: 20px;
+            padding: 0 15px;
+            border: 1px solid #d4af37;
             border-radius: 10px;
-            background: #d4af37;
-            color: #0a2e73;
-            font-weight: 800;
+            background: #0a2e73;
+            color: white;
+            font-size: 9px;
+            font-weight: 900;
             cursor: pointer;
           }
         `}</style>
@@ -1546,264 +1629,449 @@ export default function PaymentPage() {
 
   return (
     <main className="page">
+      <div className="ambientGrid" />
+      <div className="ambientGlow glowOne" />
+      <div className="ambientGlow glowTwo" />
+
       <div className="container">
         <section className="hero">
-          <p>NEW CITY STYLE</p>
-          <h1>Secure Payment</h1>
-          <span>
-            Select your preferred payment method and place your order.
-          </span>
+          <div className="heroCopy">
+            <span className="eyebrow">NEW CITY STYLE • PAYMENT</span>
+
+            <h1>Choose How You Want to Pay</h1>
+
+            <p>
+              Review your delivery address, apply any valid offer and complete
+              your order using the payment method you prefer.
+            </p>
+
+            <div className="stepRail">
+              <div className="step done">
+                <span>1</span>
+                <p>
+                  <strong>Cart</strong>
+                  <small>Done</small>
+                </p>
+              </div>
+
+              <i />
+
+              <div className="step done">
+                <span>2</span>
+                <p>
+                  <strong>Delivery</strong>
+                  <small>Done</small>
+                </p>
+              </div>
+
+              <i />
+
+              <div className="step active">
+                <span>3</span>
+                <p>
+                  <strong>Payment</strong>
+                  <small>Current step</small>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="heroStats">
+            <div>
+              <span>{cartItems.length}</span>
+              <small>Products</small>
+            </div>
+
+            <div>
+              <span>
+                {cartItems.reduce(
+                  (sum, item) => sum + Number(item.quantity || 0),
+                  0
+                )}
+              </span>
+              <small>Items</small>
+            </div>
+
+            <div>
+              <span>₹{total.toLocaleString("en-IN")}</span>
+              <small>Payable</small>
+            </div>
+          </div>
+        </section>
+
+        <section className="paymentSignals">
+          <div>
+            <span>⌂</span>
+            <p>
+              <strong>Address Confirmed</strong>
+              <small>Edit before placing the order if needed</small>
+            </p>
+          </div>
+
+          <div>
+            <span>⌁</span>
+            <p>
+              <strong>Offers Checked Live</strong>
+              <small>Coupon rules are validated before use</small>
+            </p>
+          </div>
+
+          <div>
+            <span>🔒</span>
+            <p>
+              <strong>Server Verification</strong>
+              <small>Online Razorpay payments are verified before paid status</small>
+            </p>
+          </div>
         </section>
 
         <div className="layout">
           <div className="leftColumn">
-            <section className="card">
-              <h2>Delivery Address</h2>
-              <h3>{checkoutDetails.fullName}</h3>
-              <p>{checkoutDetails.mobile}</p>
-              {checkoutDetails.email && (
-                <p>{checkoutDetails.email}</p>
-              )}
-              <p>
-                {checkoutDetails.address}, {checkoutDetails.city},{" "}
-                {checkoutDetails.state} - {checkoutDetails.pincode}
-              </p>
-              <button
-                className="outlineButton"
-                onClick={() => router.push("/checkout")}
-              >
-                Edit Address
-              </button>
+            <section className="card addressCard">
+              <div className="cardHeading">
+                <div>
+                  <span>DELIVERY</span>
+                  <h2>Delivery Address</h2>
+                </div>
+
+                <button
+                  className="outlineButton"
+                  onClick={() => router.push("/checkout")}
+                >
+                  Edit
+                </button>
+              </div>
+
+              <div className="customerIdentity">
+                <div className="identityMark">
+                  {checkoutDetails.fullName
+                    .trim()
+                    .slice(0, 1)
+                    .toUpperCase() || "N"}
+                </div>
+
+                <div>
+                  <h3>{checkoutDetails.fullName}</h3>
+                  <p>{checkoutDetails.mobile}</p>
+                  {checkoutDetails.email && (
+                    <p>{checkoutDetails.email}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="addressText">
+                <span>DELIVER TO</span>
+                <p>
+                  {checkoutDetails.address}, {checkoutDetails.city},{" "}
+                  {checkoutDetails.state} - {checkoutDetails.pincode}
+                </p>
+              </div>
             </section>
 
-            <section className="card">
-              <h2>Choose Payment Method</h2>
-
-              <PaymentOption
-                value="cod"
-                selectedValue={paymentMethod}
-                onChange={setPaymentMethod}
-                title="Cash on Delivery"
-                description="Pay safely when your order arrives."
-                icon="💵"
-              />
-
-              <PaymentOption
-                value="online"
-                selectedValue={paymentMethod}
-                onChange={setPaymentMethod}
-                title="Razorpay Online Payment"
-                description="UPI, cards, net banking and supported wallets. Club welcome voucher applies here."
-                icon="🔒"
-              />
-
-              <div className="storeCouponBox">
-                <div className="storeCouponHead">
-                  <div>
-                    <span>NEW CITY STYLE OFFERS</span>
-                    <strong>Have a Coupon Code?</strong>
-                  </div>
-                  <b>🎟️</b>
+            <section className="card paymentCard">
+              <div className="cardHeading">
+                <div>
+                  <span>PAYMENT METHOD</span>
+                  <h2>Select Payment</h2>
                 </div>
 
-                <p>
-                  Festival, special-sale and customer offer coupons work with
-                  both Cash on Delivery and Online Payment.
-                </p>
-
-                <div className="storeCouponEntry">
-                  <input
-                    value={storeCouponCode}
-                    onChange={(event) => {
-                      setStoreCouponCode(
-                        event.target.value
-                          .toUpperCase()
-                          .replace(/[^A-Z0-9_-]/g, "")
-                          .slice(0, 30)
-                      );
-                      if (storeCoupon) {
-                        setStoreCoupon(null);
-                      }
-                    }}
-                    placeholder="Example: NCS20"
-                    disabled={storeCouponChecking}
-                  />
-
-                  {storeCoupon ? (
-                    <button
-                      type="button"
-                      className="storeCouponRemoveButton"
-                      onClick={removeStoreCoupon}
-                    >
-                      Remove
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="storeCouponApplyButton"
-                      onClick={() => void applyStoreCoupon()}
-                      disabled={storeCouponChecking || !storeCouponCode.trim()}
-                    >
-                      {storeCouponChecking ? "Checking..." : "Apply"}
-                    </button>
-                  )}
-                </div>
-
-                <small className="storeCouponHint">
-                  Valid coupons can be used on COD or Online Payment. Minimum
-                  order, dates and usage limits are checked automatically.
-                </small>
-
-                {storeCouponMessage && (
-                  <div
-                    className={
-                      storeCoupon
-                        ? "storeCouponMessage storeCouponMessageSuccess"
-                        : "storeCouponMessage"
-                    }
-                  >
-                    {storeCouponMessage}
-                  </div>
-                )}
-
-                {storeCoupon && (
-                  <div className="storeCouponApplied">
-                    <span>✓ {storeCoupon.code}</span>
-                    <strong>
-                      -₹{storeCouponDiscount.toLocaleString("en-IN")}
-                    </strong>
-                  </div>
-                )}
+                <small>Choose one</small>
               </div>
 
-              <div className="clubVoucherBox">
-                <div className="clubVoucherHead">
-                  <div>
-                    <span>NEW CITY STYLE CLUB</span>
-                    <strong>₹100 Welcome Voucher</strong>
-                  </div>
-                  <b>🎁</b>
-                </div>
+              <div className="paymentOptions">
+                <PaymentOption
+                  value="cod"
+                  selectedValue={paymentMethod}
+                  onChange={setPaymentMethod}
+                  title="Cash on Delivery"
+                  description="Place the order now and pay when the order is delivered."
+                  icon="₹"
+                />
 
+                <PaymentOption
+                  value="online"
+                  selectedValue={paymentMethod}
+                  onChange={setPaymentMethod}
+                  title="Razorpay Online Payment"
+                  description="Continue to Razorpay for supported UPI, card, net-banking and wallet options."
+                  icon="▣"
+                />
+              </div>
+
+              <div className="methodStatus">
+                <span className={paymentMethod === "online" ? "onlineDot" : "codDot"} />
                 <p>
-                  Join the Club and save ₹100 on your first online / UPI order
-                  of ₹1,000 or more. Club voucher cannot be combined with another
-                  money-off coupon.
-                </p>
+                  <strong>
+                    {paymentMethod === "online"
+                      ? "Online Payment Selected"
+                      : "Cash on Delivery Selected"}
+                  </strong>
 
-                <div className="clubVoucherEntry">
-                  <input
-                    value={clubCode}
-                    onChange={(event) => {
-                      setClubCode(
-                        event.target.value
-                          .toUpperCase()
-                          .replace(/[^A-Z0-9]/g, "")
-                          .slice(0, 20)
-                      );
-                      if (clubVoucher) {
-                        setClubVoucher(null);
-                      }
-                    }}
-                    placeholder="Enter Club voucher code"
-                    disabled={paymentMethod !== "online" || clubChecking}
-                  />
-
-                  {clubVoucher ? (
-                    <button
-                      type="button"
-                      className="clubRemoveButton"
-                      onClick={removeClubVoucher}
-                    >
-                      Remove
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="clubApplyButton"
-                      onClick={() => void applyClubVoucher()}
-                      disabled={
-                        paymentMethod !== "online" ||
-                        clubChecking ||
-                        !clubCode.trim()
-                      }
-                    >
-                      {clubChecking ? "Checking..." : "Apply"}
-                    </button>
-                  )}
-                </div>
-
-                {paymentMethod !== "online" && (
-                  <small className="clubHint">
-                    Select Razorpay Online Payment to use the Club voucher.
+                  <small>
+                    {paymentMethod === "online"
+                      ? "The order is marked Paid only after server-side Razorpay verification."
+                      : "The order will be created with payment status Pending."}
                   </small>
-                )}
+                </p>
+              </div>
+            </section>
 
-                {clubMessage && (
-                  <div
-                    className={
-                      clubVoucher
-                        ? "clubMessage clubMessageSuccess"
-                        : "clubMessage"
-                    }
-                  >
-                    {clubMessage}
-                  </div>
-                )}
+            <section className="card offersCard">
+              <div className="cardHeading">
+                <div>
+                  <span>OFFERS & VOUCHERS</span>
+                  <h2>Apply Savings</h2>
+                </div>
 
-                {clubVoucher && (
-                  <div className="clubApplied">
-                    <span>✓ {clubVoucher.code}</span>
-                    <strong>
-                      -₹{clubDiscount.toLocaleString("en-IN")}
-                    </strong>
-                  </div>
-                )}
+                <small>One money-off offer at a time</small>
               </div>
 
-              <div className="securityNote">
-                🔐 Online payments are verified securely on the server.
+              <div className="offerGrid">
+                <div className="storeCouponBox">
+                  <div className="couponHead">
+                    <div>
+                      <span>STORE OFFER</span>
+                      <strong>Coupon Code</strong>
+                    </div>
+                    <b>⌁</b>
+                  </div>
+
+                  <p>
+                    Valid store coupons can work with Cash on Delivery or
+                    Online Payment. Eligibility is checked automatically.
+                  </p>
+
+                  <div className="couponEntry">
+                    <input
+                      value={storeCouponCode}
+                      onChange={(event) => {
+                        setStoreCouponCode(
+                          event.target.value
+                            .toUpperCase()
+                            .replace(/[^A-Z0-9_-]/g, "")
+                            .slice(0, 30)
+                        );
+
+                        if (storeCoupon) {
+                          setStoreCoupon(null);
+                        }
+                      }}
+                      placeholder="Enter offer code"
+                      disabled={storeCouponChecking}
+                    />
+
+                    {storeCoupon ? (
+                      <button
+                        type="button"
+                        className="removeCoupon"
+                        onClick={removeStoreCoupon}
+                      >
+                        Remove
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="applyCoupon"
+                        onClick={() => void applyStoreCoupon()}
+                        disabled={
+                          storeCouponChecking || !storeCouponCode.trim()
+                        }
+                      >
+                        {storeCouponChecking ? "Checking..." : "Apply"}
+                      </button>
+                    )}
+                  </div>
+
+                  {storeCouponMessage && (
+                    <div
+                      className={
+                        storeCoupon
+                          ? "couponMessage success"
+                          : "couponMessage"
+                      }
+                    >
+                      {storeCouponMessage}
+                    </div>
+                  )}
+
+                  {storeCoupon && (
+                    <div className="appliedOffer">
+                      <span>✓ {storeCoupon.code}</span>
+                      <strong>
+                        -₹{storeCouponDiscount.toLocaleString("en-IN")}
+                      </strong>
+                    </div>
+                  )}
+                </div>
+
+                <div className="clubVoucherBox">
+                  <div className="couponHead">
+                    <div>
+                      <span>NEW CITY STYLE CLUB</span>
+                      <strong>Welcome Voucher</strong>
+                    </div>
+                    <b>✦</b>
+                  </div>
+
+                  <p>
+                    Club welcome voucher follows the current NCS Club rules and
+                    is available only with Online / UPI payment.
+                  </p>
+
+                  <div className="couponEntry">
+                    <input
+                      value={clubCode}
+                      onChange={(event) => {
+                        setClubCode(
+                          event.target.value
+                            .toUpperCase()
+                            .replace(/[^A-Z0-9]/g, "")
+                            .slice(0, 20)
+                        );
+
+                        if (clubVoucher) {
+                          setClubVoucher(null);
+                        }
+                      }}
+                      placeholder="Enter Club voucher"
+                      disabled={paymentMethod !== "online" || clubChecking}
+                    />
+
+                    {clubVoucher ? (
+                      <button
+                        type="button"
+                        className="removeCoupon"
+                        onClick={removeClubVoucher}
+                      >
+                        Remove
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="applyCoupon"
+                        onClick={() => void applyClubVoucher()}
+                        disabled={
+                          paymentMethod !== "online" ||
+                          clubChecking ||
+                          !clubCode.trim()
+                        }
+                      >
+                        {clubChecking ? "Checking..." : "Apply"}
+                      </button>
+                    )}
+                  </div>
+
+                  {paymentMethod !== "online" && (
+                    <small className="offerHint">
+                      Select Online Payment to use a Club voucher.
+                    </small>
+                  )}
+
+                  {clubMessage && (
+                    <div
+                      className={
+                        clubVoucher
+                          ? "couponMessage success"
+                          : "couponMessage"
+                      }
+                    >
+                      {clubMessage}
+                    </div>
+                  )}
+
+                  {clubVoucher && (
+                    <div className="appliedOffer">
+                      <span>✓ {clubVoucher.code}</span>
+                      <strong>
+                        -₹{clubDiscount.toLocaleString("en-IN")}
+                      </strong>
+                    </div>
+                  )}
+                </div>
               </div>
             </section>
           </div>
 
           <section className="card summaryCard">
-            <h2>Order Summary</h2>
+            <div className="summaryHeading">
+              <div>
+                <span>FINAL REVIEW</span>
+                <h2>Order Summary</h2>
+              </div>
 
-            {cartItems.map((item) => (
-              <article className="orderItem" key={item.id}>
-                <img src={item.image} alt={item.name} />
+              <button
+                type="button"
+                onClick={() => router.push("/cart")}
+              >
+                Edit Cart
+              </button>
+            </div>
 
-                <div>
-                  <h3>{item.name}</h3>
-                  <p>Quantity: {item.quantity}</p>
-                  {(item.size || item.color) && (
-                    <p>
-                      {item.size ? `Size: ${item.size}` : ""}
-                      {item.size && item.color ? " | " : ""}
-                      {item.color ? `Color: ${item.color}` : ""}
-                    </p>
-                  )}
-                  <strong>
-                    ₹
-                    {(
-                      Number(item.price) *
-                      Number(item.quantity)
-                    ).toLocaleString("en-IN")}
-                  </strong>
-                </div>
-              </article>
-            ))}
+            <div className="orderList">
+              {cartItems.map((item) => (
+                <article className="orderItem" key={item.id}>
+                  <div className="orderImage">
+                    {item.image ? (
+                      <img src={item.image} alt={item.name} />
+                    ) : (
+                      <div>NCS</div>
+                    )}
+
+                    <span>{item.quantity}</span>
+                  </div>
+
+                  <div className="orderInfo">
+                    <h3>{item.name}</h3>
+
+                    <div className="orderMeta">
+                      {item.size && (
+                        <span>
+                          <b>Size</b>
+                          {item.size}
+                        </span>
+                      )}
+
+                      {item.color && (
+                        <span>
+                          <b>Colour</b>
+                          {item.color}
+                        </span>
+                      )}
+
+                      {item.design_unit_id && (
+                        <span>
+                          <b>Design</b>
+                          Selected
+                        </span>
+                      )}
+                    </div>
+
+                    <strong>
+                      ₹{(
+                        Number(item.price || 0) *
+                        Number(item.quantity || 0)
+                      ).toLocaleString("en-IN")}
+                    </strong>
+                  </div>
+                </article>
+              ))}
+            </div>
 
             <div className="summaryRows">
               <SummaryRow
                 title="Subtotal"
                 value={`₹${subtotal.toLocaleString("en-IN")}`}
               />
+
               <SummaryRow
                 title="Shipping"
-                value={shipping === 0 ? "FREE" : `₹${shipping}`}
+                value={
+                  shipping === 0
+                    ? "FREE"
+                    : `₹${shipping.toLocaleString("en-IN")}`
+                }
               />
+
               {tax > 0 && (
                 <SummaryRow
                   title={`Tax (${Math.round(
@@ -1822,20 +2090,33 @@ export default function PaymentPage() {
 
               {clubDiscount > 0 && (
                 <SummaryRow
-                  title="NCS Club Welcome Voucher"
+                  title="NCS Club Voucher"
                   value={`-₹${clubDiscount.toLocaleString("en-IN")}`}
                 />
               )}
             </div>
 
-            <div className="totalRow">
-              <span>Total</span>
-              <div className="totalAmountWrap">
-                {totalDiscount > 0 && (
-                  <del>₹{baseTotal.toLocaleString("en-IN")}</del>
-                )}
-                <strong>₹{total.toLocaleString("en-IN")}</strong>
+            {totalDiscount > 0 && (
+              <div className="savingsRow">
+                <span>You Save</span>
+                <strong>
+                  ₹{totalDiscount.toLocaleString("en-IN")}
+                </strong>
               </div>
+            )}
+
+            <div className="totalRow">
+              <div>
+                <span>Final Payable</span>
+
+                {totalDiscount > 0 && (
+                  <del>
+                    ₹{baseTotal.toLocaleString("en-IN")}
+                  </del>
+                )}
+              </div>
+
+              <strong>₹{total.toLocaleString("en-IN")}</strong>
             </div>
 
             <button
@@ -1843,21 +2124,75 @@ export default function PaymentPage() {
               onClick={placeOrder}
               disabled={placingOrder}
             >
-              {placingOrder
-                ? paymentMethod === "online"
-                  ? "Opening Secure Payment..."
-                  : "Placing Order..."
-                : paymentMethod === "online"
-                  ? `Pay ₹${total.toLocaleString("en-IN")} Securely`
-                  : "Place Cash on Delivery Order"}
+              <span>
+                {placingOrder
+                  ? paymentMethod === "online"
+                    ? "Opening Secure Payment..."
+                    : "Placing Order..."
+                  : paymentMethod === "online"
+                    ? `Pay ₹${total.toLocaleString("en-IN")} Securely`
+                    : "Place Cash on Delivery Order"}
+              </span>
+              <b>→</b>
             </button>
 
-            <p className="protectedText">
-              🔒 Your payment and order information is securely protected.
-            </p>
+            <div className="securityList">
+              <div>
+                <span>🔒</span>
+                <p>
+                  <strong>Online Verification</strong>
+                  <small>
+                    Razorpay payments are verified before an order is saved as Paid
+                  </small>
+                </p>
+              </div>
+
+              <div>
+                <span>✓</span>
+                <p>
+                  <strong>Inventory Sync</strong>
+                  <small>
+                    Successful orders continue through the current stock-sync flow
+                  </small>
+                </p>
+              </div>
+
+              <div>
+                <span>☏</span>
+                <p>
+                  <strong>Order Messages</strong>
+                  <small>
+                    Existing owner and customer WhatsApp confirmations remain active
+                  </small>
+                </p>
+              </div>
+            </div>
           </section>
         </div>
       </div>
+
+      {cartItems.length > 0 && (
+        <div className="mobilePayBar">
+          <div>
+            <span>
+              {paymentMethod === "online" ? "Payable" : "Order Total"}
+            </span>
+            <strong>₹{total.toLocaleString("en-IN")}</strong>
+          </div>
+
+          <button
+            type="button"
+            onClick={placeOrder}
+            disabled={placingOrder}
+          >
+            {placingOrder
+              ? "Please Wait..."
+              : paymentMethod === "online"
+                ? "Pay Securely →"
+                : "Place Order →"}
+          </button>
+        </div>
+      )}
 
       <style jsx>{`
         :global(*) {
@@ -1866,538 +2201,850 @@ export default function PaymentPage() {
 
         :global(body) {
           margin: 0;
-          background: #f8f4ec;
+          background: #f7f9fc;
           color: #172033;
           font-family: Inter, Poppins, Arial, sans-serif;
         }
 
-        button {
+        button,
+        input {
           font: inherit;
         }
 
-        .loadingPage {
-          min-height: 100vh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: #f8f4ec;
-          color: #0a2e73;
-          font-size: 22px;
-          font-weight: 800;
-        }
-
         .page {
+          position: relative;
+          overflow: hidden;
           min-height: 100vh;
-          padding: 35px 20px 70px;
+          padding: 38px 20px 90px;
           background:
-            radial-gradient(
-              circle at top right,
-              rgba(212, 175, 55, 0.11),
-              transparent 28%
-            ),
-            #f8f4ec;
+            radial-gradient(circle at 92% 5%, rgba(212,175,55,.11), transparent 24%),
+            radial-gradient(circle at 3% 88%, rgba(10,46,115,.07), transparent 24%),
+            #f7f9fc;
         }
 
         .container {
-          max-width: 1300px;
+          position: relative;
+          z-index: 3;
+          width: min(1440px, 100%);
           margin: 0 auto;
         }
 
-        .hero {
-          margin-bottom: 28px;
-          padding: 28px;
-          border-radius: 20px;
-          background: linear-gradient(135deg, #0a2e73, #164ca8);
-          color: white;
-          box-shadow: 0 12px 35px rgba(10, 46, 115, 0.25);
+        .ambientGrid {
+          position: absolute;
+          inset: 0;
+          opacity: .035;
+          pointer-events: none;
+          background-image:
+            linear-gradient(rgba(10,46,115,.18) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(10,46,115,.18) 1px, transparent 1px);
+          background-size: 66px 66px;
+          mask-image: linear-gradient(180deg, rgba(0,0,0,.8), transparent 88%);
         }
 
-        .hero p {
-          margin: 0 0 7px;
-          color: #d4af37;
-          font-weight: 850;
-          letter-spacing: 1px;
+        .ambientGlow {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(90px);
+          pointer-events: none;
+        }
+
+        .glowOne {
+          top: -100px;
+          right: -120px;
+          width: 360px;
+          height: 360px;
+          background: rgba(212,175,55,.09);
+        }
+
+        .glowTwo {
+          left: -150px;
+          bottom: 0;
+          width: 390px;
+          height: 390px;
+          background: rgba(10,46,115,.06);
+        }
+
+        .hero {
+          display: grid;
+          grid-template-columns: minmax(0, 1.35fr) minmax(350px, .65fr);
+          gap: 24px;
+          padding: 30px;
+          border: 1px solid rgba(212,175,55,.23);
+          border-radius: 24px;
+          background:
+            radial-gradient(circle at 88% 18%, rgba(212,175,55,.18), transparent 28%),
+            linear-gradient(135deg, #071a3f, #0a2e73 60%, #164b9d);
+          color: #fff;
+          box-shadow: 0 24px 60px rgba(10,46,115,.15);
+        }
+
+        .eyebrow {
+          color: #e7cb68;
+          font-size: 9px;
+          font-weight: 950;
+          letter-spacing: 1.7px;
         }
 
         .hero h1 {
-          margin: 0;
-          font-size: 34px;
+          max-width: 780px;
+          margin: 8px 0 0;
+          font-size: clamp(40px, 5vw, 66px);
+          line-height: 1;
+          letter-spacing: -2px;
         }
 
-        .hero span {
+        .heroCopy > p {
+          max-width: 700px;
+          margin: 14px 0 0;
+          color: rgba(255,255,255,.64);
+          font-size: 12px;
+          line-height: 1.7;
+        }
+
+        .stepRail {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          max-width: 650px;
+          margin-top: 22px;
+        }
+
+        .stepRail > i {
+          flex: 1;
+          height: 1px;
+          background: rgba(255,255,255,.16);
+        }
+
+        .step {
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .step > span {
+          width: 30px;
+          height: 30px;
+          display: grid;
+          place-items: center;
+          flex: 0 0 30px;
+          border: 1px solid rgba(255,255,255,.16);
+          border-radius: 50%;
+          background: rgba(255,255,255,.06);
+          color: rgba(255,255,255,.7);
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        .step.done > span,
+        .step.active > span {
+          border-color: #d4af37;
+          background: #d4af37;
+          color: #0a2e73;
+        }
+
+        .step p {
+          margin: 0;
+        }
+
+        .step strong,
+        .step small {
           display: block;
-          margin-top: 9px;
-          opacity: 0.88;
+        }
+
+        .step strong {
+          color: #fff;
+          font-size: 8px;
+        }
+
+        .step small {
+          margin-top: 2px;
+          color: rgba(255,255,255,.42);
+          font-size: 6px;
+        }
+
+        .heroStats {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+          padding: 15px;
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 17px;
+          background: rgba(255,255,255,.06);
+          backdrop-filter: blur(10px);
+        }
+
+        .heroStats > div {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 11px 7px;
+          border-radius: 11px;
+          background: rgba(255,255,255,.05);
+          text-align: center;
+        }
+
+        .heroStats span {
+          max-width: 100%;
+          overflow: hidden;
+          color: #e7cb68;
+          font-size: 18px;
+          font-weight: 950;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .heroStats small {
+          margin-top: 3px;
+          color: rgba(255,255,255,.45);
+          font-size: 7px;
+          text-transform: uppercase;
+          letter-spacing: .7px;
+        }
+
+        .paymentSignals {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px;
+          margin-top: 14px;
+        }
+
+        .paymentSignals > div {
+          min-height: 62px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 14px;
+          border: 1px solid rgba(10,46,115,.08);
+          border-radius: 14px;
+          background: rgba(255,255,255,.84);
+        }
+
+        .paymentSignals > div > span {
+          width: 31px;
+          height: 31px;
+          display: grid;
+          place-items: center;
+          flex: 0 0 31px;
+          border-radius: 9px;
+          background: #f8f3df;
+          color: #0a2e73;
+          font-size: 12px;
+          font-weight: 950;
+        }
+
+        .paymentSignals p {
+          margin: 0;
+        }
+
+        .paymentSignals strong,
+        .paymentSignals small {
+          display: block;
+        }
+
+        .paymentSignals strong {
+          color: #0a2e73;
+          font-size: 9px;
+        }
+
+        .paymentSignals small {
+          margin-top: 3px;
+          color: #667085;
+          font-size: 8px;
         }
 
         .layout {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) minmax(360px, 0.8fr);
-          gap: 28px;
+          grid-template-columns: minmax(0, 1fr) minmax(380px, .82fr);
+          gap: 22px;
           align-items: start;
+          margin-top: 20px;
         }
 
         .leftColumn {
           display: grid;
-          gap: 22px;
+          gap: 14px;
         }
 
         .card {
-          padding: 28px;
-          border: 1px solid rgba(10, 46, 115, 0.08);
-          border-radius: 18px;
-          background: white;
-          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.07);
+          border: 1px solid rgba(10,46,115,.08);
+          border-radius: 19px;
+          background: #fff;
+          box-shadow: 0 14px 36px rgba(16,24,40,.06);
         }
 
-        .card h2 {
-          margin: 0 0 22px;
-          color: #0a2e73;
-        }
-
-        .card h3 {
-          margin: 0 0 8px;
-        }
-
-        .card p {
-          margin: 0 0 7px;
-          color: #555;
-          line-height: 1.7;
-        }
-
-        .outlineButton {
-          margin-top: 17px;
-          padding: 11px 17px;
-          border: 2px solid #0a2e73;
-          border-radius: 9px;
-          background: white;
-          color: #0a2e73;
-          font-weight: 800;
-          cursor: pointer;
-        }
-
-        .storeCouponBox {
-          margin-top: 18px;
-          padding: 17px;
-          border: 1px solid rgba(10, 46, 115, 0.18);
-          border-radius: 14px;
-          background:
-            radial-gradient(
-              circle at 95% 5%,
-              rgba(10, 46, 115, 0.10),
-              transparent 34%
-            ),
-            linear-gradient(145deg, #f9fbff, #ffffff);
-        }
-
-        .storeCouponHead {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-        }
-
-        .storeCouponHead span,
-        .storeCouponHead strong {
-          display: block;
-        }
-
-        .storeCouponHead span {
-          color: #61708a;
-          font-size: 9px;
-          font-weight: 900;
-          letter-spacing: 0.8px;
-        }
-
-        .storeCouponHead strong {
-          margin-top: 3px;
-          color: #0a2e73;
-          font-size: 15px;
-        }
-
-        .storeCouponHead b {
-          font-size: 24px;
-        }
-
-        .storeCouponBox > p {
-          margin: 9px 0 0 !important;
-          color: #6d6d6d !important;
-          font-size: 11px !important;
-          line-height: 1.6 !important;
-        }
-
-        .storeCouponEntry {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) auto;
-          gap: 8px;
-          margin-top: 13px;
-        }
-
-        .storeCouponEntry input {
-          width: 100%;
-          height: 44px;
-          min-width: 0;
-          padding: 0 12px;
-          border: 1px solid #d9dfe8;
-          border-radius: 10px;
-          outline: none;
-          background: white;
-          color: #172033;
-          font: inherit;
-          font-size: 12px;
-          font-weight: 750;
-          text-transform: uppercase;
-        }
-
-        .storeCouponEntry input:focus {
-          border-color: #0a2e73;
-          box-shadow: 0 0 0 3px rgba(10, 46, 115, 0.10);
-        }
-
-        .storeCouponApplyButton,
-        .storeCouponRemoveButton {
-          min-width: 82px;
-          padding: 0 13px;
-          border: 0;
-          border-radius: 10px;
-          font-size: 11px;
-          font-weight: 900;
-          cursor: pointer;
-        }
-
-        .storeCouponApplyButton {
-          background: linear-gradient(135deg, #0a2e73, #164ca8);
-          color: white;
-        }
-
-        .storeCouponRemoveButton {
-          background: #fff0f0;
-          color: #a23636;
-        }
-
-        .storeCouponApplyButton:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .storeCouponHint {
-          display: block;
-          margin-top: 8px;
-          color: #7d8796;
-          font-size: 9px;
-          line-height: 1.45;
-        }
-
-        .storeCouponMessage {
-          margin-top: 10px;
-          padding: 9px 10px;
-          border-radius: 9px;
-          background: #fff3f3;
-          color: #a14242;
-          font-size: 10px;
-          font-weight: 750;
-          line-height: 1.45;
-        }
-
-        .storeCouponMessageSuccess {
-          background: #ebf9f0;
-          color: #157545;
-        }
-
-        .storeCouponApplied {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          margin-top: 10px;
-          padding: 10px 11px;
-          border: 1px dashed rgba(10, 46, 115, 0.35);
-          border-radius: 10px;
-          background: #0a2e73;
-          color: white;
-        }
-
-        .storeCouponApplied span {
-          color: #f3d86d;
-          font-size: 10px;
-          font-weight: 900;
-        }
-
-        .storeCouponApplied strong {
-          color: white;
-          font-size: 14px;
-        }
-
-        .clubVoucherBox {
-          margin-top: 18px;
-          padding: 17px;
-          border: 1px solid rgba(212, 175, 55, 0.55);
-          border-radius: 14px;
-          background:
-            radial-gradient(
-              circle at 95% 5%,
-              rgba(212, 175, 55, 0.18),
-              transparent 34%
-            ),
-            linear-gradient(145deg, #fffdf8, #fff8e9);
-        }
-
-        .clubVoucherHead {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-        }
-
-        .clubVoucherHead span,
-        .clubVoucherHead strong {
-          display: block;
-        }
-
-        .clubVoucherHead span {
-          color: #9b7621;
-          font-size: 9px;
-          font-weight: 900;
-          letter-spacing: 0.8px;
-        }
-
-        .clubVoucherHead strong {
-          margin-top: 3px;
-          color: #0a2e73;
-          font-size: 15px;
-        }
-
-        .clubVoucherHead b {
-          font-size: 24px;
-        }
-
-        .clubVoucherBox > p {
-          margin: 9px 0 0 !important;
-          color: #6d6d6d !important;
-          font-size: 11px !important;
-          line-height: 1.6 !important;
-        }
-
-        .clubVoucherEntry {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) auto;
-          gap: 8px;
-          margin-top: 13px;
-        }
-
-        .clubVoucherEntry input {
-          width: 100%;
-          height: 44px;
-          min-width: 0;
-          padding: 0 12px;
-          border: 1px solid #d9dfe8;
-          border-radius: 10px;
-          outline: none;
-          background: white;
-          color: #172033;
-          font: inherit;
-          font-size: 12px;
-          font-weight: 750;
-          text-transform: uppercase;
-        }
-
-        .clubVoucherEntry input:focus {
-          border-color: #d4af37;
-          box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.12);
-        }
-
-        .clubVoucherEntry input:disabled {
-          background: #f4f4f4;
-          color: #9b9b9b;
-        }
-
-        .clubApplyButton,
-        .clubRemoveButton {
-          min-width: 82px;
-          padding: 0 13px;
-          border: 0;
-          border-radius: 10px;
-          font-size: 11px;
-          font-weight: 900;
-          cursor: pointer;
-        }
-
-        .clubApplyButton {
-          background: linear-gradient(135deg, #d4af37, #efd25f);
-          color: #0a2e73;
-        }
-
-        .clubRemoveButton {
-          background: #fff0f0;
-          color: #a23636;
-        }
-
-        .clubApplyButton:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .clubHint {
-          display: block;
-          margin-top: 8px;
-          color: #8b8b8b;
-          font-size: 9px;
-        }
-
-        .clubMessage {
-          margin-top: 10px;
-          padding: 9px 10px;
-          border-radius: 9px;
-          background: #fff3f3;
-          color: #a14242;
-          font-size: 10px;
-          font-weight: 750;
-          line-height: 1.45;
-        }
-
-        .clubMessageSuccess {
-          background: #ebf9f0;
-          color: #157545;
-        }
-
-        .clubApplied {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          margin-top: 10px;
-          padding: 10px 11px;
-          border: 1px dashed #d4af37;
-          border-radius: 10px;
-          background: #0a2e73;
-          color: white;
-        }
-
-        .clubApplied span {
-          color: #f3d86d;
-          font-size: 10px;
-          font-weight: 900;
-        }
-
-        .clubApplied strong {
-          color: white;
-          font-size: 14px;
-        }
-
-        .securityNote {
-          margin-top: 16px;
-          padding: 12px 14px;
-          border-radius: 10px;
-          background: #ecfdf3;
-          color: #067647;
-          font-size: 12px;
-          font-weight: 750;
+        .addressCard,
+        .paymentCard,
+        .offersCard {
+          padding: 20px;
         }
 
         .summaryCard {
           position: sticky;
-          top: 95px;
+          top: 96px;
+          padding: 20px;
         }
 
-        .orderItem {
+        .cardHeading,
+        .summaryHeading {
           display: flex;
-          gap: 13px;
-          margin-bottom: 17px;
-          padding-bottom: 17px;
-          border-bottom: 1px solid #e5e7eb;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 14px;
         }
 
-        .orderItem img {
-          width: 70px;
-          height: 85px;
-          flex-shrink: 0;
-          border-radius: 9px;
-          background: #f3f4f6;
-          object-fit: cover;
+        .cardHeading > div > span,
+        .summaryHeading > div > span {
+          color: #b18b15;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 1.2px;
         }
 
-        .orderItem h3 {
-          margin: 0 0 7px;
+        .cardHeading h2,
+        .summaryHeading h2 {
+          margin: 4px 0 0;
           color: #0a2e73;
-          font-size: 16px;
+          font-size: 25px;
         }
 
-        .orderItem p {
-          margin: 0 0 5px;
-          color: #666;
+        .cardHeading > small {
+          color: #98a2b3;
+          font-size: 8px;
+        }
+
+        .outlineButton,
+        .summaryHeading button {
+          min-height: 34px;
+          padding: 0 10px;
+          border: 1px solid #d4af37;
+          border-radius: 8px;
+          background: #fffaf0;
+          color: #0a2e73;
+          font-size: 8px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .customerIdentity {
+          display: flex;
+          align-items: center;
+          gap: 11px;
+          margin-top: 17px;
+          padding: 13px;
+          border: 1px solid #eaecf0;
+          border-radius: 12px;
+          background: #fbfcfe;
+        }
+
+        .identityMark {
+          width: 46px;
+          height: 46px;
+          display: grid;
+          place-items: center;
+          flex: 0 0 46px;
+          border-radius: 13px;
+          background: linear-gradient(135deg, #0a2e73, #164b9d);
+          color: #d4af37;
+          font-size: 16px;
+          font-weight: 950;
+        }
+
+        .customerIdentity h3 {
+          margin: 0;
+          color: #0a2e73;
           font-size: 13px;
         }
 
-        .orderItem strong {
+        .customerIdentity p {
+          margin: 3px 0 0;
+          color: #667085;
+          font-size: 8px;
+        }
+
+        .addressText {
+          margin-top: 11px;
+          padding: 12px 13px;
+          border-radius: 11px;
+          background: #f8fafc;
+        }
+
+        .addressText > span {
+          color: #b18b15;
+          font-size: 7px;
+          font-weight: 950;
+          letter-spacing: .9px;
+        }
+
+        .addressText p {
+          margin: 6px 0 0;
+          color: #475467;
+          font-size: 9px;
+          line-height: 1.55;
+        }
+
+        .paymentOptions {
+          margin-top: 17px;
+        }
+
+        .methodStatus {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          margin-top: 3px;
+          padding: 11px 12px;
+          border: 1px solid #eaecf0;
+          border-radius: 10px;
+          background: #f8fafc;
+        }
+
+        .methodStatus > span {
+          width: 8px;
+          height: 8px;
+          flex: 0 0 8px;
+          border-radius: 50%;
+        }
+
+        .onlineDot {
+          background: #17b26a;
+          box-shadow: 0 0 0 5px rgba(23,178,106,.1);
+        }
+
+        .codDot {
+          background: #d4af37;
+          box-shadow: 0 0 0 5px rgba(212,175,55,.12);
+        }
+
+        .methodStatus p {
+          margin: 0;
+        }
+
+        .methodStatus strong,
+        .methodStatus small {
+          display: block;
+        }
+
+        .methodStatus strong {
+          color: #0a2e73;
+          font-size: 8px;
+        }
+
+        .methodStatus small {
+          margin-top: 3px;
+          color: #667085;
+          font-size: 7px;
+          line-height: 1.45;
+        }
+
+        .offerGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 11px;
+          margin-top: 17px;
+        }
+
+        .storeCouponBox,
+        .clubVoucherBox {
+          padding: 14px;
+          border: 1px solid #eaecf0;
+          border-radius: 13px;
+          background: #fbfcfe;
+        }
+
+        .couponHead {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+
+        .couponHead span,
+        .couponHead strong {
+          display: block;
+        }
+
+        .couponHead span {
+          color: #b18b15;
+          font-size: 7px;
+          font-weight: 950;
+          letter-spacing: .9px;
+        }
+
+        .couponHead strong {
+          margin-top: 3px;
+          color: #0a2e73;
+          font-size: 12px;
+        }
+
+        .couponHead b {
+          width: 34px;
+          height: 34px;
+          display: grid;
+          place-items: center;
+          flex: 0 0 34px;
+          border-radius: 9px;
+          background: #f8f3df;
+          color: #0a2e73;
+          font-size: 13px;
+        }
+
+        .storeCouponBox > p,
+        .clubVoucherBox > p {
+          min-height: 48px;
+          margin: 10px 0 0;
+          color: #667085;
+          font-size: 8px;
+          line-height: 1.5;
+        }
+
+        .couponEntry {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 7px;
+          margin-top: 11px;
+        }
+
+        .couponEntry input {
+          min-width: 0;
+          height: 39px;
+          padding: 0 10px;
+          border: 1px solid #d0d5dd;
+          border-radius: 9px;
+          background: #fff;
+          color: #172033;
+          outline: none;
+          font-size: 8px;
+        }
+
+        .couponEntry input:focus {
+          border-color: #0a2e73;
+          box-shadow: 0 0 0 3px rgba(10,46,115,.07);
+        }
+
+        .couponEntry button {
+          min-height: 39px;
+          padding: 0 10px;
+          border-radius: 9px;
+          font-size: 8px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .applyCoupon {
+          border: 1px solid #d4af37;
+          background: #0a2e73;
+          color: #fff;
+        }
+
+        .removeCoupon {
+          border: 1px solid #fecdca;
+          background: #fff5f4;
+          color: #b42318;
+        }
+
+        .couponEntry button:disabled {
+          opacity: .45;
+          cursor: not-allowed;
+        }
+
+        .offerHint {
+          display: block;
+          margin-top: 8px;
+          color: #667085;
+          font-size: 7px;
+        }
+
+        .couponMessage {
+          margin-top: 8px;
+          padding: 8px 9px;
+          border-radius: 8px;
+          background: #fff4ed;
+          color: #b54708;
+          font-size: 7px;
+          line-height: 1.45;
+        }
+
+        .couponMessage.success {
+          background: #ecfdf3;
+          color: #067647;
+        }
+
+        .appliedOffer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          margin-top: 9px;
+          padding: 8px 9px;
+          border: 1px solid #d1fadf;
+          border-radius: 8px;
+          background: #f1fcf5;
+        }
+
+        .appliedOffer span {
+          color: #067647;
+          font-size: 7px;
+          font-weight: 900;
+        }
+
+        .appliedOffer strong {
+          color: #067647;
+          font-size: 11px;
+        }
+
+        .orderList {
+          max-height: 430px;
+          overflow-y: auto;
+          margin-top: 16px;
+          padding-right: 4px;
+          scrollbar-width: thin;
+        }
+
+        .orderItem {
+          display: grid;
+          grid-template-columns: 82px minmax(0, 1fr);
+          gap: 11px;
+          padding: 11px 0;
+          border-bottom: 1px solid #eaecf0;
+        }
+
+        .orderImage {
+          position: relative;
+          overflow: hidden;
+          aspect-ratio: 4 / 5;
+          border-radius: 10px;
+          background: #eef2f7;
+        }
+
+        .orderImage img {
+          width: 100%;
+          height: 100%;
+          display: block;
+          object-fit: cover;
+        }
+
+        .orderImage > div {
+          width: 100%;
+          height: 100%;
+          display: grid;
+          place-items: center;
+          background: #0a2e73;
           color: #d4af37;
+          font-size: 13px;
+          font-weight: 950;
+        }
+
+        .orderImage > span {
+          position: absolute;
+          top: 6px;
+          right: 6px;
+          min-width: 20px;
+          height: 20px;
+          display: grid;
+          place-items: center;
+          border-radius: 999px;
+          background: rgba(3,22,54,.8);
+          color: #fff;
+          font-size: 7px;
+          font-weight: 900;
+        }
+
+        .orderInfo {
+          min-width: 0;
+        }
+
+        .orderInfo h3 {
+          display: -webkit-box;
+          overflow: hidden;
+          margin: 1px 0 0;
+          color: #0a2e73;
+          font-size: 12px;
+          line-height: 1.35;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+        }
+
+        .orderMeta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 5px;
+          margin-top: 7px;
+        }
+
+        .orderMeta span {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          min-height: 23px;
+          padding: 0 6px;
+          border: 1px solid rgba(10,46,115,.08);
+          border-radius: 7px;
+          background: #f8fafc;
+          color: #344054;
+          font-size: 7px;
+        }
+
+        .orderMeta b {
+          color: #667085;
+          font-size: 6px;
+        }
+
+        .orderInfo > strong {
+          display: block;
+          margin-top: 8px;
+          color: #b18b15;
+          font-size: 14px;
         }
 
         .summaryRows {
           display: grid;
-          gap: 11px;
-          margin-top: 18px;
+          gap: 10px;
+          margin-top: 16px;
+          padding-top: 14px;
+          border-top: 1px solid #eaecf0;
+        }
+
+        .savingsRow {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-top: 12px;
+          padding: 9px 10px;
+          border: 1px solid #d1fadf;
+          border-radius: 9px;
+          background: #f1fcf5;
+        }
+
+        .savingsRow span,
+        .savingsRow strong {
+          color: #067647;
+          font-size: 8px;
+          font-weight: 900;
         }
 
         .totalRow {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          margin-top: 20px;
-          padding-top: 20px;
-          border-top: 2px solid #e5e7eb;
+          gap: 14px;
+          margin-top: 15px;
+          padding: 14px;
+          border-radius: 12px;
+          background: linear-gradient(135deg, #071a3f, #0a2e73);
+          color: #fff;
+        }
+
+        .totalRow span,
+        .totalRow del {
+          display: block;
         }
 
         .totalRow span {
-          color: #0a2e73;
-          font-size: 21px;
-          font-weight: 800;
+          font-size: 9px;
+          font-weight: 850;
         }
 
-        .totalRow strong {
-          color: #d4af37;
-          font-size: 27px;
+        .totalRow del {
+          margin-top: 3px;
+          color: rgba(255,255,255,.42);
+          font-size: 7px;
         }
 
-        .totalAmountWrap {
-          display: flex;
-          align-items: flex-end;
-          flex-direction: column;
-          gap: 3px;
-        }
-
-        .totalAmountWrap del {
-          color: #98a2b3;
-          font-size: 12px;
-          font-weight: 700;
+        .totalRow > strong {
+          color: #e7cb68;
+          font-size: 24px;
         }
 
         .placeOrderButton {
           width: 100%;
-          min-height: 54px;
-          margin-top: 25px;
-          border: 0;
+          min-height: 49px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          margin-top: 13px;
+          border: 1px solid #d4af37;
           border-radius: 11px;
-          background: linear-gradient(135deg, #0a2e73, #164ca8);
-          color: white;
-          font-size: 16px;
-          font-weight: 850;
+          background: linear-gradient(135deg, #0a2e73, #164b9d);
+          color: #fff;
+          font-size: 9px;
+          font-weight: 950;
           cursor: pointer;
-          box-shadow: 0 12px 25px rgba(10, 46, 115, 0.2);
+          box-shadow: 0 12px 25px rgba(10,46,115,.16);
+        }
+
+        .placeOrderButton b {
+          color: #d4af37;
+          font-size: 15px;
         }
 
         .placeOrderButton:disabled {
-          opacity: 0.65;
+          opacity: .55;
           cursor: not-allowed;
         }
 
-        .protectedText {
-          margin: 13px 0 0 !important;
-          color: #667085 !important;
-          font-size: 12px !important;
-          text-align: center;
+        .securityList {
+          display: grid;
+          gap: 9px;
+          margin-top: 16px;
+          padding-top: 15px;
+          border-top: 1px solid #eaecf0;
         }
 
-        @media (max-width: 900px) {
+        .securityList > div {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+        }
+
+        .securityList > div > span {
+          width: 30px;
+          height: 30px;
+          display: grid;
+          place-items: center;
+          flex: 0 0 30px;
+          border-radius: 8px;
+          background: #f8f3df;
+          font-size: 10px;
+        }
+
+        .securityList p {
+          margin: 0;
+        }
+
+        .securityList strong,
+        .securityList small {
+          display: block;
+        }
+
+        .securityList strong {
+          color: #0a2e73;
+          font-size: 8px;
+        }
+
+        .securityList small {
+          margin-top: 2px;
+          color: #667085;
+          font-size: 7px;
+          line-height: 1.4;
+        }
+
+        .mobilePayBar {
+          display: none;
+        }
+
+        @media (max-width: 1050px) {
+          .hero {
+            grid-template-columns: 1fr;
+          }
+
+          .heroStats {
+            max-width: 560px;
+          }
+
           .layout {
             grid-template-columns: 1fr;
           }
@@ -2407,30 +3054,152 @@ export default function PaymentPage() {
           }
         }
 
-        @media (max-width: 600px) {
+        @media (max-width: 760px) {
           .page {
-            padding: 20px 10px 45px;
+            padding:
+              18px 9px
+              calc(100px + env(safe-area-inset-bottom));
           }
 
-          .hero,
-          .card {
-            padding: 18px;
+          .hero {
+            padding: 20px;
+            border-radius: 19px;
           }
 
           .hero h1 {
-            font-size: 28px;
+            font-size: 40px;
           }
 
-          .storeCouponEntry,
-          .clubVoucherEntry {
+          .heroCopy > p {
+            font-size: 11px;
+          }
+
+          .stepRail {
+            gap: 6px;
+          }
+
+          .step p {
+            display: none;
+          }
+
+          .stepRail > i {
+            min-width: 20px;
+          }
+
+          .heroStats {
+            padding: 11px;
+          }
+
+          .heroStats span {
+            font-size: 15px;
+          }
+
+          .paymentSignals {
+            display: flex;
+            overflow-x: auto;
+            gap: 8px;
+            margin-right: -9px;
+            padding-right: 9px;
+            scrollbar-width: none;
+          }
+
+          .paymentSignals::-webkit-scrollbar {
+            display: none;
+          }
+
+          .paymentSignals > div {
+            min-width: 235px;
+            flex: 0 0 235px;
+          }
+
+          .addressCard,
+          .paymentCard,
+          .offersCard,
+          .summaryCard {
+            padding: 16px;
+            border-radius: 15px;
+          }
+
+          .cardHeading h2,
+          .summaryHeading h2 {
+            font-size: 22px;
+          }
+
+          .offerGrid {
             grid-template-columns: 1fr;
           }
 
-          .storeCouponApplyButton,
-          .storeCouponRemoveButton,
-          .clubApplyButton,
-          .clubRemoveButton {
-            min-height: 42px;
+          .storeCouponBox > p,
+          .clubVoucherBox > p {
+            min-height: 0;
+          }
+
+          .placeOrderButton {
+            display: none;
+          }
+
+          .mobilePayBar {
+            position: fixed;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 5000;
+            display: grid;
+            grid-template-columns: minmax(110px, 1fr) minmax(145px, 1fr);
+            align-items: center;
+            gap: 9px;
+            padding:
+              9px 10px
+              calc(9px + env(safe-area-inset-bottom));
+            border-top: 1px solid rgba(10,46,115,.09);
+            background: rgba(255,255,255,.96);
+            box-shadow: 0 -12px 30px rgba(16,24,40,.12);
+            backdrop-filter: blur(14px);
+          }
+
+          .mobilePayBar span,
+          .mobilePayBar strong {
+            display: block;
+          }
+
+          .mobilePayBar span {
+            color: #667085;
+            font-size: 7px;
+          }
+
+          .mobilePayBar strong {
+            margin-top: 2px;
+            color: #b18b15;
+            font-size: 16px;
+          }
+
+          .mobilePayBar button {
+            min-height: 44px;
+            border: 1px solid #d4af37;
+            border-radius: 10px;
+            background: #0a2e73;
+            color: #fff;
+            font-size: 9px;
+            font-weight: 950;
+            cursor: pointer;
+          }
+
+          .mobilePayBar button:disabled {
+            opacity: .55;
+          }
+        }
+
+        @media (max-width: 430px) {
+          .hero h1 {
+            font-size: 36px;
+          }
+
+          .orderItem {
+            grid-template-columns: 72px minmax(0, 1fr);
+          }
+
+          .totalRow > strong {
+            font-size: 21px;
           }
         }
       `}</style>

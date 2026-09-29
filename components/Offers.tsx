@@ -1,384 +1,725 @@
 "use client";
 
+
+
 import { useEffect, useMemo, useState } from "react";
+
 import { useRouter } from "next/navigation";
+
 import { supabase } from "@/lib/supabase";
 
+
+
 type CouponRow = {
+
   id: string | number;
+
   code?: string | null;
+
   title?: string | null;
+
   description?: string | null;
+
   discount_type?: string | null;
+
   discount_value?: number | string | null;
+
   minimum_order?: number | string | null;
+
   maximum_discount?: number | string | null;
+
   usage_limit?: number | string | null;
+
   used_count?: number | string | null;
+
   is_active?: boolean | null;
+
   end_date?: string | null;
+
   created_at?: string | null;
+
 };
 
+
+
 type OfferCard = {
+
   id: string;
+
   icon: string;
+
   badge: string;
+
   title: string;
+
   subtitle: string;
+
   description: string;
+
   code: string;
+
   route: string;
+
   theme: "gold" | "white" | "blue" | "ivory";
+
 };
+
+
 
 const fallbackOffers: OfferCard[] = [
   {
     id: "fallback-1",
-    icon: "🎉",
-    badge: "LIMITED",
-    title: "Flat 50% OFF",
-    subtitle: "Selected Items",
-    description: "Premium fashion collections at special prices.",
+    icon: "✦",
+    badge: "STYLE PICK",
+    title: "Shop New Arrivals",
+    subtitle: "Fresh Online Collection",
+    description: "Explore recently added NEW CITY STYLE products.",
     code: "",
-    route: "/search?q=offer",
+    route: "/search?q=new",
     theme: "gold",
   },
   {
     id: "fallback-2",
-    icon: "👨‍👩‍👧",
-    badge: "FAMILY DEAL",
-    title: "Buy 2 Get 1",
-    subtitle: "Family Collection",
-    description: "Extra value for the entire family.",
+    icon: "◫",
+    badge: "FAMILY PICKS",
+    title: "Shop Family Fashion",
+    subtitle: "Men • Women • Kids",
+    description: "Browse fashion collections for the whole family.",
     code: "",
     route: "/search?q=family",
     theme: "white",
   },
   {
     id: "fallback-3",
-    icon: "⚡",
-    badge: "FLASH SALE",
-    title: "Extra 20% OFF",
-    subtitle: "New Arrivals",
-    description: "Fresh fashion collections with launch offers.",
+    icon: "→",
+    badge: "EXPLORE",
+    title: "Browse Best Styles",
+    subtitle: "Live Online Products",
+    description: "Discover active online products across categories.",
     code: "",
-    route: "/search?q=new",
+    route: "/search",
     theme: "blue",
   },
   {
     id: "fallback-4",
-    icon: "✨",
-    badge: "FESTIVE",
-    title: "Special Savings",
-    subtitle: "Festive Fashion",
-    description: "Celebrate every occasion with premium style.",
+    icon: "◇",
+    badge: "COLLECTIONS",
+    title: "Discover Collections",
+    subtitle: "Curated NEW CITY STYLE",
+    description: "Explore active collections published from Admin.",
     code: "",
-    route: "/search?q=festive",
+    route: "/collections",
     theme: "ivory",
   },
 ];
 
+
+
 const themes: OfferCard["theme"][] = [
+
   "gold",
+
   "white",
+
   "blue",
+
   "ivory",
+
 ];
+
+
 
 const icons = ["🎉", "⚡", "🎁", "✨"];
 
+
+
 function toNumber(value: unknown) {
+
   const numberValue = Number(value || 0);
+
   return Number.isFinite(numberValue) ? numberValue : 0;
+
 }
 
+
+
 function isCouponExpired(endDate?: string | null) {
+
   if (!endDate) return false;
+
+
 
   const date = new Date(endDate);
 
+
+
   if (Number.isNaN(date.getTime())) {
+
     return false;
+
   }
+
+
 
   date.setHours(23, 59, 59, 999);
 
+
+
   return date.getTime() < Date.now();
+
 }
+
+
 
 function getDiscountTitle(coupon: CouponRow) {
+
   const value = toNumber(coupon.discount_value);
+
   const type = (coupon.discount_type || "").trim().toLowerCase();
 
-  if (
-    type.includes("percent") ||
-    type.includes("percentage")
-  ) {
-    return `${value}% OFF`;
-  }
+
 
   if (
-    type.includes("fixed") ||
-    type.includes("amount") ||
-    type.includes("flat")
+
+    type.includes("percent") ||
+
+    type.includes("percentage")
+
   ) {
-    return `₹${value.toLocaleString("en-IN")} OFF`;
+
+    return `${value}% OFF`;
+
   }
+
+
+
+  if (
+
+    type.includes("fixed") ||
+
+    type.includes("amount") ||
+
+    type.includes("flat")
+
+  ) {
+
+    return `₹${value.toLocaleString("en-IN")} OFF`;
+
+  }
+
+
 
   if (value > 0) {
+
     return `${value}% OFF`;
+
   }
+
+
 
   return coupon.title?.trim() || "Special Offer";
+
 }
+
+
 
 function getSubtitle(coupon: CouponRow) {
+
   const minimumOrder = toNumber(coupon.minimum_order);
 
+
+
   if (minimumOrder > 0) {
+
     return `On orders above ₹${minimumOrder.toLocaleString("en-IN")}`;
+
   }
+
+
 
   return coupon.title?.trim() || "NEW CITY STYLE Offer";
+
 }
+
+
 
 function getBadge(coupon: CouponRow) {
+
   const code = coupon.code?.trim();
 
+
+
   if (code) {
+
     return code.toUpperCase();
+
   }
+
+
 
   return "ACTIVE OFFER";
+
 }
 
+
+
 function getDescription(coupon: CouponRow) {
+
   const text = coupon.description?.trim();
 
+
+
   if (text) {
+
     return text;
+
   }
+
+
 
   const maximumDiscount = toNumber(coupon.maximum_discount);
 
+
+
   if (maximumDiscount > 0) {
+
     return `Save up to ₹${maximumDiscount.toLocaleString("en-IN")} with this offer.`;
+
   }
 
+
+
   return "Apply this active coupon during checkout and enjoy special savings.";
+
 }
+
+
 
 function mapCouponToOffer(
+
   coupon: CouponRow,
+
   index: number
+
 ): OfferCard {
+
   const searchValue =
+
     coupon.title?.trim() ||
+
     coupon.code?.trim() ||
+
     "offer";
 
+
+
   return {
+
     id: String(coupon.id),
+
     icon: icons[index % icons.length],
+
     badge: getBadge(coupon),
+
     title: getDiscountTitle(coupon),
+
     subtitle: getSubtitle(coupon),
+
     description: getDescription(coupon),
+
     code: coupon.code?.trim() || "",
+
     route: `/search?q=${encodeURIComponent(searchValue)}`,
+
     theme: themes[index % themes.length],
+
   };
+
 }
 
+
+
 export default function Offers() {
+
   const router = useRouter();
 
+
+
   const [coupons, setCoupons] = useState<CouponRow[]>([]);
+
   const [loading, setLoading] = useState(true);
 
+
+
   useEffect(() => {
+
     loadActiveCoupons();
+
   }, []);
 
+
+
   async function loadActiveCoupons() {
+
     setLoading(true);
 
+
+
     try {
+
       const { data, error } = await supabase
+
         .from("coupons")
+
         .select("*")
+
         .eq("is_active", true)
+
         .order("created_at", { ascending: false });
 
+
+
       if (error) {
+
         throw error;
+
       }
 
+
+
       const activeCoupons = ((data as CouponRow[]) || [])
+
         .filter((coupon) => !isCouponExpired(coupon.end_date))
+
         .filter((coupon) => {
+
           const usageLimit = toNumber(coupon.usage_limit);
+
           const usedCount = toNumber(coupon.used_count);
+
+
 
           if (usageLimit <= 0) return true;
 
+
+
           return usedCount < usageLimit;
+
         });
 
+
+
       setCoupons(activeCoupons);
+
     } catch (error) {
+
       console.error("Home offers loading error:", error);
+
       setCoupons([]);
+
     } finally {
+
       setLoading(false);
+
     }
+
   }
+
+
 
   const offers = useMemo<OfferCard[]>(() => {
+
     if (coupons.length === 0) {
+
       return fallbackOffers;
+
     }
 
+
+
     return coupons
+
       .slice(0, 8)
+
       .map((coupon, index) =>
+
         mapCouponToOffer(coupon, index)
+
       );
+
   }, [coupons]);
 
+
+
   function openOffer(route: string) {
+
     router.push(route);
+
   }
 
+
+
   async function copyCouponCode(
+
     event: React.MouseEvent<HTMLButtonElement>,
+
     code: string
+
   ) {
+
     event.stopPropagation();
+
+
 
     if (!code) return;
 
+
+
     try {
+
       await navigator.clipboard.writeText(code);
+
       alert(`Coupon code ${code} copied.`);
+
     } catch {
+
       alert(`Use coupon code: ${code}`);
+
     }
+
   }
+
+
+
+  const hasLiveCoupons = coupons.length > 0;
+  const heroOffer = offers[0] || null;
+  const remainingOffers = offers.slice(1);
 
   return (
     <section className="offersSection">
+      <div className="ambientGrid" />
+      <div className="ambientGlow glowOne" />
+      <div className="ambientGlow glowTwo" />
+
       <div className="offersContainer">
-        <div className="headingArea">
-          <div className="eyebrow">
-            <span />
-            NEW CITY STYLE EXCLUSIVE
-            <span />
+        <div className="headingRow">
+          <div className="headingArea">
+            <span className="eyebrow">SMART SAVINGS • LIVE FROM ADMIN</span>
+
+            <h2>
+              Offers Worth
+              <strong>Opening</strong>
+            </h2>
+
+            <p>
+              {hasLiveCoupons
+                ? "These savings are connected to currently active NEW CITY STYLE coupons."
+                : "Explore curated shopping lanes while no live coupon campaign is active."}
+            </p>
           </div>
 
-          <h2>
-            <b>🔥</b>
-            Special Offers
-          </h2>
+          <button
+            type="button"
+            className="allOffersButton"
+            onClick={() => router.push("/search?q=offer")}
+          >
+            <span>Shop Offers</span>
+            <b>→</b>
+          </button>
+        </div>
 
-          <p>
-            Active coupons from the NEW CITY STYLE Admin Studio.
-          </p>
+        <div className="offerSignals">
+          <div>
+            <span className={hasLiveCoupons ? "liveDot" : "neutralDot"} />
+            <p>
+              <b>{hasLiveCoupons ? "LIVE COUPONS" : "NO LIVE COUPON"}</b>
+              <small>
+                {hasLiveCoupons
+                  ? "Active and valid campaigns only"
+                  : "No false discount urgency is shown"}
+              </small>
+            </p>
+          </div>
+
+          <div>
+            <span>✓</span>
+            <p>
+              <b>CONDITION AWARE</b>
+              <small>Minimum order and limits stay visible</small>
+            </p>
+          </div>
+
+          <div>
+            <span>⎘</span>
+            <p>
+              <b>ONE-TAP COPY</b>
+              <small>Coupon codes stay easy to use</small>
+            </p>
+          </div>
         </div>
 
         {loading ? (
-          <div className="offerGrid">
-            {[1, 2, 3, 4].map((item) => (
-              <div className="skeletonCard" key={item}>
-                <div className="skeletonTop">
-                  <div className="skeletonIcon" />
-                  <div className="skeletonBadge" />
-                </div>
-
-                <div className="skeletonTitle" />
-                <div className="skeletonLine" />
-                <div className="skeletonButton" />
-              </div>
-            ))}
+          <div className="loadingStage">
+            <div className="loadingHero" />
+            <div className="loadingGrid">
+              {[1, 2, 3].map((item) => (
+                <div className="loadingCard" key={item} />
+              ))}
+            </div>
           </div>
         ) : (
-          <div className="offerGrid">
-            {offers.map((offer) => (
+          <>
+            {heroOffer && (
               <article
-                key={offer.id}
-                className={`offerCard ${offer.theme}`}
-                onClick={() => openOffer(offer.route)}
+                className={`heroOffer ${heroOffer.theme}`}
+                onClick={() => openOffer(heroOffer.route)}
               >
-                <div className="topRow">
-                  <div className="iconBox">{offer.icon}</div>
+                <div className="heroDecor heroDecorOne" />
+                <div className="heroDecor heroDecorTwo" />
 
-                  <span className="badge">{offer.badge}</span>
+                <div className="heroTop">
+                  <span className="campaignType">
+                    {hasLiveCoupons ? "LIVE CAMPAIGN" : "SHOPPING PICK"}
+                  </span>
+
+                  <span className="heroBadge">{heroOffer.badge}</span>
                 </div>
 
-                <div className="offerContent">
-                  <h3>{offer.title}</h3>
-                  <h4>{offer.subtitle}</h4>
-                  <p>{offer.description}</p>
+                <div className="heroOfferContent">
+                  <div className="heroIcon">{heroOffer.icon}</div>
+
+                  <div>
+                    <span className="miniLabel">NEW CITY STYLE SAVINGS</span>
+                    <h3>{heroOffer.title}</h3>
+                    <h4>{heroOffer.subtitle}</h4>
+                    <p>{heroOffer.description}</p>
+                  </div>
                 </div>
 
-                <div className="cardActions">
-                  {offer.code ? (
+                <div className="heroActions">
+                  {heroOffer.code ? (
                     <button
                       type="button"
-                      className="couponButton"
+                      className="couponAction"
                       onClick={(event) =>
-                        copyCouponCode(event, offer.code)
+                        copyCouponCode(event, heroOffer.code)
                       }
                     >
-                      Copy {offer.code}
+                      <span>Copy {heroOffer.code}</span>
+                      <b>⎘</b>
                     </button>
                   ) : (
                     <button
                       type="button"
-                      className="couponButton"
+                      className="couponAction"
                       onClick={(event) => {
                         event.stopPropagation();
-                        openOffer(offer.route);
+                        openOffer(heroOffer.route);
                       }}
                     >
-                      Explore
+                      <span>Explore This Offer</span>
+                      <b>→</b>
                     </button>
                   )}
 
                   <button
                     type="button"
-                    className="arrowButton"
+                    className="shopAction"
                     onClick={(event) => {
                       event.stopPropagation();
-                      openOffer(offer.route);
+                      openOffer(heroOffer.route);
                     }}
-                    aria-label={`Open ${offer.title}`}
                   >
-                    →
+                    Shop Now →
                   </button>
                 </div>
-
-                <div className="circle circleOne" />
-                <div className="circle circleTwo" />
               </article>
-            ))}
-          </div>
+            )}
+
+            {remainingOffers.length > 0 && (
+              <div className="offerRail">
+                {remainingOffers.map((offer, index) => (
+                  <article
+                    key={offer.id}
+                    className={`offerCard ${offer.theme}`}
+                    onClick={() => openOffer(offer.route)}
+                  >
+                    <div className="cardTop">
+                      <span className="cardIndex">
+                        {String(index + 2).padStart(2, "0")}
+                      </span>
+
+                      <span className="badge">{offer.badge}</span>
+                    </div>
+
+                    <div className="iconBox">{offer.icon}</div>
+
+                    <div className="offerContent">
+                      <span className="miniLabel">
+                        {hasLiveCoupons ? "ACTIVE SAVING" : "STYLE DISCOVERY"}
+                      </span>
+
+                      <h3>{offer.title}</h3>
+                      <h4>{offer.subtitle}</h4>
+                      <p>{offer.description}</p>
+                    </div>
+
+                    <div className="cardActions">
+                      {offer.code ? (
+                        <button
+                          type="button"
+                          onClick={(event) =>
+                            copyCouponCode(event, offer.code)
+                          }
+                        >
+                          Copy {offer.code}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openOffer(offer.route);
+                          }}
+                        >
+                          Explore
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        className="arrowButton"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openOffer(offer.route);
+                        }}
+                        aria-label={`Open ${offer.title}`}
+                      >
+                        →
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
-        <button
-          type="button"
-          className="allOffersButton"
-          onClick={() => router.push("/search?q=offer")}
-        >
-          Shop All Offers
-          <span>→</span>
-        </button>
+        <div className="trustNotice">
+          <div>
+            <span className="noticeDot" />
+            <p>
+              <b>Truthful offer display</b>
+              <small>
+                Expired coupons and exhausted usage-limited coupons remain filtered out.
+              </small>
+            </p>
+          </div>
 
-        <p className="notice">
-          ⏳ Limited-period offers. Availability, conditions and
-          discounts may vary.
-        </p>
+          <span>
+            Terms, eligibility and final discount are confirmed during checkout.
+          </span>
+        </div>
       </div>
 
       <style jsx>{`
@@ -389,474 +730,779 @@ export default function Offers() {
         .offersSection {
           position: relative;
           overflow: hidden;
-          width: 100%;
-          padding: 62px 20px;
+          padding: 88px 20px 96px;
           background:
             radial-gradient(
-              circle at 12% 15%,
-              rgba(var(--ncs-secondary-rgb, 212,175,55), 0.20),
-              transparent 23%
+              circle at 10% 12%,
+              rgba(var(--ncs-secondary-rgb, 212,175,55), .17),
+              transparent 26%
             ),
             radial-gradient(
-              circle at 88% 80%,
-              rgba(var(--ncs-primary-rgb, 10,46,115), 0.20),
-              transparent 26%
+              circle at 90% 88%,
+              rgba(45, 93, 177, .24),
+              transparent 29%
             ),
             linear-gradient(
               135deg,
-              color-mix(in srgb, var(--ncs-primary, #0A2E73) 82%, black 18%),
-              var(--ncs-primary, #0a2e73) 55%,
-              color-mix(in srgb, var(--ncs-primary, #0A2E73) 72%, white 28%)
+              color-mix(
+                in srgb,
+                var(--ncs-primary, #0A2E73) 88%,
+                black 12%
+              ),
+              var(--ncs-primary, #0A2E73) 58%,
+              color-mix(
+                in srgb,
+                var(--ncs-primary, #0A2E73) 77%,
+                white 23%
+              )
             );
-          color: var(--ncs-surface, #ffffff);
+          color: #fff;
         }
 
         .offersContainer {
-          width: min(1280px, 100%);
+          position: relative;
+          z-index: 3;
+          width: min(1420px, 100%);
           margin: 0 auto;
-          text-align: center;
+        }
+
+        .ambientGrid {
+          position: absolute;
+          inset: 0;
+          opacity: .06;
+          pointer-events: none;
+          background-image:
+            linear-gradient(rgba(255,255,255,.14) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,.14) 1px, transparent 1px);
+          background-size: 66px 66px;
+          mask-image: linear-gradient(
+            180deg,
+            rgba(0,0,0,.8),
+            transparent 90%
+          );
+        }
+
+        .ambientGlow {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(90px);
+          pointer-events: none;
+        }
+
+        .glowOne {
+          top: -100px;
+          left: -130px;
+          width: 360px;
+          height: 360px;
+          background: rgba(var(--ncs-secondary-rgb, 212,175,55), .16);
+        }
+
+        .glowTwo {
+          right: -140px;
+          bottom: -100px;
+          width: 390px;
+          height: 390px;
+          background: rgba(86, 132, 223, .18);
+        }
+
+        .headingRow {
+          display: flex;
+          align-items: end;
+          justify-content: space-between;
+          gap: 30px;
         }
 
         .headingArea {
-          margin-bottom: 32px;
+          max-width: 860px;
         }
 
         .eyebrow {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%);
-          font-size: 11px;
-          font-weight: 900;
-          letter-spacing: 2px;
-        }
-
-        .eyebrow span {
-          width: 35px;
-          height: 2px;
-          background: var(--ncs-secondary, #d4af37);
+          color: color-mix(
+            in srgb,
+            var(--ncs-secondary, #D4AF37) 74%,
+            white 26%
+          );
+          font-size: 10px;
+          font-weight: 950;
+          letter-spacing: 1.9px;
         }
 
         h2 {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          margin: 13px 0 0;
-          color: var(--ncs-secondary, #d4af37);
-          font-size: clamp(36px, 5vw, 58px);
-          line-height: 1.05;
-          letter-spacing: -1.5px;
+          margin: 9px 0 0;
+          color: #fff;
+          font-size: clamp(42px, 5.5vw, 70px);
+          line-height: .98;
+          letter-spacing: -2.3px;
         }
 
-        h2 b {
-          font-size: 0.8em;
+        h2 strong {
+          display: block;
+          color: var(--ncs-secondary, #D4AF37);
+          font-weight: 950;
         }
 
         .headingArea > p {
-          margin: 13px 0 0;
-          color: rgba(255, 255, 255, 0.72);
-          font-size: 15px;
+          max-width: 760px;
+          margin: 18px 0 0;
+          color: rgba(255,255,255,.68);
+          font-size: 14px;
+          line-height: 1.7;
         }
 
-        .offerGrid {
+        .allOffersButton {
+          min-height: 49px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          flex: 0 0 auto;
+          padding: 0 18px;
+          border: 1px solid rgba(212,175,55,.58);
+          border-radius: 13px;
+          background: rgba(255,255,255,.08);
+          color: #fff;
+          font-size: 10px;
+          font-weight: 900;
+          cursor: pointer;
+          backdrop-filter: blur(10px);
+        }
+
+        .allOffersButton b {
+          color: var(--ncs-secondary, #D4AF37);
+          font-size: 17px;
+        }
+
+        .offerSignals {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 16px;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px;
+          margin-top: 30px;
         }
 
-        .offerCard,
-        .skeletonCard {
+        .offerSignals > div {
+          min-height: 60px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 14px;
+          border: 1px solid rgba(255,255,255,.11);
+          border-radius: 14px;
+          background: rgba(255,255,255,.06);
+          backdrop-filter: blur(10px);
+        }
+
+        .offerSignals > div > span {
+          width: 30px;
+          height: 30px;
+          display: grid;
+          place-items: center;
+          flex: 0 0 30px;
+          border-radius: 9px;
+          background: rgba(255,255,255,.08);
+          color: #eed36f;
+          font-size: 12px;
+          font-weight: 950;
+        }
+
+        .offerSignals .liveDot,
+        .offerSignals .neutralDot {
+          position: relative;
+        }
+
+        .offerSignals .liveDot::after,
+        .offerSignals .neutralDot::after {
+          width: 8px;
+          height: 8px;
+          content: "";
+          border-radius: 50%;
+        }
+
+        .offerSignals .liveDot::after {
+          background: #7cf0a5;
+          box-shadow: 0 0 0 5px rgba(124,240,165,.1);
+        }
+
+        .offerSignals .neutralDot::after {
+          background: #c7ced9;
+          box-shadow: 0 0 0 5px rgba(199,206,217,.08);
+        }
+
+        .offerSignals p {
+          margin: 0;
+        }
+
+        .offerSignals b,
+        .offerSignals small {
+          display: block;
+        }
+
+        .offerSignals b {
+          color: #fff;
+          font-size: 9px;
+          letter-spacing: .8px;
+        }
+
+        .offerSignals small {
+          margin-top: 3px;
+          color: rgba(255,255,255,.5);
+          font-size: 8px;
+        }
+
+        .heroOffer {
           position: relative;
           overflow: hidden;
-          min-height: 250px;
-          display: flex;
-          flex-direction: column;
-          padding: 19px;
-          border-radius: 20px;
-          text-align: left;
-          box-shadow: 0 18px 38px rgba(0, 0, 0, 0.2);
-        }
-
-        .offerCard {
+          min-height: 340px;
+          margin-top: 38px;
+          padding: 28px;
+          border-radius: 25px;
           cursor: pointer;
-          transition:
-            transform 0.25s ease,
-            box-shadow 0.25s ease;
+          box-shadow: 0 24px 60px rgba(0,0,0,.2);
         }
 
-        .offerCard:hover {
-          transform: translateY(-6px);
-          box-shadow: 0 25px 48px rgba(0, 0, 0, 0.27);
+        .heroOffer.gold {
+          border: 1px solid rgba(255,255,255,.42);
+          background:
+            linear-gradient(
+              135deg,
+              color-mix(
+                in srgb,
+                var(--ncs-secondary, #D4AF37) 84%,
+                black 16%
+              ),
+              color-mix(
+                in srgb,
+                var(--ncs-secondary, #D4AF37) 72%,
+                white 28%
+              )
+            );
+          color: color-mix(
+            in srgb,
+            var(--ncs-primary, #0A2E73) 86%,
+            black 14%
+          );
         }
 
-        .gold {
-          border: 1px solid rgba(255, 255, 255, 0.5);
-          background: linear-gradient(135deg, color-mix(in srgb, var(--ncs-secondary, #D4AF37) 84%, black 16%), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%));
-          color: color-mix(in srgb, var(--ncs-primary, #0A2E73) 84%, black 16%);
+        .heroOffer.white {
+          border: 1px solid rgba(255,255,255,.72);
+          background: linear-gradient(135deg, #fff, #edf2fa);
+          color: var(--ncs-primary, #0A2E73);
         }
 
-        .white {
-          border: 1px solid rgba(255, 255, 255, 0.75);
-          background: linear-gradient(145deg, var(--ncs-surface, #ffffff), color-mix(in srgb, var(--ncs-primary, #0A2E73) 6%, white 94%));
-          color: var(--ncs-primary, #0a2e73);
+        .heroOffer.blue {
+          border: 1px solid rgba(212,175,55,.38);
+          background:
+            linear-gradient(
+              135deg,
+              #061735,
+              var(--ncs-primary, #0A2E73)
+            );
+          color: #fff;
         }
 
-        .blue {
-          border: 1px solid rgba(var(--ncs-secondary-rgb, 212,175,55), 0.50);
-          background: linear-gradient(145deg, color-mix(in srgb, var(--ncs-primary, #0A2E73) 82%, black 18%), color-mix(in srgb, var(--ncs-primary, #0A2E73) 72%, white 28%));
-          color: var(--ncs-surface, #ffffff);
+        .heroOffer.ivory {
+          border: 1px solid rgba(212,175,55,.38);
+          background:
+            linear-gradient(
+              135deg,
+              #fffdf6,
+              #f0d77f
+            );
+          color: var(--ncs-primary, #0A2E73);
         }
 
-        .ivory {
-          border: 1px solid rgba(212, 175, 55, 0.55);
-          background: linear-gradient(145deg, color-mix(in srgb, var(--ncs-secondary, #D4AF37) 9%, white 91%), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 58%, white 42%));
-          color: var(--ncs-primary, #0a2e73);
+        .heroDecor {
+          position: absolute;
+          border-radius: 50%;
+          background: rgba(255,255,255,.12);
+          pointer-events: none;
         }
 
-        .topRow {
+        .heroDecorOne {
+          width: 240px;
+          height: 240px;
+          top: -90px;
+          right: -50px;
+        }
+
+        .heroDecorTwo {
+          width: 380px;
+          height: 380px;
+          right: 15%;
+          bottom: -300px;
+        }
+
+        .heroTop {
           position: relative;
           z-index: 2;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 8px;
+          gap: 12px;
+        }
+
+        .campaignType,
+        .heroBadge {
+          display: inline-flex;
+          align-items: center;
+          min-height: 30px;
+          padding: 0 10px;
+          border: 1px solid currentColor;
+          border-radius: 999px;
+          font-size: 7px;
+          font-weight: 950;
+          letter-spacing: .8px;
+          opacity: .82;
+        }
+
+        .heroOfferContent {
+          position: relative;
+          z-index: 2;
+          display: grid;
+          grid-template-columns: 72px minmax(0, 1fr);
+          gap: 18px;
+          align-items: start;
+          max-width: 900px;
+          margin-top: 34px;
+        }
+
+        .heroIcon {
+          width: 72px;
+          height: 72px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(255,255,255,.3);
+          border-radius: 20px;
+          background: rgba(255,255,255,.13);
+          font-size: 31px;
+          backdrop-filter: blur(8px);
+        }
+
+        .miniLabel {
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 1.4px;
+          opacity: .68;
+        }
+
+        .heroOfferContent h3 {
+          margin: 6px 0 0;
+          font-size: clamp(38px, 5vw, 68px);
+          line-height: .96;
+          letter-spacing: -2px;
+        }
+
+        .heroOfferContent h4 {
+          margin: 10px 0 0;
+          font-size: 15px;
+        }
+
+        .heroOfferContent p {
+          max-width: 700px;
+          margin: 10px 0 0;
+          font-size: 11px;
+          line-height: 1.6;
+          opacity: .7;
+        }
+
+        .heroActions {
+          position: relative;
+          z-index: 2;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-top: 28px;
+        }
+
+        .heroActions button {
+          min-height: 44px;
+          border-radius: 11px;
+          font-size: 9px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .couponAction {
+          min-width: 180px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          padding: 0 15px;
+          border: 1px solid currentColor;
+          background: rgba(255,255,255,.14);
+          color: inherit;
+        }
+
+        .shopAction {
+          padding: 0 15px;
+          border: 1px solid transparent;
+          background: rgba(3,22,54,.82);
+          color: #fff;
+        }
+
+        .offerRail {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 12px;
+          margin-top: 14px;
+        }
+
+        .offerCard {
+          position: relative;
+          overflow: hidden;
+          min-height: 255px;
+          display: flex;
+          flex-direction: column;
+          padding: 18px;
+          border-radius: 18px;
+          cursor: pointer;
+          transition:
+            transform .22s ease,
+            box-shadow .22s ease;
+        }
+
+        .offerCard:hover {
+          transform: translateY(-5px);
+          box-shadow: 0 22px 42px rgba(0,0,0,.18);
+        }
+
+        .offerCard.gold {
+          border: 1px solid rgba(255,255,255,.4);
+          background:
+            linear-gradient(
+              135deg,
+              color-mix(
+                in srgb,
+                var(--ncs-secondary, #D4AF37) 82%,
+                black 18%
+              ),
+              color-mix(
+                in srgb,
+                var(--ncs-secondary, #D4AF37) 70%,
+                white 30%
+              )
+            );
+          color: color-mix(
+            in srgb,
+            var(--ncs-primary, #0A2E73) 86%,
+            black 14%
+          );
+        }
+
+        .offerCard.white {
+          border: 1px solid rgba(255,255,255,.72);
+          background: linear-gradient(145deg, #fff, #eef3fb);
+          color: var(--ncs-primary, #0A2E73);
+        }
+
+        .offerCard.blue {
+          border: 1px solid rgba(212,175,55,.38);
+          background:
+            linear-gradient(145deg, #061735, #0b3d8f);
+          color: #fff;
+        }
+
+        .offerCard.ivory {
+          border: 1px solid rgba(212,175,55,.4);
+          background:
+            linear-gradient(145deg, #fffdf6, #f1dd99);
+          color: var(--ncs-primary, #0A2E73);
+        }
+
+        .cardTop {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+
+        .cardIndex {
+          min-width: 34px;
+          padding: 6px 7px;
+          border: 1px solid currentColor;
+          border-radius: 8px;
+          font-size: 8px;
+          font-weight: 950;
+          text-align: center;
+          opacity: .62;
+        }
+
+        .badge {
+          max-width: 130px;
+          overflow: hidden;
+          padding: 6px 9px;
+          border-radius: 999px;
+          background: rgba(255,255,255,.12);
+          font-size: 7px;
+          font-weight: 950;
+          letter-spacing: .6px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         .iconBox {
           width: 48px;
           height: 48px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          border: 1px solid rgba(255, 255, 255, 0.32);
+          display: grid;
+          place-items: center;
+          margin-top: 18px;
+          border: 1px solid rgba(255,255,255,.24);
           border-radius: 14px;
-          background: rgba(255, 255, 255, 0.18);
-          font-size: 23px;
-          backdrop-filter: blur(8px);
-        }
-
-        .badge {
-          max-width: 120px;
-          overflow: hidden;
-          padding: 6px 9px;
-          border-radius: 999px;
-          background: rgba(var(--ncs-primary-rgb, 10,46,115), 0.12);
-          color: inherit;
-          font-size: 8px;
-          font-weight: 950;
-          letter-spacing: 0.7px;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .blue .badge {
-          background: rgba(var(--ncs-secondary-rgb, 212,175,55), 0.16);
-          color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%);
+          background: rgba(255,255,255,.12);
+          font-size: 22px;
         }
 
         .offerContent {
-          position: relative;
-          z-index: 2;
-          margin-top: 21px;
+          margin-top: 14px;
         }
 
         .offerContent h3 {
-          margin: 0;
-          font-size: clamp(20px, 2.2vw, 27px);
-          line-height: 1.12;
-          letter-spacing: -0.6px;
+          margin: 5px 0 0;
+          font-size: 26px;
+          line-height: 1.05;
+          letter-spacing: -.8px;
         }
 
         .offerContent h4 {
-          margin: 8px 0 0;
-          font-size: 12px;
-          line-height: 1.35;
+          margin: 7px 0 0;
+          font-size: 11px;
         }
 
         .offerContent p {
           display: -webkit-box;
-          min-height: 38px;
-          margin: 10px 0 0;
+          min-height: 33px;
           overflow: hidden;
-          font-size: 10px;
+          margin: 8px 0 0;
+          font-size: 9px;
           line-height: 1.5;
-          opacity: 0.7;
+          opacity: .7;
           -webkit-box-orient: vertical;
           -webkit-line-clamp: 2;
         }
 
         .cardActions {
-          position: relative;
-          z-index: 3;
           display: grid;
-          grid-template-columns: 1fr 42px;
-          gap: 8px;
+          grid-template-columns: 1fr 40px;
+          gap: 7px;
           margin-top: auto;
           padding-top: 15px;
         }
 
         .cardActions button {
-          min-height: 40px;
-          border: 1px solid rgba(255, 255, 255, 0.4);
-          border-radius: 11px;
-          background: rgba(255, 255, 255, 0.17);
+          min-height: 38px;
+          border: 1px solid rgba(255,255,255,.28);
+          border-radius: 10px;
+          background: rgba(255,255,255,.12);
           color: inherit;
-          font-size: 10px;
+          font-size: 8px;
           font-weight: 900;
           cursor: pointer;
-          backdrop-filter: blur(8px);
-        }
-
-        .blue .cardActions button {
-          border-color: rgba(var(--ncs-secondary-rgb, 212,175,55), 0.45);
-          color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%);
         }
 
         .arrowButton {
-          font-size: 17px !important;
+          font-size: 16px !important;
         }
 
-        .circle {
-          position: absolute;
-          border-radius: 50%;
-          background: rgba(255, 255, 255, 0.09);
-          pointer-events: none;
-        }
-
-        .circleOne {
-          top: 65px;
-          right: -25px;
-          width: 80px;
-          height: 80px;
-        }
-
-        .circleTwo {
-          right: -45px;
-          bottom: -55px;
-          width: 145px;
-          height: 145px;
-        }
-
-        .allOffersButton {
-          min-width: 240px;
-          min-height: 54px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 13px;
-          margin-top: 28px;
-          padding: 0 28px;
-          border: 1px solid rgba(255, 255, 255, 0.38);
-          border-radius: 14px;
-          background: linear-gradient(135deg, var(--ncs-secondary, #d4af37), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%));
-          color: var(--ncs-primary, #0a2e73);
-          font-size: 15px;
-          font-weight: 950;
-          cursor: pointer;
-          box-shadow: 0 15px 32px rgba(var(--ncs-secondary-rgb, 212,175,55), 0.25);
-        }
-
-        .allOffersButton span {
-          font-size: 22px;
-        }
-
-        .notice {
-          margin: 16px 0 0;
-          color: rgba(255, 255, 255, 0.55);
-          font-size: 10px;
-        }
-
-        .skeletonCard {
-          border: 1px solid rgba(255, 255, 255, 0.16);
-          background: rgba(255, 255, 255, 0.08);
-        }
-
-        .skeletonTop {
+        .trustNotice {
+          min-height: 62px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-        }
-
-        .skeletonIcon,
-        .skeletonBadge,
-        .skeletonTitle,
-        .skeletonLine,
-        .skeletonButton {
-          background: linear-gradient(
-            90deg,
-            rgba(255, 255, 255, 0.08),
-            rgba(255, 255, 255, 0.18),
-            rgba(255, 255, 255, 0.08)
-          );
-          background-size: 200% 100%;
-          animation: skeletonMove 1.2s linear infinite;
-        }
-
-        .skeletonIcon {
-          width: 48px;
-          height: 48px;
+          gap: 18px;
+          margin-top: 28px;
+          padding: 12px 14px;
+          border: 1px solid rgba(255,255,255,.1);
           border-radius: 14px;
+          background: rgba(255,255,255,.05);
         }
 
-        .skeletonBadge {
-          width: 75px;
-          height: 22px;
-          border-radius: 999px;
+        .trustNotice > div {
+          display: flex;
+          align-items: center;
+          gap: 10px;
         }
 
-        .skeletonTitle {
-          width: 72%;
-          height: 25px;
-          margin-top: 25px;
-          border-radius: 8px;
+        .noticeDot {
+          width: 8px;
+          height: 8px;
+          flex: 0 0 8px;
+          border-radius: 50%;
+          background: #7cf0a5;
+          box-shadow: 0 0 0 5px rgba(124,240,165,.08);
         }
 
-        .skeletonLine {
-          width: 88%;
-          height: 12px;
-          margin-top: 13px;
-          border-radius: 8px;
+        .trustNotice p {
+          margin: 0;
         }
 
-        .skeletonButton {
-          width: 100%;
-          height: 40px;
-          margin-top: auto;
-          border-radius: 11px;
+        .trustNotice b,
+        .trustNotice small {
+          display: block;
         }
 
-        @keyframes skeletonMove {
-          from {
-            background-position: 200% 0;
+        .trustNotice b {
+          font-size: 9px;
+        }
+
+        .trustNotice small,
+        .trustNotice > span {
+          color: rgba(255,255,255,.48);
+          font-size: 8px;
+        }
+
+        .trustNotice small {
+          margin-top: 3px;
+        }
+
+        .loadingStage {
+          margin-top: 38px;
+        }
+
+        .loadingHero,
+        .loadingCard {
+          border: 1px solid rgba(255,255,255,.09);
+          background:
+            linear-gradient(
+              90deg,
+              rgba(255,255,255,.06),
+              rgba(255,255,255,.14),
+              rgba(255,255,255,.06)
+            );
+          background-size: 200% 100%;
+          animation: shimmer 1.2s linear infinite;
+        }
+
+        .loadingHero {
+          min-height: 340px;
+          border-radius: 25px;
+        }
+
+        .loadingGrid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 12px;
+          margin-top: 14px;
+        }
+
+        .loadingCard {
+          min-height: 255px;
+          border-radius: 18px;
+        }
+
+        @keyframes shimmer {
+          from { background-position: 200% 0; }
+          to { background-position: -200% 0; }
+        }
+
+        @media (max-width: 1050px) {
+          .headingRow {
+            align-items: flex-start;
+            flex-direction: column;
           }
 
-          to {
-            background-position: -200% 0;
+          .offerSignals {
+            grid-template-columns: 1fr;
           }
-        }
 
-        @media (max-width: 950px) {
-          .offerGrid {
+          .offerRail,
+          .loadingGrid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
         }
 
-        @media (max-width: 620px) {
+        @media (max-width: 700px) {
           .offersSection {
-            padding: 45px 10px;
-          }
-
-          .headingArea {
-            margin-bottom: 24px;
-          }
-
-          .eyebrow {
-            gap: 7px;
-            font-size: 8px;
-            letter-spacing: 1.2px;
-          }
-
-          .eyebrow span {
-            width: 20px;
+            padding: 62px 9px 78px;
           }
 
           h2 {
-            gap: 6px;
-            margin-top: 10px;
-            font-size: 32px;
+            font-size: 40px;
           }
 
           .headingArea > p {
-            margin-top: 9px;
             font-size: 12px;
-          }
-
-          .offerGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 9px;
-          }
-
-          .offerCard,
-          .skeletonCard {
-            min-height: 225px;
-            padding: 13px;
-            border-radius: 16px;
-          }
-
-          .iconBox,
-          .skeletonIcon {
-            width: 40px;
-            height: 40px;
-            border-radius: 12px;
-            font-size: 19px;
-          }
-
-          .badge {
-            max-width: 82px;
-            padding: 5px 7px;
-            font-size: 7px;
-            letter-spacing: 0.3px;
-          }
-
-          .offerContent {
-            margin-top: 16px;
-          }
-
-          .offerContent h3 {
-            min-height: 40px;
-            font-size: 17px;
-            line-height: 1.15;
-          }
-
-          .offerContent h4 {
-            min-height: 28px;
-            margin-top: 5px;
-            font-size: 9px;
-          }
-
-          .offerContent p {
-            min-height: 31px;
-            margin-top: 6px;
-            font-size: 8px;
-            line-height: 1.4;
-          }
-
-          .cardActions {
-            grid-template-columns: 1fr 36px;
-            gap: 6px;
-            padding-top: 10px;
-          }
-
-          .cardActions button {
-            min-height: 35px;
-            border-radius: 9px;
-            font-size: 8px;
+            line-height: 1.6;
           }
 
           .allOffersButton {
-            width: calc(100% - 24px);
-            min-height: 50px;
-            margin-top: 23px;
-            font-size: 14px;
+            width: 100%;
           }
 
-          .notice {
-            padding: 0 15px;
-            font-size: 9px;
-            line-height: 1.5;
+          .offerSignals {
+            display: flex;
+            overflow-x: auto;
+            gap: 8px;
+            margin-right: -9px;
+            padding-right: 9px;
+            scrollbar-width: none;
           }
 
-          .circleOne {
-            width: 60px;
-            height: 60px;
+          .offerSignals::-webkit-scrollbar {
+            display: none;
           }
 
-          .circleTwo {
-            width: 105px;
-            height: 105px;
+          .offerSignals > div {
+            min-width: 230px;
+            flex: 0 0 230px;
+          }
+
+          .heroOffer {
+            min-height: 390px;
+            padding: 19px;
+            border-radius: 19px;
+          }
+
+          .heroOfferContent {
+            grid-template-columns: 1fr;
+            gap: 14px;
+          }
+
+          .heroIcon {
+            width: 58px;
+            height: 58px;
+            font-size: 26px;
+          }
+
+          .heroOfferContent h3 {
+            font-size: 42px;
+          }
+
+          .heroActions {
+            display: grid;
+            grid-template-columns: 1fr;
+          }
+
+          .heroActions button {
+            width: 100%;
+          }
+
+          .offerRail {
+            display: flex;
+            overflow-x: auto;
+            gap: 10px;
+            margin-right: -9px;
+            padding-right: 9px;
+            scroll-snap-type: x mandatory;
+            scrollbar-width: none;
+          }
+
+          .offerRail::-webkit-scrollbar {
+            display: none;
+          }
+
+          .offerCard {
+            min-width: 78vw;
+            flex: 0 0 78vw;
+            scroll-snap-align: start;
+          }
+
+          .trustNotice {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .loadingGrid {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>

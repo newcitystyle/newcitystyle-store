@@ -666,6 +666,202 @@ export default function EditProductPage() {
     return result.url;
   }
 
+
+  function isWhatsAppSafePreviewUrl(value: string) {
+    const clean = value.trim();
+
+    if (!clean) return false;
+
+    try {
+      const parsed = new URL(clean);
+      const path = parsed.pathname.toLowerCase();
+
+      return (
+        parsed.protocol === "https:" &&
+        (
+          path.endsWith(".jpg") ||
+          path.endsWith(".jpeg") ||
+          path.endsWith(".png")
+        )
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  async function createWhatsAppJpegFile(
+    source: Blob,
+    sourceName = "product"
+  ) {
+    const bitmap = await createImageBitmap(source);
+
+    try {
+      const maxWidth = 1200;
+      const maxHeight = 1500;
+      const scale = Math.min(
+        1,
+        maxWidth / bitmap.width,
+        maxHeight / bitmap.height
+      );
+
+      const width = Math.max(
+        1,
+        Math.round(bitmap.width * scale)
+      );
+      const height = Math.max(
+        1,
+        Math.round(bitmap.height * scale)
+      );
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const context = canvas.getContext("2d", {
+        alpha: false,
+      });
+
+      if (!context) {
+        throw new Error(
+          "Unable to prepare the WhatsApp product image."
+        );
+      }
+
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, width, height);
+      context.drawImage(bitmap, 0, 0, width, height);
+
+      const makeJpegBlob = (quality: number) =>
+        new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                resolve(blob);
+                return;
+              }
+
+              reject(
+                new Error(
+                  "Unable to create the WhatsApp JPEG preview."
+                )
+              );
+            },
+            "image/jpeg",
+            quality
+          );
+        });
+
+      let jpegBlob = await makeJpegBlob(0.86);
+
+      if (jpegBlob.size > 4_500_000) {
+        jpegBlob = await makeJpegBlob(0.72);
+      }
+
+      if (jpegBlob.size > 4_900_000) {
+        throw new Error(
+          "WhatsApp JPEG preview is still too large."
+        );
+      }
+
+      const safeBaseName =
+        sourceName
+          .replace(/\.[^/.]+$/, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 80) ||
+        "product";
+
+      return new File(
+        [jpegBlob],
+        `${safeBaseName}-whatsapp.jpg`,
+        {
+          type: "image/jpeg",
+          lastModified: Date.now(),
+        }
+      );
+    } finally {
+      bitmap.close();
+    }
+  }
+
+  async function uploadWhatsAppPreviewFromFile(
+    file: File,
+    folder = "whatsapp-previews"
+  ) {
+    const previewFile =
+      await createWhatsAppJpegFile(
+        file,
+        file.name
+      );
+
+    return uploadFile(
+      previewFile,
+      folder
+    );
+  }
+
+  async function ensureWhatsAppPreviewUrl(
+    mainImageUrl: string,
+    currentPreviewUrl: string,
+    folder = "whatsapp-previews"
+  ) {
+    const currentPreview =
+      currentPreviewUrl.trim();
+
+    if (
+      currentPreview &&
+      isWhatsAppSafePreviewUrl(
+        currentPreview
+      )
+    ) {
+      return currentPreview;
+    }
+
+    const sourceUrl =
+      mainImageUrl.trim();
+
+    if (!sourceUrl) {
+      return currentPreview;
+    }
+
+    if (
+      isWhatsAppSafePreviewUrl(
+        sourceUrl
+      )
+    ) {
+      return sourceUrl;
+    }
+
+    const response =
+      await fetch(
+        sourceUrl,
+        {
+          cache: "no-store",
+        }
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        `Unable to load the main image for WhatsApp preview (HTTP ${response.status}).`
+      );
+    }
+
+    const sourceBlob =
+      await response.blob();
+
+    const previewFile =
+      await createWhatsAppJpegFile(
+        sourceBlob,
+        `product-${Date.now()}`
+      );
+
+    return uploadFile(
+      previewFile,
+      folder
+    );
+  }
+
   function updateVariantField(
     variantId: number,
     field: "variantName" | "mrp" | "onlineMrp" | "onlinePrice" | "mainImage" | "galleryImages" | "sellOnline" | "onlineStockLimit",
@@ -1627,15 +1823,33 @@ export default function EditProductPage() {
     setUploadingMain(true);
 
     try {
-      const url = await uploadFile(file, "main");
+      const [
+        url,
+        whatsappPreviewUrl,
+      ] = await Promise.all([
+        uploadFile(
+          file,
+          "main"
+        ),
+        uploadWhatsAppPreviewFromFile(
+          file,
+          `whatsapp-previews/${productId || "edit"}`
+        ),
+      ]);
 
-      setField("mainImage", url);
+      setField(
+        "mainImage",
+        url
+      );
 
-      if (!form.socialPreviewUrl) {
-        setField("socialPreviewUrl", url);
-      }
+      setField(
+        "socialPreviewUrl",
+        whatsappPreviewUrl
+      );
 
-      alert("Main product image uploaded successfully.");
+      alert(
+        "Main product image + WhatsApp photo prepared automatically."
+      );
     } catch (error) {
       console.error(error);
 
@@ -1964,8 +2178,9 @@ export default function EditProductPage() {
           current.mainImage ||
           sourceDesign.imageUrl,
         socialPreviewUrl:
-          current.socialPreviewUrl ||
-          sourceDesign.imageUrl,
+          current.mainImage
+            ? current.socialPreviewUrl
+            : "",
 
         // Locked/commercial fields are explicitly preserved.
         mrp: current.mrp,
@@ -2417,6 +2632,32 @@ export default function EditProductPage() {
 
     setSaving(true);
 
+    let whatsappPreviewUrl =
+      form.socialPreviewUrl.trim();
+
+    try {
+      whatsappPreviewUrl =
+        await ensureWhatsAppPreviewUrl(
+          form.mainImage,
+          whatsappPreviewUrl,
+          `whatsapp-previews/${productId}`
+        );
+    } catch (error) {
+      console.error(
+        "WhatsApp JPEG preview preparation failed:",
+        error
+      );
+
+      alert(
+        error instanceof Error
+          ? `WhatsApp product photo preparation failed: ${error.message}`
+          : "WhatsApp product photo preparation failed."
+      );
+
+      setSaving(false);
+      return;
+    }
+
     const productData = {
       name: form.name.trim(),
       slug: createSlug(form.slug || form.name),
@@ -2476,7 +2717,10 @@ export default function EditProductPage() {
       seo_title: form.seoTitle.trim() || `${form.name.trim()} | NEW CITY STYLE`,
       meta_description: form.metaDescription.trim() || form.shortDescription.trim() || form.description.trim().slice(0, 155) || null,
       seo_keywords: form.seoKeywords.trim() || null,
-      social_preview_url: form.socialPreviewUrl.trim() || form.mainImage || null,
+      social_preview_url:
+        whatsappPreviewUrl ||
+        form.mainImage ||
+        null,
       is_featured: form.isFeatured,
       is_new_arrival: form.isNewArrival,
       is_on_sale: form.isOnSale,

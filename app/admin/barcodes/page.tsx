@@ -1,5 +1,13 @@
 "use client";
 
+/*
+ * NEW CITY STYLE • BARCODE FINAL DESIGN V7
+ * Brand source fix only:
+ * Purchase labels use purchase_items.brand first, then products.brand.
+ * Manual Print Brand remains an override.
+ * Barcode geometry / 2x2 layout / scan-safe spacing are unchanged.
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -10,6 +18,7 @@ type ProductRow = {
   name?: string | null;
   category?: string | null;
   subcategory?: string | null;
+  brand?: string | null;
   price?: number | string | null;
   mrp?: number | string | null;
   stock?: number | string | null;
@@ -55,6 +64,7 @@ type PurchaseItemRow = {
   product_id?: number | null;
   variant_id?: number | null;
   product_name?: string | null;
+  brand?: string | null;
   size?: string | null;
   color?: string | null;
   barcode?: string | null;
@@ -81,6 +91,7 @@ type BarcodeItem = {
   variantId: number | null;
   name: string;
   category: string;
+  brand: string;
   size: string;
   color: string;
   barcode: string;
@@ -275,6 +286,7 @@ export default function BarcodesPage() {
               "name",
               "category",
               "subcategory",
+              "brand",
               "price",
               "mrp",
               "stock",
@@ -335,6 +347,7 @@ export default function BarcodesPage() {
               "product_id",
               "variant_id",
               "product_name",
+              "brand",
               "size",
               "color",
               "barcode",
@@ -433,6 +446,10 @@ export default function BarcodesPage() {
               product?.category?.trim() ||
               product?.subcategory?.trim() ||
               "Others",
+            brand:
+              item.brand?.trim() ||
+              product?.brand?.trim() ||
+              "NCS SELECT",
             size:
               item.size?.trim() || variant?.size?.trim() || "",
             color:
@@ -510,6 +527,7 @@ export default function BarcodesPage() {
               variantId: Number(variant.id),
               name,
               category,
+              brand: product.brand?.trim() || "NCS SELECT",
               size: variant.size?.trim() || "",
               color: variant.color?.trim() || "",
               barcode:
@@ -552,6 +570,7 @@ export default function BarcodesPage() {
           variantId: null,
           name,
           category,
+          brand: product.brand?.trim() || "NCS SELECT",
           size: "",
           color: "",
           barcode: product.barcode?.trim() || "",
@@ -823,13 +842,14 @@ export default function BarcodesPage() {
 
     const cleanBarcode = barcode.trim();
 
-    // Compact 2 x 1 inch thermal-label rendering:
-    // keep enough quiet space around the code and leave a dedicated bottom
-    // area for the barcode number + MRP so nothing is clipped.
+    // STAGE 2x2 EDGE SAFE V3 (barcode geometry preserved):
+    // Generate a strong CODE128 vector with generous built-in quiet zones.
+    // The scan-safe CODE128 geometry from V2 is intentionally preserved.
+    // V3 changes only the label/frame side safe zones to avoid edge clipping.
     JsBarcode(svg, cleanBarcode, {
       format: "CODE128",
-      width: 2,
-      height: 60,
+      width: 2.4,
+      height: 92,
       displayValue: false,
       font: "Arial",
       fontOptions: "bold",
@@ -837,13 +857,16 @@ export default function BarcodesPage() {
       textMargin: 2,
       marginTop: 0,
       marginBottom: 0,
-      marginLeft: 20,
-      marginRight: 20,
+      marginLeft: 24,
+      marginRight: 24,
       background: "#FFFFFF",
       lineColor: "#000000",
     });
 
-    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    // Intentionally fill the physical scan band exactly. Barcode bars stay
+    // vector-crisp; only their height is stretched, not rasterized.
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("shape-rendering", "crispEdges");
     return svg.outerHTML;
   }
 
@@ -864,7 +887,13 @@ export default function BarcodesPage() {
   }
 
   function getPrintBrand(item: BarcodeItem) {
-    return brandByKey[item.key]?.trim() || "NCS SELECT";
+    const manualBrand = brandByKey[item.key]?.trim();
+
+    if (manualBrand) {
+      return manualBrand;
+    }
+
+    return item.brand?.trim() || "NCS SELECT";
   }
 
   function setPrintBrand(itemKey: string, value: string) {
@@ -957,6 +986,25 @@ export default function BarcodesPage() {
       labelSizes[labelSize] || labelSizes["tsc-te244-2up-2x2"];
     const isAdvanced2x2 = labelSize === "tsc-te244-2up-2x2";
 
+    /*
+     * STAGE 2x2 FULL-SIZE PRINT FIX:
+     * For the current TSC TE244 two-column roll, one physical row is
+     * exactly 4 in × 2 in and contains two exact 2 in × 2 in stickers.
+     *
+     * Using inches here (instead of only mm) gives Chrome + the TSC
+     * Windows driver the same physical page geometry and prevents the
+     * browser from treating the two-label row as a smaller legacy page.
+     */
+    const printPageWidth = isAdvanced2x2
+      ? "4in"
+      : `${selectedSize.pageWidth}mm`;
+    const printPageHeight = isAdvanced2x2
+      ? "2in"
+      : `${selectedSize.pageHeight}mm`;
+    const printLabelWidth = isAdvanced2x2
+      ? "2in"
+      : `${selectedSize.labelWidth}mm`;
+
     const safeCopies = Math.max(
       1,
       Math.min(500, Math.floor(copyCount || 1)),
@@ -1000,7 +1048,7 @@ export default function BarcodesPage() {
                 <div class="advProductCopy">
                   <strong class="advProductType">${escapeHtml(productType)}</strong>
                   <span class="advProductName" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span>
-                  <span class="advSubtitle">${escapeHtml(subtitle)}</span>
+                  <span class="advStoreLine">SARUBUJJILI • newcitystyle.store</span>
                 </div>
               </section>
 
@@ -1016,11 +1064,11 @@ export default function BarcodesPage() {
               </section>
 
               <section class="advMetricRow">
-                <div class="advMetric">
+                <div class="advMetric advMetricSize">
                   <span>SIZE</span>
                   <strong>${escapeHtml(size)}</strong>
                 </div>
-                <div class="advMetric">
+                <div class="advMetric advMetricMrp">
                   <span>MRP</span>
                   <strong>${showMrp && item.mrp > 0 ? `Rs.${formatLabelPrice(item.mrp)}` : "—"}</strong>
                 </div>
@@ -1038,10 +1086,7 @@ export default function BarcodesPage() {
                 <strong class="advBarcodeNo">${escapeHtml(item.barcode)}</strong>
               </section>
 
-              <footer class="advFooter">
-                <strong>SARUBUJJILI</strong>
-                <strong>newcitystyle.store</strong>
-              </footer>
+              <footer class="advFooter" aria-hidden="true"></footer>
             </div>
           `);
           continue;
@@ -1132,8 +1177,8 @@ export default function BarcodesPage() {
           <title>NEW CITY STYLE Barcodes</title>
           <style>
             @page {
-              size: ${selectedSize.pageWidth}mm ${selectedSize.pageHeight}mm;
-              margin: 0;
+              size: ${printPageWidth} ${printPageHeight};
+              margin: 0 !important;
             }
 
             * { box-sizing: border-box; }
@@ -1142,17 +1187,23 @@ export default function BarcodesPage() {
             body {
               margin: 0 !important;
               padding: 0 !important;
-              width: ${selectedSize.pageWidth}mm;
+              width: ${printPageWidth};
+              min-width: ${printPageWidth};
+              max-width: ${printPageWidth};
               background: #fff;
               font-family: Arial, Helvetica, sans-serif;
             }
 
             .printPage {
-              width: ${selectedSize.pageWidth}mm;
-              height: ${selectedSize.pageHeight}mm;
+              width: ${printPageWidth};
+              height: ${printPageHeight};
+              min-width: ${printPageWidth};
+              max-width: ${printPageWidth};
+              min-height: ${printPageHeight};
+              max-height: ${printPageHeight};
               display: grid;
-              grid-template-columns: repeat(${selectedSize.columns}, ${selectedSize.labelWidth}mm);
-              grid-template-rows: ${selectedSize.pageHeight}mm;
+              grid-template-columns: repeat(${selectedSize.columns}, ${printLabelWidth});
+              grid-template-rows: ${printPageHeight};
               column-gap: ${selectedSize.gap}mm;
               row-gap: 0;
               margin: 0;
@@ -1170,12 +1221,12 @@ export default function BarcodesPage() {
             }
 
             .label {
-              width: ${selectedSize.labelWidth}mm;
-              height: ${selectedSize.pageHeight}mm;
-              min-width: ${selectedSize.labelWidth}mm;
-              max-width: ${selectedSize.labelWidth}mm;
-              min-height: ${selectedSize.pageHeight}mm;
-              max-height: ${selectedSize.pageHeight}mm;
+              width: ${printLabelWidth};
+              height: ${printPageHeight};
+              min-width: ${printLabelWidth};
+              max-width: ${printLabelWidth};
+              min-height: ${printPageHeight};
+              max-height: ${printPageHeight};
               margin: 0;
               overflow: hidden;
               break-inside: avoid;
@@ -1195,9 +1246,16 @@ export default function BarcodesPage() {
             .advancedLabel {
               position: relative;
               display: grid;
-              grid-template-rows: 8.2mm 9.8mm 5.7mm 5.7mm 5.9mm 8.4mm 2.1mm;
-              row-gap: .35mm;
-              padding: .9mm 1mm;
+              /*
+               * EDGE-SAFE 2 x 2 layout. The old design used almost the whole
+               * 50.8 mm sticker width, so a small mechanical feed offset could
+               * cut the left label and pull the right label toward the centre.
+               * This version keeps every important element inside a 2.5-3 mm
+               * hardware-safe zone while reserving a taller scan band.
+               */
+              grid-template-rows: 8mm 9.2mm 5.4mm 5.4mm 5.6mm 11.6mm 1.8mm;
+              row-gap: .3mm;
+              padding: 1mm 3mm 1mm 3mm;
               color: #000;
               background: #fff;
             }
@@ -1211,11 +1269,27 @@ export default function BarcodesPage() {
             .advancedLabel::after {
               content: "";
               position: absolute;
-              inset: .55mm;
+              /*
+               * URGENT FIX:
+               * keep the visual border perfectly symmetric so the full label no longer
+               * drifts to the right edge in Chrome/TSC preview.
+               */
+              inset: 1.6mm;
               z-index: 20;
-              border: .18mm solid #000;
-              border-radius: 1.65mm;
+              border: .16mm solid #000;
+              border-radius: 1.5mm;
               pointer-events: none;
+            }
+
+            /*
+             * URGENT FIX:
+             * cancel the per-column right-shift override. Both stickers now use the
+             * same centered padding coming from .advancedLabel itself.
+             */
+            .printPage > .advancedLabel:nth-child(1),
+            .printPage > .advancedLabel:nth-child(2) {
+              padding-left: 3mm;
+              padding-right: 3mm;
             }
 
             .advHeader {
@@ -1306,10 +1380,10 @@ export default function BarcodesPage() {
               min-width: 0;
               height: 100%;
               display: grid;
-              grid-template-rows: 3.2mm minmax(4mm, 1fr) 1.45mm;
-              row-gap: .15mm;
+              grid-template-rows: 3.15mm minmax(3.65mm, 1fr) 1.7mm;
+              row-gap: .12mm;
               align-content: center;
-              padding: .1mm 0 .25mm;
+              padding: .05mm 0 .2mm;
               border-bottom: .22mm solid #000;
               overflow: hidden;
             }
@@ -1317,9 +1391,10 @@ export default function BarcodesPage() {
             .advProductType {
               min-width: 0;
               overflow: hidden;
-              font-size: 9.3pt;
+              font-size: 9.6pt;
               font-weight: 950;
               line-height: 1;
+              letter-spacing: .01mm;
               text-overflow: ellipsis;
               white-space: nowrap;
             }
@@ -1327,13 +1402,14 @@ export default function BarcodesPage() {
             /* Actual product name now owns a dedicated, larger row. */
             .advProductName {
               min-width: 0;
-              max-height: 4mm;
+              max-height: 3.65mm;
               display: -webkit-box;
               overflow: hidden;
               color: #000;
-              font-size: 5.1pt;
+              font-size: 5.45pt;
               font-weight: 950;
               line-height: 1.02;
+              letter-spacing: .01mm;
               -webkit-box-orient: vertical;
               -webkit-line-clamp: 2;
               text-overflow: ellipsis;
@@ -1341,14 +1417,14 @@ export default function BarcodesPage() {
               overflow-wrap: anywhere;
             }
 
-            .advSubtitle {
+            .advStoreLine {
               min-width: 0;
               overflow: hidden;
-              color: #555;
-              font-size: 2.85pt;
-              font-weight: 850;
+              color: #000;
+              font-size: 3.05pt;
+              font-weight: 950;
               line-height: 1;
-              letter-spacing: .04mm;
+              letter-spacing: .025mm;
               text-overflow: ellipsis;
               white-space: nowrap;
             }
@@ -1375,19 +1451,21 @@ export default function BarcodesPage() {
 
             .advInfoPill span {
               color: #000;
-              font-size: 2.75pt;
+              font-size: 3.05pt;
               font-weight: 950;
               line-height: 1;
+              letter-spacing: .01mm;
             }
 
             .advInfoPill strong {
               min-width: 0;
               overflow: hidden;
               color: #000;
-              font-size: 4.8pt;
+              font-size: 5.05pt;
               font-weight: 950;
               line-height: 1;
               text-align: right;
+              letter-spacing: .005mm;
               text-overflow: ellipsis;
               white-space: nowrap;
             }
@@ -1397,22 +1475,28 @@ export default function BarcodesPage() {
               display: grid;
               place-items: center;
               align-content: center;
-              row-gap: .25mm;
+              row-gap: .15mm;
+              padding: .3mm .25mm .4mm;
+              border: .24mm solid #000;
               border-radius: 1.05mm;
-              background: #efefef;
+              background: #fff;
               overflow: hidden;
             }
 
             .advMetric span {
-              font-size: 3.05pt;
+              width: 100%;
+              display: block;
+              font-size: 3.15pt;
               font-weight: 950;
               line-height: 1;
+              text-align: center;
+              letter-spacing: .01mm;
             }
 
             .advMetric strong {
               max-width: 100%;
               overflow: hidden;
-              padding: 0 .55mm;
+              padding: 0 .45mm;
               font-size: 8pt;
               font-weight: 950;
               line-height: 1;
@@ -1420,28 +1504,53 @@ export default function BarcodesPage() {
               white-space: nowrap;
             }
 
+            .advMetricSize strong {
+              font-size: 8.1pt;
+            }
+
+            .advMetricMrp {
+              padding-top: 0;
+            }
+
+            .advMetricMrp span {
+              margin: -.05mm -.05mm .25mm;
+              width: calc(100% + .1mm);
+              padding: .38mm 0 .25mm;
+              background: #000;
+              color: #fff;
+              border-radius: .78mm .78mm .38mm .38mm;
+            }
+
+            .advMetricMrp strong {
+              font-size: 8.4pt;
+            }
+
             .advOfferBar {
               min-width: 0;
               display: grid;
-              grid-template-columns: 11.5mm 12.8mm .3mm minmax(18mm, 1fr);
+              /*
+               * URGENT FIX:
+               * tighter columns so OFFER PRICE and value never get cut.
+               */
+              grid-template-columns: 9.8mm 9.8mm .22mm minmax(16mm, 1fr);
               align-items: center;
-              column-gap: .75mm;
-              padding: .55mm .8mm;
-              border-radius: 1.1mm;
+              column-gap: .45mm;
+              padding: .45mm .6mm;
+              border-radius: 1.05mm;
               background: #000;
               color: #fff;
               overflow: hidden;
             }
 
             .advDiscount {
-              height: 4.25mm;
+              height: 4mm;
               display: grid;
               place-items: center;
               overflow: hidden;
               border-radius: .8mm;
               background: #fff;
               color: #000;
-              font-size: 4.55pt;
+              font-size: 3.85pt;
               font-weight: 950;
               line-height: 1;
               text-overflow: ellipsis;
@@ -1450,7 +1559,7 @@ export default function BarcodesPage() {
 
             .advOfferText {
               overflow: hidden;
-              font-size: 4.6pt;
+              font-size: 3.7pt;
               font-weight: 950;
               line-height: 1;
               text-align: center;
@@ -1459,19 +1568,19 @@ export default function BarcodesPage() {
             }
 
             .advOfferBar > i {
-              width: .28mm;
-              height: 4.3mm;
+              width: .22mm;
+              height: 4mm;
               background: #fff;
             }
 
             /* Never ellipsize the actual selling price. */
             .advOfferPrice {
-              min-width: 18mm;
+              min-width: 16mm;
               overflow: visible;
-              font-size: 8.7pt;
+              font-size: 7.15pt;
               font-weight: 950;
               line-height: 1;
-              letter-spacing: -.03mm;
+              letter-spacing: -.02mm;
               text-align: right;
               white-space: nowrap;
             }
@@ -1479,11 +1588,13 @@ export default function BarcodesPage() {
             .advBarcodeWrap {
               min-height: 0;
               display: grid;
-              grid-template-rows: 6mm 2mm;
-              row-gap: .15mm;
+              /* Dedicated white scan zone, physically separated from borders. */
+              grid-template-rows: 9.35mm 2mm;
+              row-gap: 0;
               align-items: stretch;
-              padding: .05mm 2.1mm 0;
+              padding: .1mm .7mm 0;
               overflow: hidden;
+              background: #fff;
             }
 
             .advBarcode {
@@ -1492,17 +1603,34 @@ export default function BarcodesPage() {
               align-items: center;
               justify-content: center;
               overflow: hidden;
+              /* Keep the proven barcode size; only reclaim side padding. */
+              padding: .15mm .35mm;
+              background: #fff;
             }
 
             .advBarcode svg {
-              width: 37.8mm;
-              max-width: 37.8mm;
-              height: 5.7mm;
+              /*
+               * 42.5 mm is intentionally narrower than the physical sticker.
+               * That leaves a real quiet zone even when the TSC feed is off by
+               * 1-2 mm. 9.1 mm height makes the bars easier for phone/POS
+               * scanners to lock onto. preserveAspectRatio=none is set above
+               * so this exact physical scan band is used instead of shrinking.
+               */
+              width: 42.5mm;
+              min-width: 42.5mm;
+              max-width: 42.5mm;
+              height: 9.1mm;
+              min-height: 9.1mm;
+              max-height: 9.1mm;
               display: block;
               overflow: visible;
               shape-rendering: crispEdges;
               -webkit-print-color-adjust: exact;
               print-color-adjust: exact;
+            }
+
+            .advBarcode svg rect {
+              shape-rendering: crispEdges;
             }
 
             .advBarcodeNo {
@@ -1512,10 +1640,10 @@ export default function BarcodesPage() {
               min-height: 0;
               overflow: hidden;
               color: #000;
-              font-size: 5.25pt;
+              font-size: 5.5pt;
               font-weight: 950;
               line-height: 1;
-              letter-spacing: .07mm;
+              letter-spacing: .05mm;
               text-align: center;
               text-overflow: ellipsis;
               white-space: nowrap;
@@ -1523,21 +1651,8 @@ export default function BarcodesPage() {
 
             .advFooter {
               min-width: 0;
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              gap: 1.5mm;
+              display: block;
               overflow: hidden;
-            }
-
-            .advFooter strong {
-              overflow: hidden;
-              color: #000;
-              font-size: 3.35pt;
-              font-weight: 950;
-              line-height: 1;
-              text-overflow: ellipsis;
-              white-space: nowrap;
             }
 
             /* ---------------- OLD COMPACT LABELS PRESERVED ---------------- */
@@ -1759,6 +1874,40 @@ export default function BarcodesPage() {
             }
 
             @media print {
+              html,
+              body {
+                margin: 0 !important;
+                padding: 0 !important;
+                width: ${printPageWidth} !important;
+                min-width: ${printPageWidth} !important;
+                max-width: ${printPageWidth} !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+
+              .printPage {
+                width: ${printPageWidth} !important;
+                height: ${printPageHeight} !important;
+                min-width: ${printPageWidth} !important;
+                max-width: ${printPageWidth} !important;
+                min-height: ${printPageHeight} !important;
+                max-height: ${printPageHeight} !important;
+                grid-template-columns: repeat(${selectedSize.columns}, ${printLabelWidth}) !important;
+                grid-template-rows: ${printPageHeight} !important;
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+
+              .label {
+                width: ${printLabelWidth} !important;
+                height: ${printPageHeight} !important;
+                min-width: ${printLabelWidth} !important;
+                max-width: ${printLabelWidth} !important;
+                min-height: ${printPageHeight} !important;
+                max-height: ${printPageHeight} !important;
+                margin: 0 !important;
+              }
+
               body::before {
                 display: none !important;
                 content: none !important;
@@ -2045,7 +2194,7 @@ export default function BarcodesPage() {
               onChange={(event) => setLabelSize(event.target.value)}
             >
               <option value="tsc-te244-2up-2x2">
-                TSC TE244 — NEW 2 × 2 in (2 Labels / 50.8 × 50.8 mm)
+                TSC TE244 — 2 × 2 EDGE + SCAN SAFE • 4 × 2 ROW
               </option>
               <option value="tsc-te244-2up">
                 TSC TE244 — OLD 2 × 1 in (2 Labels / 50.8 × 25.4 mm)

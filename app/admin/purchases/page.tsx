@@ -1,5 +1,12 @@
 "use client";
 
+/*
+ * NEW CITY STYLE • SMART SAME-INVOICE PURCHASE CONTINUATION
+ * Preserves the existing purchase/offline/barcode/product flow.
+ * Same selected supplier + same supplier invoice automatically continues
+ * the existing bill, with an explicit Keep Separate override.
+ */
+
 import {
   FormEvent,
   useCallback,
@@ -142,6 +149,20 @@ type PaymentRow = {
   method: PaymentMethod;
   amount: number;
   reference: string;
+};
+
+type ExistingInvoiceMatch = {
+  id: string;
+  purchase_number?: string | null;
+  supplier_id?: number | null;
+  supplier_name?: string | null;
+  supplier_invoice_number?: string | null;
+  total_amount?: number | string | null;
+  paid_amount?: number | string | null;
+  due_amount?: number | string | null;
+  payment_status?: string | null;
+  tax_type?: string | null;
+  created_at?: string | null;
 };
 
 type PurchaseResult = {
@@ -391,6 +412,11 @@ export default function PurchasesPage() {
   const [previousSupplierBalance, setPreviousSupplierBalance] = useState(0);
 
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("");
+  const [existingInvoiceMatch, setExistingInvoiceMatch] =
+    useState<ExistingInvoiceMatch | null>(null);
+  const [checkingExistingInvoice, setCheckingExistingInvoice] =
+    useState(false);
+  const [forceNewPurchase, setForceNewPurchase] = useState(false);
   const [purchaseDate, setPurchaseDate] = useState(
     new Date().toISOString().slice(0, 10),
   );
@@ -839,6 +865,123 @@ export default function PurchasesPage() {
   ]);
 
   useEffect(() => {
+    let cancelled = false;
+    const invoice = supplierInvoiceNumber.trim();
+    const typedSupplierName =
+      supplierName.trim() || supplierSearch.trim();
+
+    if (
+      !isOnline ||
+      !invoice ||
+      (!selectedSupplierId && !typedSupplierName)
+    ) {
+      setExistingInvoiceMatch(null);
+      setCheckingExistingInvoice(false);
+      return;
+    }
+
+    setCheckingExistingInvoice(true);
+
+    const timer = window.setTimeout(async () => {
+      try {
+        /*
+         * SAME-INVOICE GUARD V2
+         * ---------------------
+         * Only ACTIVE purchases are eligible.
+         *
+         * Preferred identity:
+         *   supplier_id + supplier invoice number
+         *
+         * Fallback identity:
+         *   normalized supplier name + supplier invoice number
+         *
+         * The fallback protects against accidental duplicate bills when the
+         * operator types/selects the same supplier name but the supplier ID
+         * has not yet been committed in the UI.
+         */
+        let query = supabase
+          .from("purchases")
+          .select(
+            "id,purchase_number,supplier_id,supplier_name,supplier_invoice_number,total_amount,paid_amount,due_amount,payment_status,tax_type,created_at",
+          )
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .limit(200);
+
+        if (selectedSupplierId) {
+          query = query.eq("supplier_id", selectedSupplierId);
+        }
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+        if (cancelled) return;
+
+        const normalizedInvoice = normalizeText(invoice);
+        const normalizedSupplier = normalizeText(typedSupplierName);
+
+        const matches = ((data || []) as ExistingInvoiceMatch[]).filter(
+          (purchase) => {
+            if (
+              normalizeText(purchase.supplier_invoice_number) !==
+              normalizedInvoice
+            ) {
+              return false;
+            }
+
+            if (selectedSupplierId) {
+              return purchase.supplier_id === selectedSupplierId;
+            }
+
+            return (
+              normalizedSupplier.length > 0 &&
+              normalizeText(purchase.supplier_name) === normalizedSupplier
+            );
+          },
+        );
+
+        /*
+         * If legacy duplicates still exist, continue the oldest/original
+         * purchase. The repair SQL consolidates those legacy duplicates;
+         * this ordering keeps behaviour deterministic until that repair runs.
+         */
+        const matched =
+          [...matches].sort((left, right) => {
+            const leftTime = new Date(left.created_at || 0).getTime();
+            const rightTime = new Date(right.created_at || 0).getTime();
+            return leftTime - rightTime;
+          })[0] || null;
+
+        setExistingInvoiceMatch(matched);
+
+        if (
+          matched?.tax_type === "intra_state" ||
+          matched?.tax_type === "inter_state" ||
+          matched?.tax_type === "non_gst"
+        ) {
+          setTaxType(matched.tax_type as TaxType);
+        }
+      } catch (error) {
+        console.info("Same invoice lookup unavailable:", error);
+        if (!cancelled) setExistingInvoiceMatch(null);
+      } finally {
+        if (!cancelled) setCheckingExistingInvoice(false);
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    isOnline,
+    selectedSupplierId,
+    supplierInvoiceNumber,
+    supplierName,
+    supplierSearch,
+  ]);
+
+  useEffect(() => {
     if (
       intelligencePrefillAppliedRef.current ||
       products.length === 0 ||
@@ -1095,6 +1238,8 @@ export default function PurchasesPage() {
     setSupplierStateCode("37");
     setPlaceOfSupply("Andhra Pradesh");
     setPreviousSupplierBalance(0);
+    setExistingInvoiceMatch(null);
+    setForceNewPurchase(false);
   }
 
   function addExistingProduct(product: ProductOption) {
@@ -1437,6 +1582,9 @@ export default function PurchasesPage() {
   function resetForm() {
     clearSupplierSelection();
     setSupplierInvoiceNumber("");
+    setExistingInvoiceMatch(null);
+    setCheckingExistingInvoice(false);
+    setForceNewPurchase(false);
     setPurchaseDate(new Date().toISOString().slice(0, 10));
     setDueDate("");
     setTaxType("intra_state");
@@ -1765,6 +1913,129 @@ export default function PurchasesPage() {
           amount: payment.amount,
           reference: payment.reference.trim() || null,
         }));
+
+      /*
+       * SMART SAME-INVOICE CONTINUATION
+       * --------------------------------
+       * Same selected supplier + same non-empty supplier invoice number
+       * reuses the existing purchase card instead of creating another bill.
+       * The trusted add-items RPC updates stock, purchase totals, due and
+       * supplier balance. Any payment entered in this form is then applied
+       * against the same purchase through the existing supplier-payment RPC.
+       */
+      if (existingInvoiceMatch && !forceNewPurchase) {
+        if (
+          discountAmount > 0.001 ||
+          transportCharge > 0.001 ||
+          otherCharge > 0.001
+        ) {
+          throw new Error(
+            "This invoice already exists. To keep its totals safe, invoice-level discount/transport/other charges cannot be added through continuation mode. Add the items first, then edit the existing bill if those charges must change.",
+          );
+        }
+
+        const { data: addData, error: addError } = await supabase.rpc(
+          "ncs_add_purchase_items_batch_v1",
+          {
+            p_purchase_id: existingInvoiceMatch.id,
+            p_items: rpcItems,
+          },
+        );
+
+        if (addError) throw addError;
+
+        const addResult = (addData || {}) as unknown as PurchaseResult;
+
+        if (addResult.success === false) {
+          throw new Error(
+            addResult.message ||
+              "Unable to add items to the existing supplier invoice.",
+          );
+        }
+
+        const supplierIdForPayment =
+          selectedSupplierId || existingInvoiceMatch.supplier_id || null;
+
+        if (rpcPayments.length > 0 && !supplierIdForPayment) {
+          throw new Error(
+            "Items were added, but payment could not be applied because the supplier ID is missing. Record the payment from Purchase History.",
+          );
+        }
+
+        if (supplierIdForPayment) {
+          for (const payment of rpcPayments) {
+            const { error: paymentError } = await supabase.rpc(
+              "ncs_record_supplier_payment_v2",
+              {
+                p_supplier_id: supplierIdForPayment,
+                p_amount: payment.amount,
+                p_payment_method: payment.method,
+                p_payment_reference: payment.reference,
+                p_payment_date: purchaseDate,
+                p_notes: `Additional payment while continuing supplier invoice ${supplierInvoiceNumber.trim()}`,
+                p_purchase_id: existingInvoiceMatch.id,
+              },
+            );
+
+            if (paymentError) throw paymentError;
+          }
+        }
+
+        const { data: finalPurchase, error: finalPurchaseError } =
+          await supabase
+            .from("purchases")
+            .select(
+              "id,purchase_number,supplier_id,total_amount,paid_amount,due_amount,payment_status",
+            )
+            .eq("id", existingInvoiceMatch.id)
+            .single();
+
+        if (finalPurchaseError) throw finalPurchaseError;
+
+        const finalRow = finalPurchase as {
+          id: string;
+          purchase_number?: string | null;
+          supplier_id?: number | null;
+          total_amount?: number | string | null;
+          paid_amount?: number | string | null;
+          due_amount?: number | string | null;
+          payment_status?: string | null;
+        };
+
+        setSuccessPurchase({
+          ...addResult,
+          success: true,
+          purchase_id: finalRow.id,
+          purchase_number:
+            finalRow.purchase_number ||
+            existingInvoiceMatch.purchase_number ||
+            undefined,
+          supplier_id:
+            finalRow.supplier_id || supplierIdForPayment || undefined,
+          total_amount: toNumber(finalRow.total_amount),
+          paid_amount: toNumber(finalRow.paid_amount),
+          due_amount: toNumber(finalRow.due_amount),
+          current_purchase_due: toNumber(finalRow.due_amount),
+          payment_status: finalRow.payment_status || undefined,
+          message:
+            "Items added to the existing supplier invoice successfully.",
+        });
+
+        const continuedPurchaseNumber =
+          finalRow.purchase_number ||
+          existingInvoiceMatch.purchase_number ||
+          "Purchase";
+
+        resetForm();
+        await loadData();
+
+        showNotice(
+          `${continuedPurchaseNumber} continued successfully — same supplier invoice, same bill.`,
+          "success",
+        );
+
+        return;
+      }
 
       const { data, error } = await supabase.rpc(
         "ncs_complete_purchase_v2",
@@ -2149,11 +2420,10 @@ export default function PurchasesPage() {
                 <span>Supplier Invoice No.</span>
                 <input
                   value={supplierInvoiceNumber}
-                  onChange={(event) =>
-                    setSupplierInvoiceNumber(
-                      event.target.value,
-                    )
-                  }
+                  onChange={(event) => {
+                    setSupplierInvoiceNumber(event.target.value);
+                    setForceNewPurchase(false);
+                  }}
                   placeholder="Optional"
                 />
               </label>
@@ -2200,6 +2470,66 @@ export default function PurchasesPage() {
                 </select>
               </label>
             </div>
+
+            {checkingExistingInvoice &&
+              selectedSupplierId &&
+              supplierInvoiceNumber.trim() && (
+                <div className="ncsSameInvoiceBanner checking">
+                  <div className="ncsSameInvoiceIcon">…</div>
+                  <div>
+                    <span>SMART INVOICE CHECK</span>
+                    <strong>Checking this supplier invoice…</strong>
+                    <p>New bill create చేయాలా, existing bill continue చేయాలా system verify చేస్తోంది.</p>
+                  </div>
+                </div>
+              )}
+
+            {existingInvoiceMatch && !checkingExistingInvoice && (
+              <div
+                className={`ncsSameInvoiceBanner ${
+                  forceNewPurchase ? "separate" : "matched"
+                }`}
+              >
+                <div className="ncsSameInvoiceIcon">
+                  {forceNewPurchase ? "+" : "✓"}
+                </div>
+
+                <div className="ncsSameInvoiceContent">
+                  <span>
+                    {forceNewPurchase
+                      ? "SEPARATE PURCHASE MODE"
+                      : "SAME INVOICE FOUND • AUTO CONTINUE"}
+                  </span>
+                  <strong>
+                    {existingInvoiceMatch.purchase_number || "Existing Purchase"}
+                    {" • Invoice "}
+                    {existingInvoiceMatch.supplier_invoice_number ||
+                      supplierInvoiceNumber}
+                  </strong>
+                  <p>
+                    {forceNewPurchase
+                      ? "ఈ save కొత్త purchase bill create చేస్తుంది."
+                      : `ఇప్పటి items కొత్త billగా కాకుండా ఇదే billలో add అవుతాయి. Existing total ${formatCurrency(
+                          toNumber(existingInvoiceMatch.total_amount),
+                        )} • Due ${formatCurrency(
+                          toNumber(existingInvoiceMatch.due_amount),
+                        )}`}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  className="ncsSameInvoiceModeButton"
+                  onClick={() =>
+                    setForceNewPurchase((current) => !current)
+                  }
+                >
+                  {forceNewPurchase
+                    ? "Continue Same Bill"
+                    : "Keep Separate"}
+                </button>
+              </div>
+            )}
           </article>
 
           <article className="ncsCard" id="ncs-purchase-items-section">
@@ -3845,6 +4175,94 @@ export default function PurchasesPage() {
         .ncsInvoiceGrid {
           grid-template-columns: repeat(4, minmax(0, 1fr));
           margin-top: 12px;
+        }
+
+        .ncsSameInvoiceBanner {
+          margin-top: 12px;
+          display: grid;
+          grid-template-columns: 42px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 14px;
+          border: 1px solid rgba(14, 116, 144, 0.22);
+          border-radius: 14px;
+          background: linear-gradient(135deg, #effcff, #f6fffb);
+          box-shadow: 0 12px 26px rgba(14, 116, 144, 0.08);
+        }
+
+        .ncsSameInvoiceBanner.matched {
+          border-color: rgba(16, 185, 129, 0.28);
+          background: linear-gradient(135deg, #ecfdf5, #f0fdfa);
+        }
+
+        .ncsSameInvoiceBanner.separate {
+          border-color: rgba(245, 158, 11, 0.28);
+          background: linear-gradient(135deg, #fffbeb, #fff7ed);
+        }
+
+        .ncsSameInvoiceBanner.checking {
+          grid-template-columns: 42px minmax(0, 1fr);
+          border-color: rgba(59, 130, 246, 0.22);
+          background: linear-gradient(135deg, #eff6ff, #f8fafc);
+        }
+
+        .ncsSameInvoiceIcon {
+          width: 42px;
+          height: 42px;
+          display: grid;
+          place-items: center;
+          border-radius: 12px;
+          background: ${ROYAL_BLUE};
+          color: #fff;
+          font-size: 18px;
+          font-weight: 950;
+        }
+
+        .ncsSameInvoiceContent,
+        .ncsSameInvoiceBanner > div:nth-child(2) {
+          min-width: 0;
+        }
+
+        .ncsSameInvoiceBanner span,
+        .ncsSameInvoiceBanner strong,
+        .ncsSameInvoiceBanner p {
+          display: block;
+          margin: 0;
+        }
+
+        .ncsSameInvoiceBanner span {
+          color: #0f766e;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: .05em;
+        }
+
+        .ncsSameInvoiceBanner strong {
+          margin-top: 3px;
+          color: ${DEEP_BLUE};
+          font-size: 13px;
+          font-weight: 950;
+        }
+
+        .ncsSameInvoiceBanner p {
+          margin-top: 4px;
+          color: #64748b;
+          font-size: 10px;
+          font-weight: 700;
+          line-height: 1.45;
+        }
+
+        .ncsSameInvoiceModeButton {
+          min-height: 38px;
+          padding: 0 13px;
+          border: 0;
+          border-radius: 10px;
+          background: ${DEEP_BLUE};
+          color: #fff;
+          font-size: 9px;
+          font-weight: 900;
+          cursor: pointer;
+          white-space: nowrap;
         }
 
         .ncsSupplierBalanceStrip {

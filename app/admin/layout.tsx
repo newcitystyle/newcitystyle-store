@@ -225,6 +225,11 @@ const menuGroups: AdminMenuGroup[] = [
         icon: "🔔",
       },
       {
+        label: "WhatsApp Leads",
+        href: "/admin/whatsapp-leads",
+        icon: "💬",
+      },
+      {
         label: "NCS Club Members",
         href: "/admin/club-members",
         icon: "🎁",
@@ -268,6 +273,11 @@ const menuGroups: AdminMenuGroup[] = [
         label: "Analytics",
         href: "/admin/analytics",
         icon: "📊",
+      },
+      {
+        label: "Meta Catalog",
+        href: "/admin/meta-catalog",
+        icon: "🛰️",
       },
       {
         label: "Store Details",
@@ -804,11 +814,11 @@ export default function AdminLayout({
     let createdThemeMeta: HTMLMetaElement | null = null;
 
     if (themeMeta) {
-      themeMeta.setAttribute("content", "#0A2E73");
+      themeMeta.setAttribute("content", "#0B6670");
     } else {
       createdThemeMeta = document.createElement("meta");
       createdThemeMeta.name = "theme-color";
-      createdThemeMeta.content = "#0A2E73";
+      createdThemeMeta.content = "#0B6670";
       document.head.appendChild(createdThemeMeta);
     }
 
@@ -1910,8 +1920,6 @@ export default function AdminLayout({
       </aside>
 
       <main className="ncsAdminContent">
-        {!offlinePosAccess && <BusinessAlertTicker />}
-
         {offlinePosAccess && (
           <div className="ncsOfflinePosBanner">
             <span>● OFFLINE POS</span>
@@ -6007,6 +6015,1105 @@ export default function AdminLayout({
             flex:1 1 auto !important;
             max-height:none !important;
             overflow-y:auto !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS ADMIN • PREMIUM CLEAN SYSTEM • 2036
+           Visual-only polish. Existing auth, offline POS, ticker,
+           navigation, command palette and business logic are preserved.
+           ============================================================ */
+
+        :root {
+          --ncs-admin-navy-950:#06152f;
+          --ncs-admin-navy-900:#08265f;
+          --ncs-admin-navy-800:#0a2e73;
+          --ncs-admin-navy-700:#164b9d;
+          --ncs-admin-gold:#d4af37;
+          --ncs-admin-gold-soft:#efd878;
+          --ncs-admin-ink:#172033;
+          --ncs-admin-muted:#667085;
+          --ncs-admin-line:#e6eaf0;
+          --ncs-admin-surface:#ffffff;
+          --ncs-admin-canvas:#f6f8fb;
+        }
+
+        body {
+          background:
+            radial-gradient(circle at 92% 4%, rgba(212,175,55,.075), transparent 23%),
+            linear-gradient(180deg,#f8fafc,#f4f7fb) !important;
+          color:var(--ncs-admin-ink);
+          font-family:Inter,Poppins,Arial,sans-serif !important;
+          -webkit-font-smoothing:antialiased;
+          text-rendering:optimizeLegibility;
+        }
+
+        .ncsAdminShell {
+          background:
+            radial-gradient(circle at 92% 3%, rgba(212,175,55,.06), transparent 22%),
+            var(--ncs-admin-canvas) !important;
+          color:var(--ncs-admin-ink);
+        }
+
+        .ncsAdminPageContent {
+          min-width:0;
+          padding:18px 20px 32px !important;
+        }
+
+        /* ---------- SIDEBAR ---------- */
+        .ncsSidebar {
+          width:286px !important;
+          padding:14px 12px 12px !important;
+          background:
+            radial-gradient(circle at 88% 2%, rgba(212,175,55,.12), transparent 26%),
+            linear-gradient(180deg,#06152f 0%,#08265f 58%,#061b3d 100%) !important;
+          border-right:1px solid rgba(255,255,255,.07);
+          box-shadow:8px 0 28px rgba(3,21,63,.14) !important;
+        }
+
+        .ncsAdminContent {
+          margin-left:286px !important;
+          background:transparent;
+        }
+
+        .ncsBrandArea {
+          min-height:62px !important;
+          gap:11px !important;
+          padding:4px 7px 12px !important;
+          border-bottom:1px solid rgba(255,255,255,.09) !important;
+        }
+
+        .ncsBrandLogo {
+          width:48px !important;
+          height:48px !important;
+          flex:0 0 48px !important;
+          border:1px solid rgba(212,175,55,.72) !important;
+          border-radius:14px !important;
+          background:rgba(212,175,55,.075) !important;
+          color:var(--ncs-admin-gold-soft) !important;
+          font-size:14px !important;
+          box-shadow:inset 0 0 24px rgba(212,175,55,.03);
+        }
+
+        .ncsBrandText strong {
+          color:var(--ncs-admin-gold-soft) !important;
+          font-size:14px !important;
+          letter-spacing:.25px !important;
+        }
+
+        .ncsBrandText span {
+          margin-top:3px !important;
+          color:rgba(255,255,255,.52) !important;
+          font-size:8px !important;
+          font-weight:650 !important;
+        }
+
+        .ncsSidebarIntelligence {
+          margin:9px 0 8px !important;
+          padding:9px !important;
+          border:1px solid rgba(255,255,255,.09) !important;
+          border-radius:14px !important;
+          background:
+            linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.02)) !important;
+          box-shadow:none !important;
+          backdrop-filter:none !important;
+        }
+
+        .ncsSidebarIntelligence::before {
+          display:none !important;
+        }
+
+        .ncsSidebarIntelTop > span {
+          color:rgba(255,255,255,.58) !important;
+          font-size:7px !important;
+          letter-spacing:.9px !important;
+        }
+
+        .ncsSidebarIntelTop > b {
+          border-color:rgba(61,240,161,.16) !important;
+          background:rgba(61,240,161,.055) !important;
+          font-size:6.5px !important;
+        }
+
+        .ncsSidebarIntelCore {
+          border-radius:11px !important;
+          background:rgba(255,255,255,.025) !important;
+        }
+
+        .ncsMenu {
+          scrollbar-width:thin;
+          scrollbar-color:rgba(212,175,55,.34) transparent;
+        }
+
+        .ncsMenuSearchWrap {
+          border:1px solid rgba(255,255,255,.09) !important;
+          border-radius:11px !important;
+          background:rgba(255,255,255,.045) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsMenuSearch {
+          color:#fff !important;
+          font-size:10px !important;
+          font-weight:650 !important;
+        }
+
+        .ncsMenuSearch::placeholder {
+          color:rgba(255,255,255,.4) !important;
+        }
+
+        .ncsCommandTrigger {
+          min-height:38px !important;
+          border:1px solid rgba(212,175,55,.18) !important;
+          border-radius:11px !important;
+          background:rgba(212,175,55,.055) !important;
+          color:#fff !important;
+          box-shadow:none !important;
+        }
+
+        .ncsCommandTrigger strong {
+          font-size:9px !important;
+        }
+
+        .ncsCommandTrigger kbd {
+          border-color:rgba(255,255,255,.1) !important;
+          background:rgba(255,255,255,.045) !important;
+          color:rgba(255,255,255,.5) !important;
+        }
+
+        .ncsMenuSmartArea {
+          gap:7px !important;
+        }
+
+        .ncsSmartBlock {
+          border:1px solid rgba(255,255,255,.075) !important;
+          border-radius:11px !important;
+          background:rgba(255,255,255,.025) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsSmartBlockHeader span {
+          color:rgba(255,255,255,.5) !important;
+          font-size:6.5px !important;
+          letter-spacing:.85px !important;
+        }
+
+        .ncsSmartLink {
+          min-height:31px !important;
+          border-radius:8px !important;
+          color:rgba(255,255,255,.78) !important;
+          font-size:8px !important;
+        }
+
+        .ncsSmartLink:hover,
+        .ncsSmartLinkActive {
+          background:rgba(212,175,55,.08) !important;
+          color:#fff !important;
+        }
+
+        .ncsMenuGroups {
+          gap:6px !important;
+        }
+
+        .ncsMenuGroup {
+          border:1px solid rgba(255,255,255,.075) !important;
+          border-radius:12px !important;
+          background:rgba(255,255,255,.025) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsMenuGroupActive {
+          border-color:rgba(212,175,55,.24) !important;
+          background:rgba(212,175,55,.055) !important;
+        }
+
+        .ncsMenuGroupButton {
+          min-height:45px !important;
+          grid-template-columns:30px minmax(0,1fr) auto 17px !important;
+          gap:9px !important;
+          padding:0 10px !important;
+          border-radius:11px !important;
+        }
+
+        .ncsMenuGroupButton:hover {
+          background:rgba(255,255,255,.04) !important;
+        }
+
+        .ncsMenuGroupIcon {
+          width:29px !important;
+          height:29px !important;
+          border:1px solid rgba(212,175,55,.16) !important;
+          border-radius:9px !important;
+          background:rgba(212,175,55,.055) !important;
+          color:var(--ncs-admin-gold-soft) !important;
+          font-size:13px !important;
+        }
+
+        .ncsMenuGroupLabel {
+          color:#fff !important;
+          font-size:11px !important;
+          font-weight:800 !important;
+        }
+
+        .ncsMenuGroupCount {
+          border-color:rgba(255,255,255,.08) !important;
+          background:rgba(255,255,255,.035) !important;
+          color:rgba(255,255,255,.5) !important;
+          font-size:7px !important;
+        }
+
+        .ncsMenuItem {
+          min-height:39px !important;
+          border-radius:9px !important;
+          color:rgba(255,255,255,.72) !important;
+          font-size:9.5px !important;
+          font-weight:680 !important;
+          transition:
+            background .16s ease,
+            color .16s ease,
+            transform .16s ease !important;
+        }
+
+        .ncsMenuItem:hover {
+          background:rgba(255,255,255,.045) !important;
+          color:#fff !important;
+          transform:translateX(2px);
+        }
+
+        .ncsActiveMenuItem {
+          border-color:rgba(212,175,55,.22) !important;
+          background:
+            linear-gradient(90deg,rgba(212,175,55,.13),rgba(212,175,55,.035)) !important;
+          color:#fff !important;
+          box-shadow:inset 2px 0 0 var(--ncs-admin-gold) !important;
+        }
+
+        .ncsMenuIcon {
+          color:var(--ncs-admin-gold-soft) !important;
+        }
+
+        .ncsFavoriteButton {
+          color:rgba(255,255,255,.32) !important;
+        }
+
+        .ncsFavoriteButtonActive {
+          color:var(--ncs-admin-gold-soft) !important;
+        }
+
+        .ncsSidebarBottom {
+          border-top:1px solid rgba(255,255,255,.08) !important;
+        }
+
+        .ncsAdminIdentity {
+          border:1px solid rgba(255,255,255,.075) !important;
+          background:rgba(255,255,255,.025) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminAvatar {
+          background:rgba(212,175,55,.09) !important;
+          color:var(--ncs-admin-gold-soft) !important;
+          border-color:rgba(212,175,55,.26) !important;
+        }
+
+        .ncsAdminText strong {
+          color:#fff !important;
+        }
+
+        .ncsAdminText span {
+          color:rgba(255,255,255,.44) !important;
+        }
+
+        .ncsViewStoreButton,
+        .ncsLogoutButton {
+          border-radius:10px !important;
+          box-shadow:none !important;
+        }
+
+        .ncsViewStoreButton {
+          border-color:rgba(212,175,55,.22) !important;
+          background:rgba(212,175,55,.055) !important;
+          color:#fff !important;
+        }
+
+        .ncsLogoutButton {
+          border-color:rgba(255,255,255,.075) !important;
+          background:rgba(255,255,255,.025) !important;
+          color:rgba(255,255,255,.72) !important;
+        }
+
+        /* ---------- LIVE BUSINESS ALERT ---------- */
+        .ncsBusinessTicker {
+          min-height:52px !important;
+          grid-template-columns:auto minmax(0,1fr);
+          border-top:0 !important;
+          border-bottom:1px solid #e8ebf0 !important;
+          background:rgba(255,255,255,.92) !important;
+          box-shadow:0 7px 22px rgba(16,24,40,.06) !important;
+          backdrop-filter:blur(14px);
+        }
+
+        .ncsTickerLiveBadge {
+          min-width:172px !important;
+          padding:0 16px !important;
+          border-right:1px solid rgba(212,175,55,.22) !important;
+          background:
+            linear-gradient(135deg,#06152f,#08265f) !important;
+          box-shadow:none !important;
+          color:var(--ncs-admin-gold-soft) !important;
+          font-size:8px !important;
+          letter-spacing:.8px !important;
+        }
+
+        .ncsTickerLiveDot {
+          width:7px !important;
+          height:7px !important;
+          background:#4ade80 !important;
+          box-shadow:0 0 0 4px rgba(74,222,128,.1) !important;
+          animation:none !important;
+        }
+
+        .ncsTickerViewport {
+          min-height:52px !important;
+          padding:6px 14px !important;
+        }
+
+        .ncsChequeTickerCard {
+          min-height:35px !important;
+          padding:6px 12px !important;
+          border:1px solid #e3e8ef !important;
+          background:#fff !important;
+          color:var(--ncs-admin-navy-800) !important;
+          box-shadow:0 4px 14px rgba(16,24,40,.055) !important;
+          gap:8px !important;
+        }
+
+        .ncsChequeTickerStatus {
+          font-size:7px !important;
+          letter-spacing:.7px !important;
+        }
+
+        .ncsChequeTickerSupplier {
+          color:#475467 !important;
+          font-size:8px !important;
+          font-weight:650 !important;
+        }
+
+        .ncsChequeTickerCard-bank-blink {
+          animation:none !important;
+        }
+
+        /* ---------- EXPANDED / COLLAPSED WINDOWS ---------- */
+        .ncsExpandedFlyout,
+        .ncsCollapsedFlyout {
+          border:1px solid rgba(10,46,115,.1) !important;
+          border-radius:16px !important;
+          background:#fff !important;
+          color:var(--ncs-admin-ink) !important;
+          box-shadow:0 24px 60px rgba(16,24,40,.16) !important;
+        }
+
+        .ncsExpandedFlyoutHeader,
+        .ncsCollapsedFlyoutHeader {
+          border-bottom:1px solid #edf0f4 !important;
+          background:
+            linear-gradient(180deg,#fff,#fafbfd) !important;
+        }
+
+        .ncsExpandedFlyoutHeaderIcon,
+        .ncsCollapsedFlyoutHeaderIcon {
+          border-color:rgba(212,175,55,.25) !important;
+          background:#fffaf0 !important;
+          color:var(--ncs-admin-navy-800) !important;
+        }
+
+        .ncsExpandedFlyoutHeader strong,
+        .ncsCollapsedFlyoutHeader strong {
+          color:var(--ncs-admin-navy-800) !important;
+        }
+
+        .ncsExpandedFlyoutHeader span,
+        .ncsCollapsedFlyoutHeader span {
+          color:var(--ncs-admin-muted) !important;
+        }
+
+        .ncsExpandedFlyoutItem,
+        .ncsCollapsedFlyoutItem {
+          border-color:#edf0f4 !important;
+          background:#fff !important;
+          color:var(--ncs-admin-ink) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsExpandedFlyoutItem:hover,
+        .ncsCollapsedFlyoutItem:hover,
+        .ncsExpandedFlyoutItemActive,
+        .ncsCollapsedFlyoutItemActive {
+          border-color:rgba(212,175,55,.26) !important;
+          background:#fffaf2 !important;
+        }
+
+        .ncsExpandedFlyoutItem strong,
+        .ncsCollapsedFlyoutItem strong {
+          color:var(--ncs-admin-navy-800) !important;
+        }
+
+        .ncsExpandedFlyoutItem small,
+        .ncsCollapsedFlyoutItem small {
+          color:#7b8494 !important;
+        }
+
+        /* ---------- COMMAND PALETTE ---------- */
+        .ncsCommandOverlay {
+          background:rgba(4,15,35,.48) !important;
+          backdrop-filter:blur(8px);
+        }
+
+        .ncsCommandPalette {
+          border:1px solid rgba(10,46,115,.1) !important;
+          border-radius:18px !important;
+          background:#fff !important;
+          color:var(--ncs-admin-ink) !important;
+          box-shadow:0 28px 80px rgba(16,24,40,.24) !important;
+        }
+
+        .ncsCommandHeader {
+          border-bottom:1px solid #edf0f4 !important;
+        }
+
+        .ncsCommandHeader span {
+          color:#b18b15 !important;
+        }
+
+        .ncsCommandHeader strong {
+          color:var(--ncs-admin-navy-800) !important;
+        }
+
+        .ncsCommandHeader button {
+          border-color:#e3e8ef !important;
+          background:#f8fafc !important;
+          color:var(--ncs-admin-navy-800) !important;
+        }
+
+        .ncsCommandSearchWrap {
+          border-color:#dbe2ea !important;
+          background:#f8fafc !important;
+        }
+
+        .ncsCommandSearchWrap > span {
+          color:#b18b15 !important;
+        }
+
+        .ncsCommandSearchWrap input {
+          color:var(--ncs-admin-ink) !important;
+          font-size:11px !important;
+        }
+
+        .ncsCommandSearchWrap input::placeholder {
+          color:#98a2b3 !important;
+        }
+
+        .ncsCommandSearchWrap kbd {
+          border-color:#dbe2ea !important;
+          background:#fff !important;
+          color:#667085 !important;
+        }
+
+        .ncsCommandResult {
+          border-color:#edf0f4 !important;
+          color:var(--ncs-admin-ink) !important;
+        }
+
+        .ncsCommandResult:hover {
+          background:#f8fafc !important;
+        }
+
+        .ncsCommandResultIcon {
+          border-color:rgba(212,175,55,.22) !important;
+          background:#fffaf0 !important;
+        }
+
+        .ncsCommandResult strong {
+          color:var(--ncs-admin-navy-800) !important;
+        }
+
+        .ncsCommandResult small {
+          color:#98a2b3 !important;
+        }
+
+        /* ---------- PAGE SURFACE NORMALIZATION ---------- */
+        .ncsAdminPageContent :where(
+          section,
+          article,
+          div
+        ) {
+          scrollbar-color:#c9d1dc transparent;
+        }
+
+        .ncsAdminPageContent :where(button,a,input,select,textarea) {
+          font-family:Inter,Poppins,Arial,sans-serif;
+        }
+
+        .ncsAdminPageContent :where(input,select,textarea) {
+          outline-color:rgba(10,46,115,.12);
+        }
+
+        .ncsOfflinePosBanner {
+          margin:14px 20px 0 !important;
+          border:1px solid #fde68a !important;
+          border-radius:12px !important;
+          background:#fffbeb !important;
+          color:#7c5a06 !important;
+          box-shadow:none !important;
+        }
+
+        /* ---------- LOADING SCREEN ---------- */
+        .ncsCheckingPage {
+          background:
+            radial-gradient(circle at 84% 12%,rgba(212,175,55,.12),transparent 26%),
+            linear-gradient(135deg,#06152f,#08265f 60%,#0a2e73) !important;
+        }
+
+        .ncsCheckingLogo {
+          width:76px !important;
+          height:76px !important;
+          border:1px solid rgba(212,175,55,.72) !important;
+          border-radius:20px !important;
+          background:rgba(212,175,55,.07) !important;
+          color:var(--ncs-admin-gold-soft) !important;
+        }
+
+        .ncsCheckingPage h2 {
+          font-size:20px !important;
+          letter-spacing:-.2px;
+        }
+
+        .ncsCheckingPage p {
+          color:rgba(255,255,255,.56) !important;
+          font-size:11px !important;
+        }
+
+        /* ---------- COLLAPSED SIDEBAR ---------- */
+        .ncsSidebarCollapsed {
+          width:80px !important;
+          padding-left:10px !important;
+          padding-right:10px !important;
+        }
+
+        .ncsAdminShellCollapsed .ncsAdminContent {
+          margin-left:80px !important;
+        }
+
+        .ncsSidebarCollapsed .ncsBrandLogo {
+          width:46px !important;
+          height:46px !important;
+        }
+
+        .ncsCollapsedGroupButton {
+          border-radius:11px !important;
+          background:rgba(255,255,255,.025) !important;
+          border-color:rgba(255,255,255,.07) !important;
+        }
+
+        .ncsCollapsedGroupButtonActive,
+        .ncsCollapsedGroupButtonFlyoutOpen {
+          border-color:rgba(212,175,55,.24) !important;
+          background:rgba(212,175,55,.075) !important;
+        }
+
+        .ncsSidebarCollapseButton {
+          top:82px !important;
+          right:-13px !important;
+          width:27px !important;
+          height:38px !important;
+          border:1px solid rgba(212,175,55,.62) !important;
+          border-radius:0 10px 10px 0 !important;
+          background:#fff !important;
+          color:var(--ncs-admin-navy-800) !important;
+          font-size:20px !important;
+          box-shadow:4px 6px 14px rgba(16,24,40,.09) !important;
+        }
+
+        /* ---------- RESPONSIVE ---------- */
+        @media (max-width:1100px) {
+          .ncsSidebar {
+            width:min(286px,88vw) !important;
+          }
+
+          .ncsAdminContent,
+          .ncsAdminShellCollapsed .ncsAdminContent {
+            margin-left:0 !important;
+          }
+
+          .ncsAdminPageContent {
+            padding:64px 11px 24px !important;
+          }
+
+          .ncsBusinessTicker {
+            position:relative !important;
+            grid-template-columns:1fr !important;
+            min-height:auto !important;
+          }
+
+          .ncsTickerLiveBadge {
+            min-width:0 !important;
+            min-height:34px;
+            border-right:0 !important;
+          }
+
+          .ncsTickerViewport {
+            min-height:45px !important;
+          }
+
+          .ncsMobileMenuButton {
+            border:1px solid rgba(212,175,55,.35) !important;
+            background:#08265f !important;
+            color:#fff !important;
+            box-shadow:0 8px 22px rgba(16,24,40,.14) !important;
+          }
+        }
+
+        @media (max-width:640px) {
+          .ncsAdminPageContent {
+            padding-left:8px !important;
+            padding-right:8px !important;
+          }
+
+          .ncsTickerLiveBadge {
+            font-size:7px !important;
+          }
+
+          .ncsChequeTickerSupplier {
+            max-width:62vw;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          }
+        }
+
+        @media (prefers-reduced-motion:reduce) {
+          .ncsAdminShell *,
+          .ncsAdminShell *::before,
+          .ncsAdminShell *::after {
+            scroll-behavior:auto !important;
+            animation-duration:.01ms !important;
+            animation-iteration-count:1 !important;
+            transition-duration:.01ms !important;
+          }
+        }
+
+
+        /* NCS ADMIN • WEBSITE DESIGN LANGUAGE • 2036
+           Final visual layer only. Navigation/auth/offline/POS functions remain unchanged. */
+
+        body,
+        .ncsAdminShell {
+          background:
+            radial-gradient(circle at 82% 0%, rgba(12, 126, 128, 0.08), transparent 28%),
+            linear-gradient(180deg, #f8fbfa 0%, #f4f7f5 52%, #f8f6ef 100%) !important;
+        }
+
+        .ncsAdminPageContent {
+          min-width: 0 !important;
+          background: transparent !important;
+        }
+
+        .ncsSidebar {
+          background:
+            radial-gradient(circle at 18% 0%, rgba(227, 189, 79, 0.16), transparent 24%),
+            linear-gradient(180deg, #06283f 0%, #083f50 44%, #0a6d73 100%) !important;
+          border-right: 1px solid rgba(226, 190, 82, 0.24) !important;
+          box-shadow: 12px 0 34px rgba(3, 40, 53, 0.18) !important;
+          scrollbar-color: rgba(226, 190, 82, 0.55) transparent !important;
+        }
+
+        .ncsSidebar::-webkit-scrollbar-thumb {
+          background: rgba(226, 190, 82, 0.55) !important;
+        }
+
+        .ncsBrandArea {
+          border-bottom-color: rgba(255,255,255,.11) !important;
+        }
+
+        .ncsBrandLogo {
+          border: 1px solid rgba(235, 201, 103, 0.86) !important;
+          background: linear-gradient(145deg, #f2d36f, #dcae35) !important;
+          color: #07374a !important;
+          box-shadow: 0 10px 24px rgba(0,0,0,.16) !important;
+        }
+
+        .ncsBrandText strong {
+          color: #f1c957 !important;
+        }
+
+        .ncsBrandText span {
+          color: rgba(255,255,255,.66) !important;
+        }
+
+        .ncsSidebarIntelligence {
+          background:
+            linear-gradient(145deg, rgba(255,255,255,.055), rgba(13,126,128,.08)) !important;
+          border-color: rgba(230,195,87,.20) !important;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.035) !important;
+        }
+
+        .ncsSidebarIntelTop span,
+        .ncsSidebarIntelCopy small {
+          color: rgba(255,255,255,.58) !important;
+        }
+
+        .ncsSidebarIntelTop b {
+          color: #f1ca5c !important;
+          border-color: rgba(240,201,84,.28) !important;
+          background: rgba(239,198,76,.08) !important;
+        }
+
+        .ncsSidebarIntelGlyph {
+          border-color: rgba(239,199,80,.34) !important;
+          background: radial-gradient(circle, rgba(18,145,145,.28), rgba(6,52,68,.22)) !important;
+        }
+
+        .ncsMenuSearchWrap,
+        .ncsCommandTrigger,
+        .ncsSmartBlock,
+        .ncsMenuGroup,
+        .ncsAdminIdentity,
+        .ncsViewStoreButton,
+        .ncsLogoutButton {
+          border-color: rgba(255,255,255,.11) !important;
+        }
+
+        .ncsMenuSearchWrap {
+          background: rgba(255,255,255,.055) !important;
+        }
+
+        .ncsMenuSearch {
+          color: #fff !important;
+        }
+
+        .ncsMenuSearch::placeholder {
+          color: rgba(255,255,255,.48) !important;
+        }
+
+        .ncsCommandTrigger {
+          background:
+            linear-gradient(135deg, rgba(226,188,78,.12), rgba(13,119,122,.16)) !important;
+          color: #fff !important;
+        }
+
+        .ncsCommandTrigger > span {
+          color: #f2cb5e !important;
+        }
+
+        .ncsCommandTrigger kbd {
+          background: rgba(255,255,255,.08) !important;
+          border-color: rgba(255,255,255,.10) !important;
+          color: rgba(255,255,255,.72) !important;
+        }
+
+        .ncsMenuGroup {
+          background: rgba(255,255,255,.028) !important;
+          border-color: rgba(255,255,255,.06) !important;
+        }
+
+        .ncsMenuGroup:hover {
+          background: rgba(255,255,255,.045) !important;
+        }
+
+        .ncsMenuGroupActive {
+          background:
+            linear-gradient(135deg, rgba(17,132,133,.22), rgba(226,188,78,.08)) !important;
+          border-color: rgba(46,177,174,.28) !important;
+        }
+
+        .ncsMenuGroupButton:hover {
+          background: rgba(255,255,255,.045) !important;
+        }
+
+        .ncsMenuGroupIcon {
+          border-color: rgba(229,191,75,.28) !important;
+          background: rgba(229,191,75,.08) !important;
+          color: #f0ca5a !important;
+        }
+
+        .ncsMenuGroupCount {
+          background: rgba(255,255,255,.055) !important;
+          border-color: rgba(255,255,255,.09) !important;
+          color: rgba(255,255,255,.72) !important;
+        }
+
+        .ncsMenuItem {
+          color: rgba(255,255,255,.78) !important;
+        }
+
+        .ncsMenuItem:hover {
+          background: rgba(255,255,255,.055) !important;
+          color: #fff !important;
+        }
+
+        .ncsActiveMenuItem {
+          background:
+            linear-gradient(90deg, rgba(18,151,149,.27), rgba(226,188,78,.10)) !important;
+          color: #fff !important;
+          box-shadow: inset 3px 0 0 #e2bc4e !important;
+        }
+
+        .ncsFavoriteButtonActive {
+          color: #f1ca5c !important;
+        }
+
+        .ncsSidebarCollapseButton {
+          border-color: #ddb342 !important;
+          background: linear-gradient(180deg, #efd16c, #dcae35) !important;
+          color: #073d4f !important;
+          box-shadow: 5px 6px 16px rgba(3,42,55,.20) !important;
+        }
+
+        .ncsAdminIdentity {
+          background: rgba(255,255,255,.045) !important;
+        }
+
+        .ncsAdminAvatar {
+          background: linear-gradient(145deg, #f0ce65, #dcae35) !important;
+          color: #073a4d !important;
+        }
+
+        .ncsViewStoreButton {
+          background: rgba(18,138,140,.13) !important;
+          color: #dff8f5 !important;
+        }
+
+        .ncsViewStoreButton:hover {
+          background: rgba(20,153,153,.20) !important;
+        }
+
+        .ncsLogoutButton {
+          background: rgba(255,255,255,.035) !important;
+          color: rgba(255,255,255,.76) !important;
+        }
+
+        .ncsLogoutButton:hover {
+          background: rgba(255,255,255,.07) !important;
+          color: #fff !important;
+        }
+
+        .ncsCommandOverlay {
+          background: rgba(3,31,45,.62) !important;
+          backdrop-filter: blur(12px) !important;
+        }
+
+        .ncsCommandPalette {
+          border-color: rgba(225,188,76,.24) !important;
+          background: #fbfcfa !important;
+          box-shadow: 0 28px 80px rgba(3,38,50,.28) !important;
+        }
+
+        .ncsCommandHeader {
+          background: linear-gradient(110deg, #07394a, #0a6f76 62%, #10857e) !important;
+        }
+
+        .ncsCommandHeader span {
+          color: #f0ca5a !important;
+        }
+
+        .ncsCommandSearchWrap {
+          border-color: rgba(7,86,99,.14) !important;
+          background: #fff !important;
+        }
+
+        .ncsCommandResult:hover {
+          background: #f1f8f6 !important;
+        }
+
+        .ncsCommandResultIcon,
+        .ncsExpandedFlyoutHeaderIcon,
+        .ncsCollapsedFlyoutHeaderIcon {
+          background: #eef8f5 !important;
+          color: #0b7779 !important;
+          border-color: rgba(13,126,128,.16) !important;
+        }
+
+        .ncsExpandedFlyout,
+        .ncsCollapsedFlyout {
+          border-color: rgba(226,188,78,.22) !important;
+          background: #fbfcfa !important;
+          box-shadow: 0 22px 55px rgba(3,43,55,.22) !important;
+        }
+
+        .ncsExpandedFlyoutHeader,
+        .ncsCollapsedFlyoutHeader {
+          background: linear-gradient(110deg, #07394a, #0a6e75 62%, #10857e) !important;
+        }
+
+        .ncsExpandedFlyoutItemActive,
+        .ncsCollapsedFlyoutItemActive {
+          background: #eef8f5 !important;
+          color: #08636c !important;
+        }
+
+        .ncsOfflinePosBanner {
+          background: linear-gradient(90deg, #fff7d8, #f6fbf8) !important;
+          border-color: rgba(225,184,59,.34) !important;
+          color: #0a5260 !important;
+        }
+
+        /* The live alert ticker is intentionally no longer rendered.
+           Keep this as a safety net for any stale cached markup. */
+        .ncsBusinessTicker {
+          display: none !important;
+        }
+
+
+        /* NCS ADMIN • WEBSITE COLOR LOCK • 2036
+           High-specificity override so old purple matrix rules cannot win. */
+
+        .ncsAdminShell .ncsSidebar,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed),
+        .ncsAdminShell .ncsSidebar.ncsSidebarCollapsed {
+          background:
+            radial-gradient(circle at 10% 0%, rgba(227,189,79,.16), transparent 24%),
+            radial-gradient(circle at 100% 24%, rgba(20,145,143,.16), transparent 30%),
+            linear-gradient(180deg,#06263f 0%,#083d50 45%,#0a6770 76%,#0d7b76 100%) !important;
+          border-right:1px solid rgba(226,190,82,.24) !important;
+          box-shadow:14px 0 36px rgba(3,40,53,.18) !important;
+        }
+
+        .ncsAdminShell .ncsBrandArea,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsBrandArea {
+          background:
+            linear-gradient(135deg,rgba(255,255,255,.055),rgba(13,125,127,.14)) !important;
+          border:1px solid rgba(226,190,82,.18) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsBrandLogo,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsBrandLogo {
+          background:linear-gradient(145deg,#f2d36f,#dcae35) !important;
+          border-color:rgba(244,215,126,.92) !important;
+          color:#07384a !important;
+          box-shadow:0 8px 18px rgba(0,0,0,.16) !important;
+        }
+
+        .ncsAdminShell .ncsBrandText strong,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsBrandText strong {
+          color:#ffffff !important;
+        }
+
+        .ncsAdminShell .ncsBrandText span,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsBrandText span {
+          color:#e9c85e !important;
+        }
+
+        .ncsAdminShell .ncsSidebarIntelligence,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsSidebarIntelligence {
+          background:
+            linear-gradient(145deg,rgba(255,255,255,.045),rgba(15,133,132,.10)) !important;
+          border-color:rgba(226,190,82,.16) !important;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.03) !important;
+        }
+
+        .ncsAdminShell .ncsMenuSearchWrap,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuSearchWrap {
+          background:rgba(255,255,255,.055) !important;
+          border-color:rgba(255,255,255,.10) !important;
+        }
+
+        .ncsAdminShell .ncsCommandTrigger,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsCommandTrigger {
+          background:
+            linear-gradient(135deg,rgba(225,187,74,.12),rgba(17,136,134,.16)) !important;
+          border-color:rgba(226,190,82,.18) !important;
+          color:#fff !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroup,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroup {
+          background:rgba(255,255,255,.028) !important;
+          border-color:rgba(255,255,255,.07) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupActive,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupActive {
+          background:
+            linear-gradient(135deg,rgba(18,147,145,.22),rgba(225,187,74,.08)) !important;
+          border-color:rgba(52,174,170,.30) !important;
+          box-shadow:none !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupIcon,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupIcon {
+          background:rgba(225,187,74,.075) !important;
+          border-color:rgba(225,187,74,.20) !important;
+          color:#f1cb5c !important;
+        }
+
+        .ncsAdminShell .ncsMenuGroupCount,
+        .ncsAdminShell .ncsSidebar:not(.ncsSidebarCollapsed) .ncsMenuGroupCount {
+          background:rgba(255,255,255,.055) !important;
+          border-color:rgba(255,255,255,.09) !important;
+          color:rgba(255,255,255,.70) !important;
+        }
+
+        .ncsAdminShell .ncsMenuItem {
+          color:rgba(255,255,255,.78) !important;
+        }
+
+        .ncsAdminShell .ncsMenuItem:hover {
+          background:rgba(255,255,255,.055) !important;
+          color:#fff !important;
+        }
+
+        .ncsAdminShell .ncsActiveMenuItem {
+          background:
+            linear-gradient(90deg,rgba(17,146,145,.27),rgba(225,187,74,.09)) !important;
+          border-color:rgba(225,187,74,.18) !important;
+          box-shadow:inset 3px 0 0 #e1bb4a !important;
+          color:#fff !important;
+        }
+
+        .ncsAdminShell .ncsSidebarCollapseButton {
+          background:linear-gradient(180deg,#efd16b,#dcae35) !important;
+          border-color:#dbb13b !important;
+          color:#073b4d !important;
+          box-shadow:4px 5px 14px rgba(2,38,49,.18) !important;
+        }
+
+        .ncsAdminShell .ncsAdminIdentity {
+          background:rgba(255,255,255,.045) !important;
+          border-color:rgba(255,255,255,.10) !important;
+        }
+
+        .ncsAdminShell .ncsAdminAvatar {
+          background:linear-gradient(145deg,#f0ce65,#dcae35) !important;
+          color:#073a4c !important;
+          border-color:rgba(241,210,105,.72) !important;
+        }
+
+        .ncsAdminShell .ncsViewStoreButton {
+          background:rgba(15,133,132,.14) !important;
+          border-color:rgba(61,176,171,.20) !important;
+          color:#ddf7f4 !important;
+        }
+
+        .ncsAdminShell .ncsLogoutButton {
+          background:rgba(255,255,255,.035) !important;
+          border-color:rgba(255,255,255,.09) !important;
+          color:rgba(255,255,255,.76) !important;
+        }
+
+        .ncsAdminShell .ncsCollapsedGroupButtonActive,
+        .ncsAdminShell .ncsCollapsedGroupButtonFlyoutOpen {
+          background:
+            radial-gradient(circle,rgba(18,146,145,.30),rgba(255,255,255,.05)) !important;
+          border-color:rgba(225,187,74,.36) !important;
+          color:#fff !important;
+          box-shadow:0 0 0 4px rgba(225,187,74,.055),0 10px 24px rgba(2,56,66,.18) !important;
+        }
+
+        @media(max-width:900px){
+          .ncsAdminShell .ncsSidebar {
+            background:linear-gradient(180deg,#06263f,#083d50 45%,#0a6770 78%,#0d7b76) !important;
           }
         }
 

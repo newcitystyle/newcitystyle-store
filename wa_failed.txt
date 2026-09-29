@@ -1,0 +1,35 @@
+﻿node.exe : Vercel CLI 59.25.0 (Node.js 24.18.0)
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Vercel CLI 59.25.0 (Node.js 24.18.0):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Retrieving projectΓÇª
+Fetching logs...
+TIME         HOST                    LEVEL                                 
+15:44:32.75  www.newcitystyle.store  error  ╬╗ POST /api/whatsapp/webhook   
+WHATSAPP MESSAGE FAILED: {   "whatsappBusinessAccountId": "716679998122955",   "phoneNumberId": "888123224378382",   "displayPhoneNumber": 
+"919010014001",   "messageId": "wamid.HBgMOTE3MzM3NTY0NDU3FQIAERgUQ0VCQTkxRkU1RDc4MkMyRjc5RDYA",   "status": "failed",   "recipient": 
+"********4457",   "timestamp": "1790417671",   "conversationId": null,   "conversationCategory": null,   "billable": null,   
+"pricingCategory": null,   "errorCode": 131053,   "errorTitle": "Media upload error",   "errorMessage": "Media upload error",   
+"errorDetails": "WebP image uploads are not currently supported." }
+WhatsApp delivery status saved: 1 event(s).
+
+15:44:32.58  www.newcitystyle.store  error  ╬╗ POST /api/whatsapp/webhook   
+WHATSAPP MESSAGE FAILED: {   "whatsappBusinessAccountId": "716679998122955",   "phoneNumberId": "888123224378382",   "displayPhoneNumber": 
+"919010014001",   "messageId": "wamid.HBgMOTE3MzM3NTY0NDU3FQIAERgUQ0U2MERBQzAwQjE0RkEzQjY2NzUA",   "status": "failed",   "recipient": 
+"********4457",   "timestamp": "1790417672",   "conversationId": null,   "conversationCategory": null,   "billable": null,   
+"pricingCategory": null,   "errorCode": 131053,   "errorTitle": "Media upload error",   "errorMessage": "Media upload error",   
+"errorDetails": "WebP image uploads are not currently supported." }
+WhatsApp delivery status saved: 1 event(s).
+
+15:44:32.51  www.newcitystyle.store  error  ╬╗ POST /api/whatsapp/webhook   
+WHATSAPP MESSAGE FAILED: {   "whatsappBusinessAccountId": "716679998122955",   "phoneNumberId": "888123224378382",   "displayPhoneNumber": 
+"919010014001",   "messageId": "wamid.HBgMOTE3MzM3NTY0NDU3FQIAERgUQ0VEMjc3OEVFRUUxMUE5RjA2NzUA",   "status": "failed",   "recipient": 
+"********4457",   "timestamp": "1790417671",   "conversationId": null,   "conversationCategory": null,   "billable": null,   
+"pricingCategory": null,   "errorCode": 131053,   "errorTitle": "Media upload error",   "errorMessage": "Media upload error",   
+"errorDetails": "WebP image uploads are not currently supported." }
+WhatsApp delivery status saved: 1 event(s).
+
+Fetched 3 logs for newcitystyle-store/new-city-style

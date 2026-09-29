@@ -611,7 +611,9 @@ export default function ProductPage() {
 
   const [selectedImage, setSelectedImage] = useState("");
   const [selectedSize, setSelectedSize] = useState("");
+  const [selectedColor, setSelectedColor] = useState("");
   const [quantity, setQuantity] = useState(1);
+  const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
 
   const [designUnits, setDesignUnits] = useState<ProductDesignUnit[]>([]);
   const [variantRefs, setVariantRefs] = useState<ProductVariantRef[]>([]);
@@ -804,6 +806,36 @@ export default function ProductPage() {
       );
 
       setProduct(loadedProduct);
+
+      try {
+        let relatedQuery = supabase
+          .from("products")
+          .select("*")
+          .eq("sell_online", true)
+          .eq("is_active", true)
+          .gt("stock", 0)
+          .gt("online_stock_limit", 0)
+          .neq("id", loadedProduct.id)
+          .order("id", { ascending: false })
+          .limit(8);
+
+        if (loadedProduct.category) {
+          relatedQuery = relatedQuery.eq("category", loadedProduct.category);
+        }
+
+        const { data: relatedData, error: relatedError } = await relatedQuery;
+
+        if (relatedError) {
+          console.info("Unable to load related products:", relatedError.message);
+          setRelatedProducts([]);
+        } else {
+          setRelatedProducts((relatedData || []) as Product[]);
+        }
+      } catch (relatedLoadError) {
+        console.info("Related products fallback:", relatedLoadError);
+        setRelatedProducts([]);
+      }
+
       setVariantRefs(cleanVariantRefs);
       setDesignUnits(cleanDesignUnits);
       setDesignVariantLinks(cleanDesignVariantLinks);
@@ -916,6 +948,7 @@ export default function ProductPage() {
     } catch (error) {
       console.error("Load product error:", error);
       setProduct(null);
+      setRelatedProducts([]);
       setVariantRefs([]);
       setDesignUnits([]);
       setDesignVariantLinks([]);
@@ -1016,6 +1049,28 @@ export default function ProductPage() {
     variantRefs,
   ]);
   const tags = useMemo(() => (product ? parseListField(product.tags) : []), [product]);
+  const colors = useMemo(() => {
+    if (!product) return [];
+    return Array.from(
+      new Set([
+        ...parseListField(product.colors),
+        ...(typeof product.color === "string" && product.color.trim()
+          ? [product.color.trim()]
+          : []),
+      ])
+    );
+  }, [product]);
+
+  useEffect(() => {
+    if (!colors.length) {
+      setSelectedColor("");
+      return;
+    }
+
+    if (!selectedColor || !colors.includes(selectedColor)) {
+      setSelectedColor(colors[0]);
+    }
+  }, [colors, selectedColor]);
 
   useEffect(() => {
     if (designMode) {
@@ -1205,7 +1260,7 @@ export default function ProductPage() {
           price,
           quantity,
           size: selectedSize,
-          color: null,
+          color: selectedColor || null,
           design_unit_id:
             designMode && selectedDesignId
               ? selectedDesignId
@@ -1497,6 +1552,34 @@ export default function ProductPage() {
     }
   }
 
+  function askOnWhatsApp() {
+    if (!product) return;
+
+    const productTitle = getProductName(product);
+    const url = new URL(window.location.href);
+
+    if (designMode && selectedDesignId) {
+      url.searchParams.set("design", String(selectedDesignId));
+    }
+
+    const details = [
+      `Hi NEW CITY STYLE, I need help with this product: ${productTitle}`,
+      selectedDesign?.designName ? `Design: ${selectedDesign.designName}` : "",
+      selectedSize ? `Size: ${selectedSize}` : "",
+      selectedColor ? `Colour: ${selectedColor}` : "",
+      `Price: ${formatCurrency(price)}`,
+      `Link: ${url.toString()}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    window.open(
+      `https://wa.me/919010014001?text=${encodeURIComponent(details)}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }
+
   function handleZoomMove(event: MouseEvent<HTMLDivElement>) {
     const bounds = event.currentTarget.getBoundingClientRect();
     const x = ((event.clientX - bounds.left) / bounds.width) * 100;
@@ -1568,13 +1651,7 @@ export default function ProductPage() {
   const highlights =
     Array.isArray(product.key_features) && product.key_features.length > 0
       ? product.key_features
-      : [
-          "Premium Quality Fabric",
-          "Comfort Fit",
-          "Skin Friendly Material",
-          "Long Lasting Stitching",
-          "Easy Wash",
-        ];
+      : [];
 
   const storedSpecifications =
     Array.isArray(product.technical_specifications)
@@ -1608,7 +1685,7 @@ export default function ProductPage() {
   const lifestyleItems = parseLifestyleItems(product);
   const shippingReturns =
     product.shipping_returns ||
-    "Free delivery on eligible orders. Products can be returned within 7 days in original, unused condition with tags and packaging intact.";
+    "Shipping, delivery and return eligibility are confirmed according to the current NEW CITY STYLE checkout and store policy.";
 
   return (
     <main className="productPage">
@@ -1726,9 +1803,15 @@ export default function ProductPage() {
             <h1>{productName}</h1>
 
             <div className="ratingRow">
-              <span className="ratingBadge">★ 4.8</span>
-              <span>125 Reviews</span>
-              <span className="verified">Verified Product</span>
+              <span className="ratingBadge">LIVE</span>
+              <span>Online catalogue product</span>
+              <button
+                type="button"
+                className="reviewsJump"
+                onClick={() => setActiveDetailsTab("reviews")}
+              >
+                View Customer Reviews
+              </button>
             </div>
 
             <div className="priceBlock">
@@ -1833,6 +1916,31 @@ export default function ProductPage() {
               </div>
             )}
 
+            {colors.length > 0 && (
+              <div className="choiceSection">
+                <div className="choiceHeader">
+                  <h3>Select Colour</h3>
+                  {selectedColor && (
+                    <span className="selectedDesignName">{selectedColor}</span>
+                  )}
+                </div>
+
+                <div className="choiceGrid colourGrid">
+                  {colors.map((color) => (
+                    <button
+                      type="button"
+                      key={color}
+                      className={selectedColor === color ? "choiceActive" : ""}
+                      onClick={() => setSelectedColor(color)}
+                      aria-pressed={selectedColor === color}
+                    >
+                      {color}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="quantitySection">
               <h3>Quantity</h3>
 
@@ -1879,21 +1987,12 @@ export default function ProductPage() {
 
             <div className="stockCard">
               <div>
-                <span>
-                  {designMode ? "Unique Designs Available" : "Stock Available"}
-                </span>
-                <strong>{stock}</strong>
+                <span>Online Availability</span>
+                <strong>{stock > 0 ? "Available" : "Unavailable"}</strong>
               </div>
 
               <div className="stockBar">
-                <span
-                  style={{
-                    width: `${Math.min(
-                      100,
-                      Math.max(8, stock * 4)
-                    )}%`,
-                  }}
-                />
+                <span style={{ width: stock > 0 ? "100%" : "0%" }} />
               </div>
             </div>
 
@@ -1917,7 +2016,7 @@ export default function ProductPage() {
               </button>
             </div>
 
-            <div className="secondaryActions">
+            <div className="secondaryActions secondaryActionsThree">
               <button
                 type="button"
                 onClick={addToWishlist}
@@ -1925,11 +2024,15 @@ export default function ProductPage() {
               >
                 {addingToWishlist
                   ? "Adding..."
-                  : "♡ Add to Wishlist"}
+                  : "♡ Wishlist"}
               </button>
 
               <button type="button" onClick={shareProduct}>
-                ↗ Share Product
+                ↗ Share
+              </button>
+
+              <button type="button" className="whatsappAction" onClick={askOnWhatsApp}>
+                ☏ WhatsApp
               </button>
             </div>
 
@@ -1939,32 +2042,32 @@ export default function ProductPage() {
                 <div>
                   <span>🚚</span>
                   <p>
-                    <strong>Free Delivery</strong>
-                    <small>2–5 business days</small>
+                    <strong>Delivery Details</strong>
+                    <small>Confirmed during checkout</small>
                   </p>
                 </div>
 
                 <div>
                   <span>↺</span>
                   <p>
-                    <strong>Easy Returns</strong>
-                    <small>7-day return policy</small>
+                    <strong>Returns</strong>
+                    <small>Current store policy applies</small>
                   </p>
                 </div>
 
                 <div>
                   <span>🔒</span>
                   <p>
-                    <strong>Secure Payment</strong>
-                    <small>Trusted checkout</small>
+                    <strong>Secure Checkout</strong>
+                    <small>Supported payment methods</small>
                   </p>
                 </div>
 
                 <div>
-                  <span>✓</span>
+                  <span>☏</span>
                   <p>
-                    <strong>Genuine Product</strong>
-                    <small>Quality checked</small>
+                    <strong>Shopping Support</strong>
+                    <small>WhatsApp NEW CITY STYLE</small>
                   </p>
                 </div>
               </div>
@@ -2108,10 +2211,10 @@ export default function ProductPage() {
                 <h3>Shipping & Returns</h3>
                 <p>{shippingReturns}</p>
                 <div className="shippingPoints">
-                  <span>🚚 Fast delivery across India</span>
-                  <span>↺ Easy 7-day returns</span>
-                  <span>🔒 Secure checkout</span>
-                  <span>✓ Quality checked before dispatch</span>
+                  <span>🚚 Delivery details shown during checkout</span>
+                  <span>↺ Returns follow the current store policy</span>
+                  <span>🔒 Secure checkout flow</span>
+                  <span>☏ WhatsApp shopping support</span>
                 </div>
               </div>
             )}
@@ -2125,25 +2228,112 @@ export default function ProductPage() {
           </div>
         </section>
 
+        {relatedProducts.length > 0 && (
+          <section className="relatedSection">
+            <div className="relatedHeading">
+              <div>
+                <span>CONTINUE DISCOVERING</span>
+                <h2>You May Also Like</h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  router.push(
+                    `/search?q=${encodeURIComponent(
+                      product.category || product.subcategory || "fashion"
+                    )}`
+                  )
+                }
+              >
+                View More →
+              </button>
+            </div>
+
+            <div className="relatedRail">
+              {relatedProducts.map((item) => {
+                const relatedImages = parseImages(item);
+                const relatedImage = relatedImages[0] || "";
+                const relatedPrice = Number(item.price ?? 0);
+                const relatedMrp = Math.max(
+                  relatedPrice,
+                  Number(item.mrp ?? relatedPrice)
+                );
+
+                return (
+                  <article
+                    key={`related-${item.id}`}
+                    onClick={() => router.push(`/product/${item.id}`)}
+                  >
+                    <div className="relatedImage">
+                      {relatedImage ? (
+                        <img src={relatedImage} alt={getProductName(item)} />
+                      ) : (
+                        <div>NCS</div>
+                      )}
+                    </div>
+
+                    <div className="relatedInfo">
+                      <span>{item.category || "NEW CITY STYLE"}</span>
+                      <h3>{getProductName(item)}</h3>
+                      <div>
+                        <strong>{formatCurrency(relatedPrice)}</strong>
+                        {relatedMrp > relatedPrice && (
+                          <del>{formatCurrency(relatedMrp)}</del>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         <section className="trustGrid">
           <article>
-            <span>🚚</span>
-            <h3>Fast Delivery</h3>
-            <p>Free shipping across India with quick delivery.</p>
+            <span>◉</span>
+            <h3>Live Catalogue</h3>
+            <p>Availability and product choices come from the current online catalogue.</p>
           </article>
 
           <article>
             <span>🔒</span>
-            <h3>Secure Payment</h3>
-            <p>100% secure payment with trusted payment gateways.</p>
+            <h3>Secure Checkout</h3>
+            <p>Use the supported payment options available during checkout.</p>
           </article>
 
           <article>
-            <span>💯</span>
-            <h3>Quality Assurance</h3>
-            <p>Every product is carefully checked before dispatch.</p>
+            <span>☏</span>
+            <h3>Direct Support</h3>
+            <p>Ask NEW CITY STYLE on WhatsApp before you place your order.</p>
           </article>
         </section>
+      </div>
+
+      <div className="mobileBuyBar">
+        <div>
+          <span>{selectedDesign?.designName || productName}</span>
+          <strong>{formatCurrency(price)}</strong>
+        </div>
+
+        <button
+          type="button"
+          className="mobileCartButton"
+          onClick={() => addToCart(true)}
+          disabled={addingToCart || stock <= 0 || (designMode && !selectedDesign)}
+        >
+          {addingToCart ? "Adding..." : "Add to Cart"}
+        </button>
+
+        <button
+          type="button"
+          className="mobileBuyButton"
+          onClick={buyNow}
+          disabled={addingToCart || stock <= 0 || (designMode && !selectedDesign)}
+        >
+          Buy Now
+        </button>
       </div>
 
       {fullscreenOpen && selectedImage && (
@@ -3295,6 +3485,424 @@ export default function ProductPage() {
           .detailsGrid,
           .trustGrid {
             grid-template-columns: 1fr;
+          }
+        }
+
+
+        /* STAGE 10 • PREMIUM PRODUCT EXPERIENCE */
+        .productPage {
+          position: relative;
+          overflow: hidden;
+          background:
+            radial-gradient(circle at 92% 3%, rgba(212,175,55,.10), transparent 25%),
+            radial-gradient(circle at 3% 88%, rgba(10,46,115,.06), transparent 25%),
+            #f7f9fc;
+        }
+
+        .pageShell {
+          max-width: 1500px;
+        }
+
+        .backButton {
+          min-height: 36px;
+          padding: 0 12px;
+          border: 1px solid rgba(10,46,115,.09);
+          border-radius: 9px;
+          background: #ffffff;
+          font-size: 10px;
+          box-shadow: 0 6px 18px rgba(16,24,40,.04);
+        }
+
+        .productHero {
+          grid-template-columns: minmax(0, 1.12fr) minmax(420px, .88fr);
+          gap: 22px;
+        }
+
+        .galleryColumn,
+        .infoColumn {
+          border-radius: 22px;
+          box-shadow: 0 18px 45px rgba(16,24,40,.07);
+        }
+
+        .galleryColumn {
+          top: 92px;
+          padding: 16px;
+        }
+
+        .mainImageFrame {
+          min-height: 690px;
+          background:
+            radial-gradient(circle at 50% 12%, #ffffff, #f3f6fb 75%);
+        }
+
+        .mainImage {
+          height: 690px;
+        }
+
+        .infoColumn {
+          padding: 28px;
+        }
+
+        .topBadges {
+          flex-wrap: wrap;
+          gap: 7px;
+        }
+
+        .premiumBadge,
+        .newBadge,
+        .featuredBadge,
+        .saleBadge,
+        .discountBadge {
+          padding: 6px 8px;
+          font-size: 8px;
+        }
+
+        .infoColumn h1 {
+          font-size: clamp(34px, 4vw, 54px);
+          letter-spacing: -1.6px;
+        }
+
+        .ratingRow {
+          padding: 9px 10px;
+          border: 1px solid rgba(10,46,115,.07);
+          border-radius: 10px;
+          background: #f8fafc;
+          font-size: 9px;
+        }
+
+        .ratingBadge {
+          background: #067647;
+          font-size: 7px;
+          letter-spacing: .7px;
+        }
+
+        .reviewsJump {
+          margin-left: auto;
+          border: 0;
+          background: transparent;
+          color: #0a2e73;
+          font-size: 8px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .priceBlock > strong {
+          font-size: 42px;
+        }
+
+        .description {
+          font-size: 13px;
+          line-height: 1.65;
+        }
+
+        .productMetaGrid > div {
+          background: #f8fafc;
+        }
+
+        .choiceGrid button {
+          min-height: 42px;
+          font-size: 10px;
+        }
+
+        .colourGrid button {
+          min-width: 72px;
+        }
+
+        .stockCard {
+          background: #f8fafc;
+        }
+
+        .stockCard strong {
+          color: #067647;
+          font-size: 12px;
+        }
+
+        .secondaryActionsThree {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .whatsappAction {
+          border-color: #1f9f59 !important;
+          background: #effaf4 !important;
+          color: #067647 !important;
+        }
+
+        .deliveryCard {
+          background: linear-gradient(180deg, #fff, #f8fafc);
+        }
+
+        .relatedSection {
+          margin-top: 28px;
+          padding: 24px;
+          border: 1px solid rgba(10,46,115,.08);
+          border-radius: 20px;
+          background: #fff;
+          box-shadow: 0 14px 36px rgba(16,24,40,.06);
+        }
+
+        .relatedHeading {
+          display: flex;
+          align-items: end;
+          justify-content: space-between;
+          gap: 16px;
+          margin-bottom: 16px;
+        }
+
+        .relatedHeading span {
+          color: #b18b15;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 1.2px;
+        }
+
+        .relatedHeading h2 {
+          margin: 5px 0 0;
+          color: #0a2e73;
+          font-size: 28px;
+        }
+
+        .relatedHeading button {
+          min-height: 38px;
+          padding: 0 12px;
+          border: 1px solid #d4af37;
+          border-radius: 9px;
+          background: #fffaf0;
+          color: #0a2e73;
+          font-size: 8px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .relatedRail {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 11px;
+        }
+
+        .relatedRail article {
+          overflow: hidden;
+          border: 1px solid rgba(10,46,115,.07);
+          border-radius: 14px;
+          background: #fff;
+          cursor: pointer;
+          transition: transform .2s ease, box-shadow .2s ease;
+        }
+
+        .relatedRail article:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 14px 30px rgba(16,24,40,.09);
+        }
+
+        .relatedImage {
+          aspect-ratio: 4 / 5;
+          overflow: hidden;
+          background: #eef2f7;
+        }
+
+        .relatedImage img {
+          width: 100%;
+          height: 100%;
+          display: block;
+          object-fit: cover;
+        }
+
+        .relatedImage > div {
+          width: 100%;
+          height: 100%;
+          display: grid;
+          place-items: center;
+          background: #0a2e73;
+          color: #d4af37;
+          font-weight: 950;
+        }
+
+        .relatedInfo {
+          padding: 11px;
+        }
+
+        .relatedInfo > span {
+          color: #b18b15;
+          font-size: 6px;
+          font-weight: 950;
+          letter-spacing: .8px;
+          text-transform: uppercase;
+        }
+
+        .relatedInfo h3 {
+          min-height: 34px;
+          display: -webkit-box;
+          overflow: hidden;
+          margin: 5px 0 0;
+          color: #0a2e73;
+          font-size: 11px;
+          line-height: 1.35;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+        }
+
+        .relatedInfo > div {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 8px;
+        }
+
+        .relatedInfo strong {
+          color: #b18b15;
+          font-size: 14px;
+        }
+
+        .relatedInfo del {
+          color: #98a2b3;
+          font-size: 8px;
+        }
+
+        .mobileBuyBar {
+          display: none;
+        }
+
+        @media (max-width: 1100px) {
+          .relatedRail {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 760px) {
+          .productPage {
+            padding-bottom: 104px;
+          }
+
+          .galleryColumn {
+            position: static;
+          }
+
+          .mainImageFrame,
+          .mainImage {
+            min-height: 0;
+            height: auto;
+            aspect-ratio: 4 / 5;
+          }
+
+          .mainImage {
+            object-fit: contain;
+          }
+
+          .infoColumn h1 {
+            font-size: 30px;
+          }
+
+          .ratingRow {
+            align-items: flex-start;
+          }
+
+          .reviewsJump {
+            width: 100%;
+            margin-left: 0;
+            padding: 0;
+            text-align: left;
+          }
+
+          .secondaryActionsThree {
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 7px;
+          }
+
+          .secondaryActionsThree button {
+            min-height: 44px;
+            padding: 0 6px;
+            font-size: 9px;
+          }
+
+          .relatedSection {
+            padding: 16px 10px;
+          }
+
+          .relatedHeading {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .relatedRail {
+            display: flex;
+            overflow-x: auto;
+            gap: 9px;
+            margin-right: -10px;
+            padding-right: 10px;
+            scroll-snap-type: x mandatory;
+            scrollbar-width: none;
+          }
+
+          .relatedRail::-webkit-scrollbar {
+            display: none;
+          }
+
+          .relatedRail article {
+            min-width: 58vw;
+            flex: 0 0 58vw;
+            scroll-snap-align: start;
+          }
+
+          .mobileBuyBar {
+            position: fixed;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 5000;
+            display: grid;
+            grid-template-columns: minmax(90px, 1fr) 1fr 1fr;
+            align-items: center;
+            gap: 7px;
+            padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+            border-top: 1px solid rgba(10,46,115,.09);
+            background: rgba(255,255,255,.96);
+            box-shadow: 0 -12px 30px rgba(16,24,40,.12);
+            backdrop-filter: blur(14px);
+          }
+
+          .mobileBuyBar > div {
+            min-width: 0;
+          }
+
+          .mobileBuyBar span,
+          .mobileBuyBar strong {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .mobileBuyBar span {
+            color: #667085;
+            font-size: 7px;
+          }
+
+          .mobileBuyBar strong {
+            margin-top: 2px;
+            color: #b18b15;
+            font-size: 14px;
+          }
+
+          .mobileBuyBar button {
+            min-height: 43px;
+            border-radius: 9px;
+            font-size: 8px;
+            font-weight: 900;
+          }
+
+          .mobileCartButton {
+            border: 1px solid #0a2e73;
+            background: #fff;
+            color: #0a2e73;
+          }
+
+          .mobileBuyButton {
+            border: 1px solid #d4af37;
+            background: #0a2e73;
+            color: #fff;
+          }
+
+          .mobileBuyBar button:disabled {
+            opacity: .5;
           }
         }
 

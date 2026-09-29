@@ -1,4 +1,4 @@
-const NCS_CACHE_VERSION = "ncs-pos-pwa-v3-offline-startup";
+const NCS_CACHE_VERSION = "ncs-pos-pwa-v4-offline-vault";
 const NCS_STATIC_CACHE = `${NCS_CACHE_VERSION}-static`;
 const NCS_PAGE_CACHE = `${NCS_CACHE_VERSION}-pages`;
 
@@ -110,6 +110,74 @@ async function cacheHtmlPage(
   return true;
 }
 
+
+async function cacheDocumentAssets(response) {
+  if (!response?.ok || !isHtmlResponse(response)) {
+    return;
+  }
+
+  try {
+    const html = await response.clone().text();
+    const urls = new Set();
+
+    const pattern =
+      /(?:src|href)=["']([^"']+)["']/gi;
+
+    let match;
+
+    while ((match = pattern.exec(html)) !== null) {
+      const raw = match[1];
+
+      if (!raw || raw.startsWith("data:")) {
+        continue;
+      }
+
+      const assetUrl = new URL(raw, self.location.origin);
+
+      if (assetUrl.origin !== self.location.origin) {
+        continue;
+      }
+
+      if (
+        assetUrl.pathname.startsWith("/_next/static/") ||
+        assetUrl.pathname.startsWith("/icons/") ||
+        assetUrl.pathname.startsWith("/images/") ||
+        assetUrl.pathname.startsWith("/animations/")
+      ) {
+        urls.add(assetUrl.href);
+      }
+    }
+
+    if (urls.size === 0) {
+      return;
+    }
+
+    const cache = await caches.open(NCS_STATIC_CACHE);
+
+    await Promise.all(
+      Array.from(urls).map(async (assetUrl) => {
+        try {
+          const request = new Request(assetUrl, {
+            method: "GET",
+            credentials: "same-origin",
+            cache: "reload",
+          });
+
+          const response = await fetch(request);
+
+          if (response.ok) {
+            await cache.put(request, response.clone());
+          }
+        } catch {
+          // One asset failure must not break the offline vault.
+        }
+      }),
+    );
+  } catch {
+    // HTML parsing/cache warm-up is best effort.
+  }
+}
+
 async function fetchAndCachePage(
   cache,
   path,
@@ -163,7 +231,7 @@ self.addEventListener("install", (event) => {
               new URL(url, self.location.origin).pathname,
             );
           } catch {
-            // One URL failed అయినా install ఆగదు.
+            // One URL failed అయినా service worker install ఆగకూడదు.
           }
         }
       })
@@ -209,8 +277,9 @@ self.addEventListener("fetch", (event) => {
   }
 
   /*
-   * Next.js RSC / Flight requestsను HTML cacheలో
-   * ఎప్పుడూ save చేయకూడదు.
+   * Next.js App Router RSC / Flight requests must never be stored
+   * in the HTML page cache. Returning an RSC payload as a document
+   * causes raw "$react.fragment" text to appear in the browser.
    */
   if (isNextRscRequest(request, url)) {
     event.respondWith(
@@ -288,6 +357,10 @@ self.addEventListener("fetch", (event) => {
             navigationKey,
             networkResponse,
             url.pathname,
+          );
+
+          await cacheDocumentAssets(
+            networkResponse,
           );
 
           if (isPosPage(url)) {
@@ -469,24 +542,83 @@ self.addEventListener("message", (event) => {
       caches
         .open(NCS_PAGE_CACHE)
         .then(async (cache) => {
+          let loginReady = false;
+          let posReady = false;
+
           try {
-            await fetchAndCachePage(
-              cache,
-              "/admin/login",
-              "/admin/login",
+            const loginResponse =
+              await fetchHtmlNavigation(
+                new Request("/admin/login", {
+                  method: "GET",
+                  credentials: "include",
+                  cache: "no-store",
+                  headers: {
+                    Accept: "text/html",
+                  },
+                }),
+              );
+
+            loginReady =
+              await cacheHtmlPage(
+                cache,
+                "/admin/login",
+                loginResponse,
+                "/admin/login",
+              );
+
+            await cacheDocumentAssets(
+              loginResponse,
             );
           } catch {
-            // Existing cached login page remains available.
+            loginReady =
+              Boolean(
+                await cache.match(
+                  "/admin/login",
+                ),
+              );
           }
 
           try {
-            await fetchAndCachePage(
-              cache,
-              "/admin/pos",
-              "/admin/pos",
+            const posResponse =
+              await fetchHtmlNavigation(
+                new Request("/admin/pos", {
+                  method: "GET",
+                  credentials: "include",
+                  cache: "no-store",
+                  headers: {
+                    Accept: "text/html",
+                  },
+                }),
+              );
+
+            posReady =
+              await cacheHtmlPage(
+                cache,
+                "/admin/pos",
+                posResponse,
+                "/admin/pos",
+              );
+
+            await cacheDocumentAssets(
+              posResponse,
             );
           } catch {
-            // Existing cached POS page remains available.
+            posReady =
+              Boolean(
+                await cache.match(
+                  "/admin/pos",
+                ),
+              );
+          }
+
+          try {
+            event.source?.postMessage({
+              type: "OFFLINE_SHELL_STATUS",
+              loginReady,
+              posReady,
+            });
+          } catch {
+            // Client may already have navigated away.
           }
         }),
     );

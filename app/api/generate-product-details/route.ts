@@ -7,7 +7,7 @@ const GEMINI_MODEL = "gemini-3.6-flash";
 const GEMINI_DESIGN_NAME_MODEL = "gemini-3.5-flash-lite";
 const OPENROUTER_MODEL = "openrouter/free";
 const CLOUDFLARE_MODEL =
-  "@cf/meta/llama-3.2-11b-vision-instruct";
+  "@cf/moondream/moondream3.1-9B-A2B";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -123,6 +123,9 @@ type CloudflareResponse = {
     | {
         response?: string;
         description?: string;
+        answer?: string;
+        caption?: string;
+        finish_reason?: string;
       };
   errors?: Array<{
     code?: number;
@@ -773,6 +776,14 @@ function getCloudflareText(
     typeof response.result === "object"
   ) {
     return (
+      cleanText(
+        response.result.answer,
+        20000
+      ) ||
+      cleanText(
+        response.result.caption,
+        20000
+      ) ||
       cleanText(
         response.result.response,
         20000
@@ -1704,36 +1715,42 @@ async function generateWithCloudflare(
     `data:${mimeType};base64,` +
     imageBuffer.toString("base64");
 
-  const requestBody = {
-    messages: [
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
+  /*
+   * NCS BACKUP AI 2036
+   *
+   * Cloudflare's older Llama 3.2 vision fallback was timing out in
+   * production. Moondream 3.1 is a current Cloudflare-hosted fast
+   * image-to-text / structured-output model.
+   *
+   * Its REST schema is deliberately simple:
+   * task=query + image + question.
+   */
+  const requestBody: Record<string, unknown> = {
+    task: "query",
     image: imageDataUrl,
-    max_tokens: 4096,
-    temperature: 0.2,
+    question: prompt,
+    reasoning: false,
+    temperature: 0.1,
+    max_tokens: 2400,
+    stream: false,
   };
 
   let response: Response;
   let data: CloudflareResponse;
 
   try {
-    const firstAttempt =
+    const attempt =
       await callCloudflare(
         accountId,
         apiToken,
         requestBody,
-        14_000
+        20_000
       );
 
-    response = firstAttempt.response;
-    data = firstAttempt.data;
+    response = attempt.response;
+    data = attempt.data;
   } catch (error) {
-    if (
-      error instanceof AiProviderError
-    ) {
+    if (error instanceof AiProviderError) {
       throw error;
     }
 
@@ -1743,75 +1760,14 @@ async function generateWithCloudflare(
         : "Cloudflare AI request failed.";
 
     throw new AiProviderError(
-      message
-        .toLowerCase()
-        .includes("timeout")
-        ? "Cloudflare AI request timed out."
-        : "Cloudflare AI is temporarily unavailable.",
+      message.toLowerCase().includes("timeout") ||
+      message.toLowerCase().includes("timed out")
+        ? "Cloudflare fast vision backup timed out."
+        : "Cloudflare fast vision backup is temporarily unavailable.",
       504,
       "cloudflare",
       false
     );
-  }
-
-  if (!response.ok || data.success === false) {
-    const firstMessage =
-      getCloudflareErrorMessage(data);
-
-    if (
-      isCloudflareLicenseError(
-        firstMessage
-      )
-    ) {
-      try {
-        const agreement =
-          await callCloudflare(
-            accountId,
-            apiToken,
-            { prompt: "agree" },
-            5_000
-          );
-
-        if (
-          !agreement.response.ok ||
-          agreement.data.success === false
-        ) {
-          throw new AiProviderError(
-            getCloudflareErrorMessage(
-              agreement.data
-            ),
-            agreement.response.status ||
-              502,
-            "cloudflare",
-            false
-          );
-        }
-
-        const retry =
-          await callCloudflare(
-            accountId,
-            apiToken,
-            requestBody,
-            12_000
-          );
-
-        response = retry.response;
-        data = retry.data;
-      } catch (error) {
-        if (
-          error instanceof AiProviderError
-        ) {
-          throw error;
-        }
-
-        throw new AiProviderError(
-          "Cloudflare AI model licence could not be activated.",
-          502,
-          "cloudflare",
-          false
-        );
-      }
-    }
   }
 
   if (!response.ok || data.success === false) {
@@ -1828,7 +1784,7 @@ async function generateWithCloudflare(
 
   if (!generatedText) {
     throw new AiProviderError(
-      "Cloudflare AI returned no product details.",
+      "Cloudflare fast vision backup returned no product details.",
       502,
       "cloudflare",
       false
@@ -1842,12 +1798,12 @@ async function generateWithCloudflare(
       extractJsonObject(generatedText);
   } catch {
     console.error(
-      "Cloudflare returned invalid JSON:",
+      "Cloudflare Moondream returned invalid JSON:",
       generatedText
     );
 
     throw new AiProviderError(
-      "Cloudflare AI returned invalid product data.",
+      "Cloudflare fast vision backup returned invalid product data.",
       502,
       "cloudflare",
       false
@@ -1857,11 +1813,9 @@ async function generateWithCloudflare(
   const details =
     normalizeDetails(parsed);
 
-  if (
-    !validateGeneratedDetails(details)
-  ) {
+  if (!validateGeneratedDetails(details)) {
     throw new AiProviderError(
-      "Cloudflare AI could not identify enough product information.",
+      "Cloudflare fast vision backup could not identify enough product information.",
       422,
       "cloudflare",
       false
@@ -2091,6 +2045,7 @@ export async function POST(
     }
 
     let geminiErrorMessage = "";
+    let geminiLiteErrorMessage = "";
     let openRouterErrorMessage = "";
 
     try {
@@ -2155,6 +2110,53 @@ export async function POST(
       }
     }
 
+    /*
+     * FALLBACK 1 • GEMINI FLASH-LITE
+     *
+     * The Product Studio already uses this model for design-name /
+     * common-details work. Try it once before leaving Google AI.
+     */
+    try {
+      const liteDetails =
+        await generateCommonDetailsWithGeminiLite(
+          imageBuffer,
+          mimeType,
+          productPrompt
+        );
+
+      return NextResponse.json({
+        details: liteDetails,
+        provider: "gemini",
+        model: GEMINI_DESIGN_NAME_MODEL,
+        usedFallback: true,
+        fallbackLevel: 3,
+        contextUsed: Boolean(
+          productContext.name ||
+          productContext.brand ||
+          productContext.category ||
+          productContext.size ||
+          productContext.colour
+        ),
+        message:
+          "Primary Gemini quota was unavailable, so product details were generated with Gemini Flash-Lite backup.",
+      });
+    } catch (error) {
+      if (error instanceof AiProviderError) {
+        console.error(
+          "Gemini Flash-Lite fallback error:",
+          error.message
+        );
+        geminiLiteErrorMessage = error.message;
+      } else {
+        console.error(
+          "Unexpected Gemini Flash-Lite fallback error:",
+          error
+        );
+        geminiLiteErrorMessage =
+          "Gemini Flash-Lite failed unexpectedly.";
+      }
+    }
+
     try {
       const backupResult =
         await generateWithOpenRouter(
@@ -2178,7 +2180,7 @@ export async function POST(
           productContext.colour
         ),
         message:
-          "Gemini was unavailable, so product details were generated with OpenRouter Backup AI.",
+          "Gemini and Gemini Flash-Lite were unavailable, so product details were generated with OpenRouter Backup AI.",
       });
     } catch (error) {
       if (
@@ -2226,7 +2228,7 @@ export async function POST(
           productContext.colour
         ),
         message:
-          "Gemini and OpenRouter were unavailable, so product details were generated with Cloudflare Workers AI.",
+          "Gemini, Gemini Flash-Lite and OpenRouter were unavailable, so product details were generated with Cloudflare Moondream fast vision backup.",
       });
     } catch (error) {
       console.error(
@@ -2243,12 +2245,13 @@ export async function POST(
         {
           error:
             `Gemini failed: ${geminiErrorMessage} ` +
+            `Gemini Flash-Lite failed: ${geminiLiteErrorMessage} ` +
             `OpenRouter failed: ${openRouterErrorMessage} ` +
             `Cloudflare AI failed: ${cloudflareMessage} ` +
             "You can still enter all product details manually.",
           provider: "none",
           usedFallback: true,
-          fallbackLevel: 3,
+          fallbackLevel: 4,
         },
         {
           status:

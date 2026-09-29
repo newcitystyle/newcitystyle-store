@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type HeroSlide = {
@@ -15,60 +15,73 @@ type HeroSlide = {
   secondaryPath: string;
   image: string;
   position: string;
+  accent: string;
 };
 
 const slides: HeroSlide[] = [
   {
     id: 1,
-    eyebrow: "SMART FAMILY SHOPPING • LIVE ONLINE COLLECTION",
-    title: "Fashion For",
-    highlight: "Every Family Member",
+    eyebrow: "NEW CITY STYLE • AI COMMERCE EXPERIENCE",
+    title: "Your Family Fashion",
+    highlight: "Starts With One Smart Search",
     description:
-      "Shop men, women and kids fashion in one place with live stock, smart recommendations and trusted NEW CITY STYLE value.",
+      "Discover live-stock fashion for men, women and kids with faster search, smarter recommendations and a premium NEW CITY STYLE shopping experience.",
     primaryLabel: "Start Shopping",
     primaryPath: "/search",
     secondaryLabel: "Explore Collections",
     secondaryPath: "/collections",
     image:
-      "https://www.bls.gov/opub/btn/volume-6/images/hispanic-household-spending-in-2015_cover_image.jpg",
-    position: "center 38%",
+      "https://images.unsplash.com/photo-1445205170230-053b83016050?auto=format&fit=crop&w=2400&q=90",
+    position: "center 42%",
+    accent: "AI SHOPPING LIVE",
   },
   {
     id: 2,
-    eyebrow: "MEN'S PREMIUM COLLECTION",
-    title: "Confidence Begins",
-    highlight: "With The Right Look",
+    eyebrow: "MEN'S PREMIUM EDIT • LIVE ONLINE STOCK",
+    title: "Modern Menswear",
+    highlight: "Built Around Your Look",
     description:
-      "Sharp shirts, premium denim and versatile everyday styles designed for modern men.",
+      "Sharp shirts, denim and everyday essentials—presented with a cleaner, faster, image-first shopping experience.",
     primaryLabel: "Shop Men",
     primaryPath: "/search?q=Men",
-    secondaryLabel: "View Trending Styles",
+    secondaryLabel: "Trending Styles",
     secondaryPath: "/collections",
     image:
-      "https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&w=2200&q=88",
+      "https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&w=2400&q=90",
     position: "center 30%",
+    accent: "MEN • LIVE PICKS",
   },
   {
     id: 3,
-    eyebrow: "WOMEN & KIDS FESTIVE EDIT",
-    title: "Celebrate Every Moment",
-    highlight: "In Signature Style",
+    eyebrow: "WOMEN & KIDS • FESTIVE + EVERYDAY",
+    title: "Style Every Moment",
+    highlight: "For Every Family Member",
     description:
-      "Elegant sarees, festive wear and charming kids' fashion for every celebration and special memory.",
+      "From elegant women’s fashion to joyful kidswear, explore fresh designs, live availability and smarter recommendations.",
     primaryLabel: "Shop Women",
     primaryPath: "/search?q=Women",
     secondaryLabel: "Shop Kids",
     secondaryPath: "/search?q=Kids",
     image:
-      "https://images.unsplash.com/photo-1583391733956-6c78276477e2?auto=format&fit=crop&w=2200&q=88",
-    position: "center 28%",
+      "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&w=2400&q=90",
+    position: "center 34%",
+    accent: "FAMILY STYLE EDIT",
   },
+];
+
+const quickIntents = [
+  { label: "Men", query: "men" },
+  { label: "Women", query: "women" },
+  { label: "Kids", query: "kids" },
+  { label: "Shirts under ₹999", query: "shirts under 999" },
+  { label: "Fresh arrivals", query: "new arrivals" },
 ];
 
 export default function Hero() {
   const router = useRouter();
   const [activeIndex, setActiveIndex] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [query, setQuery] = useState("");
   const [imageErrors, setImageErrors] = useState<Record<number, boolean>>({});
 
   const activeSlide = slides[activeIndex];
@@ -78,7 +91,7 @@ export default function Hero() {
 
     const timer = window.setInterval(() => {
       setActiveIndex((current) => (current + 1) % slides.length);
-    }, 6500);
+    }, 7000);
 
     return () => window.clearInterval(timer);
   }, [paused]);
@@ -102,13 +115,45 @@ export default function Hero() {
     setActiveIndex((current) => (current + 1) % slides.length);
   }
 
+  function submitSmartSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const clean = query.trim();
+    if (!clean) {
+      router.push("/search");
+      return;
+    }
+
+    try {
+      window.localStorage.setItem("ncs_ai_last_query", clean);
+    } catch {
+      // Optional personalization memory only.
+    }
+
+    router.push(`/search?q=${encodeURIComponent(clean)}`);
+  }
+
+  function openIntent(value: string) {
+    try {
+      window.localStorage.setItem("ncs_ai_last_query", value);
+    } catch {
+      // Optional personalization memory only.
+    }
+
+    router.push(`/search?q=${encodeURIComponent(value)}`);
+  }
+
   return (
     <section
       className="hero"
-      aria-label="NEW CITY STYLE promotional banner"
+      aria-label="NEW CITY STYLE premium shopping experience"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
+      <div className="ambientGrid" />
+      <div className="ambientOrb orbOne" />
+      <div className="ambientOrb orbTwo" />
+
       <div className="slides">
         {slides.map((slide, index) => {
           const isActive = index === activeIndex;
@@ -129,7 +174,6 @@ export default function Hero() {
                   }}
                   role="img"
                   aria-label={`${slide.title} ${slide.highlight}`}
-                  onAnimationEnd={() => undefined}
                 >
                   <img
                     src={slide.image}
@@ -147,15 +191,17 @@ export default function Hero() {
               )}
 
               <div className="fallbackBackground" />
-              <div className="blueOverlay" />
-              <div className="goldGlow" />
-              <div className="patternOverlay" />
+              <div className="photoShade" />
+              <div className="softGlow" />
 
               <div className="contentShell">
                 <div className="heroContent">
-                  <div className="eyebrow">
-                    <span className="eyebrowLine" />
-                    {slide.eyebrow}
+                  <div className="topSignalRow">
+                    <span className="livePill">
+                      <i />
+                      {slide.accent}
+                    </span>
+                    <span className="eyebrow">{slide.eyebrow}</span>
                   </div>
 
                   <h1>
@@ -163,7 +209,40 @@ export default function Hero() {
                     <strong>{slide.highlight}</strong>
                   </h1>
 
-                  <p>{slide.description}</p>
+                  <p className="heroDescription">{slide.description}</p>
+
+                  <form
+                    className="smartSearch"
+                    onSubmit={submitSmartSearch}
+                    role="search"
+                  >
+                    <div className="searchIcon">⌕</div>
+                    <div className="searchCopy">
+                      <small>ASK NEW CITY STYLE</small>
+                      <input
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        placeholder="Try: black shirt under ₹1200, size L"
+                        aria-label="Search NEW CITY STYLE"
+                      />
+                    </div>
+                    <button type="submit">
+                      <span>Find My Style</span>
+                      <b>→</b>
+                    </button>
+                  </form>
+
+                  <div className="intentRow" aria-label="Popular shopping shortcuts">
+                    {quickIntents.map((item) => (
+                      <button
+                        type="button"
+                        key={item.label}
+                        onClick={() => openIntent(item.query)}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
 
                   <div className="heroActions">
                     <button
@@ -186,53 +265,82 @@ export default function Hero() {
 
                   <div className="trustRow">
                     <div>
+                      <span>LIVE</span>
+                      <p>
+                        <strong>Live Availability</strong>
+                        <small>Shopping reflects online stock</small>
+                      </p>
+                    </div>
+
+                    <div>
+                      <span>AI</span>
+                      <p>
+                        <strong>Smart Discovery</strong>
+                        <small>Intent-driven recommendations</small>
+                      </p>
+                    </div>
+
+                    <div>
                       <span>✓</span>
                       <p>
-                        <strong>Premium Quality</strong>
-                        <small>Carefully selected fashion</small>
-                      </p>
-                    </div>
-
-                    <div>
-                      <span>🚚</span>
-                      <p>
-                        <strong>Fast Delivery</strong>
-                        <small>Secure shipping across India</small>
-                      </p>
-                    </div>
-
-                    <div>
-                      <span>↺</span>
-                      <p>
-                        <strong>Easy Returns</strong>
-                        <small>Simple customer-friendly policy</small>
+                        <strong>Trusted Store</strong>
+                        <small>NEW CITY STYLE customer service</small>
                       </p>
                     </div>
                   </div>
                 </div>
 
-                <div className="floatingCard">
-                  <span className="floatingLabel">NEW CITY STYLE</span>
-                  <strong>Style for Every Family</strong>
-                  <p>Premium fashion. Live stock. Smart shopping assistance.</p>
-
-                  <div className="floatingStats">
-                    <div>
-                      <b>Men</b>
-                      <small>Live online picks</small>
-                    </div>
-
-                    <div>
-                      <b>Women</b>
-                      <small>Smart recommendations</small>
-                    </div>
-
-                    <div>
-                      <b>Kids</b>
-                      <small>Family-ready fashion</small>
-                    </div>
+                <aside className="commerceDeck" aria-label="NEW CITY STYLE quick shopping">
+                  <div className="deckTop">
+                    <span>NEW CITY STYLE</span>
+                    <i>2036 COMMERCE</i>
                   </div>
-                </div>
+
+                  <strong>
+                    A smarter way
+                    <br />
+                    to shop fashion.
+                  </strong>
+
+                  <p>
+                    Search naturally, discover live products and continue directly
+                    into the catalogue.
+                  </p>
+
+                  <div className="deckTiles">
+                    <button
+                      type="button"
+                      onClick={() => router.push("/search?q=Men")}
+                    >
+                      <span>MEN</span>
+                      <b>Shop →</b>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => router.push("/search?q=Women")}
+                    >
+                      <span>WOMEN</span>
+                      <b>Explore →</b>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => router.push("/search?q=Kids")}
+                    >
+                      <span>KIDS</span>
+                      <b>Discover →</b>
+                    </button>
+                  </div>
+
+                  <div className="deckFooter">
+                    <span className="pulseDot" />
+                    <p>
+                      <b>AI Shopping is active</b>
+                      <small>Search + live catalogue working together</small>
+                    </p>
+                  </div>
+                </aside>
               </div>
             </article>
           );
@@ -287,15 +395,15 @@ export default function Hero() {
         </div>
       )}
 
-      <div className="bottomCurve" />
+      <div className="bottomFade" />
 
       <style jsx>{`
         .hero {
           position: relative;
-          min-height: min(820px, calc(100vh - 80px));
+          min-height: min(860px, calc(100vh - 72px));
           overflow: hidden;
           isolation: isolate;
-          background: color-mix(in srgb, var(--ncs-primary, #0A2E73) 84%, black 16%);
+          background: #061735;
         }
 
         .slides,
@@ -307,10 +415,10 @@ export default function Hero() {
         .slide {
           opacity: 0;
           visibility: hidden;
-          transform: scale(1.025);
+          transform: scale(1.018);
           transition:
-            opacity 0.8s ease,
-            visibility 0.8s ease,
+            opacity 0.75s ease,
+            visibility 0.75s ease,
             transform 7s ease;
         }
 
@@ -323,9 +431,8 @@ export default function Hero() {
 
         .backgroundImage,
         .fallbackBackground,
-        .blueOverlay,
-        .goldGlow,
-        .patternOverlay {
+        .photoShade,
+        .softGlow {
           position: absolute;
           inset: 0;
         }
@@ -334,7 +441,7 @@ export default function Hero() {
           z-index: 1;
           background-repeat: no-repeat;
           background-size: cover;
-          filter: saturate(0.98) contrast(1.04);
+          filter: saturate(0.94) contrast(1.04);
           animation: cinematicZoom 8s ease-out both;
         }
 
@@ -349,110 +456,133 @@ export default function Hero() {
         .fallbackBackground {
           z-index: 0;
           background:
-            radial-gradient(
-              circle at 78% 36%,
-              rgba(var(--ncs-secondary-rgb, 212,175,55), 0.24),
-              transparent 25%
-            ),
-            linear-gradient(120deg, color-mix(in srgb, var(--ncs-primary, #0A2E73) 84%, black 16%) 0%, var(--ncs-primary, #0a2e73) 52%, color-mix(in srgb, var(--ncs-primary, #0A2E73) 70%, white 30%) 100%);
+            radial-gradient(circle at 78% 22%, rgba(212, 175, 55, 0.16), transparent 24%),
+            linear-gradient(135deg, #061735 0%, #0a2e73 48%, #174d98 100%);
         }
 
-        .blueOverlay {
+        .photoShade {
           z-index: 2;
           background:
             linear-gradient(
               90deg,
-              rgba(3, 19, 52, 0.98) 0%,
-              rgba(6, 31, 79, 0.94) 34%,
-              rgba(8, 38, 94, 0.7) 58%,
-              rgba(7, 28, 67, 0.3) 100%
+              rgba(2, 13, 34, 0.98) 0%,
+              rgba(4, 26, 65, 0.92) 34%,
+              rgba(5, 31, 75, 0.68) 57%,
+              rgba(5, 24, 55, 0.3) 100%
             ),
             linear-gradient(
               180deg,
-              rgba(3, 14, 39, 0.15),
-              rgba(3, 14, 39, 0.5)
+              rgba(0, 0, 0, 0.06),
+              rgba(0, 0, 0, 0.52)
             );
         }
 
-        .goldGlow {
+        .softGlow {
           z-index: 3;
+          pointer-events: none;
           background:
-            radial-gradient(
-              circle at 80% 26%,
-              rgba(var(--ncs-secondary-rgb, 212,175,55), 0.23),
-              transparent 22%
-            ),
-            radial-gradient(
-              circle at 18% 78%,
-              rgba(var(--ncs-secondary-rgb, 212,175,55), 0.13),
-              transparent 25%
-            );
+            radial-gradient(circle at 81% 24%, rgba(212, 175, 55, 0.2), transparent 22%),
+            radial-gradient(circle at 18% 72%, rgba(74, 144, 226, 0.14), transparent 28%);
+        }
+
+        .ambientGrid {
+          position: absolute;
+          z-index: 4;
+          inset: 0;
+          opacity: 0.08;
+          pointer-events: none;
+          background-image:
+            linear-gradient(rgba(255,255,255,.18) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,.18) 1px, transparent 1px);
+          background-size: 72px 72px;
+          mask-image: linear-gradient(90deg, rgba(0,0,0,.85), transparent 72%);
+        }
+
+        .ambientOrb {
+          position: absolute;
+          z-index: 4;
+          width: 360px;
+          height: 360px;
+          border-radius: 50%;
+          filter: blur(100px);
           pointer-events: none;
         }
 
-        .patternOverlay {
-          z-index: 4;
-          opacity: 0.18;
-          background-image:
-            linear-gradient(
-              rgba(255, 255, 255, 0.08) 1px,
-              transparent 1px
-            ),
-            linear-gradient(
-              90deg,
-              rgba(255, 255, 255, 0.08) 1px,
-              transparent 1px
-            );
-          background-size: 70px 70px;
-          mask-image: linear-gradient(
-            90deg,
-            rgba(0, 0, 0, 0.8),
-            transparent 68%
-          );
+        .orbOne {
+          top: -180px;
+          left: 6%;
+          background: rgba(51, 103, 220, 0.22);
+        }
+
+        .orbTwo {
+          right: 10%;
+          bottom: -220px;
+          background: rgba(212, 175, 55, 0.2);
         }
 
         .contentShell {
           position: relative;
-          z-index: 6;
-          width: min(1500px, calc(100% - 48px));
-          min-height: min(820px, calc(100vh - 80px));
+          z-index: 7;
+          width: min(1520px, calc(100% - 54px));
+          min-height: min(860px, calc(100vh - 72px));
           display: grid;
-          grid-template-columns: minmax(0, 1fr) minmax(310px, 420px);
+          grid-template-columns: minmax(0, 1fr) minmax(330px, 410px);
           align-items: center;
-          gap: 70px;
+          gap: 78px;
           margin: 0 auto;
-          padding: 90px 0 110px;
+          padding: 86px 0 120px;
         }
 
         .heroContent {
-          max-width: 830px;
+          max-width: 900px;
           color: white;
-          animation: contentReveal 0.9s ease both;
+          animation: contentReveal 0.85s ease both;
+        }
+
+        .topSignalRow {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 12px;
+          margin-bottom: 22px;
+        }
+
+        .livePill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          min-height: 29px;
+          padding: 0 11px;
+          border: 1px solid rgba(255,255,255,.24);
+          border-radius: 999px;
+          background: rgba(255,255,255,.08);
+          color: #fff;
+          font-size: 9px;
+          font-weight: 900;
+          letter-spacing: 1.2px;
+          backdrop-filter: blur(12px);
+        }
+
+        .livePill i {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #77f2a6;
+          box-shadow: 0 0 12px rgba(119, 242, 166, .95);
         }
 
         .eyebrow {
-          display: flex;
-          align-items: center;
-          gap: 13px;
-          margin-bottom: 22px;
-          color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%);
-          font-size: clamp(11px, 1.2vw, 14px);
-          font-weight: 850;
-          letter-spacing: 2.4px;
-        }
-
-        .eyebrowLine {
-          width: 48px;
-          height: 2px;
-          background: linear-gradient(90deg, var(--ncs-secondary, #d4af37), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 52%, white 48%));
-          box-shadow: 0 0 18px rgba(212, 175, 55, 0.7);
+          color: #eedc9a;
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: 1.9px;
         }
 
         h1 {
           margin: 0;
-          font-size: clamp(48px, 6.5vw, 96px);
-          line-height: 0.98;
-          letter-spacing: -3.2px;
+          font-size: clamp(48px, 6.1vw, 92px);
+          line-height: 0.96;
+          letter-spacing: -3.4px;
           text-wrap: balance;
         }
 
@@ -462,122 +592,203 @@ export default function Hero() {
         }
 
         h1 span {
-          color: #ffffff;
-          font-weight: 720;
+          color: #fff;
+          font-weight: 660;
         }
 
         h1 strong {
-          margin-top: 8px;
-          color: var(--ncs-secondary, #d4af37);
+          margin-top: 9px;
+          color: #d4af37;
           font-weight: 900;
-          text-shadow: 0 10px 38px rgba(212, 175, 55, 0.2);
+          text-shadow: 0 16px 48px rgba(212, 175, 55, .2);
         }
 
-        .heroContent > p {
-          max-width: 700px;
-          margin: 27px 0 0;
-          color: rgba(255, 255, 255, 0.84);
-          font-size: clamp(16px, 1.5vw, 20px);
-          line-height: 1.75;
-          text-wrap: balance;
+        .heroDescription {
+          max-width: 730px;
+          margin: 25px 0 0;
+          color: rgba(255,255,255,.82);
+          font-size: clamp(15px, 1.4vw, 19px);
+          line-height: 1.72;
+        }
+
+        .smartSearch {
+          max-width: 810px;
+          display: grid;
+          grid-template-columns: 48px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 10px;
+          margin-top: 30px;
+          padding: 9px 10px 9px 12px;
+          border: 1px solid rgba(255,255,255,.22);
+          border-radius: 18px;
+          background: rgba(255,255,255,.11);
+          box-shadow:
+            0 20px 55px rgba(0,0,0,.18),
+            inset 0 1px rgba(255,255,255,.12);
+          backdrop-filter: blur(18px);
+        }
+
+        .searchIcon {
+          width: 42px;
+          height: 42px;
+          display: grid;
+          place-items: center;
+          border-radius: 13px;
+          background: rgba(212,175,55,.14);
+          color: #e8cc6b;
+          font-size: 24px;
+          font-weight: 900;
+        }
+
+        .searchCopy {
+          min-width: 0;
+        }
+
+        .searchCopy small {
+          display: block;
+          margin-bottom: 4px;
+          color: #e3c865;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 1.5px;
+        }
+
+        .searchCopy input {
+          width: 100%;
+          padding: 0;
+          border: 0;
+          outline: 0;
+          background: transparent;
+          color: #fff;
+          font-size: 14px;
+          font-weight: 650;
+        }
+
+        .searchCopy input::placeholder {
+          color: rgba(255,255,255,.56);
+        }
+
+        .smartSearch > button {
+          min-height: 48px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          padding: 0 17px;
+          border: 1px solid #d4af37;
+          border-radius: 13px;
+          background: linear-gradient(135deg, #d4af37, #f0d985);
+          color: #071d49;
+          font-size: 11px;
+          font-weight: 950;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+
+        .smartSearch > button b {
+          font-size: 17px;
+        }
+
+        .intentRow {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 12px;
+        }
+
+        .intentRow button {
+          min-height: 30px;
+          padding: 0 11px;
+          border: 1px solid rgba(255,255,255,.16);
+          border-radius: 999px;
+          background: rgba(4,23,58,.48);
+          color: rgba(255,255,255,.84);
+          font-size: 9px;
+          font-weight: 800;
+          cursor: pointer;
+          backdrop-filter: blur(10px);
+          transition: .2s ease;
+        }
+
+        .intentRow button:hover {
+          border-color: rgba(212,175,55,.8);
+          color: #f0d985;
+          transform: translateY(-1px);
         }
 
         .heroActions {
           display: flex;
           flex-wrap: wrap;
-          gap: 14px;
-          margin-top: 35px;
+          gap: 12px;
+          margin-top: 26px;
         }
 
         .heroActions button {
-          min-height: 58px;
-          padding: 0 24px;
-          border-radius: 14px;
-          font-size: 14px;
-          font-weight: 850;
+          min-height: 50px;
+          padding: 0 20px;
+          border-radius: 13px;
+          font-size: 12px;
+          font-weight: 900;
           cursor: pointer;
-          transition:
-            transform 0.25s ease,
-            box-shadow 0.25s ease,
-            background 0.25s ease;
+          transition: .22s ease;
         }
 
         .heroActions button:hover {
-          transform: translateY(-3px);
+          transform: translateY(-2px);
         }
 
         .primaryButton {
-          position: relative;
-          overflow: hidden;
           display: inline-flex;
           align-items: center;
-          justify-content: center;
-          gap: 14px;
-          border: 1px solid var(--ncs-secondary, #d4af37);
-          background: linear-gradient(135deg, var(--ncs-secondary, #d4af37), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%));
-          color: color-mix(in srgb, var(--ncs-primary, #0A2E73) 84%, black 16%);
-          box-shadow: 0 16px 35px rgba(var(--ncs-secondary-rgb, 212,175,55), 0.25);
-        }
-
-        .primaryButton::after {
-          position: absolute;
-          top: -65%;
-          left: -65%;
-          width: 35%;
-          height: 230%;
-          content: "";
-          background: rgba(255, 255, 255, 0.5);
-          transform: rotate(24deg);
-          animation: buttonShine 3.2s infinite;
+          gap: 12px;
+          border: 1px solid #d4af37;
+          background: #d4af37;
+          color: #071d49;
+          box-shadow: 0 14px 34px rgba(212,175,55,.2);
         }
 
         .primaryButton b {
-          font-size: 19px;
+          font-size: 17px;
         }
 
         .secondaryButton {
-          border: 1px solid rgba(255, 255, 255, 0.42);
-          background: rgba(255, 255, 255, 0.09);
-          color: white;
+          border: 1px solid rgba(255,255,255,.3);
+          background: rgba(255,255,255,.07);
+          color: #fff;
           backdrop-filter: blur(12px);
         }
 
-        .secondaryButton:hover {
-          border-color: var(--ncs-secondary, #d4af37);
-          background: rgba(var(--ncs-secondary-rgb, 212,175,55), 0.12);
-        }
-
         .trustRow {
+          max-width: 780px;
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 12px;
-          max-width: 760px;
-          margin-top: 42px;
+          gap: 9px;
+          margin-top: 26px;
         }
 
         .trustRow > div {
           display: flex;
           align-items: center;
-          gap: 10px;
-          padding: 13px;
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          border-radius: 13px;
-          background: rgba(255, 255, 255, 0.07);
-          backdrop-filter: blur(12px);
+          gap: 9px;
+          padding: 10px 11px;
+          border: 1px solid rgba(255,255,255,.11);
+          border-radius: 12px;
+          background: rgba(255,255,255,.05);
+          backdrop-filter: blur(10px);
         }
 
         .trustRow > div > span {
-          width: 34px;
-          height: 34px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          border-radius: 10px;
-          background: rgba(var(--ncs-secondary-rgb, 212,175,55), 0.17);
-          color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%);
-          font-size: 15px;
-          font-weight: 900;
+          min-width: 34px;
+          height: 28px;
+          display: grid;
+          place-items: center;
+          padding: 0 6px;
+          border-radius: 8px;
+          background: rgba(212,175,55,.14);
+          color: #ecd36e;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: .6px;
         }
 
         .trustRow p {
@@ -590,146 +801,208 @@ export default function Hero() {
         }
 
         .trustRow strong {
-          color: white;
-          font-size: 11px;
+          color: #fff;
+          font-size: 10px;
         }
 
         .trustRow small {
-          margin-top: 3px;
-          color: rgba(255, 255, 255, 0.62);
-          font-size: 9px;
+          margin-top: 2px;
+          color: rgba(255,255,255,.56);
+          font-size: 8px;
         }
 
-        .floatingCard {
-          align-self: end;
-          margin-bottom: 90px;
-          padding: 27px;
-          border: 1px solid rgba(255, 255, 255, 0.24);
-          border-radius: 24px;
-          background: rgba(6, 30, 75, 0.64);
-          color: white;
-          box-shadow: 0 24px 70px rgba(2, 12, 34, 0.32);
-          backdrop-filter: blur(18px);
-          animation: floatingReveal 1s 0.15s ease both;
+        .commerceDeck {
+          align-self: center;
+          padding: 25px;
+          border: 1px solid rgba(255,255,255,.22);
+          border-radius: 28px;
+          background:
+            linear-gradient(180deg, rgba(11, 42, 92, .74), rgba(4, 24, 57, .76));
+          color: #fff;
+          box-shadow:
+            0 34px 90px rgba(0,0,0,.3),
+            inset 0 1px rgba(255,255,255,.1);
+          backdrop-filter: blur(24px);
+          animation: deckReveal 1s .12s ease both;
         }
 
-        .floatingLabel {
-          display: inline-flex;
-          padding: 6px 9px;
-          border-radius: 999px;
-          background: rgba(var(--ncs-secondary-rgb, 212,175,55), 0.16);
-          color: color-mix(in srgb, var(--ncs-secondary, #D4AF37) 72%, white 28%);
-          font-size: 10px;
-          font-weight: 900;
-          letter-spacing: 1.4px;
-        }
-
-        .floatingCard > strong {
-          display: block;
-          margin-top: 15px;
-          color: var(--ncs-secondary, #d4af37);
-          font-size: 26px;
-          line-height: 1.2;
-        }
-
-        .floatingCard > p {
-          margin: 10px 0 0;
-          color: rgba(255, 255, 255, 0.76);
-          font-size: 13px;
-          line-height: 1.6;
-        }
-
-        .floatingStats {
-          display: grid;
-          gap: 9px;
-          margin-top: 21px;
-        }
-
-        .floatingStats > div {
+        .deckTop {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 15px;
-          padding: 10px 12px;
-          border-radius: 11px;
-          background: rgba(255, 255, 255, 0.08);
+          gap: 10px;
         }
 
-        .floatingStats b {
-          color: white;
-          font-size: 12px;
+        .deckTop span {
+          color: #e8cf70;
+          font-size: 9px;
+          font-weight: 950;
+          letter-spacing: 1.5px;
         }
 
-        .floatingStats small {
-          color: rgba(255, 255, 255, 0.58);
+        .deckTop i {
+          padding: 5px 7px;
+          border-radius: 999px;
+          background: rgba(255,255,255,.07);
+          color: rgba(255,255,255,.52);
+          font-size: 7px;
+          font-style: normal;
+          font-weight: 800;
+        }
+
+        .commerceDeck > strong {
+          display: block;
+          margin-top: 20px;
+          color: #fff;
+          font-size: clamp(26px, 2.2vw, 34px);
+          line-height: 1.12;
+          letter-spacing: -1.1px;
+        }
+
+        .commerceDeck > p {
+          margin: 11px 0 0;
+          color: rgba(255,255,255,.65);
+          font-size: 11px;
+          line-height: 1.65;
+        }
+
+        .deckTiles {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+          margin-top: 20px;
+        }
+
+        .deckTiles button {
+          min-height: 92px;
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          justify-content: space-between;
+          padding: 12px;
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 14px;
+          background: rgba(255,255,255,.06);
+          color: #fff;
+          cursor: pointer;
+          text-align: left;
+          transition: .2s ease;
+        }
+
+        .deckTiles button:hover {
+          border-color: rgba(212,175,55,.62);
+          background: rgba(212,175,55,.1);
+          transform: translateY(-2px);
+        }
+
+        .deckTiles span {
+          color: #ead16e;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 1px;
+        }
+
+        .deckTiles b {
           font-size: 10px;
+        }
+
+        .deckFooter {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-top: 17px;
+          padding: 12px;
+          border-radius: 13px;
+          background: rgba(2, 18, 44, .42);
+        }
+
+        .pulseDot {
+          width: 9px;
+          height: 9px;
+          flex: 0 0 9px;
+          border-radius: 50%;
+          background: #7af0a5;
+          box-shadow: 0 0 0 5px rgba(122,240,165,.1), 0 0 16px rgba(122,240,165,.65);
+        }
+
+        .deckFooter p {
+          margin: 0;
+        }
+
+        .deckFooter b,
+        .deckFooter small {
+          display: block;
+        }
+
+        .deckFooter b {
+          color: #fff;
+          font-size: 9px;
+        }
+
+        .deckFooter small {
+          margin-top: 2px;
+          color: rgba(255,255,255,.48);
+          font-size: 7px;
         }
 
         .sliderArrow {
           position: absolute;
-          z-index: 12;
+          z-index: 13;
           top: 50%;
-          width: 50px;
-          height: 50px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid rgba(255, 255, 255, 0.3);
+          width: 46px;
+          height: 46px;
+          display: grid;
+          place-items: center;
+          border: 1px solid rgba(255,255,255,.24);
           border-radius: 50%;
-          background: rgba(4, 22, 58, 0.58);
-          color: white;
-          font-size: 34px;
+          background: rgba(3, 20, 49, .55);
+          color: #fff;
+          font-size: 30px;
           cursor: pointer;
           backdrop-filter: blur(10px);
           transform: translateY(-50%);
-          transition:
-            transform 0.2s ease,
-            border-color 0.2s ease,
-            background 0.2s ease;
+          transition: .2s ease;
         }
 
         .sliderArrow:hover {
-          border-color: var(--ncs-secondary, #d4af37);
-          background: rgba(var(--ncs-primary-rgb, 10,46,115), 0.90);
-          transform: translateY(-50%) scale(1.06);
+          border-color: #d4af37;
+          transform: translateY(-50%) scale(1.04);
         }
 
         .leftArrow {
-          left: 18px;
+          left: 16px;
         }
 
         .rightArrow {
-          right: 18px;
+          right: 16px;
         }
 
         .sliderFooter {
           position: absolute;
-          z-index: 12;
-          right: max(42px, calc((100% - 1500px) / 2 + 24px));
-          bottom: 44px;
+          z-index: 13;
+          right: max(40px, calc((100% - 1520px) / 2 + 24px));
+          bottom: 34px;
           display: flex;
           align-items: center;
-          gap: 18px;
+          gap: 15px;
         }
 
         .dots {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 7px;
         }
 
         .dots button {
-          width: 33px;
-          height: 8px;
+          width: 28px;
+          height: 7px;
           overflow: hidden;
           padding: 0;
           border: 0;
           border-radius: 999px;
-          background: rgba(255, 255, 255, 0.27);
+          background: rgba(255,255,255,.22);
           cursor: pointer;
-          transition:
-            width 0.25s ease,
-            background 0.25s ease;
+          transition: .2s ease;
         }
 
         .dots button span {
@@ -739,69 +1012,64 @@ export default function Hero() {
         }
 
         .dots .activeDot {
-          width: 60px;
-          background: var(--ncs-secondary, #d4af37);
+          width: 54px;
+          background: #d4af37;
         }
 
         .slideCounter {
           display: flex;
           align-items: baseline;
-          gap: 5px;
-          color: white;
+          gap: 4px;
+          color: rgba(255,255,255,.6);
         }
 
         .slideCounter strong {
-          color: var(--ncs-secondary, #d4af37);
-          font-size: 18px;
+          color: #d4af37;
+          font-size: 16px;
         }
 
-        .slideCounter span,
         .slideCounter small {
-          color: rgba(255, 255, 255, 0.62);
+          font-size: 10px;
         }
 
         .progressTrack {
           position: absolute;
-          z-index: 13;
+          z-index: 14;
           right: 0;
           bottom: 0;
           left: 0;
-          height: 4px;
-          background: rgba(255, 255, 255, 0.12);
+          height: 3px;
+          background: rgba(255,255,255,.08);
         }
 
         .progressTrack span {
           display: block;
           width: 0;
           height: 100%;
-          background: linear-gradient(90deg, var(--ncs-secondary, #d4af37), color-mix(in srgb, var(--ncs-secondary, #D4AF37) 52%, white 48%));
-          animation: progress 6.5s linear forwards;
+          background: linear-gradient(90deg, #d4af37, #f0da87);
+          animation: progress 7s linear forwards;
         }
 
-        .bottomCurve {
+        .bottomFade {
           position: absolute;
-          z-index: 10;
-          right: -4%;
-          bottom: -55px;
-          left: -4%;
-          height: 105px;
-          border-radius: 50% 50% 0 0;
-          background: var(--ncs-page-bg, #F7F8FC);
+          z-index: 11;
+          right: 0;
+          bottom: 0;
+          left: 0;
+          height: 100px;
+          pointer-events: none;
+          background: linear-gradient(180deg, transparent, rgba(247,248,252,.04));
         }
 
         @keyframes cinematicZoom {
-          from {
-            transform: scale(1.09);
-          }
-          to {
-            transform: scale(1);
-          }
+          from { transform: scale(1.075); }
+          to { transform: scale(1); }
         }
 
         @keyframes contentReveal {
           from {
             opacity: 0;
-            transform: translateY(24px);
+            transform: translateY(20px);
           }
           to {
             opacity: 1;
@@ -809,10 +1077,10 @@ export default function Hero() {
           }
         }
 
-        @keyframes floatingReveal {
+        @keyframes deckReveal {
           from {
             opacity: 0;
-            transform: translateY(25px) scale(0.97);
+            transform: translateY(22px) scale(.98);
           }
           to {
             opacity: 1;
@@ -820,57 +1088,44 @@ export default function Hero() {
           }
         }
 
-        @keyframes buttonShine {
-          0% {
-            left: -65%;
-          }
-          58%,
-          100% {
-            left: 135%;
-          }
-        }
-
         @keyframes progress {
-          from {
-            width: 0;
-          }
-          to {
-            width: 100%;
-          }
+          from { width: 0; }
+          to { width: 100%; }
         }
 
-        @media (max-width: 1150px) {
+        @media (max-width: 1180px) {
           .contentShell {
             grid-template-columns: 1fr;
+            gap: 28px;
           }
 
-          .floatingCard {
+          .commerceDeck {
             display: none;
           }
 
           .heroContent {
-            max-width: 850px;
+            max-width: 920px;
           }
         }
 
         @media (max-width: 760px) {
           .hero {
-            min-height: 760px;
+            min-height: 820px;
           }
 
           .contentShell {
-            width: calc(100% - 28px);
-            min-height: 760px;
-            padding: 80px 4px 110px;
+            width: calc(100% - 26px);
+            min-height: 820px;
+            padding: 72px 2px 108px;
           }
 
-          .blueOverlay {
+          .photoShade {
             background:
               linear-gradient(
                 180deg,
-                rgba(3, 19, 52, 0.9) 0%,
-                rgba(5, 29, 74, 0.9) 45%,
-                rgba(3, 18, 48, 0.96) 100%
+                rgba(2, 15, 38, .82) 0%,
+                rgba(4, 27, 68, .9) 42%,
+                rgba(2, 16, 40, .98) 100%
               );
           }
 
@@ -879,81 +1134,117 @@ export default function Hero() {
           }
 
           h1 {
-            font-size: clamp(45px, 13vw, 67px);
-            letter-spacing: -2px;
+            font-size: clamp(43px, 12vw, 66px);
+            letter-spacing: -2.2px;
           }
 
-          .heroContent > p {
-            font-size: 15px;
-            line-height: 1.65;
+          .heroDescription {
+            font-size: 14px;
+            line-height: 1.62;
+          }
+
+          .smartSearch {
+            grid-template-columns: 38px 1fr;
+            gap: 8px;
+            padding: 9px;
+          }
+
+          .searchIcon {
+            width: 36px;
+            height: 36px;
+            font-size: 20px;
+          }
+
+          .smartSearch > button {
+            grid-column: 1 / -1;
+            width: 100%;
+            min-height: 44px;
+          }
+
+          .intentRow {
+            overflow-x: auto;
+            flex-wrap: nowrap;
+            padding-bottom: 3px;
+            scrollbar-width: none;
+          }
+
+          .intentRow::-webkit-scrollbar {
+            display: none;
+          }
+
+          .intentRow button {
+            flex: 0 0 auto;
           }
 
           .heroActions {
             display: grid;
-            grid-template-columns: 1fr;
+            grid-template-columns: 1fr 1fr;
           }
 
           .heroActions button {
             width: 100%;
+            min-height: 46px;
+            padding: 0 12px;
           }
 
           .trustRow {
-            grid-template-columns: 1fr;
-            max-width: 360px;
-            gap: 8px;
-            margin-top: 28px;
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .trustRow > div:nth-child(3) {
+            display: none;
           }
 
           .sliderArrow {
             top: auto;
-            bottom: 44px;
-            width: 42px;
-            height: 42px;
-            font-size: 28px;
+            bottom: 38px;
+            width: 40px;
+            height: 40px;
+            font-size: 25px;
           }
 
           .leftArrow {
-            left: 15px;
+            left: 13px;
           }
 
           .rightArrow {
-            right: 15px;
+            right: 13px;
           }
 
           .sliderFooter {
             right: 50%;
-            bottom: 52px;
+            bottom: 47px;
             transform: translateX(50%);
           }
 
           .slideCounter {
             display: none;
           }
-
-          .bottomCurve {
-            bottom: -68px;
-          }
         }
 
         @media (max-width: 430px) {
           .hero {
-            min-height: 790px;
+            min-height: 850px;
           }
 
           .contentShell {
-            min-height: 790px;
+            min-height: 850px;
+          }
+
+          .topSignalRow {
+            align-items: flex-start;
           }
 
           .eyebrow {
-            align-items: flex-start;
-            line-height: 1.5;
+            max-width: 220px;
+            line-height: 1.45;
           }
 
-          .eyebrowLine {
-            margin-top: 7px;
+          .trustRow {
+            grid-template-columns: 1fr;
           }
 
-          .trustRow > div:nth-child(3) {
+          .trustRow > div:nth-child(2) {
             display: none;
           }
         }
@@ -962,9 +1253,8 @@ export default function Hero() {
           .slide,
           .backgroundImage,
           .heroContent,
-          .floatingCard,
-          .progressTrack span,
-          .primaryButton::after {
+          .commerceDeck,
+          .progressTrack span {
             animation: none !important;
             transition: none !important;
           }

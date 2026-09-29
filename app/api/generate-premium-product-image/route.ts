@@ -1,1201 +1,260 @@
 import { NextRequest, NextResponse } from "next/server";
-import { InferenceClient } from "@huggingface/inference";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
-const OPENAI_IMAGE_MODEL =
-  process.env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-1";
-
-const GEMINI_IMAGE_MODEL =
-  process.env.GEMINI_IMAGE_MODEL?.trim() || "gemini-3.1-flash-image";
-
-const HUGGINGFACE_IMAGE_MODEL =
-  process.env.HUGGINGFACE_IMAGE_MODEL?.trim() ||
-  process.env.HF_IMAGE_MODEL?.trim() ||
-  "black-forest-labs/FLUX.1-Kontext-dev";
-
-const CLOUDFLARE_PRIMARY_MODEL =
-  "@cf/runwayml/stable-diffusion-v1-5-img2img";
-
-const CLOUDFLARE_RETRY_DELAYS_MS = [0, 2500, 5000] as const;
-
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-
-const ALLOWED_IMAGE_TYPES = new Set([
-  "image/jpeg",
-  "image/jpg",
-  "image/png",
-  "image/webp",
-]);
-
-type ProductContext = {
-  productId?: number | null;
-  variantId?: number | null;
-  name?: string;
-  brand?: string;
-  category?: string;
-  subcategory?: string;
-  gender?: string;
-  ageGroup?: string;
-  size?: string;
-  colour?: string;
-  material?: string;
-  fabric?: string;
-  pattern?: string;
-  sleeveType?: string;
-  fitType?: string;
-  occasion?: string;
-  sku?: string;
-  barcode?: string;
-};
-
-type StudioPreset = {
-  id: number;
-  name: string;
-  description: string;
-  backgroundStyle: string;
-  bestFor: string;
-};
-
-type OpenAiImageResponse = {
-  data?: Array<{
-    b64_json?: string;
-    url?: string;
-    revised_prompt?: string;
-  }>;
-  error?: {
-    message?: string;
-    type?: string;
-    code?: string;
-  };
-};
-
-type CloudflareJsonResponse = {
-  success?: boolean;
-  errors?: Array<
-    | string
-    | {
-        message?: string;
-        code?: number | string;
-      }
-  >;
-  messages?: Array<
-    | string
-    | {
-        message?: string;
-      }
-  >;
-  result?:
-    | string
-    | {
-        image?: string;
-        output?: string | string[];
-      };
-};
-
-type GeminiImageResponse = {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{
-        text?: string;
-        inlineData?: {
-          mimeType?: string;
-          data?: string;
-        };
-        thought?: boolean;
-      }>;
-    };
-    finishReason?: string;
-  }>;
-  promptFeedback?: {
-    blockReason?: string;
-  };
-  error?: {
-    message?: string;
-    status?: string;
-    code?: number;
-  };
-};
-
-type ProviderResult = {
-  imageUrl: string;
-  revisedPrompt?: string;
-  model: string;
-  provider: "cloudflare" | "gemini" | "huggingface" | "openai";
-};
-
-class PremiumImageError extends Error {
-  status: number;
-
-  constructor(message: string, status = 500) {
-    super(message);
-    this.name = "PremiumImageError";
-    this.status = status;
-  }
-}
-
-function cleanText(value: unknown, maxLength = 2000) {
-  return typeof value === "string"
-    ? value.trim().slice(0, maxLength)
-    : "";
-}
-
-function cleanId(value: unknown) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-function cleanProductContext(value: unknown): ProductContext {
-  const source =
-    value && typeof value === "object"
-      ? (value as Record<string, unknown>)
-      : {};
-
-  return {
-    productId: cleanId(source.productId),
-    variantId: cleanId(source.variantId),
-    name: cleanText(source.name, 140),
-    brand: cleanText(source.brand, 100),
-    category: cleanText(source.category, 80),
-    subcategory: cleanText(source.subcategory, 100),
-    gender: cleanText(source.gender, 40),
-    ageGroup: cleanText(source.ageGroup, 40),
-    size: cleanText(source.size, 60),
-    colour: cleanText(source.colour ?? source.color, 80),
-    material: cleanText(source.material, 120),
-    fabric: cleanText(source.fabric, 120),
-    pattern: cleanText(source.pattern, 80),
-    sleeveType: cleanText(source.sleeveType, 80),
-    fitType: cleanText(source.fitType, 80),
-    occasion: cleanText(source.occasion, 120),
-    sku: cleanText(source.sku, 120),
-    barcode: cleanText(source.barcode, 120),
-  };
-}
-
-function cleanPreset(value: unknown): StudioPreset {
-  const source =
-    value && typeof value === "object"
-      ? (value as Record<string, unknown>)
-      : {};
-
-  return {
-    id: cleanId(source.id) || 1,
-    name: cleanText(source.name, 100) || "Royal Boutique Wall",
-    description:
-      cleanText(source.description, 220) ||
-      "Premium boutique product presentation.",
-    backgroundStyle:
-      cleanText(source.backgroundStyle, 300) ||
-      "royal blue boutique wall, soft premium lighting, elegant clean product presentation",
-    bestFor:
-      cleanText(source.bestFor, 160) ||
-      "general fashion e-commerce products",
-  };
-}
-
-function isSafeImageUrl(value: string) {
+function isSafeHttpUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:";
+    return (
+      url.protocol === "https:" ||
+      url.protocol === "http:"
+    );
   } catch {
     return false;
   }
 }
 
-function buildPremiumPrompt(
-  context: ProductContext,
-  preset: StudioPreset
+export async function GET(
+  request: NextRequest,
 ) {
-  const trustedEntries = Object.entries({
-    "Product name": context.name,
-    Brand: context.brand,
-    Category: context.category,
-    Subcategory: context.subcategory,
-    Gender: context.gender,
-    "Age group": context.ageGroup,
-    Size: context.size,
-    Colour: context.colour,
-    Material: context.material,
-    Fabric: context.fabric,
-    Pattern: context.pattern,
-    "Sleeve type": context.sleeveType,
-    "Fit type": context.fitType,
-    Occasion: context.occasion,
-  }).filter(([, value]) => Boolean(value));
+  const source =
+    request.nextUrl
+      .searchParams
+      .get("src")
+      ?.trim() || "";
 
-  const trustedRecord = trustedEntries.length
-    ? trustedEntries
-        .map(([label, value]) => `- ${label}: ${value}`)
-        .join("\n")
-    : "- No structured product record was supplied.";
-
-  return `
-You are the premium e-commerce product-image assistant for NEW CITY STYLE.
-
-TASK:
-Edit the supplied source product photo into one world-class, photorealistic, premium e-commerce product-only image. Treat the uploaded garment as the immutable product reference and improve only its presentation.
-
-STRICT PRODUCT PRESERVATION RULES:
-1. PRODUCT GEOMETRY IS LOCKED. Preserve the exact product identity, silhouette and construction from the source image.
-2. Preserve the exact neckline shape, shoulder width, armhole shape, sleeve state and sleeve length, waist seam/waist position, bodice length, skirt/trouser shape, flare, hem length and all visible construction details. If the source is sleeveless, it MUST remain sleeveless. Never add sleeves, a belt, waistband decoration, collar, pockets, pleats, panels or closures that are not present in the source.
-3. Preserve the original base colour and the actual visible print/embroidery/check placement as faithfully as possible. Do not reinterpret, enlarge, simplify, redraw or replace the pattern. Preserve fabric texture, borders, buttons, stitching and proportions.
-4. Do not add or remove garment parts. Do not redesign the garment to make it look more fashionable.
-5. Do not add a model, mannequin, hands, jewellery, text, logo overlay, price, watermark or promotional badge.
-6. Remove only the existing background, floor clutter, unwanted surroundings, visible watermark/tag distractions and poor presentation.
-6. Keep the complete product visible, upright, centered and naturally proportioned in a vertical 4:5 catalogue composition.
-7. Correct only obvious camera tilt/perspective in the presentation when it can be done without redesigning the garment.
-8. Use photorealistic studio lighting, natural fabric depth, clean edge separation and a subtle physically plausible grounding shadow.
-9. Remove the photographed floor/background and replace it with the selected premium studio environment; avoid poster-like frames, graphic boxes and fake decorative overlays unless the selected preset explicitly requests them.
-10. Do not invent packaging, branding or accessories. Do not smooth away texture, embroidery or print detail.
-11. The garment itself must remain the same sellable item. Improve presentation, not product design.
-12. The final image MUST visibly differ from the source photograph in background, framing and professional presentation. Never return the original photo unchanged or merely re-encoded.
-13. Remove the original floor/room completely and replace it with the selected premium studio environment while preserving the garment faithfully.
-
-PRODUCT-FIDELITY GATE (MANDATORY):
-Before producing the final image, visually compare the garment against the supplied source. If your edit would change sleeves, neckline, waist construction, belt details, hem length, garment category, silhouette, colour family, or the recognizable print placement, do NOT make that change. Prefer a more conservative edit. The goal is the same real store item photographed professionally, not a redesigned look-alike.
-
-PREMIUM BACKGROUND DIRECTION:
-Create a realistic luxury NEW CITY STYLE boutique atmosphere designed for a premium e-commerce product page. Use a light warm ivory / cream / soft beige store interior with elegant soft light falling from above onto the garment. Keep the garment as the only sharp hero subject. In the far background and along the left and right edges, show tasteful clothing racks or hanging garments, but keep them softly blurred with shallow depth of field so they never compete with the product. Use subtle champagne/brass retail accents, refined wall panels, a clean light floor, gentle natural floor-to-wall depth and a restrained realistic contact shadow. The scene must feel like a high-end fashion boutique photograph, not a plain cutout, not a poster and not a graphic mockup. No readable text, logos, price tags, people, mannequins, props touching the product, decorative frames or busy clutter.
-
-BACKGROUND PRESET:
-Preset Name: ${preset.name}
-Preset Description: ${preset.description}
-Preset Background Style: ${preset.backgroundStyle}
-Best For: ${preset.bestFor}
-
-TRUSTED PRODUCT RECORD:
-${trustedRecord}
-
-FINAL RESULT:
-A photorealistic premium fashion catalogue image, vertical 4:5, with the exact original garment faithfully preserved and professionally presented inside a softly blurred luxury boutique environment with overhead light and subtle clothing displays at the sides. It must look like a premium international fashion-store product photograph, never like a simple background-removal composite.
-`.trim();
-}
-
-function buildNegativePrompt() {
-  return [
-    "changed garment",
-    "different colour",
-    "different pattern",
-    "different print",
-    "extra buttons",
-    "missing buttons",
-    "different collar",
-    "different sleeves",
-    "added sleeves",
-    "short sleeves on sleeveless garment",
-    "changed neckline",
-    "deep v neck",
-    "added belt",
-    "new waistband",
-    "changed waist seam",
-    "changed hem length",
-    "changed flare",
-    "different silhouette",
-    "redesigned garment",
-    "reinterpreted print",
-    "different embroidery",
-    "extra garment parts",
-    "cropped product",
-    "model",
-    "mannequin",
-    "hands",
-    "jewellery",
-    "text",
-    "watermark",
-    "logo overlay",
-    "price tag",
-    "poster",
-    "duplicate product",
-    "distorted clothing",
-  ].join(", ");
-}
-
-async function sleep(ms: number) {
-  await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function downloadImage(imageUrl: string) {
-  let imageResponse: Response;
-
-  try {
-    imageResponse = await fetch(imageUrl, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch {
-    throw new PremiumImageError(
-      "The uploaded source image could not be downloaded.",
-      400
-    );
-  }
-
-  if (!imageResponse.ok) {
-    throw new PremiumImageError(
-      "The uploaded source image could not be downloaded.",
-      400
-    );
-  }
-
-  const contentLength = Number(
-    imageResponse.headers.get("content-length") || 0
-  );
-
-  if (contentLength && contentLength > MAX_IMAGE_BYTES) {
-    throw new PremiumImageError(
-      "The source image must be smaller than 8 MB.",
-      413
-    );
-  }
-
-  const mimeType = (imageResponse.headers.get("content-type") || "")
-    .split(";")[0]
-    .trim()
-    .toLowerCase();
-
-  if (!ALLOWED_IMAGE_TYPES.has(mimeType)) {
-    throw new PremiumImageError(
-      "Only JPG, PNG and WEBP images are supported.",
-      415
-    );
-  }
-
-  const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
-
-  if (!imageBuffer.length) {
-    throw new PremiumImageError(
-      "The uploaded source image is empty.",
-      400
-    );
-  }
-
-  if (imageBuffer.length > MAX_IMAGE_BYTES) {
-    throw new PremiumImageError(
-      "The source image must be smaller than 8 MB.",
-      413
-    );
-  }
-
-  return {
-    imageBuffer,
-    mimeType,
-  };
-}
-
-function getCloudflareErrorMessage(
-  payload: CloudflareJsonResponse | null,
-  fallback = "Cloudflare could not generate the premium product image."
-) {
-  if (!payload) return fallback;
-
-  const errorMessages = Array.isArray(payload.errors)
-    ? payload.errors
-        .map((item) =>
-          typeof item === "string"
-            ? item
-            : cleanText(item?.message, 800)
-        )
-        .filter(Boolean)
-    : [];
-
-  if (errorMessages.length) {
-    return errorMessages.join(" | ");
-  }
-
-  const messageTexts = Array.isArray(payload.messages)
-    ? payload.messages
-        .map((item) =>
-          typeof item === "string"
-            ? item
-            : cleanText(item?.message, 800)
-        )
-        .filter(Boolean)
-    : [];
-
-  if (messageTexts.length) {
-    return messageTexts.join(" | ");
-  }
-
-  return fallback;
-}
-
-function ensureImageDataUrl(value: string) {
-  const cleaned = cleanText(value, 20_000_000);
-
-  if (!cleaned) return "";
-
-  if (cleaned.startsWith("data:image/")) {
-    return cleaned;
-  }
-
-  return `data:image/png;base64,${cleaned}`;
-}
-
-function isRetriableCloudflareFailure(
-  status: number,
-  message: string
-) {
-  const text = message.toLowerCase();
-
-  if ([408, 409, 425, 429, 500, 502, 503, 504].includes(status)) {
-    return true;
-  }
-
-  return (
-    text.includes("capacity temporarily exceeded") ||
-    text.includes("temporarily unavailable") ||
-    text.includes("temporarily overloaded") ||
-    text.includes("request timed out") ||
-    text.includes("timeout") ||
-    text.includes("internal error") ||
-    text.includes("service unavailable") ||
-    text.includes("try again")
-  );
-}
-
-async function generateWithCloudflareModel(
-  model: string,
-  imageBuffer: Buffer,
-  prompt: string
-): Promise<ProviderResult> {
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
-  const apiToken =
-    process.env.CLOUDFLARE_API_TOKEN?.trim() ||
-    process.env.CLOUDFLARE_AUTH_TOKEN?.trim();
-
-  if (!accountId || !apiToken) {
-    throw new PremiumImageError(
-      "Cloudflare credentials are not configured.",
-      500
-    );
-  }
-
-  let response: Response;
-
-  try {
-    response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(
-        accountId
-      )}/ai/run/${model}`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prompt,
-          negative_prompt: buildNegativePrompt(),
-          image_b64: imageBuffer.toString("base64"),
-          num_steps: 20,
-          strength: 0.3,
-          guidance: 7.5,
-        }),
-        cache: "no-store",
-        signal: AbortSignal.timeout(45_000),
-      }
-    );
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Cloudflare image request failed.";
-
-    throw new PremiumImageError(
-      message.toLowerCase().includes("timeout")
-        ? `${model} request timed out.`
-        : `${model} is temporarily unavailable.`,
-      504
-    );
-  }
-
-  const contentType = (
-    response.headers.get("content-type") || ""
-  ).toLowerCase();
-
-  if (response.ok && contentType.startsWith("image/")) {
-    const outputBuffer = Buffer.from(await response.arrayBuffer());
-
-    if (!outputBuffer.length) {
-      throw new PremiumImageError(
-        `${model} returned an empty image.`,
-        502
-      );
-    }
-
-    return {
-      imageUrl: `data:${contentType};base64,${outputBuffer.toString("base64")}`,
-      model,
-      provider: "cloudflare",
-    };
-  }
-
-  let payload: CloudflareJsonResponse | null = null;
-
-  try {
-    payload = (await response.json()) as CloudflareJsonResponse;
-  } catch {
-    throw new PremiumImageError(
-      response.ok
-        ? `${model} returned an unexpected response.`
-        : `${model} returned an unreadable error response.`,
-      response.status || 502
-    );
-  }
-
-  if (!response.ok || payload.success === false) {
-    throw new PremiumImageError(
-      getCloudflareErrorMessage(
-        payload,
-        `${model} could not generate the image.`
-      ),
-      response.status || 502
-    );
-  }
-
-  let encodedImage = "";
-
-  if (typeof payload.result === "string") {
-    encodedImage = payload.result;
-  } else if (payload.result && typeof payload.result === "object") {
-    encodedImage =
-      cleanText(payload.result.image, 20_000_000) ||
-      (Array.isArray(payload.result.output)
-        ? cleanText(payload.result.output[0], 20_000_000)
-        : cleanText(payload.result.output, 20_000_000));
-  }
-
-  const resultUrl = ensureImageDataUrl(encodedImage);
-
-  if (!resultUrl) {
-    throw new PremiumImageError(
-      `${model} returned no generated image.`,
-      502
-    );
-  }
-
-  return {
-    imageUrl: resultUrl,
-    model,
-    provider: "cloudflare",
-  };
-}
-
-async function generateWithCloudflareRetry(
-  imageBuffer: Buffer,
-  prompt: string
-): Promise<ProviderResult> {
-  let lastError: PremiumImageError | null = null;
-
-  for (
-    let attemptIndex = 0;
-    attemptIndex < CLOUDFLARE_RETRY_DELAYS_MS.length;
-    attemptIndex += 1
+  if (
+    !source ||
+    !isSafeHttpUrl(source)
   ) {
-    const delay = CLOUDFLARE_RETRY_DELAYS_MS[attemptIndex];
-
-    if (delay > 0) {
-      await sleep(delay);
-    }
-
-    try {
-      return await generateWithCloudflareModel(
-        CLOUDFLARE_PRIMARY_MODEL,
-        imageBuffer,
-        prompt
-      );
-    } catch (error) {
-      const resolvedError =
-        error instanceof PremiumImageError
-          ? error
-          : new PremiumImageError(
-              error instanceof Error
-                ? error.message
-                : "Unknown Cloudflare error.",
-              500
-            );
-
-      lastError = resolvedError;
-
-      const shouldRetry =
-        attemptIndex < CLOUDFLARE_RETRY_DELAYS_MS.length - 1 &&
-        isRetriableCloudflareFailure(
-          resolvedError.status,
-          resolvedError.message
-        );
-
-      if (!shouldRetry) {
-        throw resolvedError;
-      }
-    }
-  }
-
-  throw (
-    lastError ||
-    new PremiumImageError(
-      "Cloudflare could not generate the premium image.",
-      502
-    )
-  );
-}
-
-function shouldFallbackFromGemini(status: number, message: string) {
-  const text = message.toLowerCase();
-
-  return (
-    status === 402 ||
-    status === 408 ||
-    status === 409 ||
-    status === 429 ||
-    status >= 500 ||
-    text.includes("quota") ||
-    text.includes("rate limit") ||
-    text.includes("resource_exhausted") ||
-    text.includes("billing") ||
-    text.includes("credits") ||
-    text.includes("temporarily unavailable") ||
-    text.includes("service unavailable") ||
-    text.includes("model not found") ||
-    text.includes("model is not available") ||
-    text.includes("timeout") ||
-    text.includes("timed out")
-  );
-}
-
-async function generateWithGemini(
-  imageBuffer: Buffer,
-  mimeType: string,
-  prompt: string
-): Promise<ProviderResult> {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-
-  if (!apiKey) {
-    throw new PremiumImageError(
-      "GEMINI_API_KEY is not configured.",
-      500
-    );
-  }
-
-  let response: Response;
-
-  try {
-    response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(
-        GEMINI_IMAGE_MODEL
-      )}:generateContent`,
+    return NextResponse.json(
       {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: prompt,
-                },
-                {
-                  inlineData: {
-                    mimeType,
-                    data: imageBuffer.toString("base64"),
-                  },
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            responseModalities: ["IMAGE"],
-            responseFormat: {
-              image: {
-                aspectRatio: "ASPECT_RATIO_FOUR_BY_FIVE",
-                imageSize: "IMAGE_SIZE_ONE_K",
-              },
-            },
-          },
-        }),
-        cache: "no-store",
-        signal: AbortSignal.timeout(45_000),
-      }
-    );
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Gemini image request failed.";
-
-    throw new PremiumImageError(
-      message.toLowerCase().includes("timeout")
-        ? "Gemini premium image request timed out."
-        : "Gemini premium image service is temporarily unavailable.",
-      504
-    );
-  }
-
-  let data: GeminiImageResponse;
-
-  try {
-    data = (await response.json()) as GeminiImageResponse;
-  } catch {
-    throw new PremiumImageError(
-      "Gemini returned an unreadable image response.",
-      response.status || 502
-    );
-  }
-
-  if (!response.ok) {
-    const message =
-      cleanText(data.error?.message, 1200) ||
-      "Gemini could not generate the premium product image.";
-
-    const fallbackAllowed = shouldFallbackFromGemini(
-      response.status,
-      message
-    );
-
-    throw new PremiumImageError(
-      message,
-      fallbackAllowed ? response.status || 502 : 422
-    );
-  }
-
-  if (data.promptFeedback?.blockReason) {
-    throw new PremiumImageError(
-      `Gemini blocked this image request: ${data.promptFeedback.blockReason}.`,
-      422
-    );
-  }
-
-  const parts =
-    data.candidates?.flatMap(
-      (candidate) => candidate.content?.parts || []
-    ) || [];
-
-  const imagePart = parts.find(
-    (part) =>
-      part.inlineData?.data &&
-      (part.inlineData.mimeType || "").startsWith("image/")
-  );
-
-  const generatedBase64 = cleanText(
-    imagePart?.inlineData?.data,
-    20_000_000
-  );
-
-  if (!generatedBase64) {
-    const finishReason = cleanText(
-      data.candidates?.[0]?.finishReason,
-      200
-    );
-
-    throw new PremiumImageError(
-      finishReason
-        ? `Gemini returned no image. Finish reason: ${finishReason}.`
-        : "Gemini returned no generated image.",
-      502
-    );
-  }
-
-  const outputMimeType =
-    cleanText(imagePart?.inlineData?.mimeType, 100) || "image/png";
-
-  return {
-    imageUrl: `data:${outputMimeType};base64,${generatedBase64}`,
-    model: GEMINI_IMAGE_MODEL,
-    provider: "gemini",
-  };
-}
-
-function getHuggingFaceToken() {
-  return (
-    process.env.HF_TOKEN?.trim() ||
-    process.env.HF_API_KEY?.trim() ||
-    process.env.HUGGINGFACE_API_KEY?.trim() ||
-    ""
-  );
-}
-
-async function generateWithHuggingFace(
-  imageBuffer: Buffer,
-  mimeType: string,
-  prompt: string
-): Promise<ProviderResult> {
-  const token = getHuggingFaceToken();
-
-  if (!token) {
-    throw new PremiumImageError(
-      "HF_TOKEN is not configured.",
-      500
-    );
-  }
-
-  try {
-    const client = new InferenceClient(token);
-    const imageBytes = Uint8Array.from(imageBuffer);
-
-    const output = await client.imageToImage({
-      model: HUGGINGFACE_IMAGE_MODEL,
-      provider: "auto",
-      inputs: new Blob([imageBytes], { type: mimeType }),
-      parameters: {
-        prompt,
-        negative_prompt: buildNegativePrompt(),
-        guidance_scale: 5.5,
-        num_inference_steps: 18,
-        target_size: {
-          width: 1024,
-          height: 1280,
-        },
+        ok: false,
+        error:
+          "A valid src URL is required.",
       },
-    });
-
-    const outputBuffer = Buffer.from(await output.arrayBuffer());
-
-    if (!outputBuffer.length) {
-      throw new PremiumImageError(
-        "Hugging Face returned an empty generated image.",
-        502
-      );
-    }
-
-    const outputMimeType = output.type || "image/png";
-
-    return {
-      imageUrl: `data:${outputMimeType};base64,${outputBuffer.toString("base64")}`,
-      model: HUGGINGFACE_IMAGE_MODEL,
-      provider: "huggingface",
-    };
-  } catch (error) {
-    if (error instanceof PremiumImageError) {
-      throw error;
-    }
-
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unknown Hugging Face image error.";
-
-    throw new PremiumImageError(
-      cleanText(message, 1200) ||
-        "Hugging Face could not generate the premium product image.",
-      502
-    );
-  }
-}
-
-async function generateWithOpenAI(
-  imageBuffer: Buffer,
-  mimeType: string,
-  prompt: string
-): Promise<ProviderResult> {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-
-  if (!apiKey) {
-    throw new PremiumImageError(
-      "OPENAI_API_KEY is not configured.",
-      500
-    );
-  }
-
-  const formData = new FormData();
-  formData.append("model", OPENAI_IMAGE_MODEL);
-  formData.append("prompt", prompt);
-  formData.append("size", "1024x1536");
-
-  const imageBytes = Uint8Array.from(imageBuffer);
-
-  formData.append(
-    "image",
-    new Blob([imageBytes], { type: mimeType }),
-    `source.${mimeType.split("/")[1] || "png"}`
-  );
-
-  let response: Response;
-
-  try {
-    response = await fetch("https://api.openai.com/v1/images/edits", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
+      {
+        status: 400,
       },
-      body: formData,
-      cache: "no-store",
-      signal: AbortSignal.timeout(45_000),
-    });
+    );
+  }
+
+  let sharpRuntime:
+    typeof import("sharp").default;
+
+  try {
+    const sharpModule =
+      await import("sharp");
+
+    sharpRuntime =
+      sharpModule.default;
   } catch (error) {
-    const message =
+    console.error(
+      "NCS PRODUCT IMAGE PROXY: sharp unavailable",
       error instanceof Error
         ? error.message
-        : "OpenAI image request failed.";
-
-    throw new PremiumImageError(
-      message.toLowerCase().includes("timeout")
-        ? "OpenAI premium image request timed out."
-        : "OpenAI premium image service is temporarily unavailable.",
-      504
+        : String(error),
     );
-  }
-
-  let data: OpenAiImageResponse;
-
-  try {
-    data = (await response.json()) as OpenAiImageResponse;
-  } catch {
-    throw new PremiumImageError(
-      "OpenAI returned an unreadable image response.",
-      response.status || 502
-    );
-  }
-
-  if (!response.ok) {
-    throw new PremiumImageError(
-      cleanText(data.error?.message, 1000) ||
-        "OpenAI could not generate the premium product image.",
-      response.status || 502
-    );
-  }
-
-  const result = data.data?.[0];
-
-  if (!result) {
-    throw new PremiumImageError(
-      "OpenAI returned no generated image.",
-      502
-    );
-  }
-
-  if (result.b64_json) {
-    return {
-      imageUrl: `data:image/png;base64,${result.b64_json}`,
-      revisedPrompt: cleanText(result.revised_prompt, 2000),
-      model: OPENAI_IMAGE_MODEL,
-      provider: "openai",
-    };
-  }
-
-  if (result.url) {
-    return {
-      imageUrl: result.url,
-      revisedPrompt: cleanText(result.revised_prompt, 2000),
-      model: OPENAI_IMAGE_MODEL,
-      provider: "openai",
-    };
-  }
-
-  throw new PremiumImageError(
-    "OpenAI returned an empty generated image result.",
-    502
-  );
-}
-
-function hasUsefulContext(context: ProductContext) {
-  return Boolean(
-    context.name ||
-      context.brand ||
-      context.category ||
-      context.size ||
-      context.colour
-  );
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = (await request.json()) as {
-      imageUrl?: unknown;
-      preset?: unknown;
-      productContext?: unknown;
-      skipProviders?: unknown;
-    };
-
-    const imageUrl = cleanText(body.imageUrl, 2000);
-    const preset = cleanPreset(body.preset);
-    const productContext = cleanProductContext(body.productContext);
-    const premiumPrompt = buildPremiumPrompt(productContext, preset);
-
-    const skipProviders = new Set(
-      Array.isArray(body.skipProviders)
-        ? body.skipProviders
-            .map((value) => cleanText(value, 40).toLowerCase())
-            .filter((value) =>
-              ["huggingface", "gemini", "cloudflare", "openai"].includes(
-                value
-              )
-            )
-        : []
-    );
-
-    if (!imageUrl || !isSafeImageUrl(imageUrl)) {
-      return NextResponse.json(
-        { error: "A valid uploaded product image URL is required." },
-        { status: 400 }
-      );
-    }
-
-    const { imageBuffer, mimeType } = await downloadImage(imageUrl);
-    const providerErrors: string[] = [];
-
-    if (!skipProviders.has("huggingface")) {
-      try {
-        const result = await generateWithHuggingFace(
-          imageBuffer,
-          mimeType,
-          premiumPrompt
-        );
-        return NextResponse.json({
-          enhancedImageUrl: result.imageUrl,
-          provider: result.provider,
-          model: result.model,
-          usedFallback: false,
-          presetUsed: preset,
-          manualPrompt: premiumPrompt,
-          providerErrors,
-          contextUsed: hasUsefulContext(productContext),
-          message:
-            "Premium product image generated with Hugging Face FLUX Kontext in strict product-fidelity mode and passed to NCS client-side validation.",
-        });
-      } catch (error) {
-        providerErrors.push(
-          `Hugging Face ${HUGGINGFACE_IMAGE_MODEL}: ${cleanText(
-            error instanceof Error ? error.message : "Unknown Hugging Face image error.",
-            1200
-          )}`
-        );
-      }
-    } else {
-      providerErrors.push(
-        "Hugging Face was skipped because its previous output was unchanged."
-      );
-    }
-
-    if (!skipProviders.has("gemini")) {
-      try {
-        const result = await generateWithGemini(
-          imageBuffer,
-          mimeType,
-          premiumPrompt
-        );
-        return NextResponse.json({
-          enhancedImageUrl: result.imageUrl,
-          provider: result.provider,
-          model: result.model,
-          usedFallback: true,
-          presetUsed: preset,
-          manualPrompt: premiumPrompt,
-          providerErrors,
-          contextUsed: hasUsefulContext(productContext),
-          message:
-            "The premium product image was generated with Gemini Image AI and passed to NCS quality validation.",
-        });
-      } catch (error) {
-        providerErrors.push(
-          `Gemini ${GEMINI_IMAGE_MODEL}: ${cleanText(
-            error instanceof Error ? error.message : "Unknown Gemini image error.",
-            1200
-          )}`
-        );
-      }
-    } else {
-      providerErrors.push(
-        "Gemini was skipped because its previous output was unchanged."
-      );
-    }
-
-    if (!skipProviders.has("cloudflare")) {
-      try {
-        const result = await generateWithCloudflareRetry(
-          imageBuffer,
-          premiumPrompt
-        );
-        return NextResponse.json({
-          enhancedImageUrl: result.imageUrl,
-          provider: result.provider,
-          model: result.model,
-          usedFallback: true,
-          presetUsed: preset,
-          manualPrompt: premiumPrompt,
-          providerErrors,
-          contextUsed: hasUsefulContext(productContext),
-          message:
-            "The premium product image was generated with Cloudflare and passed to NCS quality validation.",
-        });
-      } catch (error) {
-        providerErrors.push(
-          `Cloudflare ${CLOUDFLARE_PRIMARY_MODEL}: ${cleanText(
-            error instanceof Error ? error.message : "Unknown Cloudflare error.",
-            1200
-          )}`
-        );
-      }
-    } else {
-      providerErrors.push(
-        "Cloudflare was skipped because its previous output was unchanged."
-      );
-    }
-
-    if (!skipProviders.has("openai")) {
-      try {
-        const result = await generateWithOpenAI(
-          imageBuffer,
-          mimeType,
-          premiumPrompt
-        );
-        return NextResponse.json({
-          enhancedImageUrl: result.imageUrl,
-          provider: result.provider,
-          model: result.model,
-          usedFallback: true,
-          presetUsed: preset,
-          revisedPrompt: result.revisedPrompt || "",
-          manualPrompt: premiumPrompt,
-          providerErrors,
-          contextUsed: hasUsefulContext(productContext),
-          message:
-            "The premium product image was generated with OpenAI and passed to NCS quality validation.",
-        });
-      } catch (error) {
-        providerErrors.push(
-          `OpenAI: ${cleanText(
-            error instanceof Error ? error.message : "Unknown OpenAI error.",
-            1200
-          )}`
-        );
-      }
-    } else {
-      providerErrors.push(
-        "OpenAI was skipped because its previous output was unchanged."
-      );
-    }
 
     return NextResponse.json(
       {
+        ok: false,
         error:
-          "No configured cloud provider returned a usable premium image. The app can use the local MODNet/BEN2 catalog backup.",
-        provider: "none",
-        usedFallback: true,
-        presetUsed: preset,
-        manualPrompt: premiumPrompt,
-        providerErrors,
-        contextUsed: hasUsefulContext(productContext),
-        message:
-          "Cloud premium generation was unavailable or rejected by NCS quality validation.",
+          "Image converter unavailable.",
       },
-      { status: 502 }
+      {
+        status: 500,
+      },
+    );
+  }
+
+  const controller =
+    new AbortController();
+
+  const timeout =
+    setTimeout(
+      () =>
+        controller.abort(),
+      15000,
+    );
+
+  try {
+    const response =
+      await fetch(
+        source,
+        {
+          method: "GET",
+          redirect: "follow",
+          headers: {
+            Accept:
+              "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.9,*/*;q=0.1",
+            "User-Agent":
+              "NEW-CITY-STYLE-WhatsApp-Image-Proxy/15.3",
+          },
+          cache: "no-store",
+          signal:
+            controller.signal,
+        },
+      );
+
+    if (!response.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            `Source image returned HTTP ${response.status}.`,
+        },
+        {
+          status: 502,
+        },
+      );
+    }
+
+    const sourceBytes =
+      Buffer.from(
+        await response.arrayBuffer(),
+      );
+
+    if (
+      sourceBytes.length === 0 ||
+      sourceBytes.length >
+        15 * 1024 * 1024
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Source image is empty or too large.",
+        },
+        {
+          status: 413,
+        },
+      );
+    }
+
+    let jpeg =
+      await sharpRuntime(
+        sourceBytes,
+        {
+          failOn: "none",
+          limitInputPixels:
+            80_000_000,
+        },
+      )
+        .rotate()
+        .resize({
+          width: 1200,
+          height: 1500,
+          fit: "inside",
+          withoutEnlargement:
+            true,
+        })
+        .flatten({
+          background:
+            "#ffffff",
+        })
+        .jpeg({
+          quality: 86,
+          mozjpeg: true,
+        })
+        .toBuffer();
+
+    if (
+      jpeg.length >
+      4.5 * 1024 * 1024
+    ) {
+      jpeg =
+        await sharpRuntime(
+          sourceBytes,
+          {
+            failOn: "none",
+            limitInputPixels:
+              80_000_000,
+          },
+        )
+          .rotate()
+          .resize({
+            width: 900,
+            height: 1200,
+            fit: "inside",
+            withoutEnlargement:
+              true,
+          })
+          .flatten({
+            background:
+              "#ffffff",
+          })
+          .jpeg({
+            quality: 72,
+            mozjpeg: true,
+          })
+          .toBuffer();
+    }
+
+    if (
+      jpeg.length === 0 ||
+      jpeg.length >
+        5 * 1024 * 1024
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Converted image is invalid.",
+        },
+        {
+          status: 500,
+        },
+      );
+    }
+
+    /*
+     * Content-Disposition is intentionally inline.
+     * Meta needs a plain, publicly retrievable image/jpeg response.
+     */
+    return new NextResponse(
+      new Uint8Array(jpeg),
+      {
+        status: 200,
+        headers: {
+          "Content-Type":
+            "image/jpeg",
+          "Content-Length":
+            String(
+              jpeg.length,
+            ),
+          "Content-Disposition":
+            'inline; filename="ncs-product.jpg"',
+          "Cache-Control":
+            "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800",
+          "X-Content-Type-Options":
+            "nosniff",
+        },
+      },
     );
   } catch (error) {
     console.error(
-      "Generate premium product image route error:",
-      error
+      "NCS PRODUCT IMAGE PROXY FAILED:",
+      error instanceof Error
+        ? error.message
+        : String(error),
     );
 
     return NextResponse.json(
       {
+        ok: false,
         error:
-          "Premium image generation failed. The app can still use the local MODNet/BEN2 backup.",
+          "Unable to prepare product image.",
       },
-      { status: 500 }
+      {
+        status: 502,
+      },
+    );
+  } finally {
+    clearTimeout(
+      timeout,
     );
   }
 }

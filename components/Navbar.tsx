@@ -4,15 +4,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   type CSSProperties,
-  KeyboardEvent,
+  type KeyboardEvent,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
-
-
 
 type BrandingSettings = Record<string, unknown> & {
   id?: number | string;
@@ -25,15 +23,6 @@ type NavbarBranding = {
   mobileLogoUrl: string;
   primaryColor: string;
   secondaryColor: string;
-};
-
-const DEFAULT_BRANDING: NavbarBranding = {
-  brandName: "NEW CITY STYLE",
-  tagline: "Style for Every Family",
-  logoUrl: "",
-  mobileLogoUrl: "",
-  primaryColor: "#0A2E73",
-  secondaryColor: "#D4AF37",
 };
 
 type Product = {
@@ -53,6 +42,30 @@ type Product = {
   image_url?: string | null;
   images?: string[] | string | null;
 };
+
+const DEFAULT_BRANDING: NavbarBranding = {
+  brandName: "NEW CITY STYLE",
+  tagline: "Style for Every Family",
+  logoUrl: "",
+  mobileLogoUrl: "",
+  primaryColor: "#0A2E73",
+  secondaryColor: "#D4AF37",
+};
+
+const quickLinks = [
+  { label: "Men", query: "Men" },
+  { label: "Women", query: "Women" },
+  { label: "Kids", query: "Kids" },
+  { label: "New Arrivals", query: "new arrivals" },
+  { label: "Best Deals", query: "offers" },
+];
+
+const commerceLinks = [
+  { label: "Home", href: "/", icon: "⌂" },
+  { label: "Collections", href: "/collections", icon: "◫" },
+  { label: "Wishlist", href: "/wishlist", icon: "♡" },
+  { label: "Orders", href: "/orders", icon: "▣" },
+];
 
 function getProductName(product: Product) {
   return (
@@ -74,11 +87,9 @@ function getProductImage(product: Product) {
   if (typeof product.images === "string" && product.images.trim()) {
     try {
       const parsed = JSON.parse(product.images);
-
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed[0];
       }
-
       return product.images;
     } catch {
       return product.images;
@@ -115,6 +126,7 @@ function hexToRgbCss(value: string) {
 export default function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
+
   const desktopSearchWrapperRef = useRef<HTMLDivElement | null>(null);
   const mobileSearchWrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -124,19 +136,26 @@ export default function Navbar() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
   const [cartCount, setCartCount] = useState(0);
   const [wishlistCount, setWishlistCount] = useState(0);
-  const [branding, setBranding] = useState<NavbarBranding>(DEFAULT_BRANDING);
-
+  const [branding, setBranding] =
+    useState<NavbarBranding>(DEFAULT_BRANDING);
 
   useEffect(() => {
     const root = document.documentElement;
 
     root.style.setProperty("--ncs-primary", branding.primaryColor);
     root.style.setProperty("--ncs-secondary", branding.secondaryColor);
-    root.style.setProperty("--ncs-primary-rgb", hexToRgbCss(branding.primaryColor));
-    root.style.setProperty("--ncs-secondary-rgb", hexToRgbCss(branding.secondaryColor));
+    root.style.setProperty(
+      "--ncs-primary-rgb",
+      hexToRgbCss(branding.primaryColor)
+    );
+    root.style.setProperty(
+      "--ncs-secondary-rgb",
+      hexToRgbCss(branding.secondaryColor)
+    );
 
     root.style.setProperty("--ncs-surface", "#FFFFFF");
     root.style.setProperty("--ncs-page-bg", "#F7F8FC");
@@ -157,19 +176,17 @@ export default function Navbar() {
   }, [branding.primaryColor, branding.secondaryColor]);
 
   useEffect(() => {
-    loadProducts();
-    loadCounts();
-    loadBranding();
+    void loadProducts();
+    void loadCounts();
+    void loadBranding();
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {
-      loadCounts();
+      void loadCounts();
     });
 
-    return () => {
-      subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -182,7 +199,7 @@ export default function Navbar() {
           schema: "public",
           table: "cart",
         },
-        () => loadCounts()
+        () => void loadCounts()
       )
       .subscribe();
 
@@ -195,7 +212,7 @@ export default function Navbar() {
           schema: "public",
           table: "wishlist",
         },
-        () => loadCounts()
+        () => void loadCounts()
       )
       .subscribe();
 
@@ -208,14 +225,14 @@ export default function Navbar() {
           schema: "public",
           table: "branding_settings",
         },
-        () => loadBranding()
+        () => void loadBranding()
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(cartChannel);
-      supabase.removeChannel(wishlistChannel);
-      supabase.removeChannel(brandingChannel);
+      void supabase.removeChannel(cartChannel);
+      void supabase.removeChannel(wishlistChannel);
+      void supabase.removeChannel(brandingChannel);
     };
   }, []);
 
@@ -232,10 +249,17 @@ export default function Navbar() {
       }
     }
 
+    function handleScroll() {
+      setScrolled(window.scrollY > 18);
+    }
+
     document.addEventListener("mousedown", handleOutsideClick);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
 
     return () => {
       document.removeEventListener("mousedown", handleOutsideClick);
+      window.removeEventListener("scroll", handleScroll);
     };
   }, []);
 
@@ -245,9 +269,6 @@ export default function Navbar() {
 
   async function loadBranding() {
     try {
-      // Only request columns that already exist in branding_settings.
-      // The current table does not contain mobile_logo_url, so the official
-      // logo is also used on mobile until a mobile-logo column is added.
       const { data, error } = await supabase
         .from("branding_settings")
         .select(
@@ -269,12 +290,10 @@ export default function Navbar() {
       const readText = (...keys: string[]) => {
         for (const key of keys) {
           const value = settings[key];
-
           if (typeof value === "string" && value.trim()) {
             return value.trim();
           }
         }
-
         return "";
       };
 
@@ -308,7 +327,7 @@ export default function Navbar() {
         .gt("stock", 0)
         .gt("online_stock_limit", 0)
         .order("created_at", { ascending: false })
-        .limit(100);
+        .limit(120);
 
       if (error) throw error;
 
@@ -341,34 +360,23 @@ export default function Navbar() {
       }
 
       const [cartResponse, wishlistResponse] = await Promise.all([
-        supabase
-          .from("cart")
-          .select("quantity")
-          .eq("user_id", user.id),
-
+        supabase.from("cart").select("quantity").eq("user_id", user.id),
         supabase
           .from("wishlist")
           .select("id", { count: "exact", head: true })
           .eq("user_id", user.id),
       ]);
 
-      if (cartResponse.error) {
-        console.error("Cart count error:", cartResponse.error);
-      } else {
+      if (!cartResponse.error) {
         const quantityTotal = (cartResponse.data || []).reduce(
-          (sum, item: any) => sum + Number(item.quantity || 0),
+          (sum, item: { quantity?: number | string | null }) =>
+            sum + Number(item.quantity || 0),
           0
         );
-
         setCartCount(quantityTotal);
       }
 
-      if (wishlistResponse.error) {
-        console.error(
-          "Wishlist count error:",
-          wishlistResponse.error
-        );
-      } else {
+      if (!wishlistResponse.error) {
         setWishlistCount(wishlistResponse.count || 0);
       }
     } catch (error) {
@@ -378,18 +386,13 @@ export default function Navbar() {
 
   const suggestions = useMemo(() => {
     const query = search.trim().toLowerCase();
-
     if (!query) return [];
 
     return products
       .filter((product) => {
         const name = getProductName(product).toLowerCase();
-        const category = String(
-          product.category || ""
-        ).toLowerCase();
-        const subcategory = String(
-          product.subcategory || ""
-        ).toLowerCase();
+        const category = String(product.category || "").toLowerCase();
+        const subcategory = String(product.subcategory || "").toLowerCase();
         const brand = String(product.brand || "").toLowerCase();
 
         return (
@@ -402,11 +405,27 @@ export default function Navbar() {
       .slice(0, 7);
   }, [products, search]);
 
+  function rememberSearch(query: string) {
+    try {
+      window.localStorage.setItem("ncs_ai_last_query", query);
+    } catch {
+      // Optional personalization only.
+    }
+  }
+
   function handleSearch() {
     const query = search.trim();
-
     if (!query) return;
 
+    rememberSearch(query);
+    setShowSuggestions(false);
+    setMobileMenuOpen(false);
+    router.push(`/search?q=${encodeURIComponent(query)}`);
+  }
+
+  function openQuickSearch(query: string) {
+    rememberSearch(query);
+    setSearch("");
     setShowSuggestions(false);
     setMobileMenuOpen(false);
     router.push(`/search?q=${encodeURIComponent(query)}`);
@@ -419,20 +438,13 @@ export default function Navbar() {
     router.push(`/product/${product.id}`);
   }
 
-  function handleSearchKeyDown(
-    event: KeyboardEvent<HTMLInputElement>
-  ) {
+  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-
-      if (!showSuggestions) {
-        setShowSuggestions(true);
-      }
-
+      if (!showSuggestions) setShowSuggestions(true);
       setActiveIndex((current) =>
         Math.min(current + 1, suggestions.length - 1)
       );
-
       return;
     }
 
@@ -465,948 +477,1429 @@ export default function Navbar() {
     setShowSuggestions(false);
   }
 
+  function renderSuggestions(mobile = false) {
+    if (!showSuggestions || !search.trim()) return null;
+
+    return (
+      <div
+        className={`suggestions ${mobile ? "mobileSuggestions" : ""}`}
+      >
+        <div className="suggestionHeader">
+          <div>
+            <span>SMART SEARCH</span>
+            <small>Live online catalogue</small>
+          </div>
+
+          <button type="button" onClick={handleSearch}>
+            View all →
+          </button>
+        </div>
+
+        {loadingProducts ? (
+          <div className="suggestionState">
+            <div className="miniLoader" />
+            Finding live products...
+          </div>
+        ) : suggestions.length > 0 ? (
+          <div className="suggestionList">
+            {suggestions.map((product, index) => {
+              const productName = getProductName(product);
+              const image = getProductImage(product);
+
+              return (
+                <button
+                  type="button"
+                  key={String(product.id)}
+                  className={`suggestionItem ${
+                    activeIndex === index ? "suggestionActive" : ""
+                  }`}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onClick={() => openProduct(product)}
+                >
+                  <div className="suggestionImage">
+                    {image ? (
+                      <img src={image} alt={productName} />
+                    ) : (
+                      <span>NCS</span>
+                    )}
+                  </div>
+
+                  <div className="suggestionInfo">
+                    <strong>{productName}</strong>
+                    <span>
+                      {product.category ||
+                        product.subcategory ||
+                        "Fashion"}
+                      {product.brand ? ` • ${product.brand}` : ""}
+                    </span>
+                  </div>
+
+                  <div className="suggestionPrice">
+                    {formatCurrency(product.price)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="suggestionState">
+            No direct match yet. Search “{search.trim()}” across the full
+            catalogue.
+          </div>
+        )}
+
+        <button
+          type="button"
+          className="searchAllButton"
+          onClick={handleSearch}
+        >
+          Search “{search.trim()}” across NEW CITY STYLE →
+        </button>
+      </div>
+    );
+  }
+
   if (pathname?.startsWith("/admin")) {
     return null;
   }
 
+  const cssVars = {
+    "--navbar-primary": "var(--ncs-primary, #0A2E73)",
+    "--navbar-secondary": "var(--ncs-secondary, #D4AF37)",
+  } as CSSProperties;
+
   return (
-    <nav
-      className="navbar"
-      style={
-        {
-          "--navbar-primary": "var(--ncs-primary, #0A2E73)",
-          "--navbar-secondary": "var(--ncs-secondary, #D4AF37)",
-        } as CSSProperties
-      }
-    >
-      <div className="navbarInner">
-        <Link
-          href="/"
-          className="brand"
-          onClick={() => setMobileMenuOpen(false)}
-        >
-          {branding.logoUrl ? (
-            <span className="brandLogoFrame">
-              <img
-                className="brandLogo brandLogoDesktop"
-                src={branding.logoUrl}
-                alt={`${branding.brandName} official logo`}
-              />
-
-              <img
-                className="brandLogo brandLogoMobile"
-                src={branding.mobileLogoUrl || branding.logoUrl}
-                alt={`${branding.brandName} mobile logo`}
-              />
-            </span>
-          ) : (
-            <span className="brandMark">NCS</span>
-          )}
-
-          <span className="brandText">
-            <strong>{branding.brandName}</strong>
-            <small>{branding.tagline}</small>
-          </span>
-        </Link>
-
-        <div className="searchWrapper" ref={desktopSearchWrapperRef}>
-          <div className="searchBar">
-            <span className="searchIcon">⌕</span>
-
-            <input
-              type="search"
-              placeholder="Search shirts, sarees, kids wear, brands..."
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setShowSuggestions(true);
-              }}
-              onFocus={() => setShowSuggestions(true)}
-              onKeyDown={handleSearchKeyDown}
-              aria-label="Search products"
-              autoComplete="off"
-            />
-
-            {search && (
-              <button
-                type="button"
-                className="clearSearch"
-                onClick={clearSearch}
-                aria-label="Clear search"
-              >
-                ×
-              </button>
-            )}
-
-            <button
-              type="button"
-              className="searchButton"
-              onClick={handleSearch}
-              aria-label="Search"
-            >
-              Search
-            </button>
-          </div>
-
-          {showSuggestions && search.trim() && (
-            <div className="suggestions">
-              <div className="suggestionHeader">
-                <span>Search Suggestions</span>
-
-                <button type="button" onClick={handleSearch}>
-                  View all results
-                </button>
-              </div>
-
-              {loadingProducts ? (
-                <div className="suggestionState">
-                  <div className="miniLoader" />
-                  Loading products...
-                </div>
-              ) : suggestions.length > 0 ? (
-                <div className="suggestionList">
-                  {suggestions.map((product, index) => {
-                    const productName = getProductName(product);
-                    const image = getProductImage(product);
-
-                    return (
-                      <button
-                        type="button"
-                        key={String(product.id)}
-                        className={`suggestionItem ${
-                          activeIndex === index
-                            ? "suggestionActive"
-                            : ""
-                        }`}
-                        onMouseEnter={() => setActiveIndex(index)}
-                        onClick={() => openProduct(product)}
-                      >
-                        <div className="suggestionImage">
-                          {image ? (
-                            <img src={image} alt={productName} />
-                          ) : (
-                            <span>NCS</span>
-                          )}
-                        </div>
-
-                        <div className="suggestionInfo">
-                          <strong>{productName}</strong>
-
-                          <span>
-                            {product.category ||
-                              product.subcategory ||
-                              "Fashion"}
-
-                            {product.brand
-                              ? ` • ${product.brand}`
-                              : ""}
-                          </span>
-                        </div>
-
-                        <div className="suggestionPrice">
-                          {formatCurrency(product.price)}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="suggestionState">
-                  No matching products found for “{search.trim()}”
-                </div>
-              )}
-
-              <button
-                type="button"
-                className="searchAllButton"
-                onClick={handleSearch}
-              >
-                Search for “{search.trim()}” →
-              </button>
+    <>
+      <nav
+        className={`navbar ${scrolled ? "navbarScrolled" : ""}`}
+        style={cssVars}
+      >
+        <div className="utilityBar">
+          <div className="utilityInner">
+            <div className="utilityLeft">
+              <span className="liveDot" />
+              <b>LIVE ONLINE STORE</b>
+              <span>Smart shopping • Family fashion • Secure checkout</span>
             </div>
-          )}
+
+            <div className="utilityRight">
+              <Link href="/orders">Track Order</Link>
+              <Link href="/contact">Help</Link>
+              <span>NEW CITY STYLE • INDIA</span>
+            </div>
+          </div>
         </div>
 
-        <button
-          type="button"
-          className="mobileMenuButton"
-          onClick={() =>
-            setMobileMenuOpen((current) => !current)
-          }
-          aria-label="Toggle navigation menu"
-          aria-expanded={mobileMenuOpen}
-        >
-          <span />
-          <span />
-          <span />
-        </button>
-
-        <div
-          className={`navLinks ${
-            mobileMenuOpen ? "navLinksOpen" : ""
-          }`}
-        >
+        <div className="navbarInner">
           <Link
             href="/"
+            className="brand"
             onClick={() => setMobileMenuOpen(false)}
           >
-            <span>⌂</span>
-            Home
-          </Link>
-
-          <Link
-            href="/wishlist"
-            className="countLink"
-            onClick={() => setMobileMenuOpen(false)}
-          >
-            <span>♡</span>
-            Wishlist
-
-            {wishlistCount > 0 && (
-              <b className="countBadge">
-                {wishlistCount > 99 ? "99+" : wishlistCount}
-              </b>
-            )}
-          </Link>
-
-          <Link
-            href="/orders"
-            onClick={() => setMobileMenuOpen(false)}
-          >
-            <span>▣</span>
-            Orders
-          </Link>
-
-          <Link
-            href="/cart"
-            className="countLink"
-            onClick={() => setMobileMenuOpen(false)}
-          >
-            <span>🛒</span>
-            Cart
-
-            {cartCount > 0 && (
-              <b className="countBadge">
-                {cartCount > 99 ? "99+" : cartCount}
-              </b>
-            )}
-          </Link>
-
-          <Link
-            href="/login"
-            className="loginLink"
-            onClick={() => setMobileMenuOpen(false)}
-          >
-            <span>♙</span>
-            Login
-          </Link>
-        </div>
-      </div>
-
-      <div className="mobileSearch">
-        <div
-          className="searchWrapper"
-          ref={mobileSearchWrapperRef}
-        >
-          <div className="searchBar">
-            <span className="searchIcon">⌕</span>
-
-            <input
-              type="search"
-              placeholder="Search products..."
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setShowSuggestions(true);
-              }}
-              onFocus={() => setShowSuggestions(true)}
-              onKeyDown={handleSearchKeyDown}
-              aria-label="Search products on mobile"
-              autoComplete="off"
-            />
-
-            {search && (
-              <button
-                type="button"
-                className="clearSearch"
-                onClick={clearSearch}
-                aria-label="Clear search"
-              >
-                ×
-              </button>
+            {branding.logoUrl ? (
+              <span className="brandLogoFrame">
+                <img
+                  className="brandLogo brandLogoDesktop"
+                  src={branding.logoUrl}
+                  alt={`${branding.brandName} official logo`}
+                />
+                <img
+                  className="brandLogo brandLogoMobile"
+                  src={branding.mobileLogoUrl || branding.logoUrl}
+                  alt={`${branding.brandName} mobile logo`}
+                />
+              </span>
+            ) : (
+              <span className="brandMark">NCS</span>
             )}
 
-            <button
-              type="button"
-              className="searchButton"
-              onClick={handleSearch}
-              aria-label="Search"
-            >
-              Search
-            </button>
-          </div>
+            <span className="brandText">
+              <strong>{branding.brandName}</strong>
+              <small>{branding.tagline}</small>
+            </span>
+          </Link>
 
-          {showSuggestions && search.trim() && (
-            <div className="suggestions mobileSuggestions">
-              <div className="suggestionHeader">
-                <span>Search Suggestions</span>
-
-                <button type="button" onClick={handleSearch}>
-                  View all results
-                </button>
+          <div
+            className="searchWrapper desktopSearchWrapper"
+            ref={desktopSearchWrapperRef}
+          >
+            <div className="searchBar">
+              <div className="searchLead">
+                <span className="searchIcon">⌕</span>
+                <small>SMART SEARCH</small>
               </div>
 
-              {loadingProducts ? (
-                <div className="suggestionState">
-                  <div className="miniLoader" />
-                  Loading products...
-                </div>
-              ) : suggestions.length > 0 ? (
-                <div className="suggestionList">
-                  {suggestions.map((product, index) => {
-                    const productName = getProductName(product);
-                    const image = getProductImage(product);
+              <input
+                type="search"
+                placeholder="Try: black shirt under ₹1200, saree, kids set..."
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onKeyDown={handleSearchKeyDown}
+                aria-label="Search products"
+                autoComplete="off"
+              />
 
-                    return (
-                      <button
-                        type="button"
-                        key={String(product.id)}
-                        className={`suggestionItem ${
-                          activeIndex === index
-                            ? "suggestionActive"
-                            : ""
-                        }`}
-                        onMouseEnter={() => setActiveIndex(index)}
-                        onClick={() => openProduct(product)}
-                      >
-                        <div className="suggestionImage">
-                          {image ? (
-                            <img src={image} alt={productName} />
-                          ) : (
-                            <span>NCS</span>
-                          )}
-                        </div>
-
-                        <div className="suggestionInfo">
-                          <strong>{productName}</strong>
-
-                          <span>
-                            {product.category ||
-                              product.subcategory ||
-                              "Fashion"}
-
-                            {product.brand
-                              ? ` • ${product.brand}`
-                              : ""}
-                          </span>
-                        </div>
-
-                        <div className="suggestionPrice">
-                          {formatCurrency(product.price)}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="suggestionState">
-                  No matching products found for “{search.trim()}”
-                </div>
+              {search && (
+                <button
+                  type="button"
+                  className="clearSearch"
+                  onClick={clearSearch}
+                  aria-label="Clear search"
+                >
+                  ×
+                </button>
               )}
 
               <button
                 type="button"
-                className="searchAllButton"
+                className="searchButton"
                 onClick={handleSearch}
+                aria-label="Search"
               >
-                Search for “{search.trim()}” →
+                Search
               </button>
             </div>
-          )}
+
+            {renderSuggestions()}
+          </div>
+
+          <div className="desktopActions">
+            <Link href="/wishlist" className="actionButton">
+              <span>♡</span>
+              <small>Wishlist</small>
+              {wishlistCount > 0 && (
+                <b className="countBadge">
+                  {wishlistCount > 99 ? "99+" : wishlistCount}
+                </b>
+              )}
+            </Link>
+
+            <Link href="/orders" className="actionButton">
+              <span>▣</span>
+              <small>Orders</small>
+            </Link>
+
+            <Link href="/cart" className="actionButton cartAction">
+              <span>🛒</span>
+              <small>Cart</small>
+              {cartCount > 0 && (
+                <b className="countBadge">
+                  {cartCount > 99 ? "99+" : cartCount}
+                </b>
+              )}
+            </Link>
+
+            <Link href="/login" className="accountButton">
+              <span>♙</span>
+              <div>
+                <small>Account</small>
+                <b>Sign in</b>
+              </div>
+            </Link>
+          </div>
+
+          <button
+            type="button"
+            className="mobileMenuButton"
+            onClick={() =>
+              setMobileMenuOpen((current) => !current)
+            }
+            aria-label="Toggle navigation menu"
+            aria-expanded={mobileMenuOpen}
+          >
+            <span />
+            <span />
+            <span />
+          </button>
         </div>
-      </div>
 
-      <style jsx>{`
-        .navbar {
-          position: sticky;
-          z-index: 1000;
-          top: 0;
-          width: 100%;
-          background: linear-gradient(
-            90deg,
-            var(--navbar-primary),
-            color-mix(in srgb, var(--navbar-primary) 84%, white 16%)
-          );
-          color: white;
-          box-shadow: 0 10px 28px rgba(2, 17, 48, 0.24);
-          backdrop-filter: blur(14px);
-        }
+        <div className="commerceRail">
+          <div className="commerceRailInner">
+            <div className="railLinks">
+              {quickLinks.map((item) => (
+                <button
+                  type="button"
+                  key={item.label}
+                  onClick={() => openQuickSearch(item.query)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
 
-        .navbarInner {
-          width: min(1500px, calc(100% - 38px));
-          min-height: 78px;
-          display: flex;
-          align-items: center;
-          gap: 24px;
-          margin: 0 auto;
-        }
+            <div className="railSignal">
+              <span>✦</span>
+              <b>AI SHOPPING READY</b>
+              <small>Ask naturally. Find faster.</small>
+            </div>
+          </div>
+        </div>
 
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 11px;
-          flex-shrink: 0;
-          color: white;
-          text-decoration: none;
-        }
+        <div
+          className={`mobilePanel ${
+            mobileMenuOpen ? "mobilePanelOpen" : ""
+          }`}
+        >
+          <div className="mobilePanelHeader">
+            <div>
+              <small>NEW CITY STYLE</small>
+              <strong>Shop, track & manage</strong>
+            </div>
 
-        .brandLogoFrame {
-          width: 58px;
-          height: 50px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          overflow: hidden;
-          border: 1px solid color-mix(in srgb, var(--navbar-secondary) 78%, transparent);
-          border-radius: 13px;
-          background: rgba(255, 255, 255, 0.96);
-          box-shadow: 0 8px 20px rgba(2, 17, 48, 0.18);
-        }
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(false)}
+              aria-label="Close menu"
+            >
+              ×
+            </button>
+          </div>
 
-        .brandLogo {
-          width: 100%;
-          height: 100%;
-          display: block;
-          padding: 4px;
-          object-fit: contain;
-          object-position: center;
-        }
+          <div className="mobilePanelLinks">
+            {commerceLinks.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <span>{item.icon}</span>
+                <b>{item.label}</b>
 
-        .brandLogoMobile {
-          display: none;
-        }
+                {item.href === "/wishlist" && wishlistCount > 0 && (
+                  <em>{wishlistCount > 99 ? "99+" : wishlistCount}</em>
+                )}
+              </Link>
+            ))}
 
-        .brandMark {
-          width: 44px;
-          height: 44px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid rgba(212, 175, 55, 0.85);
-          border-radius: 13px;
-          background: rgba(212, 175, 55, 0.12);
-          color: var(--navbar-secondary);
-          font-size: 12px;
-          font-weight: 950;
-          letter-spacing: 1px;
-          box-shadow: 0 8px 20px rgba(212, 175, 55, 0.14);
-        }
+            <Link
+              href="/cart"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <span>🛒</span>
+              <b>Cart</b>
+              {cartCount > 0 && (
+                <em>{cartCount > 99 ? "99+" : cartCount}</em>
+              )}
+            </Link>
 
-        .brandText {
-          display: block;
-        }
+            <Link
+              href="/login"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <span>♙</span>
+              <b>Login / Account</b>
+            </Link>
+          </div>
 
-        .brandText strong,
-        .brandText small {
-          display: block;
-          white-space: nowrap;
-        }
+          <div className="mobileQuickGrid">
+            {quickLinks.map((item) => (
+              <button
+                type="button"
+                key={item.label}
+                onClick={() => openQuickSearch(item.query)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-        .brandText strong {
-          color: var(--navbar-secondary);
-          font-size: 21px;
-          line-height: 1.1;
-          letter-spacing: 0.5px;
-        }
+        <div className="mobileSearch">
+          <div
+            className="searchWrapper"
+            ref={mobileSearchWrapperRef}
+          >
+            <div className="searchBar">
+              <span className="searchIcon mobileSearchIcon">⌕</span>
 
-        .brandText small {
-          margin-top: 4px;
-          color: rgba(255, 255, 255, 0.7);
-          font-size: 9px;
-          letter-spacing: 1.2px;
-        }
+              <input
+                type="search"
+                placeholder="Search products, categories, brands..."
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onKeyDown={handleSearchKeyDown}
+                aria-label="Search products on mobile"
+                autoComplete="off"
+              />
 
-        .searchWrapper {
-          position: relative;
-          min-width: 0;
-          flex: 1;
-          max-width: 680px;
-          margin: 0 auto;
-        }
+              {search && (
+                <button
+                  type="button"
+                  className="clearSearch"
+                  onClick={clearSearch}
+                  aria-label="Clear search"
+                >
+                  ×
+                </button>
+              )}
 
-        .searchBar {
-          position: relative;
-          display: flex;
-          align-items: center;
-          overflow: hidden;
-          border: 1px solid rgba(255, 255, 255, 0.26);
-          border-radius: 13px;
-          background: white;
-          box-shadow: 0 8px 22px rgba(2, 17, 48, 0.18);
-          transition:
-            box-shadow 0.2s ease,
-            border-color 0.2s ease;
-        }
+              <button
+                type="button"
+                className="searchButton"
+                onClick={handleSearch}
+                aria-label="Search"
+              >
+                Go
+              </button>
+            </div>
 
-        .searchBar:focus-within {
-          border-color: var(--navbar-secondary);
-          box-shadow:
-            0 0 0 4px rgba(212, 175, 55, 0.16),
-            0 10px 25px rgba(2, 17, 48, 0.22);
-        }
+            {renderSuggestions(true)}
+          </div>
+        </div>
 
-        .searchIcon {
-          position: absolute;
-          z-index: 2;
-          left: 15px;
-          color: #667085;
-          font-size: 24px;
-          transform: translateY(-2px);
-          pointer-events: none;
-        }
-
-        .searchBar input {
-          width: 100%;
-          height: 49px;
-          min-width: 0;
-          padding: 0 45px 0 45px;
-          border: 0;
-          outline: none;
-          background: transparent;
-          color: #172033;
-          font-size: 14px;
-        }
-
-        .searchBar input::-webkit-search-cancel-button,
-        .searchBar input::-webkit-search-decoration {
-          display: none;
-          -webkit-appearance: none;
-          appearance: none;
-        }
-
-        .clearSearch {
-          position: absolute;
-          z-index: 2;
-          right: 92px;
-          width: 30px;
-          height: 30px;
-          border: 0;
-          border-radius: 50%;
-          background: #f2f4f7;
-          color: #667085;
-          font-size: 20px;
-          cursor: pointer;
-        }
-
-        .searchButton {
-          align-self: stretch;
-          min-width: 86px;
-          border: 0;
-          background: linear-gradient(
-            135deg,
-            var(--navbar-secondary),
-            #f1d26a
-          );
-          color: var(--navbar-primary);
-          font-size: 12px;
-          font-weight: 900;
-          cursor: pointer;
-          transition:
-            filter 0.2s ease,
-            transform 0.2s ease;
-        }
-
-        .searchButton:hover {
-          filter: brightness(1.04);
-        }
-
-        .suggestions {
-          position: absolute;
-          z-index: 1200;
-          top: calc(100% + 9px);
-          right: 0;
-          left: 0;
-          overflow: hidden;
-          border: 1px solid #e4e7ec;
-          border-radius: 15px;
-          background: white;
-          color: #172033;
-          box-shadow: 0 22px 55px rgba(2, 17, 48, 0.24);
-          animation: suggestionsOpen 0.18s ease both;
-        }
-
-        .suggestionHeader {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          padding: 12px 14px;
-          border-bottom: 1px solid #eaecf0;
-          background: #f8fafc;
-        }
-
-        .suggestionHeader span {
-          color: #475467;
-          font-size: 11px;
-          font-weight: 850;
-          letter-spacing: 0.7px;
-          text-transform: uppercase;
-        }
-
-        .suggestionHeader button {
-          padding: 0;
-          border: 0;
-          background: transparent;
-          color: var(--navbar-primary);
-          font-size: 11px;
-          font-weight: 800;
-          cursor: pointer;
-        }
-
-        .suggestionList {
-          max-height: 430px;
-          overflow-y: auto;
-        }
-
-        .suggestionItem {
-          width: 100%;
-          display: grid;
-          grid-template-columns: 52px minmax(0, 1fr) auto;
-          align-items: center;
-          gap: 11px;
-          padding: 10px 13px;
-          border: 0;
-          border-bottom: 1px solid #f0f1f3;
-          background: white;
-          text-align: left;
-          cursor: pointer;
-          transition: background 0.15s ease;
-        }
-
-        .suggestionItem:last-child {
-          border-bottom: 0;
-        }
-
-        .suggestionItem:hover,
-        .suggestionActive {
-          background: #f2f6ff;
-        }
-
-        .suggestionImage {
-          width: 52px;
-          height: 58px;
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 9px;
-          background: var(--navbar-primary);
-          color: var(--navbar-secondary);
-          font-size: 10px;
-          font-weight: 900;
-        }
-
-        .suggestionImage img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-        }
-
-        .suggestionInfo {
-          min-width: 0;
-        }
-
-        .suggestionInfo strong,
-        .suggestionInfo span {
-          display: block;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .suggestionInfo strong {
-          color: #172033;
-          font-size: 13px;
-        }
-
-        .suggestionInfo span {
-          margin-top: 5px;
-          color: #98a2b3;
-          font-size: 10px;
-        }
-
-        .suggestionPrice {
-          color: var(--navbar-primary);
-          font-size: 13px;
-          font-weight: 900;
-          white-space: nowrap;
-        }
-
-        .suggestionState {
-          min-height: 92px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 9px;
-          padding: 18px;
-          color: #667085;
-          font-size: 13px;
-          text-align: center;
-        }
-
-        .miniLoader {
-          width: 21px;
-          height: 21px;
-          border: 3px solid #e4e7ec;
-          border-top-color: var(--navbar-primary);
-          border-radius: 50%;
-          animation: spin 0.7s linear infinite;
-        }
-
-        .searchAllButton {
-          width: 100%;
-          min-height: 44px;
-          border: 0;
-          border-top: 1px solid #e4e7ec;
-          background: var(--navbar-primary);
-          color: white;
-          font-size: 12px;
-          font-weight: 850;
-          cursor: pointer;
-        }
-
-        .navLinks {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          flex-shrink: 0;
-        }
-
-        .navLinks :global(a) {
-          position: relative;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 10px 9px;
-          border-radius: 9px;
-          color: white;
-          font-size: 12px;
-          font-weight: 750;
-          text-decoration: none;
-          transition:
-            background 0.2s ease,
-            transform 0.2s ease;
-        }
-
-        .navLinks :global(a:hover) {
-          background: rgba(255, 255, 255, 0.1);
-          transform: translateY(-1px);
-        }
-
-        .navLinks :global(a span) {
-          font-size: 15px;
-        }
-
-        .navLinks :global(.loginLink) {
-          border: 1px solid rgba(212, 175, 55, 0.55);
-          color: #f1d26a;
-        }
-
-        .countBadge {
-          min-width: 19px;
-          height: 19px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0 5px;
-          border: 2px solid var(--navbar-primary);
-          border-radius: 999px;
-          background: var(--navbar-secondary);
-          color: var(--navbar-primary);
-          font-size: 9px;
-          font-weight: 950;
-          line-height: 1;
-          box-shadow: 0 5px 12px rgba(212, 175, 55, 0.28);
-        }
-
-        .mobileMenuButton {
-          display: none;
-          width: 43px;
-          height: 43px;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 5px;
-          flex-shrink: 0;
-          border: 1px solid rgba(255, 255, 255, 0.25);
-          border-radius: 10px;
-          background: rgba(255, 255, 255, 0.08);
-          cursor: pointer;
-        }
-
-        .mobileMenuButton span {
-          width: 19px;
-          height: 2px;
-          border-radius: 999px;
-          background: white;
-        }
-
-        .mobileSearch {
-          display: none;
-        }
-
-        @keyframes suggestionsOpen {
-          from {
-            opacity: 0;
-            transform: translateY(-5px);
+        <style jsx>{`
+          .navbar {
+            position: sticky;
+            z-index: 1000;
+            top: 0;
+            width: 100%;
+            background:
+              linear-gradient(
+                110deg,
+                color-mix(in srgb, var(--navbar-primary) 91%, black 9%),
+                var(--navbar-primary) 56%,
+                color-mix(in srgb, var(--navbar-primary) 82%, white 18%)
+              );
+            color: #fff;
+            box-shadow: 0 8px 28px rgba(2, 17, 48, 0.19);
+            transition:
+              box-shadow .22s ease,
+              backdrop-filter .22s ease;
           }
 
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        @keyframes spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-        @media (max-width: 1180px) {
-          .brandText small {
-            display: none;
+          .navbarScrolled {
+            box-shadow: 0 14px 34px rgba(2, 17, 48, 0.28);
+            backdrop-filter: blur(16px);
           }
 
-          .brandText strong {
-            font-size: 17px;
+          .utilityBar {
+            border-bottom: 1px solid rgba(255,255,255,.08);
+            background: rgba(1, 13, 34, .3);
           }
 
-          .navLinks {
-            gap: 2px;
-          }
-
-          .navLinks :global(a) {
-            padding: 9px 6px;
-            font-size: 11px;
-          }
-        }
-
-        @media (max-width: 920px) {
-          .navbarInner {
-            min-height: 68px;
-          }
-
-          .navbarInner > .searchWrapper {
-            display: none;
-          }
-
-          .mobileMenuButton {
+          .utilityInner {
+            width: min(1500px, calc(100% - 38px));
+            min-height: 29px;
             display: flex;
-            margin-left: auto;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin: 0 auto;
           }
 
-          .navLinks {
-            position: absolute;
-            top: 68px;
-            right: 12px;
-            left: 12px;
-            display: none;
-            overflow: hidden;
-            align-items: stretch;
-            flex-direction: column;
-            gap: 0;
-            padding: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 14px;
-            background: rgba(7, 31, 79, 0.98);
-            box-shadow: 0 20px 45px rgba(2, 17, 48, 0.3);
-            backdrop-filter: blur(15px);
-          }
-
-          .navLinksOpen {
+          .utilityLeft,
+          .utilityRight {
             display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
           }
 
-          .navLinks :global(a) {
-            justify-content: flex-start;
-            padding: 13px 12px;
-            font-size: 13px;
+          .utilityLeft {
+            color: rgba(255,255,255,.65);
+            font-size: 8px;
+            letter-spacing: .5px;
           }
 
-          .countBadge {
-            margin-left: auto;
+          .utilityLeft b {
+            color: #fff;
+            font-size: 8px;
+            letter-spacing: 1px;
           }
 
-          .mobileSearch {
-            position: relative;
-            z-index: 1300;
-            display: block;
-            overflow: visible;
-            padding: 0 14px 12px;
+          .liveDot {
+            width: 6px;
+            height: 6px;
+            flex: 0 0 6px;
+            border-radius: 50%;
+            background: #78f0a4;
+            box-shadow: 0 0 10px rgba(120,240,164,.8);
           }
 
-          .mobileSearch .searchWrapper {
-            position: static;
-            max-width: none;
-            overflow: visible;
+          .utilityRight {
+            font-size: 8px;
+            font-weight: 700;
           }
 
-          .mobileSearch .mobileSuggestions {
-            position: fixed;
-            z-index: 2147483000;
-            top: 126px;
-            right: 14px;
-            left: 14px;
-            max-height: calc(100dvh - 138px);
-            overflow: hidden;
+          .utilityRight :global(a),
+          .utilityRight span {
+            color: rgba(255,255,255,.65);
+            text-decoration: none;
           }
 
-          .mobileSearch .suggestionList {
-            max-height: calc(100dvh - 276px);
-            overscroll-behavior: contain;
-            -webkit-overflow-scrolling: touch;
+          .utilityRight :global(a:hover) {
+            color: var(--navbar-secondary);
           }
-        }
 
-        @media (max-width: 520px) {
           .navbarInner {
-            width: calc(100% - 24px);
+            width: min(1540px, calc(100% - 38px));
+            min-height: 78px;
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            margin: 0 auto;
+          }
+
+          .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+            color: #fff;
+            text-decoration: none;
           }
 
           .brandLogoFrame {
-            width: 44px;
-            height: 44px;
+            width: 54px;
+            height: 46px;
+            display: grid;
+            place-items: center;
+            flex: 0 0 54px;
+            overflow: hidden;
+            border: 1px solid color-mix(in srgb, var(--navbar-secondary) 70%, transparent);
+            border-radius: 12px;
+            background: #fff;
+            box-shadow: 0 8px 20px rgba(0,0,0,.16);
           }
 
-          .brandLogoDesktop {
-            display: none;
+          .brandLogo {
+            width: 100%;
+            height: 100%;
+            display: block;
+            padding: 4px;
+            object-fit: contain;
           }
 
           .brandLogoMobile {
-            display: block;
+            display: none;
           }
 
           .brandMark {
-            width: 40px;
-            height: 40px;
+            width: 45px;
+            height: 45px;
+            display: grid;
+            place-items: center;
+            border: 1px solid rgba(212,175,55,.78);
+            border-radius: 12px;
+            background: rgba(212,175,55,.1);
+            color: var(--navbar-secondary);
+            font-size: 11px;
+            font-weight: 950;
+            letter-spacing: 1px;
+          }
+
+          .brandText strong,
+          .brandText small {
+            display: block;
+            white-space: nowrap;
           }
 
           .brandText strong {
-            font-size: 15px;
+            color: var(--navbar-secondary);
+            font-size: 18px;
+            line-height: 1.05;
+            letter-spacing: .4px;
           }
 
-          .searchButton {
-            min-width: 72px;
-            font-size: 11px;
+          .brandText small {
+            margin-top: 4px;
+            color: rgba(255,255,255,.62);
+            font-size: 8px;
+            letter-spacing: 1px;
+          }
+
+          .searchWrapper {
+            position: relative;
+            min-width: 0;
+            flex: 1;
+          }
+
+          .desktopSearchWrapper {
+            max-width: 650px;
+            margin: 0 auto;
+          }
+
+          .searchBar {
+            position: relative;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,.18);
+            border-radius: 14px;
+            background: #fff;
+            box-shadow: 0 8px 20px rgba(2,17,48,.14);
+          }
+
+          .searchBar:focus-within {
+            border-color: var(--navbar-secondary);
+            box-shadow:
+              0 0 0 4px rgba(212,175,55,.13),
+              0 12px 27px rgba(2,17,48,.2);
+          }
+
+          .searchLead {
+            width: 88px;
+            align-self: stretch;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            flex: 0 0 88px;
+            border-right: 1px solid #edf0f5;
+            background: #f8fafc;
+          }
+
+          .searchLead .searchIcon {
+            color: var(--navbar-primary);
+            font-size: 19px;
+            line-height: 1;
+          }
+
+          .searchLead small {
+            margin-top: 1px;
+            color: #98a2b3;
+            font-size: 6px;
+            font-weight: 950;
+            letter-spacing: .8px;
+          }
+
+          .searchBar input {
+            width: 100%;
+            height: 48px;
+            min-width: 0;
+            padding: 0 44px 0 14px;
+            border: 0;
+            outline: 0;
+            background: transparent;
+            color: #172033;
+            font-size: 12px;
           }
 
           .clearSearch {
-            right: 77px;
+            position: absolute;
+            z-index: 2;
+            right: 91px;
+            width: 28px;
+            height: 28px;
+            border: 0;
+            border-radius: 50%;
+            background: #f2f4f7;
+            color: #667085;
+            font-size: 18px;
+            cursor: pointer;
           }
-        }
-      `}</style>
-    </nav>
+
+          .searchButton {
+            align-self: stretch;
+            min-width: 80px;
+            border: 0;
+            background: linear-gradient(135deg, var(--navbar-secondary), #f0d77e);
+            color: var(--navbar-primary);
+            font-size: 10px;
+            font-weight: 950;
+            cursor: pointer;
+          }
+
+          .desktopActions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+          }
+
+          :global(.desktopActions .actionButton),
+          :global(.desktopActions .accountButton) {
+            position: relative;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255,255,255,.15);
+            border-radius: 13px;
+            background: rgba(4,31,68,.22);
+            color: #fff !important;
+            text-decoration: none !important;
+            backdrop-filter: blur(12px);
+            transition: .18s ease;
+          }
+
+          :global(.desktopActions .actionButton:link),
+          :global(.desktopActions .actionButton:visited),
+          :global(.desktopActions .actionButton:hover),
+          :global(.desktopActions .actionButton:active),
+          :global(.desktopActions .accountButton:link),
+          :global(.desktopActions .accountButton:visited),
+          :global(.desktopActions .accountButton:hover),
+          :global(.desktopActions .accountButton:active) {
+            color: #fff !important;
+            text-decoration: none !important;
+          }
+
+          :global(.desktopActions .actionButton) {
+            min-width: 74px;
+            flex-direction: row;
+            gap: 8px;
+            padding: 0 12px;
+          }
+
+          :global(.desktopActions .actionButton:hover),
+          :global(.desktopActions .accountButton:hover) {
+            transform: translateY(-1px);
+            border-color: rgba(212,175,55,.58);
+            background: rgba(212,175,55,.10);
+          }
+
+          :global(.desktopActions .actionButton > span) {
+            color: #f1d777 !important;
+            font-size: 17px;
+            line-height: 1;
+          }
+
+          :global(.desktopActions .actionButton > small) {
+            margin: 0;
+            color: #fff !important;
+            font-size: 10px;
+            font-weight: 900;
+            line-height: 1;
+            text-decoration: none !important;
+            white-space: nowrap;
+          }
+
+          :global(.desktopActions .accountButton) {
+            min-width: 116px;
+            gap: 9px;
+            padding: 0 13px;
+            border-color: rgba(212,175,55,.48);
+            background:
+              linear-gradient(
+                135deg,
+                rgba(212,175,55,.14),
+                rgba(255,255,255,.04)
+              );
+          }
+
+          :global(.desktopActions .accountButton > span) {
+            width: 31px;
+            height: 31px;
+            display: grid;
+            place-items: center;
+            flex: 0 0 31px;
+            border-radius: 10px;
+            background: rgba(212,175,55,.13);
+            color: #f1d777 !important;
+            font-size: 17px;
+          }
+
+          :global(.desktopActions .accountButton small),
+          :global(.desktopActions .accountButton b) {
+            display: block;
+            text-decoration: none !important;
+            white-space: nowrap;
+          }
+
+          :global(.desktopActions .accountButton small) {
+            color: rgba(255,255,255,.64) !important;
+            font-size: 7px;
+            font-weight: 800;
+          }
+
+          :global(.desktopActions .accountButton b) {
+            margin-top: 4px;
+            color: #f2d978 !important;
+            font-size: 10px;
+            font-weight: 950;
+          }
+
+          :global(.desktopActions a),
+          :global(.desktopActions a *),
+          :global(.brand),
+          :global(.brand *) {
+            color: inherit;
+            text-decoration: none !important;
+          }
+
+          .countBadge {
+            position: absolute;
+            top: 0;
+            right: 0;
+            min-width: 17px;
+            height: 17px;
+            display: grid;
+            place-items: center;
+            padding: 0 4px;
+            border: 2px solid var(--navbar-primary);
+            border-radius: 999px;
+            background: var(--navbar-secondary);
+            color: var(--navbar-primary);
+            font-size: 7px;
+            font-weight: 950;
+          }
+
+          .commerceRail {
+            border-top: 1px solid rgba(255,255,255,.08);
+            border-bottom: 1px solid rgba(255,255,255,.05);
+            background: rgba(3,22,55,.46);
+          }
+
+          .commerceRailInner {
+            width: min(1540px, calc(100% - 38px));
+            min-height: 46px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            margin: 0 auto;
+          }
+
+          .railLinks {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+          }
+
+          .railLinks button {
+            min-height: 34px;
+            padding: 0 16px;
+            border: 1px solid transparent;
+            border-radius: 10px;
+            background: transparent;
+            color: rgba(255,255,255,.95);
+            font-size: 11px;
+            font-weight: 900;
+            cursor: pointer;
+            transition: .18s ease;
+          }
+
+          .railLinks button:hover {
+            border-color: rgba(212,175,55,.34);
+            background: rgba(212,175,55,.10);
+            color: #f2d978;
+          }
+
+          .railSignal {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            min-height: 32px;
+            padding: 0 11px;
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 999px;
+            background: rgba(255,255,255,.035);
+            color: rgba(255,255,255,.58);
+          }
+
+          .railSignal > span {
+            color: var(--navbar-secondary);
+            font-size: 13px;
+          }
+
+          .railSignal b {
+            color: #fff;
+            font-size: 8px;
+            letter-spacing: .8px;
+          }
+
+          .railSignal small {
+            font-size: 8px;
+          }
+
+          .suggestions {
+            position: absolute;
+            z-index: 1200;
+            top: calc(100% + 9px);
+            right: 0;
+            left: 0;
+            overflow: hidden;
+            border: 1px solid #e4e7ec;
+            border-radius: 16px;
+            background: #fff;
+            color: #172033;
+            box-shadow: 0 26px 70px rgba(2,17,48,.25);
+            animation: suggestionsOpen .18s ease both;
+          }
+
+          .suggestionHeader {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            border-bottom: 1px solid #eaecf0;
+            background: #f8fafc;
+          }
+
+          .suggestionHeader span,
+          .suggestionHeader small {
+            display: block;
+          }
+
+          .suggestionHeader span {
+            color: var(--navbar-primary);
+            font-size: 9px;
+            font-weight: 950;
+            letter-spacing: 1px;
+          }
+
+          .suggestionHeader small {
+            margin-top: 2px;
+            color: #98a2b3;
+            font-size: 7px;
+          }
+
+          .suggestionHeader button {
+            border: 0;
+            background: transparent;
+            color: var(--navbar-primary);
+            font-size: 9px;
+            font-weight: 850;
+            cursor: pointer;
+          }
+
+          .suggestionList {
+            max-height: 420px;
+            overflow-y: auto;
+          }
+
+          .suggestionItem {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 54px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 11px;
+            padding: 10px 13px;
+            border: 0;
+            border-bottom: 1px solid #f0f1f3;
+            background: #fff;
+            text-align: left;
+            cursor: pointer;
+          }
+
+          .suggestionItem:hover,
+          .suggestionActive {
+            background: #f3f6fb;
+          }
+
+          .suggestionImage {
+            width: 54px;
+            height: 60px;
+            overflow: hidden;
+            display: grid;
+            place-items: center;
+            border-radius: 9px;
+            background: var(--navbar-primary);
+            color: var(--navbar-secondary);
+            font-size: 9px;
+            font-weight: 950;
+          }
+
+          .suggestionImage img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+          }
+
+          .suggestionInfo {
+            min-width: 0;
+          }
+
+          .suggestionInfo strong,
+          .suggestionInfo span {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .suggestionInfo strong {
+            color: #172033;
+            font-size: 11px;
+          }
+
+          .suggestionInfo span {
+            margin-top: 4px;
+            color: #98a2b3;
+            font-size: 8px;
+          }
+
+          .suggestionPrice {
+            color: var(--navbar-primary);
+            font-size: 11px;
+            font-weight: 950;
+            white-space: nowrap;
+          }
+
+          .suggestionState {
+            min-height: 90px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 18px;
+            color: #667085;
+            font-size: 11px;
+            text-align: center;
+          }
+
+          .miniLoader {
+            width: 20px;
+            height: 20px;
+            border: 3px solid #e4e7ec;
+            border-top-color: var(--navbar-primary);
+            border-radius: 50%;
+            animation: spin .7s linear infinite;
+          }
+
+          .searchAllButton {
+            width: 100%;
+            min-height: 42px;
+            border: 0;
+            border-top: 1px solid #e4e7ec;
+            background: var(--navbar-primary);
+            color: #fff;
+            font-size: 9px;
+            font-weight: 900;
+            cursor: pointer;
+          }
+
+          .mobileMenuButton,
+          .mobilePanel,
+          .mobileSearch {
+            display: none;
+          }
+
+          @keyframes suggestionsOpen {
+            from {
+              opacity: 0;
+              transform: translateY(-5px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+
+          @keyframes spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+
+          @media (max-width: 1180px) {
+            .brandText small {
+              display: none;
+            }
+
+            .desktopActions {
+              gap: 5px;
+            }
+
+            .actionButton {
+              min-width: 48px;
+              padding-inline: 6px;
+            }
+
+            .accountButton {
+              min-width: 82px;
+              padding-inline: 8px;
+            }
+
+            .accountButton small {
+              display: none;
+            }
+          }
+
+          @media (max-width: 920px) {
+            .utilityBar,
+            .commerceRail,
+            .desktopSearchWrapper,
+            .desktopActions {
+              display: none;
+            }
+
+            .navbarInner {
+              width: calc(100% - 24px);
+              min-height: 62px;
+            }
+
+            .brandLogoFrame {
+              width: 43px;
+              height: 43px;
+              flex-basis: 43px;
+            }
+
+            .brandLogoDesktop {
+              display: none;
+            }
+
+            .brandLogoMobile {
+              display: block;
+            }
+
+            .brandText strong {
+              font-size: 14px;
+            }
+
+            .brandText small {
+              display: block;
+              font-size: 6px;
+            }
+
+            .mobileMenuButton {
+              width: 41px;
+              height: 41px;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              gap: 5px;
+              margin-left: auto;
+              border: 1px solid rgba(255,255,255,.2);
+              border-radius: 10px;
+              background: rgba(255,255,255,.07);
+              cursor: pointer;
+            }
+
+            .mobileMenuButton span {
+              width: 18px;
+              height: 2px;
+              border-radius: 999px;
+              background: #fff;
+            }
+
+            .mobilePanel {
+              position: absolute;
+              z-index: 1300;
+              top: 62px;
+              right: 10px;
+              left: 10px;
+              overflow: hidden;
+              padding: 13px;
+              border: 1px solid rgba(255,255,255,.13);
+              border-radius: 16px;
+              background:
+                linear-gradient(180deg, rgba(6,31,79,.99), rgba(3,20,50,.99));
+              box-shadow: 0 24px 60px rgba(0,0,0,.32);
+              backdrop-filter: blur(18px);
+            }
+
+            .mobilePanelOpen {
+              display: block;
+            }
+
+            .mobilePanelHeader {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 12px;
+              padding: 4px 3px 12px;
+              border-bottom: 1px solid rgba(255,255,255,.08);
+            }
+
+            .mobilePanelHeader small,
+            .mobilePanelHeader strong {
+              display: block;
+            }
+
+            .mobilePanelHeader small {
+              color: var(--navbar-secondary);
+              font-size: 7px;
+              font-weight: 950;
+              letter-spacing: 1px;
+            }
+
+            .mobilePanelHeader strong {
+              margin-top: 3px;
+              font-size: 12px;
+            }
+
+            .mobilePanelHeader button {
+              width: 34px;
+              height: 34px;
+              border: 1px solid rgba(255,255,255,.14);
+              border-radius: 9px;
+              background: rgba(255,255,255,.06);
+              color: #fff;
+              font-size: 20px;
+            }
+
+            .mobilePanelLinks {
+              display: grid;
+              grid-template-columns: repeat(2, 1fr);
+              gap: 7px;
+              margin-top: 11px;
+            }
+
+            .mobilePanelLinks :global(a) {
+              position: relative;
+              min-height: 62px;
+              display: flex;
+              align-items: center;
+              gap: 9px;
+              padding: 10px;
+              border: 1px solid rgba(255,255,255,.08);
+              border-radius: 11px;
+              background: rgba(255,255,255,.05);
+              color: #fff;
+              text-decoration: none;
+            }
+
+            .mobilePanelLinks :global(a span) {
+              color: var(--navbar-secondary);
+              font-size: 17px;
+            }
+
+            .mobilePanelLinks :global(a b) {
+              font-size: 9px;
+            }
+
+            .mobilePanelLinks :global(a em) {
+              position: absolute;
+              top: 7px;
+              right: 7px;
+              min-width: 17px;
+              height: 17px;
+              display: grid;
+              place-items: center;
+              padding: 0 4px;
+              border-radius: 999px;
+              background: var(--navbar-secondary);
+              color: var(--navbar-primary);
+              font-size: 7px;
+              font-style: normal;
+              font-weight: 950;
+            }
+
+            .mobileQuickGrid {
+              display: flex;
+              gap: 6px;
+              overflow-x: auto;
+              margin-top: 10px;
+              padding-bottom: 2px;
+              scrollbar-width: none;
+            }
+
+            .mobileQuickGrid::-webkit-scrollbar {
+              display: none;
+            }
+
+            .mobileQuickGrid button {
+              flex: 0 0 auto;
+              min-height: 31px;
+              padding: 0 11px;
+              border: 1px solid rgba(212,175,55,.28);
+              border-radius: 999px;
+              background: rgba(212,175,55,.08);
+              color: #eed66f;
+              font-size: 8px;
+              font-weight: 850;
+            }
+
+            .mobileSearch {
+              position: relative;
+              z-index: 1250;
+              display: block;
+              overflow: visible;
+              padding: 0 12px 10px;
+            }
+
+            .mobileSearch .searchWrapper {
+              position: static;
+            }
+
+            .mobileSearch .searchBar input {
+              height: 43px;
+              padding-left: 39px;
+              font-size: 10px;
+            }
+
+            .mobileSearchIcon {
+              position: absolute;
+              z-index: 2;
+              left: 13px;
+              color: #667085;
+              font-size: 18px;
+              pointer-events: none;
+            }
+
+            .mobileSearch .clearSearch {
+              right: 51px;
+              width: 25px;
+              height: 25px;
+              font-size: 16px;
+            }
+
+            .mobileSearch .searchButton {
+              min-width: 46px;
+              font-size: 9px;
+            }
+
+            .mobileSearch .mobileSuggestions {
+              position: fixed;
+              z-index: 2147483000;
+              top: 115px;
+              right: 12px;
+              left: 12px;
+              max-height: calc(100dvh - 130px);
+            }
+
+            .mobileSearch .suggestionList {
+              max-height: calc(100dvh - 265px);
+              overscroll-behavior: contain;
+              -webkit-overflow-scrolling: touch;
+            }
+          }
+
+          @media (max-width: 520px) {
+            .navbarInner {
+              width: calc(100% - 20px);
+            }
+
+            .brandText strong {
+              font-size: 13px;
+            }
+
+            .brandText small {
+              font-size: 5.5px;
+            }
+
+            .suggestionItem {
+              grid-template-columns: 48px minmax(0, 1fr) auto;
+              padding: 8px 9px;
+            }
+
+            .suggestionImage {
+              width: 48px;
+              height: 54px;
+            }
+
+            .suggestionPrice {
+              font-size: 9px;
+            }
+          }
+        `}</style>
+      </nav>
+
+      <div className="mobileBottomBar">
+        <Link href="/" className={pathname === "/" ? "activeBottom" : ""}>
+          <span>⌂</span>
+          <small>Home</small>
+        </Link>
+
+        <Link
+          href="/search"
+          className={pathname?.startsWith("/search") ? "activeBottom" : ""}
+        >
+          <span>⌕</span>
+          <small>Search</small>
+        </Link>
+
+        <Link
+          href="/wishlist"
+          className={pathname?.startsWith("/wishlist") ? "activeBottom" : ""}
+        >
+          <span>♡</span>
+          <small>Wishlist</small>
+          {wishlistCount > 0 && (
+            <b>{wishlistCount > 9 ? "9+" : wishlistCount}</b>
+          )}
+        </Link>
+
+        <Link
+          href="/cart"
+          className={pathname?.startsWith("/cart") ? "activeBottom" : ""}
+        >
+          <span>🛒</span>
+          <small>Cart</small>
+          {cartCount > 0 && <b>{cartCount > 9 ? "9+" : cartCount}</b>}
+        </Link>
+
+        <Link
+          href="/login"
+          className={pathname?.startsWith("/login") ? "activeBottom" : ""}
+        >
+          <span>♙</span>
+          <small>Account</small>
+        </Link>
+
+        <style jsx>{`
+          .mobileBottomBar {
+            display: none;
+          }
+
+          @media (max-width: 920px) {
+            .mobileBottomBar {
+              position: fixed;
+              z-index: 999;
+              right: 9px;
+              bottom: max(8px, env(safe-area-inset-bottom));
+              left: 9px;
+              height: 61px;
+              display: grid;
+              grid-template-columns: repeat(5, 1fr);
+              align-items: center;
+              padding: 5px 7px;
+              border: 1px solid rgba(10,46,115,.09);
+              border-radius: 18px;
+              background: rgba(255,255,255,.94);
+              box-shadow: 0 16px 45px rgba(2,17,48,.2);
+              backdrop-filter: blur(18px);
+            }
+
+            .mobileBottomBar :global(a) {
+              position: relative;
+              min-width: 0;
+              height: 50px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              flex-direction: column;
+              gap: 2px;
+              border-radius: 12px;
+              color: #667085;
+              text-decoration: none;
+            }
+
+            .mobileBottomBar :global(a span) {
+              font-size: 17px;
+              line-height: 1;
+            }
+
+            .mobileBottomBar :global(a small) {
+              font-size: 7px;
+              font-weight: 800;
+            }
+
+            .mobileBottomBar :global(a.activeBottom) {
+              background: color-mix(in srgb, var(--ncs-primary, #0A2E73) 7%, white 93%);
+              color: var(--ncs-primary, #0A2E73);
+            }
+
+            .mobileBottomBar :global(a b) {
+              position: absolute;
+              top: 2px;
+              right: calc(50% - 20px);
+              min-width: 15px;
+              height: 15px;
+              display: grid;
+              place-items: center;
+              padding: 0 3px;
+              border-radius: 999px;
+              background: var(--ncs-secondary, #D4AF37);
+              color: var(--ncs-primary, #0A2E73);
+              font-size: 6px;
+              font-weight: 950;
+            }
+          }
+        `}</style>
+      </div>
+    </>
   );
 }
