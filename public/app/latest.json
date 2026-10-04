@@ -1,0 +1,15 @@
+﻿{
+    "versionCode":  2,
+    "versionName":  "2.0.0",
+    "apkUrl":  "https://newcitystyle.store/downloads/new-city-style.apk",
+    "sha256":  "e7139a31a29df34b9fdc4233597e8c509c8c5a419cc15f934ba325f97d3dccdc",
+    "sizeMb":  5.3,
+    "force":  false,
+    "releaseNotes":  [
+                         "Premium NEW CITY STYLE mobile shopping experience",
+                         "Advanced Ask NCS live catalogue search",
+                         "Faster navigation and smoother shopping flow",
+                         "Secure direct updates from newcitystyle.store"
+                     ],
+    "publishedAt":  "2026-10-02T05:46:40.7523599Z"
+}

@@ -173,6 +173,42 @@ type GoogleBusinessStatus = {
 };
 
 
+type AppDownloadDay = {
+  key: string;
+  label: string;
+  downloads: number;
+};
+
+type AppDownloadSource = {
+  source: string;
+  downloads: number;
+};
+
+type AppDownloadStats = {
+  totalDownloads: number;
+  todayDownloads: number;
+  uniqueVisitors: number;
+  last7DaysDownloads: number;
+  daily: AppDownloadDay[];
+  sources: AppDownloadSource[];
+  loading: boolean;
+  refreshing: boolean;
+  error?: string | null;
+};
+
+const emptyAppDownloadStats: AppDownloadStats = {
+  totalDownloads: 0,
+  todayDownloads: 0,
+  uniqueVisitors: 0,
+  last7DaysDownloads: 0,
+  daily: [],
+  sources: [],
+  loading: true,
+  refreshing: false,
+  error: null,
+};
+
+
 type ProfitVariantSummaryRow = {
   variant_id: number;
   product_id: number;
@@ -557,6 +593,10 @@ export default function AdminDashboardPage() {
       totalReviews: null,
     });
 
+
+  const [appDownloads, setAppDownloads] =
+    useState<AppDownloadStats>(emptyAppDownloadStats);
+
   const [profitVariantRows, setProfitVariantRows] = useState<ProfitVariantSummaryRow[]>([]);
   const [profitVariantIdentityRows, setProfitVariantIdentityRows] = useState<ProfitVariantIdentityRow[]>([]);
   const [profitProductIdentityRows, setProfitProductIdentityRows] = useState<ProfitProductIdentityRow[]>([]);
@@ -614,6 +654,57 @@ export default function AdminDashboardPage() {
     },
     [],
   );
+
+  const loadAppDownloadStats = useCallback(
+    async (showRefresh = false) => {
+      setAppDownloads((current) => ({
+        ...current,
+        loading: showRefresh ? current.loading : true,
+        refreshing: showRefresh,
+        error: null,
+      }));
+
+      try {
+        const response = await fetch("/api/admin/app-downloads/stats", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data?.ok) {
+          throw new Error(
+            typeof data?.error === "string"
+              ? data.error
+              : "Unable to load app download analytics.",
+          );
+        }
+
+        setAppDownloads({
+          totalDownloads: Number(data.totalDownloads || 0),
+          todayDownloads: Number(data.todayDownloads || 0),
+          uniqueVisitors: Number(data.uniqueVisitors || 0),
+          last7DaysDownloads: Number(data.last7DaysDownloads || 0),
+          daily: Array.isArray(data.daily) ? data.daily : [],
+          sources: Array.isArray(data.sources) ? data.sources : [],
+          loading: false,
+          refreshing: false,
+          error: null,
+        });
+      } catch (error) {
+        console.error("Unable to load app download analytics:", error);
+
+        setAppDownloads((current) => ({
+          ...current,
+          loading: false,
+          refreshing: false,
+          error: "Unable to load app download analytics.",
+        }));
+      }
+    },
+    [],
+  );
+
 
   const loadProfitSummary = useCallback(async () => {
     setProfitSummaryLoading(true);
@@ -913,11 +1004,13 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     void loadDashboard();
     void loadGoogleBusinessStatus();
+    void loadAppDownloadStats();
     void loadProfitSummary();
     void loadTodayOwnerProfit();
   }, [
     loadDashboard,
     loadGoogleBusinessStatus,
+    loadAppDownloadStats,
     loadProfitSummary,
     loadTodayOwnerProfit,
   ]);
@@ -1765,6 +1858,11 @@ export default function AdminDashboardPage() {
   const blockedMoney = dashboardProfitSummary.blocked;
   const stockInvestment = dashboardProfitSummary.stockInvestment;
 
+  const maximumDailyDownloads = Math.max(
+    ...appDownloads.daily.map((day) => day.downloads),
+    1,
+  );
+
   const todayOwnerProfit = useMemo(() => {
     const billRows = todayOwnerProfitRows.filter(
       (row) => row.alert_type === "BILL_PROFIT_SUMMARY",
@@ -2008,6 +2106,7 @@ export default function AdminDashboardPage() {
             onClick={() => {
               void loadDashboard(true);
               void loadGoogleBusinessStatus(true);
+              void loadAppDownloadStats(true);
               void loadProfitSummary();
               void loadTodayOwnerProfit();
             }}
@@ -2892,6 +2991,140 @@ export default function AdminDashboardPage() {
               <small>Total inventory investment currently tracked</small>
             </div>
           </div>
+        )}
+      </section>
+
+      <section className="appDownloadsPanel">
+        <div className="sectionHeader">
+          <div>
+            <span>ANDROID APP • LIVE</span>
+            <h2>NEW CITY STYLE App Downloads</h2>
+            <p className="appDownloadsSubtitle">
+              Official APK download activity from newcitystyle.store/app.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="appDownloadsRefreshButton"
+            onClick={() => void loadAppDownloadStats(true)}
+            disabled={appDownloads.refreshing}
+          >
+            {appDownloads.refreshing
+              ? "Refreshing..."
+              : "↻ Refresh Downloads"}
+          </button>
+        </div>
+
+        {appDownloads.loading ? (
+          <div className="appDownloadsLoading">
+            Loading app download analytics...
+          </div>
+        ) : (
+          <>
+            <div className="appDownloadsMetricGrid">
+              <div className="appDownloadMetric primary">
+                <span>📲 TOTAL DOWNLOADS</span>
+                <strong>{appDownloads.totalDownloads}</strong>
+                <small>All successful direct APK downloads</small>
+              </div>
+
+              <div className="appDownloadMetric success">
+                <span>⚡ TODAY</span>
+                <strong>{appDownloads.todayDownloads}</strong>
+                <small>Downloads recorded today</small>
+              </div>
+
+              <div className="appDownloadMetric">
+                <span>📱 UNIQUE VISITORS</span>
+                <strong>{appDownloads.uniqueVisitors}</strong>
+                <small>Approximate unique devices / browsers</small>
+              </div>
+
+              <div className="appDownloadMetric warning">
+                <span>📈 LAST 7 DAYS</span>
+                <strong>{appDownloads.last7DaysDownloads}</strong>
+                <small>Recent seven-day download volume</small>
+              </div>
+            </div>
+
+            {appDownloads.error ? (
+              <div className="appDownloadsMessage error">
+                {appDownloads.error}
+              </div>
+            ) : (
+              <div className="appDownloadsDetailGrid">
+                <div className="appDownloadsTrendCard">
+                  <div className="appDownloadsCardHeader">
+                    <div>
+                      <span>DOWNLOAD TREND</span>
+                      <strong>Last 7 Days</strong>
+                    </div>
+                    <small>{appDownloads.last7DaysDownloads} downloads</small>
+                  </div>
+
+                  {appDownloads.daily.length === 0 ? (
+                    <div className="appDownloadsEmpty">
+                      No app downloads recorded yet.
+                    </div>
+                  ) : (
+                    <div className="appDownloadsBars">
+                      {appDownloads.daily.map((day) => {
+                        const height = Math.max(
+                          (day.downloads / maximumDailyDownloads) * 116,
+                          day.downloads > 0 ? 18 : 5,
+                        );
+
+                        return (
+                          <div
+                            key={day.key}
+                            className="appDownloadsBarItem"
+                          >
+                            <strong>{day.downloads}</strong>
+                            <div className="appDownloadsBarTrack">
+                              <div
+                                className="appDownloadsBar"
+                                style={{ height: `${height}px` }}
+                                title={`${day.downloads} downloads`}
+                              />
+                            </div>
+                            <span>{day.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="appDownloadsSourceCard">
+                  <div className="appDownloadsCardHeader">
+                    <div>
+                      <span>DOWNLOAD SOURCES</span>
+                      <strong>Customer Entry</strong>
+                    </div>
+                  </div>
+
+                  {appDownloads.sources.length === 0 ? (
+                    <div className="appDownloadsEmpty">
+                      No source information yet.
+                    </div>
+                  ) : (
+                    <div className="appDownloadsSourceList">
+                      {appDownloads.sources.map((item) => (
+                        <div
+                          key={item.source}
+                          className="appDownloadsSourceRow"
+                        >
+                          <span>{item.source}</span>
+                          <strong>{item.downloads}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </section>
 
@@ -4251,6 +4484,271 @@ export default function AdminDashboardPage() {
         @keyframes profitPulse {
           0%, 100% { transform: scale(1); opacity: 0.65; }
           50% { transform: scale(1.12); opacity: 1; }
+        }
+
+        .appDownloadsPanel {
+          margin-top: 18px;
+          margin-bottom: 18px;
+          padding: 22px;
+          border: 1.5px solid rgba(109, 77, 255, 0.18);
+          border-radius: 20px;
+          background:
+            radial-gradient(circle at 100% 0%, rgba(22, 184, 212, 0.12), transparent 28%),
+            radial-gradient(circle at 0% 100%, rgba(109, 77, 255, 0.10), transparent 30%),
+            linear-gradient(135deg, #f8f6ff 0%, #ffffff 48%, #f1fcff 100%);
+          box-shadow: 0 14px 34px rgba(36, 17, 74, 0.08);
+        }
+
+        .appDownloadsSubtitle {
+          margin: 5px 0 0;
+          color: #667085;
+          font-size: 12px;
+          line-height: 1.5;
+        }
+
+        .appDownloadsRefreshButton {
+          min-height: 40px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 14px;
+          border: 1px solid rgba(109, 77, 255, 0.35);
+          border-radius: 10px;
+          background: #f8f6ff;
+          color: #5f46d7;
+          font-size: 11px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .appDownloadsRefreshButton:disabled {
+          cursor: not-allowed;
+          opacity: 0.65;
+        }
+
+        .appDownloadsLoading {
+          padding: 28px 10px;
+          color: #667085;
+          font-size: 13px;
+          font-weight: 800;
+          text-align: center;
+        }
+
+        .appDownloadsMetricGrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+          gap: 12px;
+          margin-top: 18px;
+        }
+
+        .appDownloadMetric {
+          min-height: 112px;
+          padding: 16px;
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          border-radius: 15px;
+          background: rgba(255, 255, 255, 0.90);
+          box-shadow: 0 8px 22px rgba(36, 17, 74, 0.05);
+        }
+
+        .appDownloadMetric.primary {
+          background: linear-gradient(135deg, #4f35c9 0%, #6d4dff 60%, #16b8d4 135%);
+          border-color: transparent;
+          color: #ffffff;
+        }
+
+        .appDownloadMetric.success {
+          background: linear-gradient(135deg, #edfdf7, #ffffff);
+          border-color: rgba(16, 185, 129, 0.25);
+        }
+
+        .appDownloadMetric.warning {
+          background: linear-gradient(135deg, #fff8e9, #ffffff);
+          border-color: rgba(245, 158, 11, 0.25);
+        }
+
+        .appDownloadMetric > span {
+          display: block;
+          color: #687084;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 0.65px;
+        }
+
+        .appDownloadMetric.primary > span {
+          color: rgba(255, 255, 255, 0.82);
+        }
+
+        .appDownloadMetric > strong {
+          display: block;
+          margin-top: 10px;
+          color: #293247;
+          font-size: 28px;
+          line-height: 1;
+        }
+
+        .appDownloadMetric.primary > strong {
+          color: #ffffff;
+        }
+
+        .appDownloadMetric > small {
+          display: block;
+          margin-top: 9px;
+          color: #8a91a0;
+          font-size: 9px;
+          font-weight: 700;
+          line-height: 1.45;
+        }
+
+        .appDownloadMetric.primary > small {
+          color: rgba(255, 255, 255, 0.72);
+        }
+
+        .appDownloadsDetailGrid {
+          display: grid;
+          grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.8fr);
+          gap: 14px;
+          margin-top: 14px;
+        }
+
+        .appDownloadsTrendCard,
+        .appDownloadsSourceCard {
+          padding: 16px;
+          border: 1px solid rgba(148, 163, 184, 0.20);
+          border-radius: 15px;
+          background: rgba(255, 255, 255, 0.86);
+        }
+
+        .appDownloadsCardHeader {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 14px;
+          margin-bottom: 14px;
+        }
+
+        .appDownloadsCardHeader span {
+          display: block;
+          color: #665a89;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 0.7px;
+        }
+
+        .appDownloadsCardHeader strong {
+          display: block;
+          margin-top: 3px;
+          color: #293247;
+          font-size: 15px;
+        }
+
+        .appDownloadsCardHeader small {
+          color: #818898;
+          font-size: 9px;
+          font-weight: 800;
+        }
+
+        .appDownloadsBars {
+          min-height: 154px;
+          display: flex;
+          align-items: flex-end;
+          justify-content: space-between;
+          gap: 8px;
+        }
+
+        .appDownloadsBarItem {
+          min-width: 0;
+          flex: 1;
+          text-align: center;
+        }
+
+        .appDownloadsBarItem > strong {
+          display: block;
+          margin-bottom: 5px;
+          color: #4e3db0;
+          font-size: 10px;
+        }
+
+        .appDownloadsBarTrack {
+          height: 120px;
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+        }
+
+        .appDownloadsBar {
+          width: min(100%, 30px);
+          border-radius: 8px 8px 4px 4px;
+          background: linear-gradient(180deg, #6d4dff 0%, #16b8d4 100%);
+          box-shadow: 0 5px 13px rgba(109, 77, 255, 0.22);
+          transition: height 0.35s ease;
+        }
+
+        .appDownloadsBarItem > span {
+          display: block;
+          margin-top: 6px;
+          color: #7c8494;
+          font-size: 8px;
+          font-weight: 850;
+        }
+
+        .appDownloadsSourceList {
+          display: grid;
+          gap: 8px;
+        }
+
+        .appDownloadsSourceRow {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          min-height: 38px;
+          padding: 8px 10px;
+          border: 1px solid rgba(148, 163, 184, 0.18);
+          border-radius: 9px;
+          background: #f8fafc;
+        }
+
+        .appDownloadsSourceRow span {
+          overflow: hidden;
+          color: #697184;
+          font-size: 10px;
+          font-weight: 800;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .appDownloadsSourceRow strong {
+          color: #4f35c9;
+          font-size: 12px;
+        }
+
+        .appDownloadsEmpty {
+          padding: 26px 10px;
+          color: #9198a6;
+          font-size: 11px;
+          font-weight: 800;
+          text-align: center;
+        }
+
+        .appDownloadsMessage {
+          margin-top: 14px;
+          padding: 12px 13px;
+          border-radius: 11px;
+          font-size: 12px;
+          font-weight: 750;
+          line-height: 1.55;
+        }
+
+        .appDownloadsMessage.error {
+          border: 1px solid #fca5a5;
+          background: #fff7f7;
+          color: #b91c1c;
+        }
+
+        @media (max-width: 840px) {
+          .appDownloadsDetailGrid {
+            grid-template-columns: 1fr;
+          }
         }
 
         .googleBusinessPanel {

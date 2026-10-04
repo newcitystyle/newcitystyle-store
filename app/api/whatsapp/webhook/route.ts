@@ -986,6 +986,20 @@ function normalizePhone(
 
 }
 
+/*
+ * STAGE 16.3.1 • BUILD COMPATIBILITY
+ *
+ * Older greeting helper code calls normalizePhoneNumber().
+ * Keep it as a safe alias so both old/new call sites compile.
+ */
+function normalizePhoneNumber(
+  value?: string,
+): string {
+  return normalizePhone(
+    value,
+  );
+}
+
 
 
 /* ============================================================
@@ -2737,7 +2751,7 @@ function chooseProducts(
    * reaching this fallback path.
    */
   const candidatePool =
-    strictEligible.length > 0
+    intent.hasStructuredIntent
       ? strictEligible
       : baseEligible;
 
@@ -4074,19 +4088,111 @@ function scoreUnifiedInventoryResult(
   return score;
 }
 
+function strictRequestedGarmentFamily(
+  normalizedInput: string,
+):
+  | "tshirt"
+  | "shirt"
+  | "saree"
+  | "kurti"
+  | "frock"
+  | "jeans"
+  | "pant"
+  | "shorts"
+  | "legging"
+  | "trackpant"
+  | "top"
+  | "dress"
+  | "nighty"
+  | "innerwear"
+  | "sportswear"
+  | "chunni"
+  | null {
+  const normalized =
+    normalizeSearchText(
+      normalizedInput,
+    );
+
+  if (/(?:^|\s)(?:t\s*shirts?|tshirts?|tee|tees)(?:$|\s)/.test(normalized)) {
+    return "tshirt";
+  }
+
+  if (/(?:^|\s)shirts?(?:$|\s)/.test(normalized)) {
+    return "shirt";
+  }
+
+  if (/(?:^|\s)(?:sarees?|saris?|చీర)(?:$|\s)/.test(normalized)) {
+    return "saree";
+  }
+
+  if (/(?:^|\s)(?:kurtis?|kurtas?)(?:$|\s)/.test(normalized)) {
+    return "kurti";
+  }
+
+  if (/(?:^|\s)frocks?(?:$|\s)/.test(normalized)) {
+    return "frock";
+  }
+
+  if (/(?:^|\s)(?:jeans?|denim)(?:$|\s)/.test(normalized)) {
+    return "jeans";
+  }
+
+  if (/(?:^|\s)(?:pants?|trousers?)(?:$|\s)/.test(normalized)) {
+    return "pant";
+  }
+
+  if (/(?:^|\s)shorts?(?:$|\s)/.test(normalized)) {
+    return "shorts";
+  }
+
+  if (/(?:^|\s)leggings?(?:$|\s)/.test(normalized)) {
+    return "legging";
+  }
+
+  if (/(?:^|\s)(?:track\s*pants?|trackpants?)(?:$|\s)/.test(normalized)) {
+    return "trackpant";
+  }
+
+  if (/(?:^|\s)tops?(?:$|\s)/.test(normalized)) {
+    return "top";
+  }
+
+  if (/(?:^|\s)dresses?(?:$|\s)/.test(normalized)) {
+    return "dress";
+  }
+
+  if (/(?:^|\s)(?:nighty|nighties|night\s*dress|nightwear)(?:$|\s)/.test(normalized)) {
+    return "nighty";
+  }
+
+  if (/(?:^|\s)(?:innerwear|vest|banian|baniyan|briefs?)(?:$|\s)/.test(normalized)) {
+    return "innerwear";
+  }
+
+  if (/(?:^|\s)(?:sportswear|sports\s*wear|activewear|active\s*wear)(?:$|\s)/.test(normalized)) {
+    return "sportswear";
+  }
+
+  if (/(?:^|\s)(?:chunni|chuni|chunny|dupatta|duppatta|stole|scarf|shawl|చున్నీ|దుపట్టా)(?:$|\s)/.test(normalized)) {
+    return "chunni";
+  }
+
+  return null;
+}
+
 function matchesStrictGarmentCategoryIntent(
   product: ProductRow,
   variants: InventoryVariantRow[],
   intent: SmartProductIntent,
 ): boolean {
-  const normalized = normalizeSearchText(intent.normalized);
+  const requestedFamily =
+    strictRequestedGarmentFamily(
+      intent.normalized,
+    );
 
-  const asksTShirt =
-    /(?:^|\s)(?:t\s*shirts?|tshirts?|tee|tees)(?:$|\s)/.test(normalized);
-
-  const asksPlainShirt =
-    !asksTShirt &&
-    /(?:^|\s)shirts?(?:$|\s)/.test(normalized);
+  if (!requestedFamily) {
+    return true;
+  }
 
   const productText =
     inventoryProductSearchText(
@@ -4094,35 +4200,60 @@ function matchesStrictGarmentCategoryIntent(
       variants,
     );
 
-  /*
-   * STAGE 11.2.1 • HARD T-SHIRT LOCK
-   * An explicit T-Shirt request must match an actual T-Shirt / Tee signal.
-   * A normal Shirt is rejected even though both contain the word "shirt".
-   */
-  if (asksTShirt) {
-    const isTShirt =
-      /(?:^|\s)(?:t\s*shirts?|tshirts?|tee|tees|round\s*neck|crew\s*neck)(?:$|\s)/.test(
-        productText,
-      );
+  switch (requestedFamily) {
+    case "tshirt":
+      return /(?:^|\s)(?:t\s*shirts?|tshirts?|tee|tees|round\s*neck|crew\s*neck)(?:$|\s)/.test(productText);
 
-    return isTShirt;
+    case "shirt": {
+      const excluded =
+        /(?:^|\s)(?:t\s*shirts?|tshirts?|tee|tees|round\s*neck|crew\s*neck|baniyan|banian|vest|innerwear|briefs?)(?:$|\s)/.test(productText);
+      return !excluded && /(?:^|\s)shirts?(?:$|\s)/.test(productText);
+    }
+
+    case "saree":
+      return /(?:^|\s)(?:sarees?|saris?|చీర)(?:$|\s)/.test(productText);
+
+    case "kurti":
+      return /(?:^|\s)(?:kurtis?|kurtas?)(?:$|\s)/.test(productText);
+
+    case "frock":
+      return /(?:^|\s)frocks?(?:$|\s)/.test(productText);
+
+    case "jeans":
+      return /(?:^|\s)(?:jeans?|denim)(?:$|\s)/.test(productText);
+
+    case "pant":
+      return /(?:^|\s)(?:pants?|trousers?)(?:$|\s)/.test(productText);
+
+    case "shorts":
+      return /(?:^|\s)shorts?(?:$|\s)/.test(productText);
+
+    case "legging":
+      return /(?:^|\s)leggings?(?:$|\s)/.test(productText);
+
+    case "trackpant":
+      return /(?:^|\s)(?:track\s*pants?|trackpants?)(?:$|\s)/.test(productText);
+
+    case "top":
+      return /(?:^|\s)tops?(?:$|\s)/.test(productText);
+
+    case "dress":
+      return /(?:^|\s)dresses?(?:$|\s)/.test(productText);
+
+    case "nighty":
+      return /(?:^|\s)(?:nighty|nighties|night\s*dress|nightwear)(?:$|\s)/.test(productText);
+
+    case "innerwear":
+      return /(?:^|\s)(?:innerwear|vest|banian|baniyan|briefs?)(?:$|\s)/.test(productText);
+
+    case "sportswear":
+      return /(?:^|\s)(?:sportswear|sports\s*wear|activewear|active\s*wear)(?:$|\s)/.test(productText);
+
+    case "chunni":
+      return /(?:^|\s)(?:chunni|chuni|chunny|dupatta|duppatta|stole|scarf|shawl|చున్నీ|దుపట్టా)(?:$|\s)/.test(productText);
   }
-
-  if (!asksPlainShirt) {
-    return true;
-  }
-
-  const clearlyNotShirt =
-    /(?:^|\s)(?:t\s*shirts?|tshirts?|tee|tees|round\s*neck|crew\s*neck|baniyan|banian|vest|innerwear|brief|briefs)(?:$|\s)/.test(
-      productText,
-    );
-
-  if (clearlyNotShirt) {
-    return false;
-  }
-
-  return /(?:^|\s)shirts?(?:$|\s)/.test(productText);
 }
+
 
 function resultMatchesInventoryHardIntent(
   product: ProductRow,
@@ -8207,6 +8338,11 @@ function buildReservationStatusText(
   );
 }
 
+/*
+ * STAGE 16.8 • CATEGORY MEMORY RESET
+ * Fresh explicit shopping text is authoritative. Old last_query/last_category
+ * may assist short follow-ups only; it cannot replace a newly typed category.
+ */
 async function loadUnifiedInventorySearch(
   admin: any,
   messageText: string,
@@ -9774,6 +9910,161 @@ function orderGreetingHeroCandidates(
   );
 }
 
+
+async function sendNcsFirstContactThreeWorkingProductsSafe(
+  admin: any,
+  phone: string,
+  previousIds: number[],
+  customerName: string,
+): Promise<{
+  messageIds: string[];
+  productIds: number[];
+}> {
+  const messageIds: string[] = [];
+  const productIds: number[] = [];
+
+  try {
+    /*
+     * STAGE 16.3 • SAFE RESTORE
+     *
+     * This intentionally uses the SAME loadProductPool -> chooseProducts ->
+     * sendProductImage pipeline that already worked for normal queries like
+     * "shirt". No new media-upload path is introduced here.
+     */
+    const pool =
+      await loadProductPool(
+        admin,
+      );
+
+    const chosen =
+      chooseProducts(
+        pool,
+        "",
+        previousIds,
+        `FIRST_CONTACT_${phone}`,
+      );
+
+    for (
+      let index = 0;
+      index < chosen.length;
+      index += 1
+    ) {
+      const product =
+        chosen[index];
+
+      try {
+        const messageId =
+          await sendProductImage({
+            to:
+              phone,
+            product,
+            caption:
+              buildProductCaption(
+                product,
+                index,
+                chosen.length,
+                index === 0
+                  ? customerName
+                  : "",
+              ),
+          });
+
+        if (messageId) {
+          messageIds.push(
+            messageId,
+          );
+        }
+
+        productIds.push(
+          Number(
+            product.id,
+          ),
+        );
+      } catch (error) {
+        console.warn(
+          "NCS FIRST-CONTACT WORKING IMAGE SEND FAILED; CORE CHAT CONTINUES:",
+          JSON.stringify(
+            {
+              productId:
+                product.id,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : String(error),
+            },
+            null,
+            2,
+          ),
+        );
+      }
+    }
+
+    /*
+     * BUY buttons are best-effort and never block the normal search engine.
+     */
+    if (
+      productIds.length > 0
+    ) {
+      const buyButtonId =
+        await sendWhatsAppQuickReplyButtons(
+          phone,
+          "🛍️ మీకు నచ్చిన product ఎంచుకోండి:",
+          productIds
+            .slice(
+              0,
+              3,
+            )
+            .map(
+              (
+                productId,
+                index,
+              ) => ({
+                id:
+                  `NCS_PRODUCT_${productId}`,
+                title:
+                  `BUY ${index + 1}`,
+              }),
+            ),
+        ).catch(
+          (error) => {
+            console.warn(
+              "NCS FIRST-CONTACT BUY BUTTONS FAILED; PHOTOS/CORE CHAT PRESERVED:",
+              error instanceof Error
+                ? error.message
+                : String(error),
+            );
+
+            return null;
+          },
+        );
+
+      if (buyButtonId) {
+        messageIds.push(
+          buyButtonId,
+        );
+      }
+    }
+
+    return {
+      messageIds,
+      productIds,
+    };
+  } catch (error) {
+    console.warn(
+      "NCS FIRST-CONTACT 3-PHOTO SAFE FLOW FAILED; NORMAL PRODUCT SEARCH PRESERVED:",
+      error instanceof Error
+        ? error.message
+        : String(error),
+    );
+
+    return {
+      messageIds,
+      productIds,
+    };
+  }
+}
+
+
 async function sendNcsWelcomeHeroProductSafe(
   admin: any,
   to: string,
@@ -10638,7 +10929,7 @@ function buildInventoryNoMatchText(
       ? `I couldn't find an in-stock match for “${clean}” in the live store inventory right now.`
       : "I couldn't find that item in the live store inventory right now.",
     "",
-    "Here are some currently available picks:",
+    "మరో size / colour / budget లేదా category పంపండి — exact matching items మాత్రమే చూపిస్తాను.",
   ].join(
     "\n",
   );
@@ -10890,90 +11181,119 @@ async function claimAutoReply(
 
   messageText: string,
 
-  cooldownMinutes: number,
+  _cooldownMinutes: number,
 
 ): Promise<AutoReplyClaim> {
 
+  /*
+   * STAGE 16.6 • TRUE NO-COOLDOWN CORE
+   *
+   * The old database claim RPC forced a minimum 5-minute cooldown.
+   * It is no longer used here.
+   *
+   * Only one safety rule remains:
+   *   same Meta message id => duplicate_webhook
+   *
+   * Any NEW customer message can continue immediately.
+   */
   const {
-
-    data,
-
-    error,
-
+    data: existing,
+    error: loadError,
   } =
+    await admin
+      .from(
+        "whatsapp_product_auto_reply_sessions",
+      )
+      .select(
+        "phone,last_incoming_message_id,last_product_ids",
+      )
+      .eq(
+        "phone",
+        phone,
+      )
+      .maybeSingle();
 
-    await admin.rpc(
-
-      "ncs_claim_whatsapp_product_autoreply_v1",
-
-      {
-
-        p_phone: phone,
-
-        p_message_id:
-
-          messageId,
-
-        p_message_text:
-
-          messageText ||
-
-          null,
-
-        p_cooldown_minutes:
-
-          cooldownMinutes,
-
-      },
-
-    );
-
-
-
-  if (error) {
-
+  if (loadError) {
     throw new Error(
-
-      `WhatsApp product auto-reply claim failed: ${error.message}`,
-
+      `WhatsApp product auto-reply session load failed: ${loadError.message}`,
     );
-
   }
-
-
 
   if (
-
-    data &&
-
-    typeof data ===
-
-      "object" &&
-
-    !Array.isArray(data)
-
+    existing?.last_incoming_message_id ===
+    messageId
   ) {
-
-    return data as
-
-      AutoReplyClaim;
-
+    return {
+      claimed: false,
+      reason:
+        "duplicate_webhook",
+      previous_product_ids:
+        Array.isArray(
+          existing?.last_product_ids,
+        )
+          ? existing.last_product_ids
+          : [],
+      retry_after_seconds:
+        0,
+    };
   }
 
+  const now =
+    new Date()
+      .toISOString();
 
+  const {
+    error: saveError,
+  } =
+    await admin
+      .from(
+        "whatsapp_product_auto_reply_sessions",
+      )
+      .upsert(
+        {
+          phone,
+          last_incoming_message_id:
+            messageId,
+          last_message_text:
+            messageText ||
+            null,
+          last_reply_at:
+            now,
+          last_reply_status:
+            "claimed",
+          last_reply_error:
+            null,
+          updated_at:
+            now,
+        },
+        {
+          onConflict:
+            "phone",
+        },
+      );
+
+  if (saveError) {
+    throw new Error(
+      `WhatsApp product auto-reply session save failed: ${saveError.message}`,
+    );
+  }
 
   return {
-
-    claimed: false,
-
+    claimed: true,
     reason:
-
-      "invalid_claim_response",
-
+      existing?.phone
+        ? "new_message_no_cooldown"
+        : "new_customer_no_cooldown",
+    previous_product_ids:
+      Array.isArray(
+        existing?.last_product_ids,
+      )
+        ? existing.last_product_ids
+        : [],
+    retry_after_seconds:
+      0,
   };
-
 }
-
 
 
 async function completeAutoReply(
@@ -12213,6 +12533,278 @@ async function sendWhatsAppImageByMediaId(
 }
 
 
+type NcsWhatsappPreviewResult = {
+  url: string | null;
+  created: boolean;
+};
+
+function isWhatsappSafePublicImageUrl(
+  value?: string | null,
+): boolean {
+  if (!value) return false;
+
+  try {
+    const parsed = new URL(value);
+    const path = parsed.pathname.toLowerCase();
+
+    return (
+      parsed.protocol === "https:" &&
+      (
+        path.endsWith(".jpg") ||
+        path.endsWith(".jpeg") ||
+        path.endsWith(".png")
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function ensureWhatsappSafeProductPreview(
+  product: ProductRow,
+): Promise<NcsWhatsappPreviewResult> {
+  const existing =
+    product.social_preview_url?.trim() ||
+    "";
+
+  if (
+    isWhatsappSafePublicImageUrl(
+      existing,
+    )
+  ) {
+    return {
+      url: existing,
+      created: false,
+    };
+  }
+
+  const source =
+    productImageCandidates(
+      product,
+    ).find(
+      (candidate) =>
+        candidate !== existing,
+    ) ||
+    productImageCandidates(
+      product,
+    )[0] ||
+    null;
+
+  if (!source) {
+    return {
+      url: null,
+      created: false,
+    };
+  }
+
+  try {
+    const [sharpModule, s3Module] =
+      await Promise.all([
+        import("sharp"),
+        import("@aws-sdk/client-s3"),
+      ]);
+
+    const accountId =
+      process.env.R2_ACCOUNT_ID?.trim();
+    const accessKeyId =
+      process.env.R2_ACCESS_KEY_ID?.trim();
+    const secretAccessKey =
+      process.env.R2_SECRET_ACCESS_KEY?.trim();
+    const bucket =
+      process.env.R2_BUCKET_NAME?.trim();
+    const publicBaseUrl =
+      process.env.R2_PUBLIC_BASE_URL
+        ?.trim()
+        .replace(/\/+$/, "");
+
+    if (
+      !accountId ||
+      !accessKeyId ||
+      !secretAccessKey ||
+      !bucket ||
+      !publicBaseUrl
+    ) {
+      console.warn(
+        "NCS WHATSAPP JPEG PREVIEW: R2 ENV MISSING; USING LEGACY IMAGE PATH",
+      );
+
+      return {
+        url: null,
+        created: false,
+      };
+    }
+
+    const controller =
+      new AbortController();
+    const timeout =
+      setTimeout(
+        () => controller.abort(),
+        12_000,
+      );
+
+    let sourceResponse: Response;
+
+    try {
+      sourceResponse =
+        await fetch(
+          source,
+          {
+            method: "GET",
+            redirect: "follow",
+            cache: "no-store",
+            headers: {
+              Accept:
+                "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.9,*/*;q=0.1",
+              "User-Agent":
+                "NEW-CITY-STYLE-WhatsApp-Permanent-JPEG/16.7",
+            },
+            signal:
+              controller.signal,
+          },
+        );
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (!sourceResponse.ok) {
+      throw new Error(
+        `source_http_${sourceResponse.status}`,
+      );
+    }
+
+    const sourceBytes =
+      Buffer.from(
+        await sourceResponse.arrayBuffer(),
+      );
+
+    if (
+      sourceBytes.length === 0 ||
+      sourceBytes.length >
+        12 * 1024 * 1024
+    ) {
+      throw new Error(
+        `invalid_source_bytes_${sourceBytes.length}`,
+      );
+    }
+
+    const sharp =
+      sharpModule.default;
+
+    const jpeg =
+      await sharp(
+        sourceBytes,
+        {
+          failOn: "none",
+          limitInputPixels:
+            80_000_000,
+        },
+      )
+        .rotate()
+        .resize({
+          width: 1200,
+          height: 1500,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .flatten({
+          background: "#ffffff",
+        })
+        .jpeg({
+          quality: 84,
+          mozjpeg: true,
+        })
+        .toBuffer();
+
+    const productId =
+      Number(product.id);
+    const key =
+      `products/whatsapp-preview/product-${productId}.jpg`;
+
+    const client =
+      new s3Module.S3Client({
+        region: "auto",
+        endpoint:
+          `https://${accountId}.r2.cloudflarestorage.com`,
+        credentials: {
+          accessKeyId,
+          secretAccessKey,
+        },
+      });
+
+    await client.send(
+      new s3Module.PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: jpeg,
+        ContentType: "image/jpeg",
+        CacheControl:
+          "public, max-age=31536000, immutable",
+      }),
+    );
+
+    const url =
+      `${publicBaseUrl}/${key
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}`;
+
+    const admin =
+      createWebhookSupabaseAdmin();
+
+    if (admin) {
+      await admin
+        .from("products")
+        .update({
+          social_preview_url: url,
+        })
+        .eq(
+          "id",
+          productId,
+        );
+    }
+
+    console.log(
+      "NCS WHATSAPP PERMANENT JPEG PREVIEW READY:",
+      JSON.stringify(
+        {
+          productId,
+          url,
+          bytes: jpeg.length,
+        },
+        null,
+        2,
+      ),
+    );
+
+    return {
+      url,
+      created: true,
+    };
+  } catch (error) {
+    console.warn(
+      "NCS WHATSAPP PERMANENT JPEG PREVIEW FAILED; USING LEGACY IMAGE PATH:",
+      JSON.stringify(
+        {
+          productId:
+            product.id,
+          source,
+          error:
+            error instanceof Error
+              ? error.message
+              : String(error),
+        },
+        null,
+        2,
+      ),
+    );
+
+    return {
+      url: null,
+      created: false,
+    };
+  }
+}
+
 async function sendProductImage(
   {
     to,
@@ -12250,14 +12842,57 @@ async function sendProductImage(
   }
 
   /*
-   * STAGE 15.7 • PRIMARY IMAGE PATH
+   * STAGE 16.7 • PERMANENT JPEG FIRST
    *
-   * Product source -> NCS JPEG proxy -> our server fetches JPEG
-   * -> Meta /media upload -> WhatsApp image message.
+   * Current catalogue photos are mostly R2 WebP. Create one permanent JPEG
+   * preview per product, save its URL in products.social_preview_url, and use
+   * that stable JPEG for WhatsApp from then on.
+   */
+  const safePreview =
+    await ensureWhatsappSafeProductPreview(
+      product,
+    );
+
+  if (safePreview.url) {
+    try {
+      const previewMessageId =
+        await sendProductImageByLink({
+          to,
+          imageUrl:
+            safePreview.url,
+          caption,
+          accessToken,
+          phoneNumberId,
+          apiVersion,
+        });
+
+      if (previewMessageId) {
+        return previewMessageId;
+      }
+    } catch (error) {
+      console.warn(
+        "NCS PERMANENT JPEG DIRECT SEND FAILED; CONTINUING LEGACY IMAGE PATH:",
+        error instanceof Error
+          ? error.message
+          : String(error),
+      );
+    }
+  }
+
+  /*
+   * STAGE 16.6.1 • PHOTO-DELIVERY RESTORE
    *
-   * This avoids Meta needing to download our URL itself and restores the
-   * old customer experience: greeting + one image, product search + up to
-   * three image/detail replies.
+   * Replies are now working again, so restore image delivery with the most
+   * reliable order:
+   *
+   * 1) Send our own public JPEG proxy URL directly to WhatsApp.
+   *    This is the cleanest path because the URL is already JPEG-safe.
+   * 2) If Meta link-fetch fails, server-fetch that same JPEG proxy URL,
+   *    upload bytes to Meta /media, then send by media id.
+   * 3) If both proxy paths fail, try a direct product JPEG/PNG link.
+   * 4) Final fallback: download source, convert with sharp, upload to Meta.
+   *
+   * Only if all image paths fail do we fall back to plain text.
    */
   const proxyImageUrl =
     productImageProxyUrl(
@@ -12265,6 +12900,59 @@ async function sendProductImage(
     );
 
   if (proxyImageUrl) {
+    try {
+      const proxyLinkMessageId =
+        await sendProductImageByLink(
+          {
+            to,
+            imageUrl:
+              proxyImageUrl,
+            caption,
+            accessToken,
+            phoneNumberId,
+            apiVersion,
+          },
+        );
+
+      if (proxyLinkMessageId) {
+        console.log(
+          "NCS PRODUCT IMAGE SENT VIA PROXY LINK:",
+          JSON.stringify(
+            {
+              productId:
+                product.id,
+              imageUrl:
+                proxyImageUrl,
+              messageId:
+                proxyLinkMessageId,
+            },
+            null,
+            2,
+          ),
+        );
+
+        return proxyLinkMessageId;
+      }
+    } catch (error) {
+      console.warn(
+        "NCS PROXY LINK IMAGE SEND FAILED; TRYING PROXY MEDIA UPLOAD:",
+        JSON.stringify(
+          {
+            productId:
+              product.id,
+            imageUrl:
+              proxyImageUrl,
+            error:
+              error instanceof Error
+                ? error.message
+                : String(error),
+          },
+          null,
+          2,
+        ),
+      );
+    }
+
     try {
       const mediaId =
         await uploadWhatsAppImageFromPublicJpegUrl(
@@ -12295,12 +12983,27 @@ async function sendProductImage(
           );
 
         if (proxyMessageId) {
+          console.log(
+            "NCS PRODUCT IMAGE SENT VIA PROXY MEDIA-ID:",
+            JSON.stringify(
+              {
+                productId:
+                  product.id,
+                mediaId,
+                messageId:
+                  proxyMessageId,
+              },
+              null,
+              2,
+            ),
+          );
+
           return proxyMessageId;
         }
       }
     } catch (error) {
       console.warn(
-        "NCS PRIMARY SERVER JPEG PATH FAILED; TRYING FALLBACK MEDIA PATHS:",
+        "NCS PRIMARY SERVER JPEG PATH FAILED; TRYING DIRECT/FALLBACK MEDIA PATHS:",
         JSON.stringify(
           {
             productId:
@@ -12319,7 +13022,7 @@ async function sendProductImage(
 
 
   /*
-   * Stage 2036.3 preferred path:
+   * Stage 2036.3 preferred direct path:
    * Send a permanent JPEG/PNG preview URL directly to WhatsApp.
    * This avoids Vercel native image conversion completely whenever
    * products.social_preview_url contains a JPEG/PNG preview.
@@ -13518,7 +14221,15 @@ async function autoReplyProducts(
     !customerHasHistory;
 
   /*
+   * STAGE 16.3.2 • SHOPPING INTENT MUST NEVER BE MUTED
+   *
    * BOT-TO-BOT CIRCUIT BREAKER
+   *
+   * Important regression fix:
+   * the older rapid-burst guard could silence real customers who tested
+   * "shirt", "t-shirt", "jeans", size, price or offer queries several times
+   * within one minute. Genuine shopping/business intent now bypasses the
+   * loop guard completely. Only unrelated rapid non-business chatter can mute.
    * Example: another automated business account (LIC/bank/etc.) can reply to
    * our automatic reply, causing both bots to keep answering each other.
    * After six inbound events inside one minute, NCS goes silent for that burst.
@@ -13528,6 +14239,8 @@ async function autoReplyProducts(
     !trueFirstContact &&
     !interactiveBusinessAction &&
     !greetingMessage &&
+    !businessIntent &&
+    !customerProductQuery &&
     earlySalesBrainIntent ===
       "NONE" &&
     await ncsRapidInboundLoopRisk(
@@ -13556,9 +14269,9 @@ async function autoReplyProducts(
   }
 
   /*
-   * STAGE 11.1+ • ZERO COOLDOWN
-   * Greeting and every genuine business action may respond immediately.
-   * The claim RPC is retained only for duplicate webhook/message-id safety.
+   * STAGE 16.6 • TRUE ZERO COOLDOWN
+   * Every NEW Meta message id may respond immediately.
+   * Duplicate protection is session based; no time-based cooldown remains.
    */
   const effectiveCooldownMinutes = 0;
 
@@ -13604,40 +14317,29 @@ async function autoReplyProducts(
 
 
 
+  /*
+   * STAGE 16.6 • NO COOLDOWN
+   *
+   * claimAutoReply now blocks ONLY an exact duplicate Meta message id.
+   * There is no time-based cooldown for greetings, shopping, booking,
+   * payment, size, colour, normal business text, or first contact.
+   */
   if (
-
     !claim.claimed
-
   ) {
-
     return {
-
       sent: false,
-
       skipped: true,
-
       reason:
-
         claim.reason ||
-
-        "cooldown_or_duplicate",
-
+        "duplicate_webhook",
       retryAfterSeconds:
-
-        claim.retry_after_seconds ??
-
-        null,
-
+        0,
       customerProductQuery,
-
       cooldownMinutes:
-
-        effectiveCooldownMinutes,
-
+        0,
     };
-
   }
-
 
 
   const previousIds =
@@ -13704,33 +14406,59 @@ async function autoReplyProducts(
       );
 
     /*
-     * STAGE 11.2.1 • VISUAL GREETING
-     * Every premium greeting gets one live hero product after it:
-     * - first contact -> greeting + hero
-     * - Hi / Hello / Namaste again -> greeting + hero again
-     * There is no cooldown, exactly as requested.
+     * STAGE 16.3 • FIRST-CONTACT ONLY 3-PHOTO PACK
+     *
+     * IMPORTANT:
+     * Normal catalogue/search flow below is untouched.
+     * Only a genuine first contact gets three products here.
+     * Returning greetings keep the old single rotating hero behavior.
      */
-    const hero =
-      await sendNcsWelcomeHeroProductSafe(
-        admin,
-        phone,
-        previousIds,
-      );
+    let welcomeProductIds:
+      number[] =
+        previousIds;
 
-    const welcomeProductIds =
-      hero.productId
-        ? [hero.productId]
-        : previousIds;
+    if (trueFirstContact) {
+      const firstContact =
+        await sendNcsFirstContactThreeWorkingProductsSafe(
+          admin,
+          phone,
+          previousIds,
+          leadCustomerName,
+        );
 
-    if (hero.messageId) {
       welcomeMessageIds.push(
-        hero.messageId,
+        ...firstContact.messageIds,
       );
+
+      if (
+        firstContact.productIds.length >
+        0
+      ) {
+        welcomeProductIds =
+          firstContact.productIds;
+      }
+    } else {
+      const hero =
+        await sendNcsWelcomeHeroProductSafe(
+          admin,
+          phone,
+          previousIds,
+        );
+
+      welcomeProductIds =
+        hero.productId
+          ? [hero.productId]
+          : previousIds;
+
+      if (hero.messageId) {
+        welcomeMessageIds.push(
+          hero.messageId,
+        );
+      }
     }
 
     /*
-     * Persist only a neutral welcome marker. It establishes that this number
-     * has already been greeted without inventing a product/category history.
+     * Persist only a neutral welcome marker.
      */
     await saveSalesConversation(
       admin,
@@ -13762,8 +14490,8 @@ async function autoReplyProducts(
         sent: true,
         mode:
           greetingMessage
-            ? "stage12_1_greeting_no_cooldown"
-            : "stage12_1_true_first_contact_welcome",
+            ? "stage16_3_returning_greeting_hero"
+            : "stage16_3_first_contact_3_working_photos",
         messageIds:
           welcomeMessageIds,
       };
@@ -15197,12 +15925,21 @@ async function autoReplyProducts(
      customer intents or a greeting. It never overrides a fresh product ask.
      ------------------------------------------------------------ */
 
+  /*
+   * STAGE 16.8 • FRESH QUERY ALWAYS WINS
+   *
+   * A new explicit customer product request must NEVER be rewritten by
+   * returning-customer memory. Example: if the previous search was T-shirt
+   * and the customer now sends SAREE, search SAREE immediately.
+   */
   const stage8ReturningPlan =
-    buildStage8ReturningPlan(
-      salesConversation,
-      returningShoppingMemory,
-      messageText,
-    );
+    customerProductQuery
+      ? null
+      : buildStage8ReturningPlan(
+          salesConversation,
+          returningShoppingMemory,
+          messageText,
+        );
 
   if (
     stage8ReturningPlan?.kind === "text"
@@ -15242,10 +15979,12 @@ async function autoReplyProducts(
      ------------------------------------------------------------ */
 
   const stage7AutoPlan =
-    buildStage7AutoSalesPlan(
-      salesConversation,
-      messageText,
-    );
+    customerProductQuery
+      ? null
+      : buildStage7AutoSalesPlan(
+          salesConversation,
+          messageText,
+        );
 
   if (
     stage7AutoPlan?.kind === "text"
@@ -15578,12 +16317,16 @@ async function autoReplyProducts(
     null;
 
   const inventorySearchText =
-    stage8InventoryQuery ||
-    stage7InventoryQuery ||
-    contextualInventoryQuery(
-      salesConversation,
-      messageText,
-    );
+    customerProductQuery
+      ? messageText
+      : (
+          stage8InventoryQuery ||
+          stage7InventoryQuery ||
+          contextualInventoryQuery(
+            salesConversation,
+            messageText,
+          )
+        );
 
   if (
     customerProductQuery ||
@@ -15853,12 +16596,19 @@ async function autoReplyProducts(
       UnifiedInventorySearch | null =
       null;
 
-    const relaxedQuery =
-      relaxedAlternativeQuery(
-        salesConversation,
-        inventorySearchText,
+    const explicitGarmentFamily =
+      strictRequestedGarmentFamily(
         messageText,
       );
+
+    const relaxedQuery =
+      explicitGarmentFamily
+        ? null
+        : relaxedAlternativeQuery(
+            salesConversation,
+            inventorySearchText,
+            messageText,
+          );
 
     if (
       relaxedQuery &&
@@ -16023,21 +16773,53 @@ async function autoReplyProducts(
       }
     }
 
+    let noMatchMessageId:
+      string | null = null;
+
     try {
-      await sendWhatsAppTextToCustomer(
-        phone,
-        buildInventoryNoMatchText(
-          messageText,
-        ),
-      );
+      noMatchMessageId =
+        await sendWhatsAppTextToCustomer(
+          phone,
+          buildInventoryNoMatchText(
+            messageText,
+          ),
+        );
     } catch (error) {
       console.warn(
-        "UNIFIED INVENTORY NO-MATCH NOTICE FAILED; CONTINUING WITH ONLINE PICKS:",
+        "UNIFIED INVENTORY NO-MATCH NOTICE FAILED:",
         error instanceof Error
           ? error.message
           : String(error),
       );
     }
+
+    /*
+     * STAGE 16.7 • NEVER SEND WRONG CATEGORY AS A FALLBACK
+     *
+     * A meaningful explicit inventory request with zero matches ends here.
+     * Do not fall through to chooseProducts(), because that old fallback can
+     * return unrelated products and damages customer trust.
+     */
+    await completeAutoReply(
+      admin,
+      {
+        phone,
+        messageId,
+        productIds: [],
+        status: "sent",
+      },
+    );
+
+    return {
+      sent: true,
+      mode:
+        "strict_inventory_no_match",
+      productIds: [],
+      messageIds:
+        noMatchMessageId
+          ? [noMatchMessageId]
+          : [],
+    };
   }
 
 

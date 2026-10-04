@@ -174,6 +174,18 @@ export default function SalesHistoryPage() {
   const [paymentBalanceTreatment, setPaymentBalanceTreatment] =
     useState<"due" | "waive">("due");
   const [paymentEditSaving, setPaymentEditSaving] = useState(false);
+
+  // NCS 2036 • PREVIOUS / OPENING CUSTOMER DUE
+  // This balance belongs only to Customer Dues. It never enters POS sales.
+  const [previousDueOpen, setPreviousDueOpen] = useState(false);
+  const [previousDueCustomerName, setPreviousDueCustomerName] = useState("");
+  const [previousDueCustomerPhone, setPreviousDueCustomerPhone] = useState("");
+  const [previousDueAmount, setPreviousDueAmount] = useState("");
+  const [previousDueDate, setPreviousDueDate] = useState("");
+  const [previousDueNotes, setPreviousDueNotes] = useState("");
+  const [previousDueSendWhatsApp, setPreviousDueSendWhatsApp] = useState(true);
+  const [previousDueSaving, setPreviousDueSaving] = useState(false);
+
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [whatsAppSendingSaleId, setWhatsAppSendingSaleId] =
     useState<string | null>(null);
@@ -1373,6 +1385,7 @@ export default function SalesHistoryPage() {
       "upi",
       "card",
       "bank_transfer",
+      "credit",
     ].includes(currentMethod)
       ? currentMethod
       : "cash";
@@ -1568,6 +1581,180 @@ export default function SalesHistoryPage() {
       setPaymentEditSaving(false);
     }
   }
+
+  function openPreviousDueModal() {
+    setPreviousDueCustomerName("");
+    setPreviousDueCustomerPhone("");
+    setPreviousDueAmount("");
+    setPreviousDueDate("");
+    setPreviousDueNotes("");
+    setPreviousDueSendWhatsApp(true);
+    setPreviousDueOpen(true);
+  }
+
+  function normalizeCustomerPhone(value: string) {
+    let digits = value.replace(/\D/g, "");
+
+    if (digits.startsWith("0") && digits.length === 11) {
+      digits = digits.slice(1);
+    }
+
+    if (digits.startsWith("91") && digits.length === 12) {
+      digits = digits.slice(2);
+    }
+
+    return digits.slice(-10);
+  }
+
+  async function sendPreviousDueWhatsAppReminder(input: {
+    customerName: string;
+    customerPhone: string;
+    dueAmount: number;
+    dueDate: string | null;
+  }) {
+    try {
+      const response = await fetch("/api/whatsapp/customer-reminder", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: input.customerPhone,
+          customerName: input.customerName,
+          kind: "due",
+          dueAmount: input.dueAmount,
+          dueDate: input.dueDate,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            success?: boolean;
+            error?: string;
+          }
+        | null;
+
+      return {
+        sent: response.ok && payload?.success === true,
+        error: payload?.error || "",
+      };
+    } catch (error) {
+      console.info(
+        "Previous due saved, but WhatsApp reminder failed:",
+        error,
+      );
+
+      return {
+        sent: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "WhatsApp reminder failed.",
+      };
+    }
+  }
+
+  async function savePreviousDue() {
+    const customerName = previousDueCustomerName.trim();
+    const customerPhone = normalizeCustomerPhone(previousDueCustomerPhone);
+    const amount = Math.round(num(previousDueAmount) * 100) / 100;
+    const dueDate = previousDueDate.trim() || null;
+    const notes = previousDueNotes.trim() || null;
+
+    if (!customerName) {
+      setNotice("Enter customer name.");
+      return;
+    }
+
+    if (customerPhone.length !== 10) {
+      setNotice("Enter a valid 10-digit customer mobile number.");
+      return;
+    }
+
+    if (!(amount > 0)) {
+      setNotice("Enter a valid previous due amount.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Add previous due for ${customerName}?\n\n` +
+        `Mobile: ${customerPhone}\n` +
+        `Previous Due: ${money(amount)}\n\n` +
+        `This amount will appear only in Customer Dues. ` +
+        `It will NOT be added to today's sales or any POS bill.`,
+    );
+
+    if (!confirmed) return;
+
+    setPreviousDueSaving(true);
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "add_customer_opening_due",
+        {
+          p_customer_name: customerName,
+          p_customer_phone: customerPhone,
+          p_amount: amount,
+          p_due_date: dueDate,
+          p_notes: notes,
+        },
+      );
+
+      if (error) throw error;
+
+      const result = (data || {}) as {
+        success?: boolean;
+        current_balance?: number | string;
+        due_date?: string | null;
+        message?: string;
+      };
+
+      if (result.success === false) {
+        throw new Error(
+          result.message || "Unable to add previous due.",
+        );
+      }
+
+      const currentBalance = Math.max(
+        0,
+        num(result.current_balance) || amount,
+      );
+
+      let whatsappText = "";
+
+      if (previousDueSendWhatsApp) {
+        const whatsapp = await sendPreviousDueWhatsAppReminder({
+          customerName,
+          customerPhone,
+          dueAmount: currentBalance,
+          dueDate: result.due_date || dueDate,
+        });
+
+        whatsappText = whatsapp.sent
+          ? " WhatsApp due reminder sent ✓"
+          : " Due saved; WhatsApp reminder was not sent.";
+      }
+
+      setPreviousDueOpen(false);
+      setNotice(
+        `${customerName} previous due ${money(amount)} added. ` +
+          `Current due ${money(currentBalance)}.${whatsappText}`,
+      );
+
+      await loadSales();
+      window.setTimeout(() => setNotice(""), 6000);
+    } catch (error) {
+      console.error("Unable to add previous customer due:", error);
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to add previous customer due.",
+      );
+    } finally {
+      setPreviousDueSaving(false);
+    }
+  }
+
 
   async function deleteSelectedSale() {
     if (!selected) return;
@@ -2123,7 +2310,17 @@ export default function SalesHistoryPage() {
         <article><span>Total Bills</span><strong>{stats.bills}</strong></article>
         <article><span>Sales Value</span><strong>{money(stats.value)}</strong></article>
         <article><span>Total Paid</span><strong>{money(stats.paid)}</strong></article>
-        <article><span>Current Due</span><strong>{money(stats.due)}</strong></article>
+        <article className="currentDueStat">
+          <span>Current Due</span>
+          <strong>{money(stats.due)}</strong>
+          <button
+            type="button"
+            className="previousDueButton"
+            onClick={openPreviousDueModal}
+          >
+            + Previous Due
+          </button>
+        </article>
         <article><span>Today Bills</span><strong>{stats.today}</strong></article>
       </section>
 
@@ -2556,6 +2753,158 @@ export default function SalesHistoryPage() {
         </div>
       )}
 
+      {previousDueOpen && (
+        <div
+          className="previousDueOverlay"
+          onMouseDown={() =>
+            !previousDueSaving && setPreviousDueOpen(false)
+          }
+        >
+          <section
+            className="previousDueModal"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header>
+              <div>
+                <span>CUSTOMER OPENING BALANCE</span>
+                <h2>Add Previous Due</h2>
+                <p>
+                  Old shop balance only • not included in today's sales
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPreviousDueOpen(false)}
+                disabled={previousDueSaving}
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="previousDueBody">
+              <div className="previousDueSafety">
+                <b>Previous / Old Due</b>
+                <span>
+                  This amount goes directly to Customer Dues. No POS sale,
+                  bill value, tax, stock or today's sales total is changed.
+                </span>
+              </div>
+
+              <div className="previousDueGrid">
+                <label>
+                  <span>Customer Name</span>
+                  <input
+                    value={previousDueCustomerName}
+                    onChange={(event) =>
+                      setPreviousDueCustomerName(event.target.value)
+                    }
+                    placeholder="Customer name"
+                    maxLength={80}
+                  />
+                </label>
+
+                <label>
+                  <span>Mobile Number</span>
+                  <input
+                    inputMode="numeric"
+                    value={previousDueCustomerPhone}
+                    onChange={(event) =>
+                      setPreviousDueCustomerPhone(event.target.value)
+                    }
+                    placeholder="10-digit mobile"
+                    maxLength={16}
+                  />
+                </label>
+
+                <label>
+                  <span>Previous Due Amount</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={previousDueAmount}
+                    onChange={(event) =>
+                      setPreviousDueAmount(event.target.value)
+                    }
+                    placeholder="₹0.00"
+                  />
+                </label>
+
+                <label>
+                  <span>Due Date • Optional</span>
+                  <input
+                    type="date"
+                    value={previousDueDate}
+                    onChange={(event) =>
+                      setPreviousDueDate(event.target.value)
+                    }
+                  />
+                </label>
+              </div>
+
+              <label className="previousDueNotes">
+                <span>Note • Optional</span>
+                <input
+                  value={previousDueNotes}
+                  onChange={(event) =>
+                    setPreviousDueNotes(event.target.value)
+                  }
+                  placeholder="Example: Old notebook balance"
+                  maxLength={160}
+                />
+              </label>
+
+              <label className="previousDueWhatsApp">
+                <input
+                  type="checkbox"
+                  checked={previousDueSendWhatsApp}
+                  onChange={(event) =>
+                    setPreviousDueSendWhatsApp(event.target.checked)
+                  }
+                />
+                <div>
+                  <b>Send WhatsApp Due Reminder</b>
+                  <span>
+                    Uses your existing due reminder flow with UPI / QR where
+                    configured.
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            <footer>
+              <button
+                type="button"
+                className="previousDueCancel"
+                onClick={() => setPreviousDueOpen(false)}
+                disabled={previousDueSaving}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className="previousDueSave"
+                onClick={savePreviousDue}
+                disabled={
+                  previousDueSaving ||
+                  previousDueCustomerName.trim() === "" ||
+                  normalizeCustomerPhone(previousDueCustomerPhone).length !== 10 ||
+                  num(previousDueAmount) <= 0
+                }
+              >
+                {previousDueSaving
+                  ? "Saving..."
+                  : previousDueSendWhatsApp
+                    ? "Save Due & Send WhatsApp"
+                    : "Save Previous Due"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
       {selected && paymentEditOpen && (
         <div
           className="paymentEditOverlay"
@@ -2612,9 +2961,17 @@ export default function SalesHistoryPage() {
                   <span>Correct Payment Method</span>
                   <select
                     value={paymentEditValue}
-                    onChange={(event) =>
-                      setPaymentEditValue(event.target.value)
-                    }
+                    onChange={(event) => {
+                      const nextMethod = event.target.value;
+                      setPaymentEditValue(nextMethod);
+
+                      // Full-credit correction: make it one clean action.
+                      // Paid amount stays editable afterwards for partial-credit cases.
+                      if (nextMethod === "credit") {
+                        setPaymentEditPaidAmount("0.00");
+                        setPaymentBalanceTreatment("due");
+                      }
+                    }}
                   >
                     <option value="cash">Cash</option>
                     <option value="upi">UPI</option>
@@ -2622,6 +2979,7 @@ export default function SalesHistoryPage() {
                     <option value="bank_transfer">
                       Bank Transfer
                     </option>
+                    <option value="credit">Credit / Customer Due</option>
                   </select>
                 </label>
 
@@ -2731,11 +3089,12 @@ export default function SalesHistoryPage() {
               })()}
 
               <div className="paymentSafetyNote">
-                Items and stock remain unchanged. Select Customer Due only
-                when the customer will pay later. Select Discount / Waived
-                Off when the remaining amount should never appear as due.
-                After saving, the revised invoice PDF is sent directly on
-                WhatsApp.
+                Items and stock remain unchanged. Credit / Customer Due can
+                be used to correct a bill that was accidentally saved as Cash.
+                Set Amount Actually Received to ₹0 for a full-credit bill.
+                Select Discount / Waived Off only when the remaining amount
+                should never appear as due. After saving, the revised invoice
+                PDF is sent directly on WhatsApp.
               </div>
             </div>
 
@@ -4509,6 +4868,223 @@ export default function SalesHistoryPage() {
         .salesPage .saleCard footer button:hover {
           transform:translateY(-2px) !important;
           box-shadow:0 10px 20px rgba(52,55,84,.15) !important;
+        }
+
+
+        /* NCS 2036 • PREVIOUS CUSTOMER DUE */
+        .salesPage .currentDueStat {
+          position:relative;
+          padding-bottom:54px !important;
+        }
+
+        .salesPage .previousDueButton {
+          position:absolute;
+          left:16px;
+          right:16px;
+          bottom:12px;
+          min-height:32px;
+          border:1px solid #d9cfef;
+          border-radius:10px;
+          background:linear-gradient(135deg,#f2edff,#edf8f7);
+          color:#51368f;
+          font-size:11px;
+          font-weight:900;
+          cursor:pointer;
+        }
+
+        .previousDueOverlay {
+          position:fixed;
+          inset:0;
+          z-index:50000;
+          display:grid;
+          place-items:center;
+          padding:20px;
+          background:rgba(14,12,27,.72);
+          backdrop-filter:blur(9px);
+        }
+
+        .previousDueModal {
+          width:min(620px,96vw);
+          max-height:92vh;
+          overflow:auto;
+          border-radius:26px;
+          background:#fff;
+          box-shadow:0 34px 90px rgba(12,11,21,.36);
+        }
+
+        .previousDueModal > header {
+          display:flex;
+          justify-content:space-between;
+          gap:18px;
+          padding:24px 26px;
+          color:#fff;
+          background:
+            radial-gradient(circle at 90% -10%,rgba(255,215,115,.18),transparent 29%),
+            linear-gradient(118deg,#31184f 0%,#5c32a8 45%,#3c6f93 100%);
+        }
+
+        .previousDueModal > header span {
+          display:block;
+          margin-bottom:5px;
+          font-size:10px;
+          font-weight:1000;
+          letter-spacing:.15em;
+          color:#ddd0ff;
+        }
+
+        .previousDueModal > header h2 {
+          margin:0;
+          font-size:25px;
+        }
+
+        .previousDueModal > header p {
+          margin:5px 0 0;
+          font-size:12px;
+          color:#eee9ff;
+        }
+
+        .previousDueModal > header button {
+          width:46px;
+          height:46px;
+          border:1px solid rgba(255,255,255,.24);
+          border-radius:13px;
+          background:rgba(255,255,255,.12);
+          color:#fff;
+          font-size:25px;
+          cursor:pointer;
+        }
+
+        .previousDueBody {
+          padding:22px 24px 10px;
+        }
+
+        .previousDueSafety {
+          display:flex;
+          flex-direction:column;
+          gap:5px;
+          margin-bottom:18px;
+          padding:13px 15px;
+          border:1px solid #eadfbe;
+          border-radius:14px;
+          background:#fffaf0;
+        }
+
+        .previousDueSafety b {
+          color:#6b4f16;
+          font-size:12px;
+        }
+
+        .previousDueSafety span {
+          color:#6e6657;
+          font-size:11px;
+          line-height:1.45;
+        }
+
+        .previousDueGrid {
+          display:grid;
+          grid-template-columns:1fr 1fr;
+          gap:14px;
+        }
+
+        .previousDueGrid label,
+        .previousDueNotes {
+          display:flex;
+          flex-direction:column;
+          gap:6px;
+        }
+
+        .previousDueGrid label span,
+        .previousDueNotes span {
+          color:#5f6474;
+          font-size:10px;
+          font-weight:900;
+          text-transform:uppercase;
+          letter-spacing:.04em;
+        }
+
+        .previousDueGrid input,
+        .previousDueNotes input {
+          width:100%;
+          min-height:48px;
+          padding:0 14px;
+          border:1px solid #dfe3ea;
+          border-radius:12px;
+          background:#fff;
+          color:#202536;
+          font-size:14px;
+          font-weight:800;
+          outline:none;
+        }
+
+        .previousDueNotes {
+          margin-top:14px;
+        }
+
+        .previousDueWhatsApp {
+          display:flex;
+          align-items:flex-start;
+          gap:11px;
+          margin-top:17px;
+          padding:13px 14px;
+          border:1px solid #d6eadf;
+          border-radius:14px;
+          background:#f2fbf6;
+          cursor:pointer;
+        }
+
+        .previousDueWhatsApp input {
+          width:18px;
+          height:18px;
+          margin-top:2px;
+        }
+
+        .previousDueWhatsApp div {
+          display:flex;
+          flex-direction:column;
+          gap:3px;
+        }
+
+        .previousDueWhatsApp b {
+          color:#216e52;
+          font-size:12px;
+        }
+
+        .previousDueWhatsApp span {
+          color:#5e746a;
+          font-size:11px;
+        }
+
+        .previousDueModal > footer {
+          display:flex;
+          justify-content:flex-end;
+          gap:10px;
+          padding:18px 24px 22px;
+        }
+
+        .previousDueCancel,
+        .previousDueSave {
+          min-height:46px;
+          padding:0 18px;
+          border:0;
+          border-radius:12px;
+          font-weight:900;
+          cursor:pointer;
+        }
+
+        .previousDueCancel {
+          background:#eef1f6;
+          color:#2f3545;
+        }
+
+        .previousDueSave {
+          background:linear-gradient(135deg,#5c4497,#427887);
+          color:#fff;
+        }
+
+        @media(max-width:700px){
+          .previousDueGrid {
+            grid-template-columns:1fr;
+          }
         }
 
         /* MODAL */

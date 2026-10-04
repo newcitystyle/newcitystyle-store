@@ -722,6 +722,34 @@ const POS_AI_ACTION_WORDS = new Set([
   "మళ్ళీ",
   "మళ్లీ",
   "ఏవి",
+  "lo",
+  "lona",
+  "nundi",
+  "nunchi",
+  "unda",
+  "undi",
+  "unna",
+  "unnaya",
+  "unnayi",
+  "vunda",
+  "vundi",
+  "vunnaya",
+  "vunnayi",
+  "emi",
+  "em",
+  "emaina",
+  "kavali",
+  "kaavali",
+  "chupu",
+  "choopu",
+  "chupinchu",
+  "chupinchandi",
+  "daggara",
+  "daggaralo",
+  "daggariki",
+  "near",
+  "with",
+  "having",
 ]);
 
 const POS_AI_QUANTITY_WORDS: Record<string, number> = {
@@ -758,11 +786,37 @@ const POS_AI_QUANTITY_WORDS: Record<string, number> = {
 };
 
 function normalizePosAiText(value: string) {
-  return value
+  let normalized = value
     .toLocaleLowerCase("en-IN")
     .replace(/[.,!?;:()[\]{}"'`]/g, " ")
+    .replace(/[_/\\]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  normalized = normalized
+    .replace(/\bt[\s-]*shirts?\b/g, "tshirt")
+    .replace(/\btees?\b/g, "tshirt")
+    .replace(/\bsaris?\b/g, "saree")
+    .replace(/\bsarees\b/g, "saree")
+    .replace(/\bshirts\b/g, "shirt")
+    .replace(/\bjean\b/g, "jeans")
+    .replace(/\bdenims?\b/g, "jeans")
+    .replace(/\btrousers?\b/g, "pant")
+    .replace(/\bpants\b/g, "pant")
+    .replace(/\bfrocks\b/g, "frock")
+    .replace(/\bdresses\b/g, "dress")
+    .replace(/\bkurtas?\b/g, "kurti")
+    .replace(/\bkurtis\b/g, "kurti")
+    .replace(/\bnighties\b/g, "nighty")
+    .replace(/\bnightwear\b/g, "nighty")
+    .replace(/\bleggings\b/g, "legging")
+    .replace(/\bshorts\b/g, "short")
+    .replace(/\bgrey\b/g, "gray")
+    .replace(/\boff[\s-]*white\b/g, "offwhite")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return normalized;
 }
 
 function getPosAiIntent(normalized: string): PosAiIntent {
@@ -1500,6 +1554,7 @@ const POS_VIP_SPEND_THRESHOLD = 5_000;
 
 export default function PosPage() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const catalogueScrollRef = useRef<HTMLDivElement | null>(null);
   const cartItemsScrollRef = useRef<HTMLDivElement | null>(null);
   const quickItemNameInputRef = useRef<HTMLInputElement | null>(null);
   const customerNameInputRef = useRef<HTMLInputElement | null>(null);
@@ -4715,6 +4770,87 @@ if (!variantsError) {
     });
   }
 
+  function scrollCatalogueToTop(behavior: ScrollBehavior = "smooth") {
+    const catalogue = catalogueScrollRef.current;
+
+    if (!catalogue) {
+      return;
+    }
+
+    catalogue.scrollTo({
+      top: 0,
+      left: 0,
+      behavior,
+    });
+  }
+
+  function handleCatalogueWheel(
+    event: React.WheelEvent<HTMLDivElement>
+  ) {
+    const catalogue = catalogueScrollRef.current;
+
+    if (!catalogue) {
+      return;
+    }
+
+    /*
+     * NCS POS 2036 • HARD SCROLL OWNERSHIP
+     *
+     * The Admin shell has several nested overflow containers. On desktop the
+     * browser can hand the wheel event to the outer shell instead of the POS
+     * catalogue, making the brand/product cards look frozen.
+     *
+     * Own vertical wheel movement inside the catalogue explicitly.
+     */
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+      return;
+    }
+
+    const maxScroll =
+      Math.max(
+        0,
+        catalogue.scrollHeight -
+        catalogue.clientHeight
+      );
+
+    if (maxScroll <= 0) {
+      return;
+    }
+
+    const nextTop =
+      Math.max(
+        0,
+        Math.min(
+          maxScroll,
+          catalogue.scrollTop +
+          event.deltaY
+        )
+      );
+
+    if (nextTop !== catalogue.scrollTop) {
+      event.preventDefault();
+      catalogue.scrollTop = nextTop;
+    }
+  }
+
+  function restoreProductBrowseAfterAdd() {
+    setExpandedProductId(null);
+    setExpandedBrand(null);
+    setBrandMatrixQuery("");
+    setBrandMatrixPage(0);
+    setProductViewMode("brands");
+
+    window.requestAnimationFrame(() => {
+      scrollCatalogueToTop("smooth");
+
+      window.setTimeout(() => {
+        searchInputRef.current?.focus({
+          preventScroll: true,
+        });
+      }, 220);
+    });
+  }
+
   function addProductDirectlyToCart(product: PosProduct) {
     if (getAvailableStock(product) <= 0) {
       showNotice(`${product.name} is out of stock.`, "error");
@@ -4747,7 +4883,7 @@ if (!variantsError) {
     }, 1600);
     showNotice(product.designUnitId ? `${product.designName || "Selected design"} added to bill.` : `${product.name} added to bill.`, "success");
     setSearchQuery("");
-    searchInputRef.current?.focus();
+    restoreProductBrowseAfterAdd();
   }
 
   function addProductToCart(product: PosProduct) {
@@ -9253,7 +9389,13 @@ if (!variantsError) {
             : ""
         }`}
       >
-        <div className="ncsPosCatalogue">
+        <div
+          ref={catalogueScrollRef}
+          className="ncsPosCatalogue"
+          onWheel={handleCatalogueWheel}
+          tabIndex={0}
+          aria-label="POS product catalogue"
+        >
 
 
       {smartFashionCategory && typeof document !== "undefined" &&
@@ -27048,6 +27190,41 @@ if (!variantsError) {
         }
 
 
+
+        /* ============================================================
+           NCS POS 16.10 • HARD CATALOGUE SCROLL OWNERSHIP
+           Fixes frozen Brands / Products scrolling inside the Admin shell.
+           ============================================================ */
+        @media (min-width:1081px) {
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosWorkspace {
+            min-height:0 !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogue {
+            min-height:0 !important;
+            height:100% !important;
+            max-height:100% !important;
+            overflow-y:scroll !important;
+            overflow-x:hidden !important;
+            overscroll-behavior-y:contain !important;
+            touch-action:pan-y !important;
+            pointer-events:auto !important;
+            scrollbar-gutter:stable both-edges !important;
+            -webkit-overflow-scrolling:touch;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosCatalogue > * {
+            flex-shrink:0 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixShell,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixViewport,
+          .ncsPosV7Living.ncsPosCounterOS .ncsPosBrandMatrixGrid {
+            pointer-events:auto !important;
+          }
+        }
+
         /* ============================================================
            NCS POS • ACTIVE BILL WINDOW RESTORE
            CRITICAL:
@@ -34382,6 +34559,1177 @@ if (!variantsError) {
           opacity:.48 !important;
           filter:saturate(.55) !important;
           cursor:not-allowed !important;
+        }
+
+
+        /* ============================================================
+           NCS POS • URGENT CHECKOUT VISIBILITY LOCK • 2036
+           2026-09-30
+           Visual/layout-only emergency fix.
+           - Round Off is always visible in the compact summary row.
+           - Cash / UPI / Card / Split / Credit stay above extra panels.
+           - Total + Complete Sale stay directly under payment buttons.
+           - Credit/Split details cannot push checkout controls below viewport.
+           - No billing/payment/stock/customer handlers changed.
+           ============================================================ */
+
+        @media (min-width:761px) {
+          /* Only product rows are allowed to consume the remaining height. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex:1 1 auto !important;
+            min-height:72px !important;
+            overflow-y:auto !important;
+            overflow-x:hidden !important;
+          }
+
+          /* One compact summary lane. Keep ROUND OFF on-screen. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummary {
+            flex:0 0 52px !important;
+            min-height:52px !important;
+            max-height:52px !important;
+            height:52px !important;
+            display:grid !important;
+            grid-template-columns:
+              1.05fr
+              .92fr
+              1fr
+              .95fr
+              .72fr
+              .95fr
+              .95fr
+              1fr !important;
+            grid-template-rows:44px !important;
+            grid-auto-flow:column !important;
+            gap:5px !important;
+            align-items:stretch !important;
+            margin:4px 9px !important;
+            padding:4px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummary > * {
+            min-width:0 !important;
+            width:auto !important;
+            min-height:44px !important;
+            height:44px !important;
+            max-height:44px !important;
+            margin:0 !important;
+            padding:4px 6px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummaryLine,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosDiscountField,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosRoundOffField {
+            display:flex !important;
+            align-items:center !important;
+            justify-content:space-between !important;
+            gap:4px !important;
+            border-radius:9px !important;
+            background:#fff !important;
+            border:1px solid rgba(7,80,94,.08) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosDiscountField,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosRoundOffField {
+            flex-direction:row !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosDiscountField > span,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosRoundOffField > span,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummaryLine > span {
+            min-width:0 !important;
+            overflow:hidden !important;
+            text-overflow:ellipsis !important;
+            white-space:nowrap !important;
+            font-size:5.8px !important;
+            line-height:1 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummaryLine strong {
+            flex:0 0 auto !important;
+            font-size:9px !important;
+            line-height:1 !important;
+            white-space:nowrap !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosDiscountField > div,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosRoundOffField > div {
+            flex:0 0 86px !important;
+            width:86px !important;
+            min-width:86px !important;
+            height:30px !important;
+            min-height:30px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosDiscountField input,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosRoundOffField input {
+            height:28px !important;
+            font-size:9px !important;
+            padding-top:0 !important;
+            padding-bottom:0 !important;
+          }
+
+          /* The editable round-off field is the authoritative compact display.
+             Hide only the extra duplicated "Round Off − ₹x" line in focus mode. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosRoundOffLine {
+            display:none !important;
+          }
+
+          /* Checkout is a strict vertical stack. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentSection {
+            position:relative !important;
+            bottom:auto !important;
+            z-index:20 !important;
+            flex:0 0 auto !important;
+            display:flex !important;
+            flex-direction:column !important;
+            gap:5px !important;
+            min-height:0 !important;
+            height:auto !important;
+            max-height:none !important;
+            margin:0 9px 6px !important;
+            padding:5px !important;
+            overflow:visible !important;
+            border-radius:11px !important;
+            background:#fff !important;
+            box-shadow:0 -5px 16px rgba(4,43,56,.08) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentHeading2036 {
+            display:none !important;
+          }
+
+          /* PAYMENT BUTTONS — always first. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentGrid2036 {
+            order:1 !important;
+            flex:0 0 40px !important;
+            min-height:40px !important;
+            height:40px !important;
+            display:grid !important;
+            grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+            gap:5px !important;
+            overflow:visible !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton {
+            min-height:40px !important;
+            height:40px !important;
+            max-height:40px !important;
+            padding:3px 7px !important;
+            flex-direction:row !important;
+            gap:6px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton span {
+            font-size:11px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton b {
+            font-size:8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton small {
+            display:none !important;
+          }
+
+          /* TOTAL + COMPLETE SALE — always second and always visible. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus
+          .ncsPosPaymentSection > .ncsPosTotalLine {
+            order:2 !important;
+            position:relative !important;
+            inset:auto !important;
+            flex:0 0 48px !important;
+            min-height:48px !important;
+            height:48px !important;
+            max-height:48px !important;
+            display:grid !important;
+            grid-template-columns:minmax(145px,1fr) 180px 250px !important;
+            align-items:center !important;
+            gap:8px !important;
+            margin:0 !important;
+            padding:5px 8px !important;
+            overflow:hidden !important;
+            border-radius:11px !important;
+            background:linear-gradient(110deg,#062e49 0%,#075868 56%,#0b7b79 100%) !important;
+            box-shadow:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCompleteButtonInline {
+            min-height:36px !important;
+            height:36px !important;
+            max-height:36px !important;
+            margin:0 !important;
+            padding:4px 8px !important;
+          }
+
+          /* Expanded Split / Credit details come AFTER the checkout button.
+             They may scroll internally, never push payment/Complete Sale away. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus
+          .ncsPosPaymentSection > .ncsPosSplitPaymentPanel2036,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus
+          .ncsPosPaymentSection > .ncsPosCreditPanel {
+            order:3 !important;
+            flex:0 0 auto !important;
+            max-height:104px !important;
+            min-height:0 !important;
+            margin:0 !important;
+            padding:5px !important;
+            overflow-y:auto !important;
+            overflow-x:hidden !important;
+            overscroll-behavior:contain !important;
+            scrollbar-width:thin !important;
+          }
+
+          /* Credit detail is compressed into a counter-friendly horizontal lane. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCreditTitle {
+            min-height:22px !important;
+            margin:0 0 3px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCreditTitle section small,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCreditPaidNowTitle2036 small {
+            display:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCreditPaidNowMatrix2036 {
+            margin:0 !important;
+            padding:3px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCreditPaidNowTitle2036 {
+            margin:0 0 3px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCreditAllocationGrid2036 {
+            grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+            gap:4px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus
+          .ncsPosCreditAllocationGrid2036 label > div {
+            min-height:31px !important;
+            height:31px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCreditSummary {
+            margin-top:4px !important;
+            gap:4px !important;
+          }
+
+          /* The old duplicate Complete Sale button remains hidden;
+             the inline button inside Total is the one visible checkout action. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus
+          .ncsPosPaymentSection > .ncsPosCompleteButton:not(.ncsPosCompleteButtonInline) {
+            display:none !important;
+          }
+        }
+
+        @media (min-width:761px) and (max-width:1250px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummary {
+            grid-template-columns:
+              1.1fr .9fr 1fr .95fr .7fr .9fr .9fr 1fr !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus
+          .ncsPosPaymentSection > .ncsPosTotalLine {
+            grid-template-columns:minmax(120px,1fr) 150px 220px !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • RUSH CREDIT WIDE CHECKOUT • 2036
+           2026-09-30
+           Layout-only fix from the current confirmed POS file.
+           Goals:
+           - use the full available bill workspace,
+           - keep customer due + rewards compact,
+           - make Credit paid-now controls wide and easy to hit,
+           - keep Complete Sale visible without page scrolling.
+           Billing/stock/customer/payment handlers are untouched.
+           ============================================================ */
+
+        @media (min-width:1081px) {
+          /* Use almost the entire available desktop viewport for the active bill. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            position:fixed !important;
+            top:4px !important;
+            right:4px !important;
+            bottom:4px !important;
+            left:max(300px,min(315px,19vw)) !important;
+            width:auto !important;
+            height:calc(100dvh - 8px) !important;
+            min-height:0 !important;
+            max-height:calc(100dvh - 8px) !important;
+            display:flex !important;
+            flex-direction:column !important;
+            overflow:hidden !important;
+            border-radius:16px !important;
+            z-index:8000 !important;
+          }
+
+          /* Save vertical space in the header without shrinking touch targets. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeader {
+            flex:0 0 92px !important;
+            min-height:92px !important;
+            max-height:92px !important;
+            padding:8px 12px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions {
+            grid-template-rows:repeat(2,34px) !important;
+            gap:5px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillHeaderActions button {
+            min-height:34px !important;
+            height:34px !important;
+            max-height:34px !important;
+          }
+
+          /* Customer trigger stays small. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7CustomerTrigger {
+            flex:0 0 34px !important;
+            min-height:34px !important;
+            height:34px !important;
+            margin:4px 8px 0 !important;
+            padding:3px 7px !important;
+          }
+
+          /* Expanded customer deck uses one row for name/phone, then due + rewards
+             share the second row instead of stacking vertically. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerCardCompact {
+            flex:0 0 auto !important;
+            display:grid !important;
+            grid-template-columns:minmax(0,1fr) minmax(0,1fr) !important;
+            gap:5px !important;
+            margin:4px 8px 0 !important;
+            padding:5px 7px !important;
+            max-height:105px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerCompactRow {
+            grid-column:1 / -1 !important;
+            min-height:34px !important;
+            height:34px !important;
+            gap:6px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerCompactName,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerCompactPhone,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosWhatsAppInline {
+            min-height:32px !important;
+            height:32px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerDueAlert,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosRewardLookupCompact {
+            min-width:0 !important;
+            min-height:42px !important;
+            height:42px !important;
+            max-height:42px !important;
+            margin:0 !important;
+            padding:4px 8px !important;
+            overflow:hidden !important;
+            border-radius:9px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCustomerDueAlert small {
+            display:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosRewardLookupCompact label {
+            min-width:100px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosRewardLookupCompact input {
+            height:30px !important;
+          }
+
+          /* Last scanned item is useful, but keep it compact in the rush bill view. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosV7LastScanCore {
+            flex:0 0 44px !important;
+            min-height:44px !important;
+            height:44px !important;
+            margin:4px 8px 0 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartTableHeader {
+            flex:0 0 28px !important;
+            min-height:28px !important;
+            height:28px !important;
+          }
+
+          /* Products alone use remaining space and scroll. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex:1 1 0 !important;
+            min-height:80px !important;
+            max-height:none !important;
+            overflow-y:auto !important;
+            overflow-x:hidden !important;
+          }
+
+          /* Summary is one slim fixed row. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosSummary {
+            flex:0 0 50px !important;
+            min-height:50px !important;
+            height:50px !important;
+            max-height:50px !important;
+            margin:4px 8px !important;
+          }
+
+          /* Checkout dock itself never scrolls off-screen. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentSection {
+            flex:0 0 auto !important;
+            min-height:0 !important;
+            height:auto !important;
+            max-height:184px !important;
+            margin:0 8px 6px !important;
+            padding:5px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentGrid2036 {
+            min-height:42px !important;
+            height:42px !important;
+            grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+            gap:6px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton {
+            min-height:42px !important;
+            height:42px !important;
+            max-height:42px !important;
+            padding:4px 10px !important;
+          }
+
+          /* ---------- CREDIT MODE: use width instead of pushing downward ---------- */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosPaymentSection {
+            display:grid !important;
+            grid-template-columns:minmax(0,1.65fr) minmax(330px,.72fr) !important;
+            grid-template-rows:42px minmax(92px,112px) !important;
+            grid-template-areas:
+              "methods methods"
+              "credit total" !important;
+            column-gap:7px !important;
+            row-gap:5px !important;
+            max-height:164px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosPaymentGrid2036 {
+            grid-area:methods !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditPanel {
+            grid-area:credit !important;
+            order:unset !important;
+            display:grid !important;
+            grid-template-columns:180px minmax(0,1fr) 250px !important;
+            align-items:center !important;
+            gap:7px !important;
+            min-height:92px !important;
+            height:100% !important;
+            max-height:112px !important;
+            margin:0 !important;
+            padding:6px 8px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditTitle {
+            display:flex !important;
+            align-items:center !important;
+            min-width:0 !important;
+            margin:0 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditTitle section small {
+            display:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditPaidNowMatrix2036 {
+            min-width:0 !important;
+            margin:0 !important;
+            padding:0 !important;
+            background:transparent !important;
+            border:0 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditPaidNowTitle2036 {
+            margin:0 0 4px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditPaidNowTitle2036 small,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditPaidNowTitle2036 span {
+            display:none !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditPaidNowTitle2036 strong {
+            display:block !important;
+            font-size:7px !important;
+            margin-bottom:3px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 {
+            display:grid !important;
+            grid-template-columns:repeat(4,minmax(105px,1fr)) !important;
+            gap:6px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 label {
+            min-width:0 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 label > span {
+            font-size:7px !important;
+            margin-bottom:3px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 label > div {
+            min-height:38px !important;
+            height:38px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 input {
+            font-size:11px !important;
+            font-weight:900 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditSummary {
+            min-width:0 !important;
+            display:grid !important;
+            grid-template-columns:1fr !important;
+            gap:4px !important;
+            margin:0 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditSummary p {
+            min-height:25px !important;
+            margin:0 !important;
+            padding:3px 7px !important;
+          }
+
+          /* Total + Complete Sale occupies the whole right checkout column. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosPaymentSection > .ncsPosTotalLine {
+            grid-area:total !important;
+            order:unset !important;
+            min-height:92px !important;
+            height:100% !important;
+            max-height:112px !important;
+            margin:0 !important;
+            padding:7px !important;
+            display:grid !important;
+            grid-template-columns:1fr !important;
+            grid-template-rows:auto auto 40px !important;
+            align-content:center !important;
+            gap:3px !important;
+            text-align:center !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosTotalLine > strong {
+            font-size:22px !important;
+            line-height:1 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCompleteButtonInline {
+            width:100% !important;
+            min-height:40px !important;
+            height:40px !important;
+            max-height:40px !important;
+          }
+
+          /* Split gets the same wide-bottom treatment. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosSplitActive
+          .ncsPosPaymentSection {
+            display:grid !important;
+            grid-template-columns:minmax(0,1.65fr) minmax(330px,.72fr) !important;
+            grid-template-rows:42px minmax(92px,112px) !important;
+            grid-template-areas:
+              "methods methods"
+              "split total" !important;
+            column-gap:7px !important;
+            row-gap:5px !important;
+            max-height:164px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosSplitActive
+          .ncsPosPaymentGrid2036 {
+            grid-area:methods !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosSplitActive
+          .ncsPosSplitPaymentPanel2036 {
+            grid-area:split !important;
+            order:unset !important;
+            min-height:92px !important;
+            height:100% !important;
+            max-height:112px !important;
+            margin:0 !important;
+            padding:5px !important;
+            overflow:auto !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosSplitActive
+          .ncsPosPaymentSection > .ncsPosTotalLine {
+            grid-area:total !important;
+            order:unset !important;
+            min-height:92px !important;
+            height:100% !important;
+            max-height:112px !important;
+            margin:0 !important;
+            display:grid !important;
+            grid-template-columns:1fr !important;
+            grid-template-rows:auto auto 40px !important;
+            gap:3px !important;
+          }
+
+          /* Hide the duplicate bottom Complete button; inline one remains visible. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus
+          .ncsPosPaymentSection > .ncsPosCompleteButton:not(.ncsPosCompleteButtonInline) {
+            display:none !important;
+          }
+        }
+
+        @media (min-width:1081px) and (max-width:1320px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosBillPanel {
+            left:100px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditPanel {
+            grid-template-columns:150px minmax(0,1fr) 210px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 {
+            grid-template-columns:repeat(4,minmax(90px,1fr)) !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • CREDIT READABILITY PASS • 2036
+           2026-09-30
+           Visual-only refinement on the confirmed wide checkout layout.
+           Makes all Credit labels/amounts readable during rush billing.
+           ============================================================ */
+
+        @media (min-width:1081px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditPanel {
+            background:
+              linear-gradient(135deg,#0b1020 0%,#111827 58%,#0e2230 100%) !important;
+            border:1px solid rgba(244,204,94,.38) !important;
+            box-shadow:
+              inset 0 1px 0 rgba(255,255,255,.05),
+              0 8px 20px rgba(5,12,25,.18) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditTitle,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditTitle > div {
+            color:#ffffff !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditTitle section strong {
+            color:#ffffff !important;
+            font-size:11px !important;
+            font-weight:1000 !important;
+            letter-spacing:.1px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditTitle > b {
+            color:#ff6b6b !important;
+            font-size:10px !important;
+            font-weight:1000 !important;
+            text-shadow:0 1px 0 rgba(0,0,0,.25) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditPaidNowTitle2036 strong {
+            color:#ffe08a !important;
+            font-size:8.5px !important;
+            font-weight:1000 !important;
+            letter-spacing:.15px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 label > span {
+            color:#f8fafc !important;
+            font-size:7.5px !important;
+            font-weight:950 !important;
+            letter-spacing:.1px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 label > span i {
+            color:#f4cc5e !important;
+            font-style:normal !important;
+            font-weight:1000 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 label > div {
+            background:#ffffff !important;
+            border:1px solid rgba(244,204,94,.36) !important;
+            border-radius:9px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 label > div > b {
+            color:#0a2e73 !important;
+            font-size:10px !important;
+            font-weight:1000 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 input {
+            color:#0b1020 !important;
+            background:#ffffff !important;
+            caret-color:#0a2e73 !important;
+            font-size:12px !important;
+            font-weight:1000 !important;
+            opacity:1 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 input::placeholder {
+            color:#7b8794 !important;
+            opacity:1 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditDueDate2036 > span {
+            color:#f8fafc !important;
+            font-size:7.5px !important;
+            font-weight:950 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditDueDate2036 > div {
+            background:#ffffff !important;
+            border:1px solid rgba(244,204,94,.36) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditDueDate2036 input {
+            color:#0b1020 !important;
+            background:#ffffff !important;
+            font-size:10px !important;
+            font-weight:950 !important;
+            opacity:1 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditSummary p {
+            background:#ffffff !important;
+            border:1px solid rgba(244,204,94,.28) !important;
+            color:#0b1020 !important;
+            border-radius:8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditSummary p span {
+            color:#64748b !important;
+            font-size:6.5px !important;
+            font-weight:900 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditSummary p strong {
+            color:#0a2e73 !important;
+            font-size:9.5px !important;
+            font-weight:1000 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditSummary .ncsPosCreditDueRow strong {
+            color:#d92d20 !important;
+          }
+
+          /* Right total card: large, high-contrast labels. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosPaymentSection > .ncsPosTotalLine {
+            background:
+              linear-gradient(160deg,#0a4459 0%,#0b6c70 100%) !important;
+            border:1px solid rgba(255,255,255,.16) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosTotalLine > div span {
+            color:#ffffff !important;
+            font-size:8px !important;
+            font-weight:1000 !important;
+            letter-spacing:.35px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosTotalLine > div small {
+            color:#d4f3f2 !important;
+            font-size:6.6px !important;
+            font-weight:850 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosTotalLine > strong {
+            color:#ffe071 !important;
+            font-size:25px !important;
+            font-weight:1000 !important;
+            text-shadow:0 2px 0 rgba(0,0,0,.18) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCompleteButtonInline {
+            background:
+              linear-gradient(135deg,#f6d86f 0%,#e9bd43 55%,#d9a72d 100%) !important;
+            color:#07394a !important;
+            border:1px solid rgba(142,103,7,.28) !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCompleteButtonInline *,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCompleteButtonInline strong,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCompleteButtonInline small,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCompleteButtonInline b,
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCompleteButtonInline span {
+            color:#07394a !important;
+            opacity:1 !important;
+            font-weight:1000 !important;
+          }
+
+          /* Main payment method names also stay crisp. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosPaymentButton b {
+            color:#243447 !important;
+            font-size:8.5px !important;
+            font-weight:1000 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus
+          .ncsPosPaymentButton.ncsPosPaymentActive b {
+            color:#07394a !important;
+          }
+        }
+
+
+        /* ============================================================
+           NCS POS • CREDIT FULL-VISIBILITY CHECKOUT • 2036
+           2026-09-30
+           Final desktop fit for rush billing:
+           - Cash / UPI / Card / Due Date stay fully visible.
+           - Total Bill / Paid Now / Remaining Due all stay visible.
+           - Complete Sale stays fully visible above the browser bottom edge.
+           - Product lane gives up height first and keeps its own scroll.
+           Visual/layout only — sale logic is unchanged.
+           ============================================================ */
+
+        @media (min-width:1081px) {
+          /* Reserve a real checkout zone instead of squeezing it under the cart. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus .ncsPosCartItems {
+            flex:1 1 0 !important;
+            min-height:92px !important;
+            max-height:none !important;
+            overflow-y:auto !important;
+            overflow-x:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosPaymentSection {
+            flex:0 0 192px !important;
+            height:192px !important;
+            min-height:192px !important;
+            max-height:192px !important;
+            display:grid !important;
+            grid-template-columns:minmax(0,1.7fr) minmax(320px,.68fr) !important;
+            grid-template-rows:42px 140px !important;
+            grid-template-areas:
+              "methods methods"
+              "credit total" !important;
+            column-gap:8px !important;
+            row-gap:6px !important;
+            margin:0 8px 5px !important;
+            padding:5px !important;
+            overflow:hidden !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosPaymentGrid2036 {
+            grid-area:methods !important;
+            min-height:42px !important;
+            height:42px !important;
+            max-height:42px !important;
+          }
+
+          /* Credit data gets a full 140px lane. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditPanel {
+            grid-area:credit !important;
+            min-height:140px !important;
+            height:140px !important;
+            max-height:140px !important;
+            display:grid !important;
+            grid-template-columns:165px minmax(430px,1fr) 220px !important;
+            grid-template-rows:1fr !important;
+            align-items:stretch !important;
+            gap:8px !important;
+            margin:0 !important;
+            padding:7px 8px !important;
+            overflow:hidden !important;
+            box-sizing:border-box !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditTitle {
+            min-width:0 !important;
+            height:100% !important;
+            display:flex !important;
+            flex-direction:column !important;
+            align-items:flex-start !important;
+            justify-content:center !important;
+            gap:7px !important;
+            margin:0 !important;
+            padding:4px 3px !important;
+            overflow:visible !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditTitle > div {
+            width:100% !important;
+            display:flex !important;
+            align-items:center !important;
+            justify-content:flex-start !important;
+            gap:8px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditTitle > b {
+            display:block !important;
+            width:100% !important;
+            margin:0 !important;
+            padding-left:39px !important;
+            white-space:nowrap !important;
+            font-size:10px !important;
+          }
+
+          /* Paid-now allocation gets the widest area and all four controls fit. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditPaidNowMatrix2036 {
+            min-width:0 !important;
+            height:100% !important;
+            display:flex !important;
+            flex-direction:column !important;
+            justify-content:center !important;
+            gap:6px !important;
+            margin:0 !important;
+            padding:4px 0 !important;
+            overflow:visible !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditPaidNowTitle2036 {
+            flex:0 0 auto !important;
+            min-height:17px !important;
+            margin:0 !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 {
+            flex:0 0 64px !important;
+            min-height:64px !important;
+            display:grid !important;
+            grid-template-columns:repeat(4,minmax(100px,1fr)) !important;
+            gap:7px !important;
+            align-items:end !important;
+            overflow:visible !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 > label {
+            min-width:0 !important;
+            height:64px !important;
+            padding:5px !important;
+            display:flex !important;
+            flex-direction:column !important;
+            justify-content:flex-end !important;
+            border-radius:10px !important;
+            box-sizing:border-box !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 > label > span {
+            flex:0 0 18px !important;
+            min-height:18px !important;
+            display:flex !important;
+            align-items:center !important;
+            gap:4px !important;
+            white-space:nowrap !important;
+            overflow:hidden !important;
+            text-overflow:ellipsis !important;
+            font-size:7.3px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 > label > div {
+            flex:0 0 36px !important;
+            min-height:36px !important;
+            height:36px !important;
+            margin-top:3px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 input {
+            height:34px !important;
+            min-height:34px !important;
+            font-size:11.5px !important;
+            line-height:34px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditDueDate2036 input {
+            font-size:9.5px !important;
+          }
+
+          /* All 3 summary rows must be visible at once. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditSummary {
+            min-width:0 !important;
+            height:100% !important;
+            display:grid !important;
+            grid-template-columns:1fr !important;
+            grid-template-rows:repeat(3,1fr) !important;
+            gap:5px !important;
+            margin:0 !important;
+            padding:3px 0 !important;
+            overflow:visible !important;
+            box-sizing:border-box !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditSummary p {
+            min-height:0 !important;
+            height:auto !important;
+            margin:0 !important;
+            padding:5px 8px !important;
+            display:flex !important;
+            align-items:center !important;
+            justify-content:space-between !important;
+            gap:8px !important;
+            overflow:visible !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditSummary p span {
+            font-size:6.8px !important;
+            white-space:nowrap !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditSummary p strong {
+            font-size:10px !important;
+            white-space:nowrap !important;
+          }
+
+          /* Right checkout card uses the same full 140px height. */
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosPaymentSection > .ncsPosTotalLine {
+            grid-area:total !important;
+            min-height:140px !important;
+            height:140px !important;
+            max-height:140px !important;
+            display:grid !important;
+            grid-template-columns:1fr !important;
+            grid-template-rows:26px 42px 50px !important;
+            align-content:center !important;
+            gap:5px !important;
+            margin:0 !important;
+            padding:8px !important;
+            overflow:hidden !important;
+            box-sizing:border-box !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosTotalLine > div {
+            min-height:26px !important;
+            display:flex !important;
+            flex-direction:column !important;
+            align-items:center !important;
+            justify-content:center !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosTotalLine > strong {
+            display:flex !important;
+            align-items:center !important;
+            justify-content:center !important;
+            min-height:42px !important;
+            font-size:26px !important;
+            line-height:1 !important;
+            white-space:nowrap !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCompleteButtonInline {
+            align-self:stretch !important;
+            width:100% !important;
+            min-height:50px !important;
+            height:50px !important;
+            max-height:50px !important;
+            margin:0 !important;
+            padding:5px 10px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCompleteButtonInline strong {
+            font-size:10px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCompleteButtonInline small {
+            font-size:7px !important;
+          }
+        }
+
+        /* Slightly narrower desktop: keep everything visible by reducing only widths. */
+        @media (min-width:1081px) and (max-width:1400px) {
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditPanel {
+            grid-template-columns:150px minmax(390px,1fr) 195px !important;
+          }
+
+          .ncsPosV7Living.ncsPosCounterOS.ncsPosBillingFocus.ncsPosCreditActive
+          .ncsPosCreditAllocationGrid2036 {
+            grid-template-columns:repeat(4,minmax(88px,1fr)) !important;
+            gap:5px !important;
+          }
         }
 
       `}
