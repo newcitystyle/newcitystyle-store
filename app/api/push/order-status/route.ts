@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+﻿import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import webpush from "web-push";
 
@@ -117,10 +117,10 @@ function orderBody(order: OrderRow, status: string) {
         : "",
     ]
       .filter(Boolean)
-      .join(" • ");
+      .join(" â€¢ ");
 
     return extra
-      ? `Order #${order.id} shipped • ${extra}`
+      ? `Order #${order.id} shipped â€¢ ${extra}`
       : `Order #${order.id} has been shipped.`;
   }
 
@@ -233,7 +233,7 @@ async function sendOrderPush(orderId: number, requestedStatus: string) {
   }
 
   const pushPayload = JSON.stringify({
-    title: "NEW CITY STYLE • ORDER PULSE",
+    title: "NEW CITY STYLE â€¢ ORDER PULSE",
     body: orderBody(order, requestedStatus),
     orderId: String(order.id),
     status: requestedStatus,
@@ -379,8 +379,8 @@ export async function GET(request: NextRequest) {
      * Does not update order status, stock, payment, POS or WhatsApp.
      * Remove after runtime verification.
      */
-    if (testMode === "order12") {
-      return await sendOrderPush(12, "Delivered");
+    if (testMode === "order14") {
+      return await sendOrderPush(14, "Delivered");
     }
 
     return NextResponse.json({
@@ -416,3 +416,4 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
