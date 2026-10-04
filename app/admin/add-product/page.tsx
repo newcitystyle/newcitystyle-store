@@ -66,35 +66,10 @@ type ExistingStockProduct = {
   sellOnline: boolean;
   image: string;
   variantId: number | null;
-  variantName: string;
   variantBarcode: string;
   variantSku: string;
-  variantMrp: number;
-  variantOnlinePrice: number;
-  variantMainImage: string;
-  variantGalleryImages: string[];
   size: string;
   color: string;
-};
-
-type BulkDesignVariantOption = {
-  variantId: number;
-  barcode: string;
-  sku: string;
-  size: string;
-  color: string;
-  stock: number;
-};
-
-type BulkDesignItem = {
-  productId: number;
-  productName: string;
-  designName: string;
-  image: string;
-  sellOnline: boolean;
-  aiStatus: "idle" | "loading" | "success" | "error";
-  variantOptions: BulkDesignVariantOption[];
-  selectedVariantIds: number[];
 };
 
 type PhotoStudioPreset = {
@@ -283,14 +258,6 @@ const commonSizes = [
 
 const ncsPhotoStudioPresets: PhotoStudioPreset[] = [
   {
-    id: "0",
-    shortLabel: "MAIN",
-    name: "NCS World-Class Catalog",
-    description: "Premium warm-ivory luxury cyclorama with soft editorial daylight, subtle champagne depth and a natural grounded finish designed for the primary e-commerce image.",
-    recommendedFor: "Main product image, website cards, search results, premium catalogue",
-    backgroundStyle: "high-end warm ivory seamless cyclorama studio, subtle limestone texture, soft editorial daylight from the upper left, restrained champagne depth, natural floor-to-wall sweep, realistic soft grounding shadow, no frames, no shelves, no props, no decorative distractions",
-  },
-  {
     id: "1",
     shortLabel: "1",
     name: "Royal Boutique Wall",
@@ -357,7 +324,6 @@ const ncsPhotoStudioPresets: PhotoStudioPreset[] = [
 ];
 
 let ncsBackgroundRemovalPipelinePromise: Promise<any> | null = null;
-let ncsBen2BackgroundRemovalPipelinePromise: Promise<any> | null = null;
 
 async function getNcsBackgroundRemovalPipeline() {
   if (ncsBackgroundRemovalPipelinePromise) {
@@ -382,7 +348,7 @@ async function getNcsBackgroundRemovalPipeline() {
         );
       } catch (error) {
         console.warn(
-          "NCS Photo Studio MODNet WebGPU startup failed; falling back to browser CPU/WASM.",
+          "NCS Photo Studio WebGPU startup failed; falling back to browser CPU/WASM.",
           error
         );
       }
@@ -401,245 +367,6 @@ async function getNcsBackgroundRemovalPipeline() {
   });
 
   return ncsBackgroundRemovalPipelinePromise;
-}
-
-async function getNcsBen2BackgroundRemovalPipeline() {
-  if (ncsBen2BackgroundRemovalPipelinePromise) {
-    return ncsBen2BackgroundRemovalPipelinePromise;
-  }
-
-  ncsBen2BackgroundRemovalPipelinePromise = (async () => {
-    const { pipeline } = await import("@huggingface/transformers");
-    const hasWebGpu =
-      typeof navigator !== "undefined" &&
-      "gpu" in (navigator as Navigator & { gpu?: unknown });
-
-    if (hasWebGpu) {
-      try {
-        return await pipeline(
-          "background-removal",
-          "onnx-community/BEN2-ONNX",
-          {
-            device: "webgpu",
-          }
-        );
-      } catch (error) {
-        console.warn(
-          "NCS Photo Studio BEN2 WebGPU startup failed; falling back to browser CPU/WASM.",
-          error
-        );
-      }
-    }
-
-    return pipeline(
-      "background-removal",
-      "onnx-community/BEN2-ONNX"
-    );
-  })().catch((error) => {
-    ncsBen2BackgroundRemovalPipelinePromise = null;
-    throw error;
-  });
-
-  return ncsBen2BackgroundRemovalPipelinePromise;
-}
-
-function getFirstBackgroundRemovalResult(output: any) {
-  if (Array.isArray(output)) {
-    return output[0] ?? null;
-  }
-
-  if (
-    output &&
-    typeof output === "object" &&
-    0 in (output as Record<number, unknown>)
-  ) {
-    return (output as Record<number, unknown>)[0] ?? null;
-  }
-
-  return output ?? null;
-}
-
-async function rawImageLikeToCanvas(rawImage: any) {
-  if (!rawImage) {
-    throw new Error("The local engine returned an empty mask.");
-  }
-
-  if (typeof rawImage.toCanvas === "function") {
-    const canvas = await Promise.resolve(rawImage.toCanvas());
-    if (canvas instanceof HTMLCanvasElement) {
-      return canvas;
-    }
-  }
-
-  const width = Number(rawImage.width || rawImage.size?.[0] || 0);
-  const height = Number(rawImage.height || rawImage.size?.[1] || 0);
-  const channels = Number(rawImage.channels || 0);
-  const data = rawImage.data as
-    | Uint8Array
-    | Uint8ClampedArray
-    | undefined;
-
-  if (!width || !height || !data?.length) {
-    throw new Error("The local engine returned an unsupported mask format.");
-  }
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    throw new Error("This browser could not prepare the local mask canvas.");
-  }
-
-  const imageData = ctx.createImageData(width, height);
-
-  for (let pixelIndex = 0; pixelIndex < width * height; pixelIndex += 1) {
-    const sourceIndex = pixelIndex * Math.max(channels, 1);
-    const targetIndex = pixelIndex * 4;
-
-    if (channels === 4) {
-      imageData.data[targetIndex] = data[sourceIndex] ?? 0;
-      imageData.data[targetIndex + 1] = data[sourceIndex + 1] ?? 0;
-      imageData.data[targetIndex + 2] = data[sourceIndex + 2] ?? 0;
-      imageData.data[targetIndex + 3] = data[sourceIndex + 3] ?? 255;
-    } else if (channels === 3) {
-      imageData.data[targetIndex] = data[sourceIndex] ?? 0;
-      imageData.data[targetIndex + 1] = data[sourceIndex + 1] ?? 0;
-      imageData.data[targetIndex + 2] = data[sourceIndex + 2] ?? 0;
-      imageData.data[targetIndex + 3] = 255;
-    } else {
-      const value = data[sourceIndex] ?? 0;
-      imageData.data[targetIndex] = value;
-      imageData.data[targetIndex + 1] = value;
-      imageData.data[targetIndex + 2] = value;
-      imageData.data[targetIndex + 3] = 255;
-    }
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-  return canvas;
-}
-
-function normalizeMaskCanvas(
-  sourceMaskCanvas: HTMLCanvasElement,
-  targetWidth: number,
-  targetHeight: number
-) {
-  const scaledCanvas = document.createElement("canvas");
-  scaledCanvas.width = targetWidth;
-  scaledCanvas.height = targetHeight;
-
-  const ctx = scaledCanvas.getContext("2d", {
-    willReadFrequently: true,
-  });
-
-  if (!ctx) {
-    throw new Error("This browser could not normalize the product mask.");
-  }
-
-  ctx.clearRect(0, 0, targetWidth, targetHeight);
-  ctx.drawImage(sourceMaskCanvas, 0, 0, targetWidth, targetHeight);
-
-  const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
-  const pixels = imageData.data;
-
-  let alphaHasVariation = false;
-  let firstAlpha = pixels[3] ?? 255;
-
-  for (let index = 3; index < pixels.length; index += 64) {
-    if (Math.abs((pixels[index] ?? 255) - firstAlpha) > 4) {
-      alphaHasVariation = true;
-      break;
-    }
-  }
-
-  for (let index = 0; index < pixels.length; index += 4) {
-    const red = pixels[index] ?? 0;
-    const green = pixels[index + 1] ?? 0;
-    const blue = pixels[index + 2] ?? 0;
-    const alpha = pixels[index + 3] ?? 255;
-
-    const luminance = Math.round(
-      red * 0.299 + green * 0.587 + blue * 0.114
-    );
-
-    const maskValue = alphaHasVariation ? alpha : luminance;
-
-    pixels[index] = 255;
-    pixels[index + 1] = 255;
-    pixels[index + 2] = 255;
-    pixels[index + 3] = maskValue;
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-  return scaledCanvas;
-}
-
-async function createCutoutCanvasFromLocalOutput(
-  sourceImage: HTMLImageElement,
-  output: any
-) {
-  const result = getFirstBackgroundRemovalResult(output);
-  const maskLike =
-    result &&
-    typeof result === "object" &&
-    "mask" in result &&
-    (result as { mask?: unknown }).mask
-      ? (result as { mask: unknown }).mask
-      : result;
-
-  const rawMaskCanvas = await rawImageLikeToCanvas(maskLike);
-
-  const sourceWidth = sourceImage.naturalWidth || sourceImage.width;
-  const sourceHeight = sourceImage.naturalHeight || sourceImage.height;
-
-  const maskCanvas = normalizeMaskCanvas(
-    rawMaskCanvas,
-    sourceWidth,
-    sourceHeight
-  );
-
-  const cutoutCanvas = document.createElement("canvas");
-  cutoutCanvas.width = sourceWidth;
-  cutoutCanvas.height = sourceHeight;
-
-  const cutoutCtx = cutoutCanvas.getContext("2d");
-  if (!cutoutCtx) {
-    throw new Error("This browser could not start the product photo canvas.");
-  }
-
-  cutoutCtx.drawImage(
-    sourceImage,
-    0,
-    0,
-    cutoutCanvas.width,
-    cutoutCanvas.height
-  );
-  cutoutCtx.globalCompositeOperation = "destination-in";
-  cutoutCtx.drawImage(
-    maskCanvas,
-    0,
-    0,
-    cutoutCanvas.width,
-    cutoutCanvas.height
-  );
-  cutoutCtx.globalCompositeOperation = "source-over";
-
-  const bounds = findAlphaBounds(cutoutCanvas);
-  const foregroundAreaRatio =
-    (bounds.width * bounds.height) /
-    Math.max(1, cutoutCanvas.width * cutoutCanvas.height);
-
-  if (
-    bounds.width < 24 ||
-    bounds.height < 24 ||
-    foregroundAreaRatio < 0.002
-  ) {
-    throw new Error("The local engine returned an unusable foreground mask.");
-  }
-
-  return cutoutCanvas;
 }
 
 function canvasToBlob(
@@ -719,36 +446,7 @@ function drawNcsPremiumBackground(
   ctx.save();
   ctx.clearRect(0, 0, width, height);
 
-  if (presetId === "0") {
-    // Primary e-commerce image: quiet, premium and product-first.
-    // No frames, shelves or decorative elements that compete with the garment.
-    const base = ctx.createLinearGradient(0, 0, 0, height);
-    base.addColorStop(0, "#FEFDFB");
-    base.addColorStop(0.56, "#FAF7F1");
-    base.addColorStop(1, "#F2ECE2");
-    ctx.fillStyle = base;
-    ctx.fillRect(0, 0, width, height);
-
-    const centerGlow = ctx.createRadialGradient(
-      width * 0.5,
-      height * 0.39,
-      width * 0.05,
-      width * 0.5,
-      height * 0.44,
-      width * 0.67
-    );
-    centerGlow.addColorStop(0, "rgba(255,255,255,0.94)");
-    centerGlow.addColorStop(0.58, "rgba(255,255,255,0.35)");
-    centerGlow.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = centerGlow;
-    ctx.fillRect(0, 0, width, height);
-
-    const floor = ctx.createLinearGradient(0, height * 0.75, 0, height);
-    floor.addColorStop(0, "rgba(231,222,208,0)");
-    floor.addColorStop(1, "rgba(222,210,193,0.28)");
-    ctx.fillStyle = floor;
-    ctx.fillRect(0, height * 0.72, width, height * 0.28);
-  } else if (presetId === "1") {
+  if (presetId === "1") {
     const wall = ctx.createLinearGradient(0, 0, width, height);
     wall.addColorStop(0, "#071A43");
     wall.addColorStop(0.55, "#0A2E73");
@@ -930,30 +628,6 @@ function drawNcsPremiumBackground(
   ctx.restore();
 }
 
-function refineProductCutoutEdges(canvas: HTMLCanvasElement) {
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return;
-
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
-
-  // Tighten weak semi-transparent mask pixels that commonly create white/grey halos.
-  // RGB product pixels are left untouched; only alpha is refined.
-  for (let index = 3; index < data.length; index += 4) {
-    const alpha = data[index];
-
-    if (alpha <= 22) {
-      data[index] = 0;
-    } else if (alpha < 92) {
-      data[index] = Math.round(((alpha - 22) / 70) * 72);
-    } else if (alpha < 176) {
-      data[index] = Math.min(255, Math.round(alpha * 1.08));
-    }
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-}
-
 function findAlphaBounds(canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) {
@@ -1036,19 +710,12 @@ export default function AddProductPage() {
   const [linkedStockProduct, setLinkedStockProduct] =
     useState<ExistingStockProduct | null>(null);
 
-  const [bulkSelectedStock, setBulkSelectedStock] = useState<
-    ExistingStockProduct[]
-  >([]);
-  const [bulkDesignItems, setBulkDesignItems] = useState<BulkDesignItem[]>([]);
-  const [uploadingBulkDesigns, setUploadingBulkDesigns] = useState(false);
-  const [generatingBulkAi, setGeneratingBulkAi] = useState(false);
-
   const [photoStudioOriginalImages, setPhotoStudioOriginalImages] =
     useState<string[]>([]);
   const [selectedStudioSourceIndex, setSelectedStudioSourceIndex] =
     useState(0);
   const [selectedPhotoStudioPresetId, setSelectedPhotoStudioPresetId] =
-    useState("0");
+    useState("1");
   const [photoStudioEnhancedImage, setPhotoStudioEnhancedImage] =
     useState("");
   const [uploadingStudioSource, setUploadingStudioSource] =
@@ -1200,38 +867,7 @@ export default function AddProductPage() {
       .filter((item) => item.label || item.value);
   }
 
-  
-function isLikelyPhysicalSizeLabel(value: string) {
-  const normalized = value.trim().toUpperCase();
-
-  if (!normalized) return false;
-
-  const namedSizes = new Set([
-    "XXS",
-    "XS",
-    "S",
-    "M",
-    "L",
-    "XL",
-    "XXL",
-    "2XL",
-    "3XL",
-    "4XL",
-    "5XL",
-    "6XL",
-    "FREE SIZE",
-    "FREESIZE",
-  ]);
-
-  if (namedSizes.has(normalized)) {
-    return true;
-  }
-
-  // Common garment numeric sizes such as 18, 20, 28, 30, 32, 34, 36, 38, 40, 42...
-  return /^\d{2,3}$/.test(normalized);
-}
-
-function asFaqs(value: unknown): Faq[] {
+  function asFaqs(value: unknown): Faq[] {
     if (!Array.isArray(value)) return [];
 
     return value
@@ -1260,24 +896,23 @@ function asFaqs(value: unknown): Faq[] {
       const safeQuery = query.replace(/[,%()]/g, " ").trim();
       const pattern = `%${safeQuery}%`;
 
-      const variantSelect =
-        "id,product_id,variant_name,barcode,sku,size,color,stock,reserved_stock,online_stock_limit,sell_online,mrp,online_price,main_image,gallery_images";
-      const productSelect =
-        "id,name,barcode,sku,stock,online_stock_limit,sell_online,image,mrp,price,gallery_images";
-
       const [productsResponse, variantsResponse] = await Promise.all([
         supabase
           .from("products")
-          .select(productSelect)
+          .select(
+            "id,name,barcode,sku,stock,online_stock_limit,sell_online,image"
+          )
           .or(
             `name.ilike.${pattern},barcode.ilike.${pattern},sku.ilike.${pattern}`
           )
           .limit(12),
         supabase
           .from("product_variants")
-          .select(variantSelect)
+          .select(
+            "id,product_id,barcode,sku,size,color,stock,reserved_stock,online_stock_limit,sell_online"
+          )
           .or(`barcode.ilike.${pattern},sku.ilike.${pattern}`)
-          .limit(24),
+          .limit(12),
       ]);
 
       if (productsResponse.error) throw productsResponse.error;
@@ -1285,35 +920,8 @@ function asFaqs(value: unknown): Faq[] {
 
       const productRows =
         (productsResponse.data || []) as Record<string, unknown>[];
-      const matchedVariantRows =
+      const variantRows =
         (variantsResponse.data || []) as Record<string, unknown>[];
-
-      // When the owner searches by product name (for example SAREE), also load
-      // every child variant of those matched products. This makes each physical
-      // design/barcode selectable even when several variants share one name/rate.
-      const directProductIds = productRows
-        .map((row) => asNumber(row.id))
-        .filter((id) => id > 0);
-
-      let childVariantRows: Record<string, unknown>[] = [];
-
-      if (directProductIds.length) {
-        const { data, error } = await supabase
-          .from("product_variants")
-          .select(variantSelect)
-          .in("product_id", directProductIds)
-          .order("id", { ascending: true });
-
-        if (error) throw error;
-        childVariantRows = (data || []) as Record<string, unknown>[];
-      }
-
-      const variantRowMap = new Map<number, Record<string, unknown>>();
-      [...matchedVariantRows, ...childVariantRows].forEach((row) => {
-        const id = asNumber(row.id);
-        if (id > 0) variantRowMap.set(id, row);
-      });
-      const variantRows = Array.from(variantRowMap.values());
 
       const variantProductIds = Array.from(
         new Set(
@@ -1326,19 +934,16 @@ function asFaqs(value: unknown): Faq[] {
       let variantParents: Record<string, unknown>[] = [];
 
       if (variantProductIds.length) {
-        const missingParentIds = variantProductIds.filter(
-          (id) => !productRows.some((row) => asNumber(row.id) === id)
-        );
+        const { data, error } = await supabase
+          .from("products")
+          .select(
+            "id,name,barcode,sku,stock,online_stock_limit,sell_online,image"
+          )
+          .in("id", variantProductIds);
 
-        if (missingParentIds.length) {
-          const { data, error } = await supabase
-            .from("products")
-            .select(productSelect)
-            .in("id", missingParentIds);
-
-          if (error) throw error;
-          variantParents = (data || []) as Record<string, unknown>[];
-        }
+        if (error) throw error;
+        variantParents =
+          (data || []) as Record<string, unknown>[];
       }
 
       const parentMap = new Map(
@@ -1359,13 +964,8 @@ function asFaqs(value: unknown): Faq[] {
           sellOnline: row.sell_online === true,
           image: asString(row.image),
           variantId: null,
-          variantName: "",
           variantBarcode: "",
           variantSku: "",
-          variantMrp: 0,
-          variantOnlinePrice: 0,
-          variantMainImage: "",
-          variantGalleryImages: [],
           size: "",
           color: "",
         })
@@ -1376,9 +976,11 @@ function asFaqs(value: unknown): Faq[] {
           const productId = asNumber(row.product_id);
           const parent = parentMap.get(productId);
 
-          if (!parent) return null;
+          if (!parent) {
+            return null;
+          }
 
-          return {
+          const variant: ExistingStockProduct = {
             id: productId,
             name: asString(parent.name) || "Unnamed Product",
             barcode: asString(parent.barcode),
@@ -1391,16 +993,13 @@ function asFaqs(value: unknown): Faq[] {
             sellOnline: row.sell_online === true,
             image: asString(parent.image),
             variantId: asNumber(row.id),
-            variantName: asString(row.variant_name),
             variantBarcode: asString(row.barcode),
             variantSku: asString(row.sku),
-            variantMrp: asNumber(row.mrp),
-            variantOnlinePrice: asNumber(row.online_price),
-            variantMainImage: asString(row.main_image),
-            variantGalleryImages: asStringArray(row.gallery_images),
             size: asString(row.size),
             color: asString(row.color),
           };
+
+          return variant;
         })
         .filter(
           (item): item is ExistingStockProduct => item !== null
@@ -1449,24 +1048,6 @@ function asFaqs(value: unknown): Faq[] {
       );
       const existingFaqs = asFaqs(row.faqs);
 
-      // Variant-specific online media/pricing wins when present.
-      // Otherwise old shirt/jeans size variants continue using the shared
-      // parent photo and price exactly as before.
-      const effectiveMrp =
-        selected.variantMrp > 0
-          ? selected.variantMrp
-          : asNumber(row.mrp);
-      const effectivePrice =
-        selected.variantOnlinePrice > 0
-          ? selected.variantOnlinePrice
-          : asNumber(row.price);
-      const effectiveMainImage =
-        selected.variantMainImage || asString(row.image);
-      const effectiveGalleryImages =
-        selected.variantGalleryImages.length > 0
-          ? selected.variantGalleryImages
-          : asStringArray(row.gallery_images);
-
       setLinkedStockProduct(selected);
       setStockSearchResults([]);
       setStockSearch(
@@ -1488,8 +1069,8 @@ function asFaqs(value: unknown): Faq[] {
         ageGroup: asString(row.age_group),
         shortDescription: asString(row.short_description),
         description: asString(row.description),
-        mrp: String(effectiveMrp || ""),
-        price: String(effectivePrice || ""),
+        mrp: String(asNumber(row.mrp) || ""),
+        price: String(asNumber(row.price) || ""),
         discountPercent: String(asNumber(row.discount_percent)),
         taxPercent: String(asNumber(row.tax_percent) || ""),
         sku: selected.variantSku || selected.sku,
@@ -1498,8 +1079,8 @@ function asFaqs(value: unknown): Faq[] {
         lowStockLimit: String(asNumber(row.low_stock_limit) || 5),
         sellOnline: selected.sellOnline,
         onlineStockLimit: String(selected.onlineStockLimit),
-        mainImage: effectiveMainImage,
-        galleryImages: effectiveGalleryImages,
+        mainImage: asString(row.image),
+        galleryImages: asStringArray(row.gallery_images),
         lifestyleImages: asStringArray(row.lifestyle_images),
         tags: asStringArray(row.tags),
         sizes: asStringArray(row.sizes),
@@ -1542,7 +1123,9 @@ function asFaqs(value: unknown): Faq[] {
       }));
 
       setPhotoStudioOriginalImages(
-        effectiveMainImage ? [effectiveMainImage] : []
+        asString(row.image)
+          ? [asString(row.image)]
+          : []
       );
       setSelectedStudioSourceIndex(0);
       setPhotoStudioEnhancedImage("");
@@ -1569,328 +1152,10 @@ function asFaqs(value: unknown): Faq[] {
     }
   }
 
-  function getStockSelectionKey(product: ExistingStockProduct) {
-    return `${product.id}-${product.variantId || 0}`;
-  }
-
-  function toggleBulkStockSelection(product: ExistingStockProduct) {
-    if (!product.variantId) {
-      alert("Bulk Design mode is available for barcode variants only. Use Link for a direct/legacy product.");
-      return;
-    }
-
-    const key = getStockSelectionKey(product);
-
-    setBulkSelectedStock((current) => {
-      const exists = current.some(
-        (item) => getStockSelectionKey(item) === key
-      );
-
-      if (exists) {
-        return current.filter(
-          (item) => getStockSelectionKey(item) !== key
-        );
-      }
-
-      if (current.length && current[0].id !== product.id) {
-        alert("For one bulk upload, select designs belonging to the same parent product only.");
-        return current;
-      }
-
-      return [...current, product];
-    });
-  }
-
-  async function startBulkDesignSetup() {
-    if (!bulkSelectedStock.length) {
-      alert("Select all size/barcode variants that can belong to this design family first.");
-      return;
-    }
-
-    if (bulkSelectedStock.some((item) => !item.variantId)) {
-      alert("Bulk Design mode requires barcode variants. Please select variant rows only.");
-      return;
-    }
-
-    const parentId = bulkSelectedStock[0].id;
-    if (bulkSelectedStock.some((item) => item.id !== parentId)) {
-      alert("Please select variants from the same parent product only.");
-      return;
-    }
-
-    const first = bulkSelectedStock[0];
-    await linkExistingStockProduct(first);
-
-    const variantOptions: BulkDesignVariantOption[] = bulkSelectedStock.map((item) => ({
-      variantId: item.variantId as number,
-      barcode: item.variantBarcode || item.barcode,
-      sku: item.variantSku || item.sku,
-      size: item.size,
-      color: item.color,
-      stock: Math.max(0, Number(item.stock || 0)),
-    }));
-
-    setBulkDesignItems([
-      {
-        productId: parentId,
-        productName: first.name,
-        designName: first.variantName || "Design 1",
-        image: first.variantMainImage || "",
-        sellOnline: true,
-        aiStatus: "idle",
-        variantOptions,
-        selectedVariantIds: variantOptions.map((item) => item.variantId),
-      },
-    ]);
-
-    setBulkSelectedStock([]);
-
-    setAiStatus({
-      type: "success",
-      message:
-        "Bulk Design mode ready. Design 1 contains all selected sizes. Add more designs, upload one photo per design, and choose exactly which sizes belong to each design.",
-    });
-  }
-
-  function addBulkDesignGroup() {
-    setBulkDesignItems((current) => {
-      if (!current.length) return current;
-      const source = current[0];
-      return [
-        ...current,
-        {
-          productId: source.productId,
-          productName: source.productName,
-          designName: `Design ${current.length + 1}`,
-          image: "",
-          sellOnline: true,
-          aiStatus: "idle" as const,
-          variantOptions: source.variantOptions.map((item) => ({ ...item })),
-          selectedVariantIds: source.variantOptions.map((item) => item.variantId),
-        },
-      ];
-    });
-  }
-
-  function removeBulkDesignGroup(index: number) {
-    setBulkDesignItems((current) =>
-      current.length <= 1
-        ? current
-        : current.filter((_, itemIndex) => itemIndex !== index)
-    );
-  }
-
-  function toggleBulkDesignVariant(designIndex: number, variantId: number) {
-    setBulkDesignItems((current) =>
-      current.map((item, itemIndex) => {
-        if (itemIndex !== designIndex) return item;
-        const exists = item.selectedVariantIds.includes(variantId);
-        return {
-          ...item,
-          selectedVariantIds: exists
-            ? item.selectedVariantIds.filter((id) => id !== variantId)
-            : [...item.selectedVariantIds, variantId],
-        };
-      })
-    );
-  }
-
-  function updateBulkDesignItem(
-    index: number,
-    patch: Partial<BulkDesignItem>
-  ) {
-    setBulkDesignItems((current) =>
-      current.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, ...patch } : item
-      )
-    );
-  }
-
-  async function uploadBulkDesignImages(
-    event: ChangeEvent<HTMLInputElement>
-  ) {
-    const files = Array.from(event.target.files || []);
-
-    if (!files.length) return;
-
-    if (!bulkDesignItems.length) {
-      alert("Select barcode variants and start Bulk Design mode first.");
-      event.target.value = "";
-      return;
-    }
-
-    if (files.length !== bulkDesignItems.length) {
-      alert(
-        `Please select exactly ${bulkDesignItems.length} photos — one photo for each DESIGN card, in the same order shown.`
-      );
-      event.target.value = "";
-      return;
-    }
-
-    const validFiles = files.filter((file) => validateImage(file));
-    if (validFiles.length !== files.length) {
-      event.target.value = "";
-      return;
-    }
-
-    setUploadingBulkDesigns(true);
-
-    try {
-      const [
-        urls,
-        whatsappPreviewUrl,
-      ] = await Promise.all([
-        Promise.all(
-          validFiles.map((file) =>
-            uploadFile(
-              file,
-              "bulk-designs"
-            )
-          )
-        ),
-        uploadWhatsAppPreviewFromFile(
-          validFiles[0],
-          "whatsapp-previews/bulk-designs"
-        ),
-      ]);
-
-      setBulkDesignItems((current) =>
-        current.map((item, index) => ({
-          ...item,
-          image: urls[index] || item.image,
-          aiStatus: "idle" as const,
-        }))
-      );
-
-      if (urls[0]) {
-        setForm((current) => ({
-          ...current,
-          mainImage: urls[0],
-          socialPreviewUrl:
-            whatsappPreviewUrl,
-        }));
-        setPhotoStudioOriginalImages(urls);
-        setSelectedStudioSourceIndex(0);
-      }
-
-      alert(
-        `${urls.length} design photos uploaded and matched to the design cards in order.`
-      );
-    } catch (error) {
-      console.error(error);
-      alert(
-        error instanceof Error
-          ? `Bulk photo upload failed: ${error.message}`
-          : "Bulk photo upload failed."
-      );
-    } finally {
-      setUploadingBulkDesigns(false);
-      event.target.value = "";
-    }
-  }
-
-  async function generateBulkDesignNamesWithAi() {
-    if (!bulkDesignItems.length) {
-      alert("Start Bulk Design mode first.");
-      return;
-    }
-
-    if (bulkDesignItems.some((item) => !item.image)) {
-      alert("Upload one photo for every design card before generating AI design names.");
-      return;
-    }
-
-    setGeneratingBulkAi(true);
-
-    try {
-      for (let index = 0; index < bulkDesignItems.length; index += 1) {
-        const item = bulkDesignItems[index];
-
-        updateBulkDesignItem(index, { aiStatus: "loading" });
-        setAiStatus({
-          type: "idle",
-          message: `AI is naming design ${index + 1} of ${bulkDesignItems.length}...`,
-        });
-
-        try {
-          const response = await fetch("/api/generate-product-details", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              imageUrl: item.image,
-              productContext: {
-                name: item.productName || form.name.trim(),
-                brand: form.brand.trim(),
-                category: form.category.trim(),
-                subcategory: form.subcategory.trim(),
-                gender: form.gender.trim(),
-                size:
-                  item.variantOptions
-                    .filter((variant) => item.selectedVariantIds.includes(variant.variantId))
-                    .map((variant) => variant.size)
-                    .filter(Boolean)
-                    .join(", ") || form.sizes.join(", "),
-                colour: item.variantOptions
-                  .filter((variant) => item.selectedVariantIds.includes(variant.variantId))
-                  .map((variant) => variant.color)
-                  .filter(Boolean)
-                  .join(", "),
-                material: form.material.trim(),
-                fabric: form.fabric.trim(),
-                pattern: "",
-                sleeveType: form.sleeveType.trim(),
-                fit: form.fitType.trim(),
-                occasion: form.occasion.trim(),
-              },
-            }),
-          });
-
-          const result = (await response.json()) as {
-            details?: AiProductDetails;
-            error?: string;
-          };
-
-          if (!response.ok || !result.details) {
-            throw new Error(
-              result.error || "AI could not name this design."
-            );
-          }
-
-          updateBulkDesignItem(index, {
-            designName:
-              result.details.productName.trim() || item.designName,
-            aiStatus: "success",
-          });
-        } catch (error) {
-          console.error(error);
-          updateBulkDesignItem(index, { aiStatus: "error" });
-        }
-      }
-
-      setAiStatus({
-        type: "success",
-        message:
-          "AI design naming finished. Review or edit each name, then press Save once.",
-      });
-    } finally {
-      setGeneratingBulkAi(false);
-    }
-  }
-
-  function cancelBulkDesignSetup() {
-    setBulkDesignItems([]);
-    setBulkSelectedStock([]);
-    setAiStatus({ type: "idle", message: "" });
-  }
-
   function unlinkExistingStockProduct() {
     setLinkedStockProduct(null);
     setStockSearch("");
     setStockSearchResults([]);
-    setBulkSelectedStock([]);
-    setBulkDesignItems([]);
     setForm(initialForm);
     setAiStatus({ type: "idle", message: "" });
     setPhotoStudioOriginalImages([]);
@@ -1974,221 +1239,40 @@ function asFaqs(value: unknown): Faq[] {
   }
 
   async function uploadFile(file: File, folder: string) {
-    const body = new FormData();
-    body.append("file", file);
-    body.append("folder", `products/${folder}`);
+    const extension =
+      file.name.split(".").pop()?.toLowerCase() || "jpg";
 
-    const response = await fetch("/api/r2/upload", {
-      method: "POST",
-      body,
-    });
+    const safeName = file.name
+      .replace(/\.[^/.]+$/, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
 
-    const result = (await response.json().catch(() => ({}))) as {
-      url?: string;
-      error?: string;
-    };
+    const filePath = `products/${folder}/${safeName}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 7)}.${extension}`;
 
-    if (!response.ok || !result.url) {
-      throw new Error(result.error || "R2 image upload failed.");
-    }
-
-    return result.url;
-  }
-
-
-  function isWhatsAppSafePreviewUrl(value: string) {
-    const clean = value.trim();
-
-    if (!clean) return false;
-
-    try {
-      const parsed = new URL(clean);
-      const path = parsed.pathname.toLowerCase();
-
-      return (
-        parsed.protocol === "https:" &&
-        (
-          path.endsWith(".jpg") ||
-          path.endsWith(".jpeg") ||
-          path.endsWith(".png")
-        )
-      );
-    } catch {
-      return false;
-    }
-  }
-
-  async function createWhatsAppJpegFile(
-    source: Blob,
-    sourceName = "product"
-  ) {
-    const bitmap = await createImageBitmap(source);
-
-    try {
-      const maxWidth = 1200;
-      const maxHeight = 1500;
-      const scale = Math.min(
-        1,
-        maxWidth / bitmap.width,
-        maxHeight / bitmap.height
-      );
-
-      const width = Math.max(
-        1,
-        Math.round(bitmap.width * scale)
-      );
-      const height = Math.max(
-        1,
-        Math.round(bitmap.height * scale)
-      );
-
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-
-      const context = canvas.getContext("2d", {
-        alpha: false,
+    const { error } = await supabase.storage
+      .from("store-assets")
+      .upload(filePath, file, {
+        contentType: file.type,
+        cacheControl: "3600",
+        upsert: false,
       });
 
-      if (!context) {
-        throw new Error(
-          "Unable to prepare the WhatsApp product image."
-        );
-      }
-
-      context.fillStyle = "#ffffff";
-      context.fillRect(0, 0, width, height);
-      context.drawImage(bitmap, 0, 0, width, height);
-
-      const makeJpegBlob = (quality: number) =>
-        new Promise<Blob>((resolve, reject) => {
-          canvas.toBlob(
-            (blob) => {
-              if (blob) {
-                resolve(blob);
-                return;
-              }
-
-              reject(
-                new Error(
-                  "Unable to create the WhatsApp JPEG preview."
-                )
-              );
-            },
-            "image/jpeg",
-            quality
-          );
-        });
-
-      let jpegBlob = await makeJpegBlob(0.86);
-
-      if (jpegBlob.size > 4_500_000) {
-        jpegBlob = await makeJpegBlob(0.72);
-      }
-
-      if (jpegBlob.size > 4_900_000) {
-        throw new Error(
-          "WhatsApp JPEG preview is still too large."
-        );
-      }
-
-      const safeBaseName =
-        sourceName
-          .replace(/\.[^/.]+$/, "")
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "")
-          .slice(0, 80) ||
-        "product";
-
-      return new File(
-        [jpegBlob],
-        `${safeBaseName}-whatsapp.jpg`,
-        {
-          type: "image/jpeg",
-          lastModified: Date.now(),
-        }
-      );
-    } finally {
-      bitmap.close();
-    }
-  }
-
-  async function uploadWhatsAppPreviewFromFile(
-    file: File,
-    folder = "whatsapp-previews"
-  ) {
-    const previewFile =
-      await createWhatsAppJpegFile(
-        file,
-        file.name
-      );
-
-    return uploadFile(
-      previewFile,
-      folder
-    );
-  }
-
-  async function ensureWhatsAppPreviewUrl(
-    mainImageUrl: string,
-    currentPreviewUrl: string,
-    folder = "whatsapp-previews"
-  ) {
-    const currentPreview =
-      currentPreviewUrl.trim();
-
-    if (
-      currentPreview &&
-      isWhatsAppSafePreviewUrl(
-        currentPreview
-      )
-    ) {
-      return currentPreview;
+    if (error) {
+      throw error;
     }
 
-    const sourceUrl =
-      mainImageUrl.trim();
+    const { data } = supabase.storage
+      .from("store-assets")
+      .getPublicUrl(filePath);
 
-    if (!sourceUrl) {
-      return currentPreview;
+    if (!data.publicUrl) {
+      throw new Error("Unable to generate image URL.");
     }
 
-    if (
-      isWhatsAppSafePreviewUrl(
-        sourceUrl
-      )
-    ) {
-      return sourceUrl;
-    }
-
-    const response =
-      await fetch(
-        sourceUrl,
-        {
-          cache: "no-store",
-        }
-      );
-
-    if (!response.ok) {
-      throw new Error(
-        `Unable to load the main image for WhatsApp preview (HTTP ${response.status}).`
-      );
-    }
-
-    const sourceBlob =
-      await response.blob();
-
-    const previewFile =
-      await createWhatsAppJpegFile(
-        sourceBlob,
-        `product-${Date.now()}`
-      );
-
-    return uploadFile(
-      previewFile,
-      folder
-    );
+    return data.publicUrl;
   }
 
   async function uploadMainImage(
@@ -2206,38 +1290,19 @@ function asFaqs(value: unknown): Faq[] {
     setUploadingMain(true);
 
     try {
-      const [
-        url,
-        whatsappPreviewUrl,
-      ] = await Promise.all([
-        uploadFile(
-          file,
-          "main"
-        ),
-        uploadWhatsAppPreviewFromFile(
-          file,
-          "whatsapp-previews"
-        ),
-      ]);
+      const url = await uploadFile(file, "main");
 
-      setField(
-        "mainImage",
-        url
-      );
-
-      setField(
-        "socialPreviewUrl",
-        whatsappPreviewUrl
-      );
-
+      setField("mainImage", url);
       setPhotoStudioOriginalImages((current) =>
         current.includes(url) ? current : [url, ...current]
       );
       setSelectedStudioSourceIndex(0);
 
-      alert(
-        "Main product image + WhatsApp photo prepared automatically."
-      );
+      if (!form.socialPreviewUrl) {
+        setField("socialPreviewUrl", url);
+      }
+
+      alert("Main product image uploaded successfully.");
     } catch (error) {
       console.error(error);
 
@@ -2398,475 +1463,6 @@ function asFaqs(value: unknown): Faq[] {
     }
   }
 
-  async function saveCloudEnhancedImageToStorage(imageUrl: string) {
-    if (!imageUrl) {
-      throw new Error("Cloud AI returned no enhanced image.");
-    }
-
-    let response: Response;
-
-    try {
-      response = await fetch(imageUrl, { cache: "no-store" });
-    } catch {
-      throw new Error("Cloud AI image could not be prepared for storage.");
-    }
-
-    if (!response.ok) {
-      throw new Error("Cloud AI image could not be downloaded.");
-    }
-
-    const blob = await response.blob();
-    const mimeType = blob.type || "image/png";
-    const extension =
-      mimeType.includes("webp")
-        ? "webp"
-        : mimeType.includes("jpeg") || mimeType.includes("jpg")
-          ? "jpg"
-          : "png";
-
-    const generatedFile = new File(
-      [blob],
-      `ncs-cloud-premium-${Date.now()}.${extension}`,
-      { type: mimeType }
-    );
-
-    return uploadFile(generatedFile, "studio-cloud-generated");
-  }
-
-  async function compareCloudImageWithSource(
-    sourceUrl: string,
-    candidateUrl: string
-  ) {
-    try {
-      const [sourceImage, candidateImage] = await Promise.all([
-        loadCanvasImage(sourceUrl),
-        loadCanvasImage(candidateUrl),
-      ]);
-
-      const sampleSize = 64;
-      const sourceCanvas = document.createElement("canvas");
-      const candidateCanvas = document.createElement("canvas");
-      sourceCanvas.width = sampleSize;
-      sourceCanvas.height = sampleSize;
-      candidateCanvas.width = sampleSize;
-      candidateCanvas.height = sampleSize;
-
-      const sourceCtx = sourceCanvas.getContext("2d", {
-        willReadFrequently: true,
-      });
-      const candidateCtx = candidateCanvas.getContext("2d", {
-        willReadFrequently: true,
-      });
-
-      if (!sourceCtx || !candidateCtx) {
-        return null;
-      }
-
-      sourceCtx.drawImage(sourceImage, 0, 0, sampleSize, sampleSize);
-      candidateCtx.drawImage(candidateImage, 0, 0, sampleSize, sampleSize);
-
-      const sourcePixels = sourceCtx.getImageData(
-        0,
-        0,
-        sampleSize,
-        sampleSize
-      ).data;
-      const candidatePixels = candidateCtx.getImageData(
-        0,
-        0,
-        sampleSize,
-        sampleSize
-      ).data;
-
-      let absoluteDifference = 0;
-      let changedPixels = 0;
-      const pixelCount = sampleSize * sampleSize;
-
-      for (let index = 0; index < sourcePixels.length; index += 4) {
-        const redDifference = Math.abs(
-          (sourcePixels[index] ?? 0) - (candidatePixels[index] ?? 0)
-        );
-        const greenDifference = Math.abs(
-          (sourcePixels[index + 1] ?? 0) -
-            (candidatePixels[index + 1] ?? 0)
-        );
-        const blueDifference = Math.abs(
-          (sourcePixels[index + 2] ?? 0) -
-            (candidatePixels[index + 2] ?? 0)
-        );
-
-        const pixelDifference =
-          (redDifference + greenDifference + blueDifference) / 3;
-
-        absoluteDifference += pixelDifference;
-
-        if (pixelDifference >= 12) {
-          changedPixels += 1;
-        }
-      }
-
-      return {
-        meanDifference: absoluteDifference / Math.max(pixelCount, 1),
-        changedRatio: changedPixels / Math.max(pixelCount, 1),
-      };
-    } catch (error) {
-      console.warn(
-        "NCS cloud output similarity check could not run; keeping provider result eligible:",
-        error
-      );
-      return null;
-    }
-  }
-
-  async function createValidationProductCutout(imageUrl: string) {
-    const sourceImage = await loadCanvasImage(imageUrl);
-
-    try {
-      const modnetSegmenter = await getNcsBackgroundRemovalPipeline();
-      const modnetOutput = await modnetSegmenter(imageUrl);
-      const cutout = await createCutoutCanvasFromLocalOutput(
-        sourceImage,
-        modnetOutput
-      );
-      refineProductCutoutEdges(cutout);
-      return cutout;
-    } catch (modnetError) {
-      console.warn(
-        "NCS fidelity validation MODNet failed; trying BEN2:",
-        modnetError
-      );
-    }
-
-    const ben2Segmenter = await getNcsBen2BackgroundRemovalPipeline();
-    const ben2Output = await ben2Segmenter([imageUrl]);
-    const cutout = await createCutoutCanvasFromLocalOutput(
-      sourceImage,
-      ben2Output
-    );
-    refineProductCutoutEdges(cutout);
-    return cutout;
-  }
-
-  function normalizeCutoutForFidelity(
-    cutout: HTMLCanvasElement,
-    width = 96,
-    height = 120
-  ) {
-    const bounds = findAlphaBounds(cutout);
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
-    if (!ctx) {
-      throw new Error("Unable to prepare NCS product-fidelity canvas.");
-    }
-
-    ctx.clearRect(0, 0, width, height);
-    const scale = Math.min(
-      (width * 0.9) / Math.max(bounds.width, 1),
-      (height * 0.9) / Math.max(bounds.height, 1)
-    );
-    const drawWidth = Math.max(1, Math.round(bounds.width * scale));
-    const drawHeight = Math.max(1, Math.round(bounds.height * scale));
-    const drawX = Math.round((width - drawWidth) / 2);
-    const drawY = Math.round((height - drawHeight) / 2);
-
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(
-      cutout,
-      bounds.x,
-      bounds.y,
-      bounds.width,
-      bounds.height,
-      drawX,
-      drawY,
-      drawWidth,
-      drawHeight
-    );
-
-    return {
-      canvas,
-      bounds,
-      aspectRatio: bounds.width / Math.max(bounds.height, 1),
-    };
-  }
-
-  async function compareCloudProductFidelity(
-    sourceUrl: string,
-    candidateUrl: string
-  ) {
-    try {
-      const [sourceCutout, candidateCutout] = await Promise.all([
-        createValidationProductCutout(sourceUrl),
-        createValidationProductCutout(candidateUrl),
-      ]);
-
-      const source = normalizeCutoutForFidelity(sourceCutout);
-      const candidate = normalizeCutoutForFidelity(candidateCutout);
-      const sourceCtx = source.canvas.getContext("2d", {
-        willReadFrequently: true,
-      });
-      const candidateCtx = candidate.canvas.getContext("2d", {
-        willReadFrequently: true,
-      });
-
-      if (!sourceCtx || !candidateCtx) return null;
-
-      const sourcePixels = sourceCtx.getImageData(
-        0,
-        0,
-        source.canvas.width,
-        source.canvas.height
-      ).data;
-      const candidatePixels = candidateCtx.getImageData(
-        0,
-        0,
-        candidate.canvas.width,
-        candidate.canvas.height
-      ).data;
-
-      let intersection = 0;
-      let union = 0;
-      let productDifference = 0;
-      let productComparedPixels = 0;
-      let stronglyChangedProductPixels = 0;
-
-      for (let index = 0; index < sourcePixels.length; index += 4) {
-        const sourceAlpha = sourcePixels[index + 3] ?? 0;
-        const candidateAlpha = candidatePixels[index + 3] ?? 0;
-        const sourceOn = sourceAlpha >= 64;
-        const candidateOn = candidateAlpha >= 64;
-
-        if (sourceOn && candidateOn) intersection += 1;
-        if (sourceOn || candidateOn) union += 1;
-
-        if (sourceOn && candidateOn) {
-          const difference =
-            (Math.abs((sourcePixels[index] ?? 0) - (candidatePixels[index] ?? 0)) +
-              Math.abs(
-                (sourcePixels[index + 1] ?? 0) -
-                  (candidatePixels[index + 1] ?? 0)
-              ) +
-              Math.abs(
-                (sourcePixels[index + 2] ?? 0) -
-                  (candidatePixels[index + 2] ?? 0)
-              )) /
-            3;
-
-          productDifference += difference;
-          productComparedPixels += 1;
-          if (difference >= 70) stronglyChangedProductPixels += 1;
-        }
-      }
-
-      return {
-        silhouetteIou: intersection / Math.max(union, 1),
-        aspectRatioDelta:
-          Math.abs(source.aspectRatio - candidate.aspectRatio) /
-          Math.max(source.aspectRatio, 0.01),
-        productMeanDifference:
-          productDifference / Math.max(productComparedPixels, 1),
-        productStrongChangeRatio:
-          stronglyChangedProductPixels / Math.max(productComparedPixels, 1),
-      };
-    } catch (error) {
-      console.warn(
-        "NCS strict product-fidelity validation could not complete:",
-        error
-      );
-      return null;
-    }
-  }
-
-  function isMeaningfullyEnhancedCloudImage(
-    comparison: {
-      meanDifference: number;
-      changedRatio: number;
-    } | null
-  ) {
-    if (!comparison) return true;
-
-    return (
-      comparison.meanDifference >= 8 ||
-      comparison.changedRatio >= 0.2
-    );
-  }
-
-  function passesStrictProductFidelity(
-    fidelity: {
-      silhouetteIou: number;
-      aspectRatioDelta: number;
-      productMeanDifference: number;
-      productStrongChangeRatio: number;
-    } | null
-  ) {
-    // If browser-side segmentation cannot validate, do not silently reject a
-    // provider result. The strict prompt still applies and the user must review it.
-    if (!fidelity) return true;
-
-    return (
-      fidelity.silhouetteIou >= 0.74 &&
-      fidelity.aspectRatioDelta <= 0.22 &&
-      fidelity.productMeanDifference <= 62 &&
-      fidelity.productStrongChangeRatio <= 0.5
-    );
-  }
-
-  async function generatePremiumPhotoWithCloudAi() {
-    const skippedProviders: string[] = [];
-    const rejectedProviderNotes: string[] = [];
-
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      setPhotoStudioStatus({
-        type: "idle",
-        message:
-          attempt === 0
-            ? "NCS Cloud AI is creating the premium e-commerce image first. Hugging Face is the primary provider; unchanged results will be rejected automatically..."
-            : "The previous cloud result was too similar to the source photo. Trying the next AI provider automatically...",
-      });
-
-      const response = await fetch("/api/generate-premium-product-image", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          imageUrl: selectedPhotoStudioSourceImage,
-          preset: {
-            id: Number(selectedPhotoStudioPreset.id || 1),
-            name: selectedPhotoStudioPreset.name,
-            description: selectedPhotoStudioPreset.description,
-            backgroundStyle: selectedPhotoStudioPreset.backgroundStyle,
-            bestFor: selectedPhotoStudioPreset.recommendedFor,
-          },
-          productContext: buildProductContextPayload(),
-          skipProviders: skippedProviders,
-        }),
-      });
-
-      const result = (await response.json()) as {
-        enhancedImageUrl?: string;
-        provider?: string;
-        model?: string;
-        message?: string;
-        error?: string;
-        providerErrors?: string[];
-      };
-
-      if (!response.ok || !result.enhancedImageUrl) {
-        const providerDetails = Array.isArray(result.providerErrors)
-          ? result.providerErrors.filter(Boolean).join(" | ")
-          : "";
-
-        throw new Error(
-          [
-            result.error || "Cloud AI could not generate the premium image.",
-            providerDetails,
-            rejectedProviderNotes.join(" | "),
-          ]
-            .filter(Boolean)
-            .join(" ")
-        );
-      }
-
-      const normalizedProvider = (result.provider || "")
-        .trim()
-        .toLowerCase();
-
-      const comparison = await compareCloudImageWithSource(
-        selectedPhotoStudioSourceImage,
-        result.enhancedImageUrl
-      );
-
-      if (!isMeaningfullyEnhancedCloudImage(comparison)) {
-        if (
-          normalizedProvider &&
-          !skippedProviders.includes(normalizedProvider)
-        ) {
-          skippedProviders.push(normalizedProvider);
-        }
-
-        rejectedProviderNotes.push(
-          `${(result.provider || "Cloud AI").toUpperCase()} returned an image that was too similar to the original and was rejected.`
-        );
-
-        if (attempt < 3) {
-          continue;
-        }
-
-        throw new Error(
-          "Cloud providers returned unchanged or near-unchanged images. Switching to the local catalog backup."
-        );
-      }
-
-      setPhotoStudioStatus({
-        type: "idle",
-        message:
-          `${(result.provider || "AI").toUpperCase()} changed the presentation. NCS is now checking that the exact garment silhouette, colour and print remain faithful...`,
-      });
-
-      const fidelity = await compareCloudProductFidelity(
-        selectedPhotoStudioSourceImage,
-        result.enhancedImageUrl
-      );
-
-      if (!passesStrictProductFidelity(fidelity)) {
-        if (
-          normalizedProvider &&
-          !skippedProviders.includes(normalizedProvider)
-        ) {
-          skippedProviders.push(normalizedProvider);
-        }
-
-        const fidelityNote = fidelity
-          ? `silhouette ${(fidelity.silhouetteIou * 100).toFixed(0)}%, aspect delta ${(fidelity.aspectRatioDelta * 100).toFixed(0)}%, product change ${(fidelity.productMeanDifference).toFixed(1)}`
-          : "fidelity validation unavailable";
-
-        rejectedProviderNotes.push(
-          `${(result.provider || "Cloud AI").toUpperCase()} redesigned the garment too much and was rejected by NCS Strict Product Fidelity (${fidelityNote}).`
-        );
-
-        if (attempt < 3) {
-          setPhotoStudioStatus({
-            type: "idle",
-            message:
-              "That AI result looked premium but changed the actual product. NCS rejected it automatically and is trying the next provider...",
-          });
-          continue;
-        }
-
-        throw new Error(
-          "Cloud AI changed the garment structure too much. Switching to the exact-product local catalog backup."
-        );
-      }
-
-      setPhotoStudioStatus({
-        type: "idle",
-        message:
-          `Cloud AI generated a meaningfully changed image with ${(result.provider || "AI").toUpperCase()}. Saving it safely to NEW CITY STYLE storage...`,
-      });
-
-      const storedUrl = await saveCloudEnhancedImageToStorage(
-        result.enhancedImageUrl
-      );
-
-      setPhotoStudioEnhancedImage(storedUrl);
-      setPhotoStudioStatus({
-        type: "success",
-        message:
-          result.message ||
-          `Premium photo generated successfully with ${(result.provider || "cloud AI").toUpperCase()}. The result passed NCS meaningful-change and strict product-fidelity checks. Review Original vs Enhanced before using it as the main image.`,
-      });
-      return;
-    }
-
-    throw new Error(
-      "No cloud provider returned a meaningfully enhanced premium image."
-    );
-  }
-
   async function generatePremiumPhotoDirect() {
     if (!selectedPhotoStudioSourceImage) {
       setPhotoStudioStatus({
@@ -2878,110 +1474,59 @@ function asFaqs(value: unknown): Faq[] {
     }
 
     setGeneratingPremiumPhoto(true);
-    let cloudFailureMessage = "";
+    setPhotoStudioStatus({
+      type: "idle",
+      message:
+        "Loading the free NCS background-removal model in this browser. The first run can take longer...",
+    });
 
     try {
-      try {
-        await generatePremiumPhotoWithCloudAi();
-        return;
-      } catch (cloudError) {
-        cloudFailureMessage =
-          cloudError instanceof Error
-            ? cloudError.message
-            : "Cloud AI was unavailable.";
-
-        console.warn(
-          "NCS cloud-first premium image generation failed; using local backup:",
-          cloudError
-        );
-
-        setPhotoStudioStatus({
-          type: "idle",
-          message:
-            "Cloud AI could not complete this image. Using the on-device MODNet/BEN2 catalog engine as the automatic backup...",
-        });
-      }
-
-      const sourceImage = await loadCanvasImage(
-        selectedPhotoStudioSourceImage
-      );
-
-      let cutoutCanvas: HTMLCanvasElement | null = null;
-      let localEngineUsed = "";
-      const localEngineErrors: string[] = [];
-
-      try {
-        setPhotoStudioStatus({
-          type: "idle",
-          message:
-            "Local Engine 1 (MODNet): removing the background on this device...",
-        });
-
-        const modnetSegmenter =
-          await getNcsBackgroundRemovalPipeline();
-        const modnetOutput = await modnetSegmenter(
-          selectedPhotoStudioSourceImage
-        );
-
-        cutoutCanvas = await createCutoutCanvasFromLocalOutput(
-          sourceImage,
-          modnetOutput
-        );
-        localEngineUsed = "MODNet";
-      } catch (modnetError) {
-        const message =
-          modnetError instanceof Error
-            ? modnetError.message
-            : "MODNet failed.";
-
-        localEngineErrors.push(`MODNet: ${message}`);
-        console.warn("NCS MODNet local engine failed:", modnetError);
-
-        setPhotoStudioStatus({
-          type: "idle",
-          message:
-            "Local Engine 1 could not isolate this product. Trying Local Engine 2 (BEN2) automatically. The first BEN2 download can take longer, then the browser will cache it...",
-        });
-
-        try {
-          const ben2Segmenter =
-            await getNcsBen2BackgroundRemovalPipeline();
-          const ben2Output = await ben2Segmenter([
-            selectedPhotoStudioSourceImage,
-          ]);
-
-          cutoutCanvas = await createCutoutCanvasFromLocalOutput(
-            sourceImage,
-            ben2Output
-          );
-          localEngineUsed = "BEN2";
-        } catch (ben2Error) {
-          const ben2Message =
-            ben2Error instanceof Error
-              ? ben2Error.message
-              : "BEN2 failed.";
-
-          localEngineErrors.push(`BEN2: ${ben2Message}`);
-          console.warn("NCS BEN2 local engine failed:", ben2Error);
-        }
-      }
-
-      if (!cutoutCanvas) {
-        throw new Error(
-          localEngineErrors.length
-            ? localEngineErrors.join(" | ")
-            : "Both local background-removal engines failed."
-        );
-      }
+      const segmenter = await getNcsBackgroundRemovalPipeline();
 
       setPhotoStudioStatus({
         type: "idle",
         message:
-          `${localEngineUsed} removed the background locally. Preparing the selected NCS premium studio background...`,
+          "Removing the background and preparing the premium NCS studio image...",
       });
 
-      // Refine only transparency so the original garment colour/print remains untouched.
-      refineProductCutoutEdges(cutoutCanvas);
+      const [sourceImage, output] = await Promise.all([
+        loadCanvasImage(selectedPhotoStudioSourceImage),
+        segmenter(selectedPhotoStudioSourceImage),
+      ]);
+
+      const mask = Array.isArray(output) ? output[0] : null;
+      if (!mask || typeof mask.toCanvas !== "function") {
+        throw new Error(
+          "The local background-removal model did not return a usable mask."
+        );
+      }
+
+      const maskCanvas = mask.toCanvas() as HTMLCanvasElement;
+      const cutoutCanvas = document.createElement("canvas");
+      cutoutCanvas.width = sourceImage.naturalWidth || sourceImage.width;
+      cutoutCanvas.height = sourceImage.naturalHeight || sourceImage.height;
+
+      const cutoutCtx = cutoutCanvas.getContext("2d");
+      if (!cutoutCtx) {
+        throw new Error("This browser could not start the product photo canvas.");
+      }
+
+      cutoutCtx.drawImage(
+        sourceImage,
+        0,
+        0,
+        cutoutCanvas.width,
+        cutoutCanvas.height
+      );
+      cutoutCtx.globalCompositeOperation = "destination-in";
+      cutoutCtx.drawImage(
+        maskCanvas,
+        0,
+        0,
+        cutoutCanvas.width,
+        cutoutCanvas.height
+      );
+      cutoutCtx.globalCompositeOperation = "source-over";
 
       const bounds = findAlphaBounds(cutoutCanvas);
       const outputCanvas = document.createElement("canvas");
@@ -3000,9 +1545,8 @@ function asFaqs(value: unknown): Faq[] {
         outputCanvas.height
       );
 
-      const isMainCatalogPreset = selectedPhotoStudioPresetId === "0";
-      const maxProductWidth = isMainCatalogPreset ? 850 : 910;
-      const maxProductHeight = isMainCatalogPreset ? 1110 : 1125;
+      const maxProductWidth = 910;
+      const maxProductHeight = 1125;
       const scale = Math.min(
         maxProductWidth / bounds.width,
         maxProductHeight / bounds.height
@@ -3010,26 +1554,19 @@ function asFaqs(value: unknown): Faq[] {
       const targetWidth = Math.max(1, Math.round(bounds.width * scale));
       const targetHeight = Math.max(1, Math.round(bounds.height * scale));
       const targetX = Math.round((outputCanvas.width - targetWidth) / 2);
-
-      const safeTop = isMainCatalogPreset ? 135 : 120;
-      const safeBottom = isMainCatalogPreset ? 175 : 135;
-      const availableHeight = outputCanvas.height - safeTop - safeBottom;
       const targetY = Math.round(
-        safeTop + Math.max(0, (availableHeight - targetHeight) * 0.44)
+        Math.max(120, outputCanvas.height * 0.49 - targetHeight * 0.48)
       );
 
-      // Premium contact shadow: deliberately subtle so it reads like studio photography, not a poster mockup.
       ctx.save();
-      ctx.fillStyle = isMainCatalogPreset
-        ? "rgba(41,37,36,0.075)"
-        : "rgba(17,24,39,0.11)";
-      ctx.filter = isMainCatalogPreset ? "blur(24px)" : "blur(18px)";
+      ctx.fillStyle = "rgba(17,24,39,0.15)";
+      ctx.filter = "blur(18px)";
       ctx.beginPath();
       ctx.ellipse(
         outputCanvas.width / 2,
-        Math.min(outputCanvas.height - safeBottom + 8, targetY + targetHeight + 18),
-        Math.max(112, targetWidth * (isMainCatalogPreset ? 0.27 : 0.32)),
-        Math.max(12, targetHeight * (isMainCatalogPreset ? 0.014 : 0.022)),
+        Math.min(outputCanvas.height - 135, targetY + targetHeight + 28),
+        Math.max(135, targetWidth * 0.34),
+        Math.max(18, targetHeight * 0.025),
         0,
         0,
         Math.PI * 2
@@ -3038,14 +1575,9 @@ function asFaqs(value: unknown): Faq[] {
       ctx.restore();
 
       ctx.save();
-      // Keep garment pixels faithful. Shadow is minimal and only supplies natural separation from the studio.
-      ctx.shadowColor = isMainCatalogPreset
-        ? "rgba(41,37,36,0.10)"
-        : "rgba(15,23,42,0.18)";
-      ctx.shadowBlur = isMainCatalogPreset ? 16 : 26;
-      ctx.shadowOffsetY = isMainCatalogPreset ? 8 : 16;
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
+      ctx.shadowColor = "rgba(15,23,42,0.24)";
+      ctx.shadowBlur = 34;
+      ctx.shadowOffsetY = 22;
       ctx.drawImage(
         cutoutCanvas,
         bounds.x,
@@ -3071,23 +1603,16 @@ function asFaqs(value: unknown): Faq[] {
       setPhotoStudioStatus({
         type: "success",
         message:
-          `Cloud AI was unavailable, so the local backup generated this image with ${localEngineUsed} using ${selectedPhotoStudioPreset.shortLabel} – ${selectedPhotoStudioPreset.name}. ${selectedPhotoStudioPresetId === "0" ? "Clean catalog composition applied: ivory studio, refined edge, controlled scale and subtle contact shadow." : "This creative preset is best suited to gallery/lifestyle presentation."} Review Original vs Enhanced before using it.`,
+          `Premium photo generated directly with the free local browser engine using preset ${selectedPhotoStudioPreset.shortLabel} – ${selectedPhotoStudioPreset.name}. Review Original vs Enhanced before using it as the main image.`,
       });
-    } catch (localError) {
-      console.error(
-        "NCS dual local premium photo generation failed:",
-        localError
-      );
-
-      const localErrorMessage =
-        localError instanceof Error
-          ? localError.message
-          : "Both local premium photo engines failed.";
-
+    } catch (error) {
+      console.error("NCS direct premium photo generation failed:", error);
       setPhotoStudioStatus({
         type: "error",
         message:
-          `Premium photo generation failed. Cloud AI: ${cloudFailureMessage || "Unavailable."} Local backup: ${localErrorMessage}. Please try another photo or preset.`,
+          error instanceof Error
+            ? `Direct premium photo failed: ${error.message} You can still use Copy Prompt + Import Enhanced Result as the backup.`
+            : "Direct premium photo failed. You can still use Copy Prompt + Import Enhanced Result as the backup.",
       });
     } finally {
       setGeneratingPremiumPhoto(false);
@@ -3195,8 +1720,8 @@ function asFaqs(value: unknown): Faq[] {
     setForm((current) => ({
       ...current,
       mainImage: photoStudioEnhancedImage,
-      // Force Save Product to generate a fresh JPEG preview for this new main image.
-      socialPreviewUrl: "",
+      socialPreviewUrl:
+        current.socialPreviewUrl || photoStudioEnhancedImage,
     }));
     setPhotoStudioStatus({
       type: "success",
@@ -3693,32 +2218,6 @@ function asFaqs(value: unknown): Faq[] {
 
     setSaving(true);
 
-    let whatsappPreviewUrl =
-      form.socialPreviewUrl.trim();
-
-    try {
-      whatsappPreviewUrl =
-        await ensureWhatsAppPreviewUrl(
-          form.mainImage,
-          whatsappPreviewUrl,
-          "whatsapp-previews"
-        );
-    } catch (error) {
-      console.error(
-        "WhatsApp JPEG preview preparation failed:",
-        error
-      );
-
-      alert(
-        error instanceof Error
-          ? `WhatsApp product photo preparation failed: ${error.message}`
-          : "WhatsApp product photo preparation failed."
-      );
-
-      setSaving(false);
-      return;
-    }
-
     const productData = {
       name: form.name.trim(),
       slug: createSlug(form.slug || form.name),
@@ -3814,7 +2313,7 @@ function asFaqs(value: unknown): Faq[] {
         form.description.trim().slice(0, 155),
       seo_keywords: form.seoKeywords.trim() || null,
       social_preview_url:
-        whatsappPreviewUrl ||
+        form.socialPreviewUrl.trim() ||
         form.mainImage ||
         null,
 
@@ -3828,374 +2327,25 @@ function asFaqs(value: unknown): Faq[] {
       updated_at: new Date().toISOString(),
     };
 
-    if (bulkDesignItems.length > 0) {
-      const sizeEnteredAsDesignIndex = bulkDesignItems.findIndex((item) =>
-        isLikelyPhysicalSizeLabel(item.designName)
-      );
-
-      if (sizeEnteredAsDesignIndex >= 0) {
-        const wrongValue =
-          bulkDesignItems[sizeEnteredAsDesignIndex].designName.trim();
-
-        alert(
-          `"${wrongValue}" looks like a SIZE, not a design/colour name. ` +
-            `Do not type sizes in Design / Colour Name. ` +
-            `Sizes must come only from Purchase Stock and must be selected below under Available Physical Sizes / Barcodes.`
-        );
-        setSaving(false);
-        return;
-      }
-
-      const missingImageIndex = bulkDesignItems.findIndex((item) => !item.image);
-      if (missingImageIndex >= 0) {
-        alert(`Photo missing for Design ${missingImageIndex + 1}. Upload one photo for every design card before saving.`);
-        setSaving(false);
-        return;
-      }
-
-      const emptySizeIndex = bulkDesignItems.findIndex(
-        (item) => item.selectedVariantIds.length === 0
-      );
-      if (emptySizeIndex >= 0) {
-        alert(`Select at least one available size/barcode for Design ${emptySizeIndex + 1}.`);
-        setSaving(false);
-        return;
-      }
-
-      const parentId = bulkDesignItems[0].productId;
+    if (linkedStockProduct) {
       const {
         sku: _sku,
         barcode: _barcode,
         stock: _stock,
         online_stock_limit: _onlineStockLimit,
-        mrp: _parentMrp,
-        price: _parentPrice,
-        discount_percent: _parentDiscount,
-        image: _parentImage,
-        gallery_images: _parentGallery,
-        sell_online: _parentSellOnline,
-        social_preview_url: _parentSocialPreview,
-        ...sharedDetails
+        ...detailsOnly
       } = productData;
 
-      const uniqueSelectedVariantIds = Array.from(
-        new Set(bulkDesignItems.flatMap((item) => item.selectedVariantIds))
-      );
-      const allVariantOptions = bulkDesignItems[0].variantOptions;
-      const parentOnlineQuantity = allVariantOptions
-        .filter((variant) => uniqueSelectedVariantIds.includes(variant.variantId))
-        .reduce((total, variant) => total + Math.max(0, Number(variant.stock || 0)), 0);
-
-      const { error: parentError } = await supabase
+      const { error } = await supabase
         .from("products")
-        .update({
-          ...sharedDetails,
-          sell_online: true,
-          online_stock_limit: Math.min(
-            Math.max(0, Number(form.stock || 0)),
-            Math.max(1, parentOnlineQuantity)
-          ),
-          image: bulkDesignItems[0].image || form.mainImage || null,
-          social_preview_url:
-            whatsappPreviewUrl ||
-            bulkDesignItems[0].image ||
-            form.mainImage ||
-            null,
-        })
-        .eq("id", parentId);
+        .update(detailsOnly)
+        .eq("id", linkedStockProduct.id);
 
-      if (parentError) {
-        console.error(parentError);
-        alert(`Unable to update common product details: ${parentError.message}`);
+      if (error) {
+        console.error(error);
+        alert(`Unable to update product: ${error.message}`);
         setSaving(false);
         return;
-      }
-
-      const { data: existingDesignUnitRows, error: existingDesignUnitsError } =
-        await supabase
-          .from("product_design_units")
-          .select(
-            "id,product_id,parent_variant_id,parent_barcode,design_name,image_url,status,sort_order"
-          )
-          .eq("product_id", parentId)
-          .order("sort_order", { ascending: true })
-          .order("id", { ascending: true });
-
-      if (existingDesignUnitsError) {
-        console.error(existingDesignUnitsError);
-        alert(`Unable to read existing storefront designs: ${existingDesignUnitsError.message}`);
-        setSaving(false);
-        return;
-      }
-
-      const existingDesignUnits = (existingDesignUnitRows || []) as Array<{
-        id: number;
-        product_id: number;
-        parent_variant_id: number | null;
-        parent_barcode: string | null;
-        design_name: string | null;
-        image_url: string | null;
-        status: string | null;
-        sort_order: number | null;
-      }>;
-
-      const claimedDesignUnitIds = new Set<number>();
-      const touchedVariantIds = new Set<number>();
-
-      for (let index = 0; index < bulkDesignItems.length; index += 1) {
-        const design = bulkDesignItems[index];
-        const selectedVariants = design.variantOptions.filter((variant) =>
-          design.selectedVariantIds.includes(variant.variantId)
-        );
-
-        const finalDesignName = design.designName.trim() || `Design ${index + 1}`;
-        const primaryVariant = selectedVariants[0];
-        const designHasStock = selectedVariants.some((variant) => Number(variant.stock || 0) > 0);
-        const designStatus = design.sellOnline && designHasStock ? "available" : "sold_out";
-
-        for (const variant of selectedVariants) {
-          if (touchedVariantIds.has(variant.variantId)) continue;
-
-          const onlineQuantity = design.sellOnline
-            ? Math.max(0, Number(variant.stock || 0))
-            : 0;
-
-          const { error: variantError } = await supabase
-            .from("product_variants")
-            .update({
-              sell_online: design.sellOnline,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", variant.variantId)
-            .eq("product_id", parentId);
-
-          if (variantError) {
-            console.error(variantError);
-            alert(`Variant ${variant.barcode || variant.variantId} online visibility failed: ${variantError.message}`);
-            setSaving(false);
-            return;
-          }
-
-          const { error: onlineStockError } = await supabase.rpc(
-            "set_product_online_stock",
-            {
-              p_product_id: parentId,
-              p_variant_id: variant.variantId,
-              p_online_quantity: onlineQuantity,
-              p_sell_online: design.sellOnline,
-            }
-          );
-
-          if (onlineStockError) {
-            console.error(onlineStockError);
-            alert(`Variant ${variant.barcode || variant.variantId} online quantity failed: ${onlineStockError.message}`);
-            setSaving(false);
-            return;
-          }
-
-          touchedVariantIds.add(variant.variantId);
-        }
-
-        const existingDesignUnit = existingDesignUnits.find((unit) => {
-          if (claimedDesignUnitIds.has(Number(unit.id))) return false;
-          return Number(unit.sort_order || 0) === index + 1;
-        });
-
-        let designUnitId: number;
-        const primaryBarcode = String(primaryVariant?.barcode || "").trim();
-
-        if (existingDesignUnit) {
-          const { error: designUnitUpdateError } = await supabase
-            .from("product_design_units")
-            .update({
-              parent_variant_id: primaryVariant?.variantId || null,
-              parent_barcode: primaryBarcode || null,
-              design_name: finalDesignName,
-              image_url: design.image,
-              status: designStatus,
-              sort_order: index + 1,
-            })
-            .eq("id", existingDesignUnit.id)
-            .eq("product_id", parentId);
-
-          if (designUnitUpdateError) {
-            console.error(designUnitUpdateError);
-            alert(`Storefront design ${index + 1} update failed: ${designUnitUpdateError.message}`);
-            setSaving(false);
-            return;
-          }
-
-          designUnitId = Number(existingDesignUnit.id);
-          claimedDesignUnitIds.add(designUnitId);
-        } else {
-          const { data: insertedDesignUnit, error: designUnitInsertError } =
-            await supabase
-              .from("product_design_units")
-              .insert({
-                product_id: parentId,
-                parent_variant_id: primaryVariant?.variantId || null,
-                parent_barcode: primaryBarcode || null,
-                design_name: finalDesignName,
-                image_url: design.image,
-                status: designStatus,
-                sort_order: index + 1,
-              })
-              .select("id")
-              .single();
-
-          if (designUnitInsertError || !insertedDesignUnit?.id) {
-            console.error(designUnitInsertError);
-            alert(`Storefront design ${index + 1} creation failed: ${designUnitInsertError?.message || "No design unit id returned."}`);
-            setSaving(false);
-            return;
-          }
-
-          designUnitId = Number(insertedDesignUnit.id);
-          claimedDesignUnitIds.add(designUnitId);
-        }
-
-        const { error: oldLinksDeleteError } = await supabase
-          .from("product_design_unit_variants")
-          .delete()
-          .eq("product_id", parentId)
-          .eq("design_unit_id", designUnitId);
-
-        if (oldLinksDeleteError) {
-          console.error(oldLinksDeleteError);
-          alert(`Unable to refresh size links for Design ${index + 1}: ${oldLinksDeleteError.message}`);
-          setSaving(false);
-          return;
-        }
-
-        const linkRows = selectedVariants.map((variant) => ({
-          product_id: parentId,
-          design_unit_id: designUnitId,
-          variant_id: variant.variantId,
-          status:
-            design.sellOnline && Number(variant.stock || 0) > 0
-              ? "available"
-              : "sold_out",
-        }));
-
-        const { error: linkInsertError } = await supabase
-          .from("product_design_unit_variants")
-          .insert(linkRows);
-
-        if (linkInsertError) {
-          console.error(linkInsertError);
-          alert(`Size links for Design ${index + 1} failed: ${linkInsertError.message}`);
-          setSaving(false);
-          return;
-        }
-      }
-
-      const unusedDesignIds = existingDesignUnits
-        .map((unit) => Number(unit.id))
-        .filter((id) => !claimedDesignUnitIds.has(id));
-
-      if (unusedDesignIds.length > 0) {
-        const { error: hideUnusedError } = await supabase
-          .from("product_design_units")
-          .update({ status: "hidden" })
-          .in("id", unusedDesignIds)
-          .eq("product_id", parentId);
-
-        if (hideUnusedError) console.error(hideUnusedError);
-      }
-
-      alert(
-        `${bulkDesignItems.length} designs saved successfully. Each design is one storefront card, and each card now has its own selected sizes. Existing barcodes, SKU and physical stock were preserved.`
-      );
-
-      setForm(initialForm);
-      setLinkedStockProduct(null);
-      setBulkDesignItems([]);
-      setBulkSelectedStock([]);
-      setPhotoStudioOriginalImages([]);
-      setSelectedStudioSourceIndex(0);
-      setPhotoStudioEnhancedImage("");
-      setPhotoStudioStatus({ type: "idle", message: "" });
-      setSaving(false);
-
-      router.push(`/admin/products`);
-      router.refresh();
-      return;
-    }
-
-    if (linkedStockProduct) {
-      if (linkedStockProduct.variantId) {
-        // Variant-linked save: keep physical stock/barcode/SKU untouched.
-        // Save only this variant's online price/photo while common catalogue
-        // details remain on the parent product. Parent price/photo are kept as
-        // backward-compatible fallbacks for old size-only products.
-        const {
-          sku: _sku,
-          barcode: _barcode,
-          stock: _stock,
-          online_stock_limit: _onlineStockLimit,
-          mrp: _parentMrp,
-          price: _parentPrice,
-          discount_percent: _parentDiscount,
-          image: _parentImage,
-          gallery_images: _parentGallery,
-          sell_online: _parentSellOnline,
-          social_preview_url: _parentSocialPreview,
-          ...sharedDetails
-        } = productData;
-
-        const { error: parentError } = await supabase
-          .from("products")
-          .update(sharedDetails)
-          .eq("id", linkedStockProduct.id);
-
-        if (parentError) {
-          console.error(parentError);
-          alert(`Unable to update product: ${parentError.message}`);
-          setSaving(false);
-          return;
-        }
-
-        const { error: variantDetailsError } = await supabase
-          .from("product_variants")
-          .update({
-            mrp: Number(form.mrp || form.price),
-            online_price: Number(form.price),
-            main_image: form.mainImage || null,
-            gallery_images: form.galleryImages,
-            sell_online: form.sellOnline,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", linkedStockProduct.variantId);
-
-        if (variantDetailsError) {
-          console.error(variantDetailsError);
-          alert(
-            `Product details were updated, but variant price/photo failed: ${variantDetailsError.message}`
-          );
-          setSaving(false);
-          return;
-        }
-      } else {
-        // Legacy/direct product link keeps the old behaviour unchanged.
-        const {
-          sku: _sku,
-          barcode: _barcode,
-          stock: _stock,
-          online_stock_limit: _onlineStockLimit,
-          ...detailsOnly
-        } = productData;
-
-        const { error } = await supabase
-          .from("products")
-          .update(detailsOnly)
-          .eq("id", linkedStockProduct.id);
-
-        if (error) {
-          console.error(error);
-          alert(`Unable to update product: ${error.message}`);
-          setSaving(false);
-          return;
-        }
       }
 
       const { error: onlineStockError } = await supabase.rpc(
@@ -4223,20 +2373,83 @@ function asFaqs(value: unknown): Faq[] {
       }
 
       alert(
-        linkedStockProduct.variantId
-          ? "Variant updated successfully. Its own online price and photo were saved; barcode and physical stock were preserved."
-          : "Existing stock product updated successfully. Barcode and physical stock were preserved."
+        "Existing stock product updated successfully. Barcode and physical stock were preserved."
       );
     } else {
-      const { error } = await supabase
+      const { data: createdProduct, error } = await supabase
         .from("products")
-        .insert(productData);
+        .insert(productData)
+        .select(
+          "id,name,slug,price,mrp,image,image_url,social_preview_url,category,is_active,sell_online"
+        )
+        .single();
 
       if (error) {
         console.error(error);
         alert(`Unable to save product: ${error.message}`);
         setSaving(false);
         return;
+      }
+
+      /*
+       * NCS NATIVE NEW-PRODUCT PUSH
+       * ---------------------------
+       * Product save is the source of truth. Notification delivery is
+       * best-effort and can never roll back or block a successfully
+       * created product.
+       *
+       * Only genuinely NEW products enter this branch. Existing stock
+       * items that are merely linked/updated above do not generate a
+       * "new product" notification.
+       */
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        const accessToken =
+          session?.access_token?.trim() || "";
+
+        if (accessToken && createdProduct?.id) {
+          const response = await fetch(
+            "/api/push/new-product",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${accessToken}`,
+              },
+              body: JSON.stringify({
+                productId: createdProduct.id,
+              }),
+            }
+          );
+
+          const result = (await response.json().catch(() => null)) as
+            | {
+                success?: boolean;
+                sent?: boolean;
+                skipped?: boolean;
+                error?: string;
+              }
+            | null;
+
+          if (!response.ok || result?.success === false) {
+            console.warn(
+              "NCS new-product push was not sent:",
+              result?.error || `HTTP ${response.status}`
+            );
+          }
+        } else {
+          console.warn(
+            "NCS new-product push skipped: admin session or product id is missing."
+          );
+        }
+      } catch (pushError) {
+        console.warn(
+          "NCS new-product push failed after product save:",
+          pushError
+        );
       }
 
       alert("Premium product added successfully.");
@@ -4265,7 +2478,6 @@ function asFaqs(value: unknown): Faq[] {
     uploadingMain ||
     uploadingGallery ||
     uploadingLifestyle ||
-    uploadingBulkDesigns ||
     uploadingStudioSource ||
     uploadingStudioEnhanced ||
     generatingPremiumPhoto;
@@ -4354,9 +2566,6 @@ function asFaqs(value: unknown): Faq[] {
                         {linkedStockProduct.variantId
                           ? ` • Variant ID: ${linkedStockProduct.variantId}`
                           : ""}
-                        {linkedStockProduct.variantName
-                          ? ` • ${linkedStockProduct.variantName}`
-                          : ""}
                       </p>
                       <p>
                         Barcode: {linkedStockProduct.variantBarcode || linkedStockProduct.barcode || "Auto barcode"}
@@ -4382,308 +2591,50 @@ function asFaqs(value: unknown): Faq[] {
                 )}
 
                 {!linkedStockProduct && stockSearchResults.length > 0 && (
-                  <>
-                    <div className="existing-stock-results">
-                      {stockSearchResults.map((product) => {
-                        const bulkSelected = bulkSelectedStock.some(
-                          (item) =>
-                            getStockSelectionKey(item) ===
-                            getStockSelectionKey(product)
-                        );
-
-                        return (
-                          <div
-                            key={`${product.id}-${product.variantId || 0}`}
-                            style={bulkStockResultRowStyle}
-                          >
-                            <button
-                              type="button"
-                              onClick={() =>
-                                linkExistingStockProduct(product)
-                              }
-                              style={bulkStockResultLinkStyle}
-                            >
-                              <div className="existing-stock-result-image">
-                                {product.variantMainImage || product.image ? (
-                                  <img
-                                    src={product.variantMainImage || product.image}
-                                    alt={product.name}
-                                  />
-                                ) : (
-                                  <span>📦</span>
-                                )}
-                              </div>
-
-                              <div>
-                                <strong>
-                                  {product.name}
-                                  {product.variantName
-                                    ? ` • ${product.variantName}`
-                                    : ""}
-                                </strong>
-                                <span>
-                                  {product.variantBarcode ||
-                                    product.barcode ||
-                                    "No barcode"}
-                                </span>
-                                <small>
-                                  Stock {product.stock}
-                                  {product.size ? ` • ${product.size}` : ""}
-                                  {product.color
-                                    ? ` • ${product.color}`
-                                    : ""}
-                                </small>
-                              </div>
-
-                              <b>Link One</b>
-                            </button>
-
-                            {product.variantId && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  toggleBulkStockSelection(product)
-                                }
-                                style={{
-                                  ...bulkSelectButtonStyle,
-                                  ...(bulkSelected
-                                    ? bulkSelectButtonActiveStyle
-                                    : {}),
-                                }}
-                              >
-                                {bulkSelected ? "✓ Selected" : "+ Bulk"}
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {bulkSelectedStock.length > 0 && (
-                      <div style={bulkStartBarStyle}>
-                        <div>
-                          <strong>
-                            {bulkSelectedStock.length} barcode design
-                            {bulkSelectedStock.length === 1 ? "" : "s"} selected
-                          </strong>
-                          <span>
-                            Select all required variants, then start one-time bulk photo setup.
-                          </span>
+                  <div className="existing-stock-results">
+                    {stockSearchResults.map((product) => (
+                      <button
+                        type="button"
+                        key={`${product.id}-${product.variantId || 0}`}
+                        onClick={() =>
+                          linkExistingStockProduct(product)
+                        }
+                      >
+                        <div className="existing-stock-result-image">
+                          {product.image ? (
+                            <img
+                              src={product.image}
+                              alt={product.name}
+                            />
+                          ) : (
+                            <span>📦</span>
+                          )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={startBulkDesignSetup}
-                          style={bulkStartButtonStyle}
-                        >
-                          Start Bulk Design Setup ({bulkSelectedStock.length})
-                        </button>
-                      </div>
-                    )}
-                  </>
+
+                        <div>
+                          <strong>{product.name}</strong>
+                          <span>
+                            {product.variantBarcode || product.barcode || "No barcode"}
+                          </span>
+                          <small>
+                            Stock {product.stock}
+                            {product.size ? ` • ${product.size}` : ""}
+                            {product.color ? ` • ${product.color}` : ""}
+                          </small>
+                        </div>
+
+                        <b>Link</b>
+                      </button>
+                    ))}
+                  </div>
                 )}
 
                 <div className="existing-stock-note">
                   {linkedStockProduct
-                    ? linkedStockProduct.variantId
-                      ? "This exact variant is linked. Price and photos save to this variant only; barcode and physical stock stay locked and continue syncing from Purchase Stock / POS."
-                      : "This product is linked. Saving updates the same product and preserves barcode and physical stock."
+                    ? "Now upload the shirt photo and use AI. Saving updates this same product; it does not create a duplicate."
                     : "Leave this empty only when you want to create a completely new product."}
                 </div>
               </Panel>
-
-              {bulkDesignItems.length > 0 && (
-                <Panel
-                  title="Bulk Designs — One Card, Multiple Physical Sizes"
-                  subtitle="Each design/photo becomes one storefront card. Design / Colour Name is only a visual name; NEVER type a size there. Physical sizes come only from Purchase Stock and are selected below."
-                >
-                  <div style={bulkInstructionStyle}>
-                    <strong>1. Create the number of visual designs you have</strong>
-                    <span>2. Upload exactly one photo for each design card</span>
-                    <span>3. Design / Colour Name = visual name only (example: Blue Floral, Design 1) — do not enter 28/34/L/XL here</span>
-                    <span>4. Tick the actual physical sizes below. These sizes come from Purchase Stock / barcode variants only</span>
-                    <span>5. Save once — design cards stay separate and exact physical sizes remain linked safely</span>
-                  </div>
-
-                  <div style={bulkToolbarStyle}>
-                    <button
-                      type="button"
-                      onClick={addBulkDesignGroup}
-                      disabled={generatingBulkAi || uploadingBulkDesigns}
-                      style={bulkStartButtonStyle}
-                    >
-                      + Add Another Design
-                    </button>
-                    <button
-                      type="button"
-                      onClick={generateBulkDesignNamesWithAi}
-                      disabled={generatingBulkAi || uploadingBulkDesigns}
-                      style={bulkAiButtonStyle}
-                    >
-                      {generatingBulkAi ? "✨ AI Naming Designs..." : "✨ Generate AI Name for Every Design"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={cancelBulkDesignSetup}
-                      disabled={generatingBulkAi || uploadingBulkDesigns}
-                      style={bulkCancelButtonStyle}
-                    >
-                      Cancel Bulk Mode
-                    </button>
-                  </div>
-
-                  <UploadBox
-                    uploading={uploadingBulkDesigns}
-                    label={`Upload ${bulkDesignItems.length} Design Photos Together`}
-                    description="Select one photo per DESIGN card. File order = Design 1, Design 2, Design 3..."
-                    multiple
-                    onChange={uploadBulkDesignImages}
-                  />
-
-                  <div style={bulkDesignGridStyle}>
-                    {bulkDesignItems.map((item, index) => {
-                      const selectedVariants = item.variantOptions.filter((variant) =>
-                        item.selectedVariantIds.includes(variant.variantId)
-                      );
-                      const selectedStock = selectedVariants.reduce(
-                        (total, variant) => total + Math.max(0, Number(variant.stock || 0)),
-                        0
-                      );
-
-                      return (
-                        <div key={`${item.productId}-design-${index}`} style={bulkDesignCardStyle}>
-                          <div style={bulkDesignOrderStyle}>DESIGN {index + 1}</div>
-
-                          {bulkDesignItems.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeBulkDesignGroup(index)}
-                              style={{ ...bulkCancelButtonStyle, width: "100%", marginBottom: "10px" }}
-                            >
-                              Remove This Design
-                            </button>
-                          )}
-
-                          <div style={bulkDesignImageBoxStyle}>
-                            {item.image ? (
-                              <img
-                                src={item.image}
-                                alt={item.designName || `Design ${index + 1}`}
-                                style={bulkDesignImageStyle}
-                              />
-                            ) : (
-                              <div style={bulkDesignEmptyStyle}>
-                                <span>📷</span>
-                                <small>Photo {index + 1}</small>
-                              </div>
-                            )}
-                          </div>
-
-                          <Field label="Design / Colour Name — NOT SIZE">
-                            <input
-                              value={item.designName}
-                              onChange={(event) =>
-                                updateBulkDesignItem(index, { designName: event.target.value })
-                              }
-                              placeholder={`Example: Blue Floral / Design ${index + 1}`}
-                              style={inputStyle}
-                            />
-                          </Field>
-
-                          <div
-                            style={{
-                              marginTop: "-2px",
-                              marginBottom: "10px",
-                              padding: "9px 11px",
-                              borderRadius: "10px",
-                              border: "1px solid #F3D7A2",
-                              background: "#FFF8E7",
-                              color: "#7A4E00",
-                              fontSize: "11px",
-                              fontWeight: 800,
-                              lineHeight: 1.45,
-                            }}
-                          >
-                            ⚠️ Do not type 28, 34, S, M, L, XL here. Those are physical sizes.
-                            Select physical sizes only in the section below.
-                          </div>
-
-                          <div style={bulkAiStateStyle}>
-                            {item.aiStatus === "loading"
-                              ? "✨ AI analysing this photo..."
-                              : item.aiStatus === "success"
-                                ? "✅ AI name ready — editable"
-                                : item.aiStatus === "error"
-                                  ? "⚠️ AI name failed — type/edit manually"
-                                  : "AI name optional"}
-                          </div>
-
-                          <div style={{ marginTop: "14px", padding: "13px", border: "1px solid #E5E7EB", borderRadius: "12px", background: "#F8FAFC" }}>
-                            <strong style={{ display: "block", color: "#0A2E73", marginBottom: "9px" }}>
-                              Available Physical Sizes / Barcodes — from Purchase Stock
-                            </strong>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "8px" }}>
-                              {item.variantOptions.map((variant) => {
-                                const checked = item.selectedVariantIds.includes(variant.variantId);
-                                return (
-                                  <label
-                                    key={`${index}-${variant.variantId}`}
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "flex-start",
-                                      gap: "7px",
-                                      padding: "9px",
-                                      border: checked ? "1px solid #D4AF37" : "1px solid #D1D5DB",
-                                      borderRadius: "9px",
-                                      background: checked ? "#FFFBEB" : "#FFFFFF",
-                                      cursor: "pointer",
-                                    }}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={() => toggleBulkDesignVariant(index, variant.variantId)}
-                                    />
-                                    <span>
-                                      <strong style={{ color: "#0A2E73" }}>
-                                        {variant.size || variant.color || "Variant"}
-                                      </strong>
-                                      <small style={{ display: "block", marginTop: "2px", color: "#667085", fontSize: "10px" }}>
-                                        Stock {variant.stock}
-                                      </small>
-                                      <small style={{ display: "block", color: "#98A2B3", fontSize: "8px" }}>
-                                        {variant.barcode || `#${variant.variantId}`}
-                                      </small>
-                                    </span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                            <div style={{ marginTop: "10px", color: item.selectedVariantIds.length > 0 ? "#067647" : "#B42318", fontSize: "11px", fontWeight: 800 }}>
-                              {item.selectedVariantIds.length} size(s) selected • Shared stock {selectedStock}
-                            </div>
-                          </div>
-
-                          <div style={{ ...bulkOnlineRowStyle, marginTop: "14px" }}>
-                            <label style={bulkCheckboxLabelStyle}>
-                              <input
-                                type="checkbox"
-                                checked={item.sellOnline}
-                                onChange={(event) => updateBulkDesignItem(index, { sellOnline: event.target.checked })}
-                              />
-                              Sell This Design Online
-                            </label>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div style={bulkSafetyNoteStyle}>
-                    🔒 Final safe mode: one design/photo = one storefront card. Design name never creates a size. Physical sizes come only from existing Purchase Stock / barcode variants. Existing barcode, SKU, stock, photos and all current features remain preserved.
-                  </div>
-                </Panel>
-              )}
-
 
               <Panel
                 title="Basic Information"
@@ -5062,11 +3013,7 @@ function asFaqs(value: unknown): Faq[] {
 
               <Panel
                 title="Main Product Image"
-                subtitle={
-                  bulkDesignItems.length > 0
-                    ? "Bulk Design mode automatically uses Design 1 as the parent fallback image. You can leave this section as-is."
-                    : "Upload the primary image shown on product cards."
-                }
+                subtitle="Upload the primary image shown on product cards."
               >
                 <UploadBox
                   uploading={uploadingMain}
@@ -5089,7 +3036,7 @@ function asFaqs(value: unknown): Faq[] {
 
               <Panel
                 title="NCS Smart Product Studio"
-                subtitle="Take or upload a product photo and generate a premium e-commerce image with NCS Cloud AI first. If Cloud AI is unavailable, the on-device MODNet/BEN2 catalog engine runs automatically as backup. Existing stock, barcode, offline pricing and online stock rules stay untouched."
+                subtitle="Take or upload a product photo, choose an NCS premium background and generate the enhanced e-commerce image directly inside this page. The free external-AI prompt/import path remains available only as a backup. Existing stock, barcode, offline pricing and online stock rules stay untouched."
               >
                 <div style={photoStudioHeaderActionsStyle}>
                   <button
@@ -5223,10 +3170,10 @@ function asFaqs(value: unknown): Faq[] {
                       ✨ Generate Premium Photo Directly
                     </strong>
                     <p style={photoStudioDirectTextStyle}>
-                      One-click premium product generation. NCS Cloud AI is tried first for a true boutique-style e-commerce result; if cloud generation is unavailable, the on-device MODNet/BEN2 engine creates a safe catalog fallback while preserving the original garment pixels.
+                      Runs the free background-removal model in your browser, keeps the original product pixels, auto-crops and centers the product, adds a premium NCS preset background and creates a 1200 × 1500 WEBP image.
                     </p>
                     <small style={photoStudioDirectSmallStyle}>
-                      MAIN – NCS World-Class Catalog uses a light luxury boutique scene with soft top light, blurred clothing displays and a clean premium retail depth. No manual prompt or import step is required.
+                      First run may take longer while the browser loads the local AI model. If direct generation cannot run on a device, use the free AI prompt/import backup below.
                     </small>
                   </div>
 
@@ -5260,6 +3207,54 @@ function asFaqs(value: unknown): Faq[] {
                   </button>
                 </div>
 
+                <div style={photoStudioBackupLabelStyle}>
+                  Backup — External Free AI
+                </div>
+
+                <div style={photoStudioPromptCardStyle}>
+                  <div style={photoStudioPromptHeaderStyle}>
+                    <div>
+                      <strong style={photoStudioPromptTitleStyle}>
+                        Backup Free AI Studio Prompt
+                      </strong>
+                      <p style={photoStudioPromptTextStyle}>
+                        Use this only if direct generation is unavailable or you want a model/lifestyle-style result from another free AI app. Copy the prompt, upload the selected source image there, then import the result back here.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={copyPhotoStudioPrompt}
+                      style={photoStudioPrimaryButtonStyle}
+                    >
+                      Copy Prompt
+                    </button>
+                  </div>
+
+                  <textarea
+                    value={photoStudioPrompt}
+                    readOnly
+                    style={photoStudioPromptTextareaStyle}
+                  />
+                </div>
+
+                <div style={photoStudioImportBoxStyle}>
+                  <strong style={photoStudioPromptTitleStyle}>
+                    Import Enhanced Result
+                  </strong>
+                  <p style={photoStudioPromptTextStyle}>
+                    After generating in any free AI app, upload the enhanced image here and then set it as the product main image, gallery image or lifestyle image.
+                  </p>
+
+                  <UploadBox
+                    uploading={uploadingStudioEnhanced}
+                    label="⬆ Import Enhanced AI Result"
+                    description="Upload the premium image generated in any AI app"
+                    multiple={false}
+                    onChange={importPhotoStudioEnhancedResult}
+                  />
+                </div>
+
                 {(selectedPhotoStudioSourceImage || photoStudioEnhancedImage) && (
                   <div style={photoStudioCompareGridStyle}>
                     <div style={photoStudioCompareCardStyle}>
@@ -5284,7 +3279,7 @@ function asFaqs(value: unknown): Faq[] {
                           style={photoStudioCompareImageStyle}
                         />
                       ) : (
-                        <div style={photoStudioEmptyPreviewStyle}>Premium result will appear here</div>
+                        <div style={photoStudioEmptyPreviewStyle}>Import enhanced result here</div>
                       )}
                     </div>
                   </div>
@@ -7725,235 +5720,6 @@ const photoStudioMiniDangerButtonStyle: CSSProperties = {
   fontWeight: 800,
   cursor: "pointer",
   fontSize: "11px",
-};
-
-const bulkStockResultRowStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr) auto",
-  gap: "10px",
-  alignItems: "stretch",
-};
-
-const bulkStockResultLinkStyle: CSSProperties = {
-  width: "100%",
-  minWidth: 0,
-  border: "none",
-  background: "transparent",
-  color: "inherit",
-  padding: 0,
-  textAlign: "left",
-  cursor: "pointer",
-  display: "grid",
-  gridTemplateColumns: "56px minmax(0, 1fr) auto",
-  gap: "12px",
-  alignItems: "center",
-};
-
-const bulkSelectButtonStyle: CSSProperties = {
-  minWidth: "92px",
-  border: "1px solid #D6B75B",
-  borderRadius: "12px",
-  background: "#FFFDF5",
-  color: "#0A2E73",
-  fontWeight: 800,
-  padding: "10px 12px",
-  cursor: "pointer",
-};
-
-const bulkSelectButtonActiveStyle: CSSProperties = {
-  background: "#0A2E73",
-  color: "#FFFFFF",
-  borderColor: "#0A2E73",
-};
-
-const bulkStartBarStyle: CSSProperties = {
-  marginTop: "14px",
-  padding: "14px",
-  borderRadius: "14px",
-  border: "1px solid rgba(212,175,55,0.70)",
-  background: "linear-gradient(135deg, #FFFDF7, #F7F0DB)",
-  display: "flex",
-  gap: "14px",
-  justifyContent: "space-between",
-  alignItems: "center",
-  flexWrap: "wrap",
-};
-
-const bulkStartButtonStyle: CSSProperties = {
-  border: "none",
-  borderRadius: "12px",
-  background: "#0A2E73",
-  color: "#FFFFFF",
-  fontWeight: 900,
-  padding: "12px 16px",
-  cursor: "pointer",
-};
-
-const bulkInstructionStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: "8px 16px",
-  marginBottom: "14px",
-  padding: "12px 14px",
-  borderRadius: "12px",
-  background: "#F7F9FD",
-  color: "#17345E",
-  fontSize: "13px",
-};
-
-const bulkToolbarStyle: CSSProperties = {
-  display: "flex",
-  gap: "10px",
-  flexWrap: "wrap",
-  margin: "14px 0",
-};
-
-const bulkAiButtonStyle: CSSProperties = {
-  border: "none",
-  borderRadius: "12px",
-  background: "linear-gradient(135deg, #0A2E73, #174FA7)",
-  color: "#FFFFFF",
-  fontWeight: 900,
-  padding: "12px 16px",
-  cursor: "pointer",
-};
-
-const bulkCancelButtonStyle: CSSProperties = {
-  border: "1px solid #D1D5DB",
-  borderRadius: "12px",
-  background: "#FFFFFF",
-  color: "#6B7280",
-  fontWeight: 800,
-  padding: "12px 16px",
-  cursor: "pointer",
-};
-
-const bulkDesignGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(245px, 1fr))",
-  gap: "14px",
-};
-
-const bulkDesignCardStyle: CSSProperties = {
-  border: "1px solid #E4D39A",
-  borderRadius: "16px",
-  background: "#FFFFFF",
-  padding: "12px",
-  boxShadow: "0 10px 28px rgba(10,46,115,0.06)",
-};
-
-const bulkDesignOrderStyle: CSSProperties = {
-  color: "#B28716",
-  fontSize: "11px",
-  fontWeight: 900,
-  letterSpacing: "0.08em",
-  marginBottom: "8px",
-};
-
-const bulkDesignImageBoxStyle: CSSProperties = {
-  width: "100%",
-  aspectRatio: "4 / 5",
-  borderRadius: "12px",
-  overflow: "hidden",
-  background: "#F5F7FA",
-  border: "1px solid #E5E7EB",
-};
-
-const bulkDesignImageStyle: CSSProperties = {
-  width: "100%",
-  height: "100%",
-  objectFit: "contain",
-  display: "block",
-};
-
-const bulkDesignEmptyStyle: CSSProperties = {
-  width: "100%",
-  height: "100%",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: "8px",
-  color: "#6B7280",
-  fontSize: "30px",
-};
-
-const bulkBarcodeBadgeStyle: CSSProperties = {
-  marginTop: "10px",
-  borderRadius: "10px",
-  background: "#0A2E73",
-  color: "#FFFFFF",
-  padding: "8px 10px",
-  fontSize: "12px",
-  fontWeight: 900,
-  letterSpacing: "0.03em",
-  wordBreak: "break-all",
-};
-
-const bulkMetaStyle: CSSProperties = {
-  display: "grid",
-  gap: "5px",
-  margin: "10px 0",
-  color: "#4B5563",
-  fontSize: "12px",
-};
-
-const bulkAiStateStyle: CSSProperties = {
-  minHeight: "18px",
-  marginTop: "6px",
-  color: "#6B7280",
-  fontSize: "11px",
-  fontWeight: 700,
-};
-
-const bulkOnlineRowStyle: CSSProperties = {
-  marginTop: "12px",
-  paddingTop: "10px",
-  borderTop: "1px solid #EEF0F4",
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "10px",
-  flexWrap: "wrap",
-};
-
-const bulkCheckboxLabelStyle: CSSProperties = {
-  display: "flex",
-  gap: "7px",
-  alignItems: "center",
-  color: "#0A2E73",
-  fontSize: "12px",
-  fontWeight: 800,
-};
-
-const bulkQtyLabelStyle: CSSProperties = {
-  display: "flex",
-  gap: "7px",
-  alignItems: "center",
-  color: "#4B5563",
-  fontSize: "12px",
-  fontWeight: 700,
-};
-
-const bulkQtyInputStyle: CSSProperties = {
-  width: "72px",
-  border: "1px solid #D1D5DB",
-  borderRadius: "8px",
-  padding: "7px 8px",
-  color: "#111827",
-  background: "#FFFFFF",
-  fontWeight: 800,
-};
-
-const bulkSafetyNoteStyle: CSSProperties = {
-  marginTop: "14px",
-  padding: "12px 14px",
-  borderRadius: "12px",
-  border: "1px solid #A7D7B5",
-  background: "#F0FFF4",
-  color: "#116530",
-  fontSize: "12px",
-  fontWeight: 800,
 };
 
 const saveProductButtonStyle: CSSProperties = {
