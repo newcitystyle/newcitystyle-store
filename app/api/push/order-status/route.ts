@@ -12,7 +12,8 @@ type Payload = {
 
 type OrderRow = {
   id: number;
-  user_id?: string | null;
+  email?: string | null;
+  phone?: string | null;
   order_status?: string | null;
   status?: string | null;
   courier_name?: string | null;
@@ -30,6 +31,14 @@ type PushRow = {
 
 function clean(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function normalizeEmail(value: unknown) {
+  return clean(value).toLowerCase();
+}
+
+function normalizePhone(value: unknown) {
+  return clean(value).replace(/\D/g, "").slice(-10);
 }
 
 function normalizeStatus(value: unknown) {
@@ -130,6 +139,42 @@ function orderBody(order: OrderRow, status: string) {
   return `Order #${order.id} status updated to ${status}.`;
 }
 
+async function loadSubscriptionsForOrder(
+  supabase: ReturnType<typeof createServerSupabase>,
+  order: OrderRow
+) {
+  const email = normalizeEmail(order.email);
+  const phone = normalizePhone(order.phone);
+
+  if (email) {
+    const { data, error } = await supabase
+      .from("customer_push_subscriptions")
+      .select("id,endpoint,p256dh,auth,failure_count")
+      .eq("is_active", true)
+      .eq("user_email", email);
+
+    if (error) throw error;
+
+    if ((data || []).length > 0) {
+      return (data || []) as PushRow[];
+    }
+  }
+
+  if (phone) {
+    const { data, error } = await supabase
+      .from("customer_push_subscriptions")
+      .select("id,endpoint,p256dh,auth,failure_count")
+      .eq("is_active", true)
+      .eq("user_phone", phone);
+
+    if (error) throw error;
+
+    return (data || []) as PushRow[];
+  }
+
+  return [] as PushRow[];
+}
+
 async function sendOrderPush(orderId: number, requestedStatus: string) {
   configureWebPush();
 
@@ -139,7 +184,7 @@ async function sendOrderPush(orderId: number, requestedStatus: string) {
     await supabase
       .from("orders")
       .select(
-        "id,user_id,order_status,status,courier_name,tracking_id,expected_delivery_date"
+        "id,email,phone,order_status,status,courier_name,tracking_id,expected_delivery_date"
       )
       .eq("id", orderId)
       .single<OrderRow>();
@@ -171,31 +216,19 @@ async function sendOrderPush(orderId: number, requestedStatus: string) {
     );
   }
 
-  if (!order.user_id) {
-    return NextResponse.json({
-      success: true,
-      skipped: true,
-      reason:
-        "This order is not linked to an authenticated customer user_id.",
-    });
-  }
-
-  const { data: subscriptions, error: subscriptionError } =
-    await supabase
-      .from("customer_push_subscriptions")
-      .select("id,endpoint,p256dh,auth,failure_count")
-      .eq("user_id", order.user_id)
-      .eq("is_active", true);
-
-  if (subscriptionError) throw subscriptionError;
-
-  const rows = (subscriptions || []) as PushRow[];
+  const rows = await loadSubscriptionsForOrder(
+    supabase,
+    order
+  );
 
   if (rows.length === 0) {
     return NextResponse.json({
       success: true,
       skipped: true,
-      reason: "No active customer push subscriptions.",
+      orderId,
+      status: requestedStatus,
+      reason:
+        "No active customer push subscription matched this order email/phone.",
     });
   }
 
@@ -240,6 +273,7 @@ async function sendOrderPush(orderId: number, requestedStatus: string) {
           last_success_at: new Date().toISOString(),
           last_error: null,
           failure_count: 0,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", row.id);
     } catch (error: unknown) {
@@ -269,6 +303,7 @@ async function sendOrderPush(orderId: number, requestedStatus: string) {
           last_error: message.slice(0, 1000),
           failure_count:
             Number(row.failure_count || 0) + 1,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", row.id);
     }
@@ -340,12 +375,9 @@ export async function GET(request: NextRequest) {
     const testMode = url.searchParams.get("test");
 
     /*
-     * TEMPORARY ONE-ORDER PUSH TEST
-     * -----------------------------
-     * Restricted to historical Order #12 + Delivered.
-     * Does NOT change order, stock, POS, payment, or WhatsApp.
-     * It only attempts Web Push delivery to existing active subscriptions.
-     * Remove this branch after runtime verification.
+     * TEMPORARY ORDER #12 PUSH-ONLY TEST.
+     * Does not update order status, stock, payment, POS or WhatsApp.
+     * Remove after runtime verification.
      */
     if (testMode === "order12") {
       return await sendOrderPush(12, "Delivered");

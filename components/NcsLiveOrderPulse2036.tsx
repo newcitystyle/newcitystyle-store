@@ -32,6 +32,14 @@ function detectPlatform() {
   return "web";
 }
 
+function normalizeEmail(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizePhone(value: unknown) {
+  return String(value ?? "").replace(/\D/g, "").slice(-10);
+}
+
 export default function NcsLiveOrderPulse2036() {
   const [state, setState] = useState<PulseState>("idle");
   const [detail, setDetail] = useState("");
@@ -81,7 +89,13 @@ export default function NcsLiveOrderPulse2036() {
       await registration.pushManager.getSubscription();
 
     if (subscription) {
-      await persistSubscription(subscription, user.id);
+      await persistSubscription(
+        subscription,
+        user.id,
+        user.email,
+        user.phone
+      );
+
       setState("enabled");
       setDetail("Live Order Pulse is active on this device.");
       return;
@@ -93,7 +107,9 @@ export default function NcsLiveOrderPulse2036() {
 
   async function persistSubscription(
     subscription: PushSubscription,
-    userId: string
+    userId: string,
+    userEmail?: string | null,
+    userPhone?: string | null
   ) {
     const raw = subscription.toJSON();
 
@@ -110,14 +126,18 @@ export default function NcsLiveOrderPulse2036() {
       .upsert(
         {
           user_id: userId,
+          user_email: normalizeEmail(userEmail) || null,
+          user_phone: normalizePhone(userPhone) || null,
           endpoint,
           p256dh,
           auth,
           user_agent: navigator.userAgent,
           platform: detectPlatform(),
           is_active: true,
+          failure_count: 0,
           last_seen_at: new Date().toISOString(),
           last_error: null,
+          updated_at: new Date().toISOString(),
         },
         {
           onConflict: "endpoint",
@@ -176,7 +196,12 @@ export default function NcsLiveOrderPulse2036() {
           });
       }
 
-      await persistSubscription(subscription, user.id);
+      await persistSubscription(
+        subscription,
+        user.id,
+        user.email,
+        user.phone
+      );
 
       setState("enabled");
       setDetail(
