@@ -850,6 +850,55 @@ export default function PaymentPage() {
     }
   }
 
+  async function syncPaidWebOrderToPos({
+    orderId,
+    razorpayOrderId,
+    razorpayPaymentId,
+  }: {
+    orderId: string | number;
+    razorpayOrderId?: string | null;
+    razorpayPaymentId: string;
+  }) {
+    const response = await fetch("/api/orders/auto-pos", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        orderId: String(orderId),
+        razorpayOrderId: razorpayOrderId || null,
+        razorpayPaymentId,
+        sendWhatsApp: true,
+      }),
+    });
+
+    const result = (await response.json()) as {
+      success?: boolean;
+      duplicate?: boolean;
+      invoiceNumber?: string;
+      whatsappSent?: boolean;
+      whatsappMessageId?: string | null;
+      warning?: string | null;
+      error?: string;
+    };
+
+    if (!response.ok || result.success !== true) {
+      throw new Error(
+        result.error ||
+          "Paid order was saved, but Auto POS sync could not be completed."
+      );
+    }
+
+    if (result.whatsappSent === false && result.warning) {
+      console.info(
+        "V9 Auto POS completed; WhatsApp will retry on the next safe sync:",
+        result.warning
+      );
+    }
+
+    return result;
+  }
+
   async function decrementPurchasedStock(items: CartItem[]) {
     /*
      * Online order stock rule:
@@ -1146,6 +1195,19 @@ export default function PaymentPage() {
       if (existingOrderError) throw existingOrderError;
 
       if (existingOrder?.id) {
+        try {
+          await syncPaidWebOrderToPos({
+            orderId: existingOrder.id,
+            razorpayOrderId: razorpayOrderId || null,
+            razorpayPaymentId,
+          });
+        } catch (autoPosError) {
+          console.error(
+            "Existing paid order Auto POS retry failed:",
+            autoPosError
+          );
+        }
+
         localStorage.setItem(
           "new-city-style-last-order-id",
           String(existingOrder.id)
@@ -1206,6 +1268,25 @@ export default function PaymentPage() {
       alert(
         `Order #${data.id} was created, but stock sync needs attention. Please check Admin Orders.`
       );
+    }
+
+    if (
+      paymentStatus === "Paid" &&
+      razorpayPaymentId &&
+      data?.id
+    ) {
+      try {
+        await syncPaidWebOrderToPos({
+          orderId: data.id,
+          razorpayOrderId: razorpayOrderId || null,
+          razorpayPaymentId,
+        });
+      } catch (autoPosError) {
+        console.error(
+          "Paid web order saved, but V9 Auto POS sync needs retry:",
+          autoPosError
+        );
+      }
     }
 
     const { error: cartError } =
