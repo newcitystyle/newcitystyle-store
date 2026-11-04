@@ -187,6 +187,12 @@ function getPaymentStatus(purchase: PurchaseRow) {
 
 export default function PurchaseHistoryPage() {
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
+  const [onlineLedgerStats, setOnlineLedgerStats] = useState<{
+    totalPurchase: number;
+    totalPaid: number;
+    totalDue: number;
+    dueSuppliers: number;
+  } | null>(null);
   const [itemsByPurchase, setItemsByPurchase] = useState<
     Record<string, PurchaseItemRow[]>
   >({});
@@ -484,6 +490,69 @@ export default function PurchaseHistoryPage() {
       totalDue,
       dueSuppliers,
     };
+  }, [purchases]);
+
+  // Match the supplier-account summary used by /admin/suppliers.
+  // Read-only: no supplier, payment, stock, or purchase records are changed.
+  useEffect(() => {
+    let active = true;
+    async function refreshAccountSummary() {
+      const [supplierResult, paymentResult] = await Promise.all([
+        supabase.from("suppliers").select("id,is_active,current_balance"),
+        supabase.from("supplier_payments").select("supplier_id,amount"),
+      ]);
+      if (!active) return;
+      if (supplierResult.error || paymentResult.error) {
+        setOnlineLedgerStats(null);
+        return;
+      }
+      const supplierRows = (supplierResult.data || []).filter(
+        (supplier) => supplier.is_active !== false,
+      );
+      const paymentRows = paymentResult.data || [];
+      let totalPurchase = 0;
+      let totalPaid = 0;
+      let totalDue = 0;
+      let dueSuppliers = 0;
+
+      for (const supplier of supplierRows) {
+        const matchingPurchases = purchases.filter(
+          (purchase) => Number(purchase.supplier_id) === Number(supplier.id),
+        );
+        const purchaseValue = matchingPurchases.reduce(
+          (sum, purchase) => sum + toNumber(purchase.total_amount), 0,
+        );
+        const purchasePaid = matchingPurchases.reduce(
+          (sum, purchase) => sum + toNumber(purchase.paid_amount), 0,
+        );
+        const purchaseDue = matchingPurchases.reduce(
+          (sum, purchase) => sum + toNumber(purchase.due_amount), 0,
+        );
+        const recordedPayments = paymentRows
+          .filter((payment) => Number(payment.supplier_id) === Number(supplier.id))
+          .reduce((sum, payment) => sum + Math.max(0, toNumber(payment.amount)), 0);
+        const hasBalance = supplier.current_balance !== null &&
+          supplier.current_balance !== undefined &&
+          String(supplier.current_balance).trim() !== "";
+        const balance = hasBalance
+          ? Math.max(0, toNumber(supplier.current_balance))
+          : purchaseDue;
+        const derivedPaid = Math.max(0,
+          Math.min(purchaseValue, purchaseValue - balance));
+        const paid = Math.max(purchasePaid, recordedPayments, derivedPaid);
+        totalPurchase += purchaseValue;
+        totalPaid += paid;
+        totalDue += balance;
+        if (balance > 0) dueSuppliers += 1;
+      }
+      if (active) setOnlineLedgerStats({
+        totalPurchase, totalPaid, totalDue, dueSuppliers,
+      });
+    }
+    refreshAccountSummary().catch(() => {
+      if (active) setOnlineLedgerStats(null);
+    });
+    return () => { active = false; };
   }, [purchases]);
 
   async function recordDuePayment() {
@@ -1611,22 +1680,22 @@ window.setTimeout(() => setNotice(""), 4500);
 
         <article>
           <span>Purchase Value</span>
-          <strong>{formatCurrency(statistics.totalPurchase)}</strong>
+          <strong>{formatCurrency(onlineLedgerStats?.totalPurchase ?? statistics.totalPurchase)}</strong>
         </article>
 
         <article>
           <span>Total Paid</span>
-          <strong>{formatCurrency(statistics.totalPaid)}</strong>
+          <strong>{formatCurrency(onlineLedgerStats?.totalPaid ?? statistics.totalPaid)}</strong>
         </article>
 
         <article>
           <span>Total Supplier Due</span>
-          <strong>{formatCurrency(statistics.totalDue)}</strong>
+          <strong>{formatCurrency(onlineLedgerStats?.totalDue ?? statistics.totalDue)}</strong>
         </article>
 
         <article>
           <span>Suppliers With Due</span>
-          <strong>{statistics.dueSuppliers}</strong>
+          <strong>{onlineLedgerStats?.dueSuppliers ?? statistics.dueSuppliers}</strong>
         </article>
       </section>
 
