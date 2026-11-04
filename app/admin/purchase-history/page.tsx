@@ -193,6 +193,16 @@ export default function PurchaseHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  // Supplier ledger summary only; never changes bills, sync, or payment data.
+  const [supplierLedgerStatsV413, setSupplierLedgerStatsV413] = useState<{
+    totalPaid: number;
+    totalDue: number;
+    dueSuppliers: number;
+  } | null>(null);
+  const [supplierLedgerStatusV413, setSupplierLedgerStatusV413] = useState<
+    "loading" | "ready" | "unavailable"
+  >("loading");
+
   const [notice, setNotice] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -485,6 +495,82 @@ export default function PurchaseHistoryPage() {
       dueSuppliers,
     };
   }, [purchases]);
+
+  // Reuse the exact supplier balance method used by the existing
+  // /admin/suppliers screen. Do not add a new server API or change sync routes.
+  useEffect(() => {
+    if (loading || errorMessage || purchases.length === 0) {
+      setSupplierLedgerStatsV413(null);
+      setSupplierLedgerStatusV413(loading ? "loading" : "unavailable");
+      return;
+    }
+    let active = true;
+    setSupplierLedgerStatusV413("loading");
+    const readSupplierLedgerV413 = async () => {
+      try {
+        const supplierResponse = await supabase
+          .from("suppliers")
+          .select("id,is_active,current_balance");
+        if (supplierResponse.error) throw supplierResponse.error;
+        const paymentResponse = await supabase
+          .from("supplier_payments")
+          .select("supplier_id,amount");
+        if (paymentResponse.error) throw paymentResponse.error;
+
+        const suppliers = (supplierResponse.data || []).filter(
+          (row) => row.is_active !== false
+        );
+        const payments = paymentResponse.data || [];
+
+        let totalPaid = 0;
+        let totalDue = 0;
+        let dueSuppliers = 0;
+        for (const supplier of suppliers) {
+          const supplierPurchases = purchases.filter(
+            (purchase) => Number(purchase.supplier_id) === Number(supplier.id)
+          );
+          const totalPurchase = supplierPurchases.reduce(
+            (sum, purchase) => sum + toNumber(purchase.total_amount), 0
+          );
+          const purchasePaid = supplierPurchases.reduce(
+            (sum, purchase) => sum + toNumber(purchase.paid_amount), 0
+          );
+          const purchaseDue = supplierPurchases.reduce(
+            (sum, purchase) => sum + toNumber(purchase.due_amount), 0
+          );
+          const recordedPayments = payments
+            .filter((payment) => Number(payment.supplier_id) === Number(supplier.id))
+            .reduce((sum, payment) => sum + toNumber(payment.amount), 0);
+          const hasStoredBalance =
+            supplier.current_balance !== null &&
+            supplier.current_balance !== undefined &&
+            String(supplier.current_balance).trim() !== "";
+          const currentBalance = hasStoredBalance
+            ? Math.max(0, toNumber(supplier.current_balance))
+            : purchaseDue;
+          const balanceDerivedPaid = Math.max(
+            0, Math.min(totalPurchase, totalPurchase - currentBalance)
+          );
+          totalPaid += Math.max(purchasePaid, recordedPayments, balanceDerivedPaid);
+          totalDue += currentBalance;
+          if (currentBalance > 0) dueSuppliers++;
+        }
+        if (!active) return;
+        // These totals are a supplier-wide account summary, not payment
+        // allocations to individual historical purchase invoices.
+        setSupplierLedgerStatsV413({ totalPaid, totalDue, dueSuppliers });
+        setSupplierLedgerStatusV413("ready");
+      } catch (error) {
+        console.warn("Supplier ledger summary unavailable:", error);
+        if (active) {
+          setSupplierLedgerStatsV413(null);
+          setSupplierLedgerStatusV413("unavailable");
+        }
+      }
+    };
+    void readSupplierLedgerV413();
+    return () => { active = false; };
+  }, [loading, errorMessage, purchases]);
 
   async function recordDuePayment() {
     if (!selectedPurchase || !selectedPurchase.supplier_id) return;
@@ -1616,17 +1702,17 @@ window.setTimeout(() => setNotice(""), 4500);
 
         <article>
           <span>Total Paid</span>
-          <strong>{formatCurrency(statistics.totalPaid)}</strong>
+          <strong>{supplierLedgerStatusV413 === "ready" && supplierLedgerStatsV413 ? formatCurrency(supplierLedgerStatsV413.totalPaid) : "Ledger unavailable"}</strong>
         </article>
 
         <article>
           <span>Total Supplier Due</span>
-          <strong>{formatCurrency(statistics.totalDue)}</strong>
+          <strong>{supplierLedgerStatusV413 === "ready" && supplierLedgerStatsV413 ? formatCurrency(supplierLedgerStatsV413.totalDue) : "Ledger unavailable"}</strong>
         </article>
 
         <article>
           <span>Suppliers With Due</span>
-          <strong>{statistics.dueSuppliers}</strong>
+          <strong>{supplierLedgerStatusV413 === "ready" && supplierLedgerStatsV413 ? supplierLedgerStatsV413.dueSuppliers : "—"}</strong>
         </article>
       </section>
 
