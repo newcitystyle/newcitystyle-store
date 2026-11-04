@@ -8,6 +8,23 @@ import {
   useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
+
+// Use a project-direct read client only when the configured API endpoint fails.
+// This preserves existing write flows and shares the admin session storage key.
+function directReadClient() {
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!key) return supabase;
+  return createClient("https://uskpoaszucenqxlzgmcy.supabase.co", key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: "new-city-style-admin-session",
+    },
+  });
+}
+
 
 type PurchaseRow = {
   id: string;
@@ -300,7 +317,7 @@ export default function PurchaseHistoryPage() {
     setErrorMessage("");
 
     try {
-      const { data: purchaseData, error: purchaseError } = await supabase
+      const originalPurchases = await supabase
         .from("purchases")
         .select("*")
         .is("deleted_at", null)
@@ -308,14 +325,32 @@ export default function PurchaseHistoryPage() {
         .order("purchase_date", { ascending: false })
         .order("created_at", { ascending: false });
 
-      if (purchaseError) throw purchaseError;
+      let purchaseData = originalPurchases.data;
+      if (originalPurchases.error) {
+        const directPurchases = await directReadClient()
+          .from("purchases")
+          .select("*")
+          .is("deleted_at", null)
+          .neq("purchase_status", "deleted")
+          .order("purchase_date", { ascending: false })
+          .order("created_at", { ascending: false });
+        if (directPurchases.error) throw directPurchases.error;
+        purchaseData = directPurchases.data;
+      }
 
-      const { data: itemData, error: itemError } = await supabase
+      const originalItems = await supabase
         .from("purchase_items")
         .select("*")
         .order("created_at", { ascending: true });
-
-      if (itemError) throw itemError;
+      let itemData = originalItems.data;
+      if (originalItems.error) {
+        const directItems = await directReadClient()
+          .from("purchase_items")
+          .select("*")
+          .order("created_at", { ascending: true });
+        if (directItems.error) throw directItems.error;
+        itemData = directItems.data;
+      }
 
       const rawPurchaseRows = (
         (purchaseData || []) as unknown as PurchaseRow[]
@@ -393,7 +428,9 @@ export default function PurchaseHistoryPage() {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Unable to load purchase history.",
+          : error && typeof error === "object" && "message" in error
+            ? String(error.message)
+            : "Unable to load purchase history.",
       );
     } finally {
       setLoading(false);
@@ -503,15 +540,24 @@ export default function PurchaseHistoryPage() {
     }
     let active = true;
     async function refreshAccountSummary() {
-      const supplierResult = await supabase
+      let supplierResult = await supabase
         .from("suppliers")
         .select("id,is_active,current_balance");
+      if (!active) return;
+      if (supplierResult.error) {
+        supplierResult = await directReadClient()
+          .from("suppliers").select("id,is_active,current_balance");
+      }
       if (!active || supplierResult.error) return;
-      const paymentResult = await supabase
+      let paymentResult = await supabase
         .from("supplier_payments")
         .select("supplier_id,amount");
       if (!active) return;
-      if (supplierResult.error || paymentResult.error) {
+      if (paymentResult.error) {
+        paymentResult = await directReadClient()
+          .from("supplier_payments").select("supplier_id,amount");
+      }
+      if (!active || paymentResult.error) {
         setOnlineLedgerStats(null);
         return;
       }
