@@ -495,12 +495,21 @@ export default function PurchaseHistoryPage() {
   // Match the supplier-account summary used by /admin/suppliers.
   // Read-only: no supplier, payment, stock, or purchase records are changed.
   useEffect(() => {
+    // Load the purchase list first. Secondary supplier reads must never compete
+    // with, block, or alter the purchase history loader.
+    if (loading || errorMessage || purchases.length === 0) {
+      setOnlineLedgerStats(null);
+      return;
+    }
     let active = true;
     async function refreshAccountSummary() {
-      const [supplierResult, paymentResult] = await Promise.all([
-        supabase.from("suppliers").select("id,is_active,current_balance"),
-        supabase.from("supplier_payments").select("supplier_id,amount"),
-      ]);
+      const supplierResult = await supabase
+        .from("suppliers")
+        .select("id,is_active,current_balance");
+      if (!active || supplierResult.error) return;
+      const paymentResult = await supabase
+        .from("supplier_payments")
+        .select("supplier_id,amount");
       if (!active) return;
       if (supplierResult.error || paymentResult.error) {
         setOnlineLedgerStats(null);
@@ -553,7 +562,7 @@ export default function PurchaseHistoryPage() {
       if (active) setOnlineLedgerStats(null);
     });
     return () => { active = false; };
-  }, [purchases]);
+  }, [loading, errorMessage, purchases]);
 
   async function recordDuePayment() {
     if (!selectedPurchase || !selectedPurchase.supplier_id) return;
