@@ -529,82 +529,45 @@ export default function PurchaseHistoryPage() {
     };
   }, [purchases]);
 
-  // Match the supplier-account summary used by /admin/suppliers.
-  // Read-only: no supplier, payment, stock, or purchase records are changed.
+  // Read the same verified V69 account summary as Desktop, after purchases load.
+  // This endpoint validates the owner session; no browser-visible service key.
   useEffect(() => {
-    // Load the purchase list first. Secondary supplier reads must never compete
-    // with, block, or alter the purchase history loader.
     if (loading || errorMessage || purchases.length === 0) {
       setOnlineLedgerStats(null);
       return;
     }
     let active = true;
     async function refreshAccountSummary() {
-      let supplierResult = await supabase
-        .from("suppliers")
-        .select("id,is_active,current_balance");
-      if (!active) return;
-      if (supplierResult.error) {
-        supplierResult = await directReadClient()
-          .from("suppliers").select("id,is_active,current_balance");
-      }
-      if (!active || supplierResult.error) return;
-      let paymentResult = await supabase
-        .from("supplier_payments")
-        .select("supplier_id,amount");
-      if (!active) return;
-      if (paymentResult.error) {
-        paymentResult = await directReadClient()
-          .from("supplier_payments").select("supplier_id,amount");
-      }
-      if (!active || paymentResult.error) {
-        setOnlineLedgerStats(null);
-        return;
-      }
-      const supplierRows = (supplierResult.data || []).filter(
-        (supplier) => supplier.is_active !== false,
-      );
-      const paymentRows = paymentResult.data || [];
-      let totalPurchase = 0;
-      let totalPaid = 0;
-      let totalDue = 0;
-      let dueSuppliers = 0;
+      const { data: { session }, error: authError } =
+        await supabase.auth.getSession();
+      if (!active || authError || !session?.access_token) return;
 
-      for (const supplier of supplierRows) {
-        const matchingPurchases = purchases.filter(
-          (purchase) => Number(purchase.supplier_id) === Number(supplier.id),
-        );
-        const purchaseValue = matchingPurchases.reduce(
-          (sum, purchase) => sum + toNumber(purchase.total_amount), 0,
-        );
-        const purchasePaid = matchingPurchases.reduce(
-          (sum, purchase) => sum + toNumber(purchase.paid_amount), 0,
-        );
-        const purchaseDue = matchingPurchases.reduce(
-          (sum, purchase) => sum + toNumber(purchase.due_amount), 0,
-        );
-        const recordedPayments = paymentRows
-          .filter((payment) => Number(payment.supplier_id) === Number(supplier.id))
-          .reduce((sum, payment) => sum + Math.max(0, toNumber(payment.amount)), 0);
-        const hasBalance = supplier.current_balance !== null &&
-          supplier.current_balance !== undefined &&
-          String(supplier.current_balance).trim() !== "";
-        const balance = hasBalance
-          ? Math.max(0, toNumber(supplier.current_balance))
-          : purchaseDue;
-        const derivedPaid = Math.max(0,
-          Math.min(purchaseValue, purchaseValue - balance));
-        const paid = Math.max(purchasePaid, recordedPayments, derivedPaid);
-        totalPurchase += purchaseValue;
-        totalPaid += paid;
-        totalDue += balance;
-        if (balance > 0) dueSuppliers += 1;
-      }
+      const response = await fetch("/api/admin/ncs-v69-purchase-summary", {
+        method: "GET",
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!active || !response.ok) return;
+      const result = await response.json() as {
+        ok?: boolean;
+        totalPurchase?: number;
+        totalPaid?: number;
+        totalDue?: number;
+        dueSuppliers?: number;
+      };
+      if (!result.ok ||
+          ![result.totalPurchase, result.totalPaid, result.totalDue,
+            result.dueSuppliers].every(
+              (value) => typeof value === "number" && Number.isFinite(value)
+            )) return;
       if (active) setOnlineLedgerStats({
-        totalPurchase, totalPaid, totalDue, dueSuppliers,
+        totalPurchase: result.totalPurchase!,
+        totalPaid: result.totalPaid!,
+        totalDue: result.totalDue!,
+        dueSuppliers: result.dueSuppliers!,
       });
     }
-    refreshAccountSummary().catch(() => {
+    void refreshAccountSummary().catch(() => {
       if (active) setOnlineLedgerStats(null);
     });
     return () => { active = false; };
