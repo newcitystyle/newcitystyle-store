@@ -193,6 +193,15 @@ export default function PurchaseHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  // Separate supplier account summary (V69). Invoice records remain unchanged.
+  const [ledgerTotalsV414, setLedgerTotalsV414] = useState<{
+    totalPurchase: number;
+    totalPaid: number;
+    totalDue: number;
+    dueSuppliers: number;
+  } | null>(null);
+  const [ledgerErrorV414, setLedgerErrorV414] = useState("");
+
   const [notice, setNotice] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -485,6 +494,62 @@ export default function PurchaseHistoryPage() {
       dueSuppliers,
     };
   }, [purchases]);
+
+  useEffect(() => {
+    // Never issue a ledger request until normal purchase data has loaded.
+    if (loading || errorMessage || purchases.length === 0) {
+      setLedgerTotalsV414(null);
+      setLedgerErrorV414("");
+      return;
+    }
+    let active = true;
+    const readV69Ledger = async () => {
+      try {
+        const { data: { session }, error: sessionError } =
+          await supabase.auth.getSession();
+        if (!active) return;
+        if (sessionError || !session?.access_token) {
+          throw new Error("Please sign in to view V69 supplier totals");
+        }
+        const response = await fetch("/api/admin/ncs-v414-v69-ledger-summary", {
+          method: "GET",
+          cache: "no-store",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const data = await response.json() as {
+          ok?: boolean;
+          source?: string;
+          error?: string;
+          totalPurchase?: number;
+          totalPaid?: number;
+          totalDue?: number;
+          dueSuppliers?: number;
+        };
+        if (!response.ok || data.ok !== true ||
+            data.source !== "SUPABASE_ACCOUNTS_V69" ||
+            ![data.totalPurchase, data.totalPaid, data.totalDue, data.dueSuppliers]
+              .every(v => typeof v === "number" && Number.isFinite(v))) {
+          throw new Error(data.error || `V69_LEDGER_HTTP_${response.status}`);
+        }
+        if (active) {
+          setLedgerTotalsV414({
+            totalPurchase: data.totalPurchase!,
+            totalPaid: data.totalPaid!,
+            totalDue: data.totalDue!,
+            dueSuppliers: data.dueSuppliers!,
+          });
+          setLedgerErrorV414("");
+        }
+      } catch (error) {
+        if (active) {
+          setLedgerTotalsV414(null);
+          setLedgerErrorV414(error instanceof Error ? error.message : "V69 unavailable");
+        }
+      }
+    };
+    void readV69Ledger();
+    return () => { active = false; };
+  }, [loading, errorMessage, purchases]);
 
   async function recordDuePayment() {
     if (!selectedPurchase || !selectedPurchase.supplier_id) return;
@@ -1616,18 +1681,21 @@ window.setTimeout(() => setNotice(""), 4500);
 
         <article>
           <span>Total Paid</span>
-          <strong>{formatCurrency(statistics.totalPaid)}</strong>
+          <strong>{ledgerTotalsV414 ? formatCurrency(ledgerTotalsV414.totalPaid) : "Ledger unavailable"}</strong>
         </article>
 
         <article>
           <span>Total Supplier Due</span>
-          <strong>{formatCurrency(statistics.totalDue)}</strong>
+          <strong>{ledgerTotalsV414 ? formatCurrency(ledgerTotalsV414.totalDue) : "Ledger unavailable"}</strong>
         </article>
 
         <article>
           <span>Suppliers With Due</span>
-          <strong>{statistics.dueSuppliers}</strong>
+          <strong>{ledgerTotalsV414 ? ledgerTotalsV414.dueSuppliers : "—"}</strong>
         </article>
+        {ledgerErrorV414 && <p style={{gridColumn:"1 / -1",fontSize:12,color:"#a64040"}}>
+          V69 supplier account summary unavailable: {ledgerErrorV414}. Purchase invoice records are unchanged.
+        </p>}
       </section>
 
       <section className="panel">
