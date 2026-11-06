@@ -29,7 +29,11 @@ jobs:
         with:
           gradle-version: '8.10.2'
       - name: Install Android SDK 35
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: |
+          SDKMANAGER="$(find /usr/local/lib/android/sdk/cmdline-tools -type f -name sdkmanager | head -n 1)"
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
       - name: Compile isolated demo APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload Android APK
