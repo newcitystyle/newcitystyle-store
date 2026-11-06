@@ -80,7 +80,7 @@ private fun UniversalApp() {
             }
         ) { pad ->
             Column(modifier = Modifier.padding(pad).fillMaxSize()) {
-                Header()
+                if (selected != "Home") Header()
                 if (openedModule != null) {
                     Column(Modifier.fillMaxSize().padding(20.dp)) {
                         TextButton(onClick = { openedModule = null }) { Text("← All modules") }
@@ -94,7 +94,14 @@ private fun UniversalApp() {
                     }
                 } else {
                     when (selected) {
-                        "Home" -> HomeScreen(onOpen = { openedModule = it })
+                        "Home" -> PremiumDashboard(onNavigate = { target ->
+                            when (target) {
+                                "Advanced POS" -> selected = "Billing"
+                                "Product Studio" -> selected = "Products"
+                                "Profit Studio" -> { selected = "Insights"; openedModule = null }
+                                else -> openedModule = target
+                            }
+                        })
                         "Billing" -> DemoPosScreen()
                         "Products" -> ProductStudioScreen()
                         "Insights" -> FinanceStudioScreen()
