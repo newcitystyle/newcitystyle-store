@@ -1,6 +1,11 @@
 name: NCS Universal Pro - Build Native APK
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'universal-pro/**'
+      - '.github/workflows/ncs-universal-pro-apk.yml'
   push:
     branches: [ncs-universal-pro-v1]
     paths:
