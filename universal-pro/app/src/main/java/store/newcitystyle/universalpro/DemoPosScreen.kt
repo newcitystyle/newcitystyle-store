@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,13 +48,13 @@ fun DemoPosScreen() {
     val total=sub-disc
     val filtered=posSamples.filter { (category=="All" || it.category==category) && (search.isBlank() || it.name.contains(search,true)||it.id.contains(search,true)||it.variant.contains(search,true)) }
     Column(Modifier.fillMaxSize().background(Color(0xFFF4F6FB))) {
-        Row(Modifier.fillMaxWidth().padding(horizontal=15.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(ProInk,ProBlue,ProTeal))).padding(horizontal=15.dp,vertical=16.dp),verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("SMART POS",fontSize=22.sp,fontWeight=FontWeight.Black,color=posBlue)
-                Text("Express counter  •  offline design",fontSize=11.sp,color=Color.Gray)
+                Text("SMART POS / EXPRESS",fontSize=22.sp,fontWeight=FontWeight.Black,color=Color.White)
+                Text("Counter intelligence  •  offline-ready design",fontSize=11.sp,color=Color.White.copy(alpha=.75f))
             }
             Surface(color=Color(0xFFFFEBC3),shape=RoundedCornerShape(12.dp)) {Text("DEMO",Modifier.padding(9.dp),fontSize=10.sp,fontWeight=FontWeight.Bold)}
-            IconButton(onClick={cartView=!cartView}){BadgedBox(badge={if(units>0) Badge{Text(units.toString())}}){Icon(Icons.Default.ShoppingCart,null,tint=posBlue)}}
+            IconButton(onClick={cartView=!cartView}){BadgedBox(badge={if(units>0) Badge{Text(units.toString())}}){Icon(Icons.Default.ShoppingCart,null,tint=ProGold)}}
         }
         if(preview) {
             LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(17.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
@@ -101,10 +102,20 @@ fun DemoPosScreen() {
                 listOf("All","Men","Women","Kids","Sarees").forEach{c->FilterChip(selected=category==c,onClick={category=c},label={Text(c)})}
             }
             LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(horizontal=15.dp,vertical=3.dp),verticalArrangement=Arrangement.spacedBy(9.dp)){
+                item {
+                    Row(horizontalArrangement=Arrangement.spacedBy(9.dp)){
+                        ProStat("Products",posSamples.size.toString(),"Demo catalogue",Icons.Default.Inventory2,ProPurple,Modifier.weight(1f))
+                        ProStat("Bill Items",units.toString(),"Current cart",Icons.Default.ShoppingCart,ProTeal,Modifier.weight(1f))
+                    }
+                }
                 items(filtered,key={it.id}){p->
                     Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(16.dp)){
+                        val tint=when(p.category){"Men"->ProBlue;"Women"->ProCoral;"Kids"->ProOrange;else->ProPurple}
+                        Box(Modifier.fillMaxWidth().height(4.dp).background(Brush.horizontalGradient(listOf(tint,ProTeal))))
                         Row(Modifier.fillMaxWidth().padding(13.dp),verticalAlignment=Alignment.CenterVertically){
                             Column(Modifier.weight(1f)) {
+                                ProPill(p.category,tint)
+                                Spacer(Modifier.height(5.dp))
                                 Text(p.name,fontWeight=FontWeight.Bold,fontSize=14.sp)
                                 Text(p.id+" • "+p.variant,fontSize=10.sp,color=Color.Gray)
                                 Text(rupees(p.price),fontSize=19.sp,fontWeight=FontWeight.Black,color=posBlue)
