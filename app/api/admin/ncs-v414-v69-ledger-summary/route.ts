@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
     if (error || ledger?.ok !== true || !Array.isArray(ledger.suppliers)) {
       return noCache({ ok: false, error: "V69_LEDGER_READ_FAILED" }, 503);
     }
+    const safeSuppliers: Array<{id:number;total_purchase_amount:number;total_paid_amount:number;current_balance:number;is_active:boolean}> = [];
     let totalPurchase = 0;
     let totalPaid = 0;
     let totalDue = 0;
@@ -57,6 +58,9 @@ export async function GET(request: NextRequest) {
       totalPaid += paid;
       totalDue += due;
       if (due > 0) dueSuppliers++;
+      const id = Number(row.id);
+      if (!Number.isSafeInteger(id)) return noCache({ ok: false, error: "INVALID_SUPPLIER_ID" }, 503);
+      safeSuppliers.push({ id, total_purchase_amount: purchase, total_paid_amount: paid, current_balance: due, is_active: true });
     }
     const round = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
     return noCache({
@@ -66,6 +70,7 @@ export async function GET(request: NextRequest) {
       totalPaid: round(totalPaid),
       totalDue: round(totalDue),
       dueSuppliers,
+      suppliers: safeSuppliers,
     }, 200);
   } catch {
     return noCache({ ok: false, error: "V69_LEDGER_UNAVAILABLE" }, 503);
