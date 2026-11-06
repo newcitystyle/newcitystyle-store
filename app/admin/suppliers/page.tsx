@@ -146,6 +146,13 @@ export default function SuppliersPage() {
   const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
   const [paymentHistoryWarning, setPaymentHistoryWarning] = useState("");
+  // Authoritative V69 amounts are read-only. Existing supplier actions stay intact.
+  const [v69Rows, setV69Rows] = useState<Array<{
+    id: number; total_purchase_amount: number;
+    total_paid_amount: number; current_balance: number;
+  }> | null>(null);
+  const [v69Error, setV69Error] = useState("");
+
 
   const [searchQuery, setSearchQuery] = useState("");
   const [dueFilter, setDueFilter] = useState<DueFilter>("all");
@@ -248,8 +255,45 @@ export default function SuppliersPage() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (loading || refreshing || loadError) return;
+    let active = true;
+    const run = async () => {
+      try {
+        const { data: { session }, error: authError } = await supabase.auth.getSession();
+        if (authError || !session?.access_token) throw new Error("OWNER_LOGIN_REQUIRED");
+        const response = await fetch("/api/admin/ncs-v414-v69-ledger-summary", {
+          cache: "no-store",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const data = await response.json() as {
+          ok?: boolean; source?: string; error?: string;
+          suppliers?: Array<{
+            id: number; total_purchase_amount: number;
+            total_paid_amount: number; current_balance: number;
+          }>;
+        };
+        if (!response.ok || data.ok !== true ||
+            data.source !== "SUPABASE_ACCOUNTS_V69" ||
+            !Array.isArray(data.suppliers)) {
+          throw new Error(data.error || "V69_LEDGER_UNAVAILABLE");
+        }
+        if (active) { setV69Rows(data.suppliers); setV69Error(""); }
+      } catch (e) {
+        if (active) {
+          setV69Rows(null);
+          setV69Error(e instanceof Error ? e.message : "V69_LEDGER_UNAVAILABLE");
+        }
+      }
+    };
+    void run();
+    return () => { active = false; };
+  }, [loading, refreshing, loadError]);
+
   const supplierSummaries = useMemo<SupplierSummary[]>(() => {
+    const v69ById = new Map((v69Rows || []).map(row => [Number(row.id), row]));
     return suppliers.map((supplier) => {
+      const actual = v69ById.get(Number(supplier.id));
       const supplierPurchases = purchases.filter(
         (purchase) => purchase.supplier_id === supplier.id,
       );
@@ -321,16 +365,16 @@ export default function SuppliersPage() {
         supplier,
         purchases: supplierPurchases,
         payments: supplierPayments,
-        totalPurchase,
+        totalPurchase: actual?.total_purchase_amount ?? totalPurchase,
         purchasePaid,
         purchaseDue,
         recordedPayments,
-        totalPaid,
-        currentBalance,
+        totalPaid: actual?.total_paid_amount ?? totalPaid,
+        currentBalance: actual?.current_balance ?? currentBalance,
         lastPurchaseAt,
       };
     });
-  }, [payments, purchases, suppliers]);
+  }, [payments, purchases, suppliers, v69Rows]);
 
   const filteredSuppliers = useMemo(() => {
     const query = normalize(searchQuery);
@@ -779,6 +823,9 @@ export default function SuppliersPage() {
         </article>
       </section>
 
+      {v69Error && <p role="status" style={{color:"#a64040",padding:"8px 20px"}}>
+        V69 ledger unavailable ({v69Error}). Supplier amounts may be stale; verify before recording payments.
+      </p>}
       <section className="mainPanel">
         <div className="toolbar">
           <div className="searchBox">
