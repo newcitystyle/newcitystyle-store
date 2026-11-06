@@ -25,10 +25,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONObject
 
-private val aqua = Color(0xFF21D1BD)
-private val amber = Color(0xFFF8CB78)
-private val panel = Color(0xFF102F38)
-private val ink = Color(0xFF071720)
+private val aqua = Color(0xFFD4AF37)
+private val amber = Color(0xFFF8F4EC)
+private val panel = Color(0xFF173B74)
+private val ink = Color(0xFF0A2E73)
 
 @Composable
 fun PhotoProductIntakeV6(onBack: () -> Unit, onManualDraft: () -> Unit) {
@@ -121,7 +121,7 @@ fun PhotoProductIntakeV6(onBack: () -> Unit, onManualDraft: () -> Unit) {
             }
         }
         item {
-            Card(colors=CardDefaults.cardColors(containerColor=Color(0xFF173944)),shape=RoundedCornerShape(18.dp)){
+            Card(colors=CardDefaults.cardColors(containerColor=Color(0xFF214985)),shape=RoundedCornerShape(18.dp)){
                 Column(Modifier.padding(15.dp),verticalArrangement=Arrangement.spacedBy(11.dp)){
                     Row(verticalAlignment=Alignment.CenterVertically){
                         Icon(Icons.Default.AutoStories,null,tint=amber)
