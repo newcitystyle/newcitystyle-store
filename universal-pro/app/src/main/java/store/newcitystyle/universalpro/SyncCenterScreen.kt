@@ -85,7 +85,7 @@ fun SyncCenterScreen(onBack: () -> Unit) {
                 else -> {
                     item { SyncModule("OLD APPS UNCHANGED","Dedicated package and separate local storage",Icons.Default.Security,tealSync,"Protected") }
                     item { SyncModule("LIVE FINANCIAL WRITES","Disabled until tested API and authentication",Icons.Default.Lock,Color(0xFFE05F6B),"Disabled") }
-                    item { SyncModule("REAL DATA","Not loaded, invented or copied in this preview",Icons.Default.Database,Color(0xFF3C8CE6),"Not connected") }
+                    item { SyncModule("REAL DATA","Not loaded, invented or copied in this preview",Icons.Default.Storage,Color(0xFF3C8CE6),"Not connected") }
                 }
             }
         }
