@@ -67,9 +67,10 @@ fun OperationalStudioScreen(title:String,onBack:()->Unit) {
     val drafts=remember(title){mutableStateListOf<DemoRecord>()}
     val all=records+drafts
     val shown=all.filter { (filter=="All"||it.amount>=5000) && (it.title.contains(query,true)||it.info.contains(query,true)||it.id.contains(query,true)) }
-    Column(Modifier.fillMaxSize().background(Color(0xFFF4F6FB))) {
+    val accent=when(title) { "Customers"->ProCoral; "Supplier Ledger"->ProOrange; "Purchase Center"->ProPurple; "Sales Intelligence"->ProTeal; "Cash & Bank"->ProSky; else->ProPurple }
+    Column(Modifier.fillMaxSize().background(ProBg)) {
         Row(
-            Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(studioNavy,Color(0xFF155E82)))).padding(horizontal=12.dp,vertical=7.dp),
+            Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(ProInk,accent,ProBlue))).padding(horizontal=12.dp,vertical=7.dp),
             verticalAlignment=Alignment.CenterVertically
         ){
             IconButton(onClick=onBack){Icon(Icons.Default.ArrowBack,null,tint=Color.White)}
@@ -120,10 +121,11 @@ fun OperationalStudioScreen(title:String,onBack:()->Unit) {
                 }
                 item {
                     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                        StudioMetric("Records",all.size.toString(),Modifier.weight(1f))
-                        StudioMetric("Sample total","₹"+all.sumOf{it.amount},Modifier.weight(1f))
+                        ProStat("Records",all.size.toString(),"Sample records",Icons.Default.FolderOpen,accent,Modifier.weight(1f))
+                        ProStat("Sample Total","₹"+all.sumOf{it.amount},"Not real balance",Icons.Default.AutoGraph,ProTeal,Modifier.weight(1f))
                     }
                 }
+                item { ProPill("INTERACTIVE DEMO • TEST VALUES ONLY",accent) }
                 item {
                     OutlinedTextField(query,{query=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("Find name, ID, invoice or notes")},leadingIcon={Icon(Icons.Default.Search,null)},singleLine=true,shape=RoundedCornerShape(16.dp))
                 }
@@ -141,6 +143,7 @@ fun OperationalStudioScreen(title:String,onBack:()->Unit) {
                         colors=CardDefaults.cardColors(containerColor=Color.White),
                         shape=RoundedCornerShape(17.dp)
                     ){
+                        Column(Modifier.fillMaxWidth().height(4.dp).background(Brush.horizontalGradient(listOf(accent,ProBlue)))) {}
                         Row(Modifier.padding(15.dp),verticalAlignment=Alignment.CenterVertically){
                             Column(Modifier.weight(1f)){
                                 Text(record.id,fontSize=10.sp,color=Color(0xFF71809A),fontWeight=FontWeight.Bold)
@@ -150,7 +153,7 @@ fun OperationalStudioScreen(title:String,onBack:()->Unit) {
                             }
                             Column(horizontalAlignment=Alignment.End){
                                 Text("₹"+record.amount,fontWeight=FontWeight.Black,color=studioNavy,fontSize=18.sp)
-                                Icon(Icons.Default.ChevronRight,null,tint=studioGold)
+                                Icon(Icons.Default.ChevronRight,null,tint=accent)
                             }
                         }
                     }
