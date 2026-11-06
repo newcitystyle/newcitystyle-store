@@ -32,9 +32,14 @@ private val tools = listOf(
         if (selected == "Profit Studio") {
             ProfitCalculatorScreen(onBack = { selected = null })
         } else if (selected != null) {
-            TextButton(onClick = { selected = null }) { Text("← Finance Studio") }
-            Text(selected!!, fontSize = 25.sp, color = navy, fontWeight = FontWeight.Bold)
-            Text("Native feature design. No live records or financial writes.", fontSize = 13.sp)
+            OperationalStudioScreen(when(selected) {
+                "Sales History" -> "Sales Intelligence"
+                "Customer Dues" -> "Customers"
+                "Supplier Dues" -> "Supplier Ledger"
+                "Cash / UPI", "Expenses" -> "Cash & Bank"
+                "Purchase History" -> "Purchase Center"
+                else -> selected!!
+            }, onBack = { selected = null })
         } else {
             Text("Finance Studio", fontSize = 25.sp, color = navy, fontWeight = FontWeight.Bold)
             Text("DEMO MODE • No real account values", fontSize = 11.sp, color = Color.Gray)
