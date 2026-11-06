@@ -29,7 +29,8 @@ private val allActions=listOf(
     ToolAction("Online Orders","E-commerce command",Icons.Default.ShoppingBag,ProPurple),
     ToolAction("LIVA AI","Assistant concept",Icons.Default.AutoAwesome,ProCoral),
     ToolAction("Profit Studio","Live margin calculator",Icons.Default.Calculate,ProOrange),
-    ToolAction("Sync Center","Desktop / Android integration status",Icons.Default.CloudSync,ProTeal)
+    ToolAction("Sync Center","Desktop / Android integration status",Icons.Default.CloudSync,ProTeal),
+    ToolAction("Live Business Cloud","Actual Products, Sales, Purchases and Balances",Icons.Default.CloudDone,ProBlue)
 )
 @Composable fun PremiumToolsScreen(onOpen:(String)->Unit) {
     var search by remember { mutableStateOf("") }
