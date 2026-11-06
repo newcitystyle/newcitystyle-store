@@ -59,10 +59,10 @@ private fun saveLab(ctx:Context, list:List<LabItem>) {
     })}
     ctx.getSharedPreferences(PREF_NAME,Context.MODE_PRIVATE).edit().putString("items",a.toString()).apply()
 }
-private val labNavy=Color(0xFF0B1B3B)
-private val labTeal=Color(0xFF03C4B1)
-private val labGold=Color(0xFFEBC56C)
-private val labPurple=Color(0xFF8D77E9)
+private val labNavy=Color(0xFF0A2E73)
+private val labTeal=Color(0xFFD4AF37)
+private val labGold=Color(0xFFF8F4EC)
+private val labPurple=Color(0xFF3768BC)
 
 @Composable
 fun ProductLabV6() {
@@ -83,9 +83,9 @@ fun ProductLabV6() {
             (category=="Out" && p.stock==0) || p.category==category) &&
             (search.isBlank() || listOf(p.name,p.brand,p.sku,p.color,p.sizes).any{it.contains(search,true)})
     }
-    Column(Modifier.fillMaxSize().background(Color(0xFF06121D))) {
+    Column(Modifier.fillMaxSize().background(Color(0xFF071F4B))) {
         Row(
-            Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(Color(0xFF063E54),Color(0xFF22BFAF))))
+            Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(Color(0xFF0A2E73),Color(0xFF2758A0))))
                 .padding(horizontal=16.dp,vertical=17.dp),verticalAlignment=Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
@@ -159,7 +159,7 @@ fun ProductLabV6() {
         } else {
             LazyColumn(contentPadding=PaddingValues(15.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
                 item {
-                    Card(colors=CardDefaults.cardColors(containerColor=Color(0xFF134C4C)),shape=RoundedCornerShape(18.dp),modifier=Modifier.fillMaxWidth().clickable{photoMode=true}) {
+                    Card(colors=CardDefaults.cardColors(containerColor=Color(0xFF173B74)),shape=RoundedCornerShape(18.dp),modifier=Modifier.fillMaxWidth().clickable{photoMode=true}) {
                         Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically){
                             Icon(Icons.Default.AddAPhoto,null,tint=labGold,modifier=Modifier.size(28.dp))
                             Spacer(Modifier.width(12.dp))
@@ -212,7 +212,7 @@ fun ProductLabV6() {
                 items(visible,key={it.sku}){p->
                     Card(
                         modifier=Modifier.fillMaxWidth().clickable{selected=p.sku},
-                        colors=CardDefaults.cardColors(containerColor=Color(0xFF102D32)),
+                        colors=CardDefaults.cardColors(containerColor=Color(0xFF173B74)),
                         shape=RoundedCornerShape(20.dp)
                     ) {
                         Column {
@@ -263,7 +263,7 @@ fun ProductLabV6() {
     }
 }
 @Composable private fun LabSurface(content:@Composable ColumnScope.()->Unit){
-    Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF10262D),Color(0xFF18342E))),RoundedCornerShape(21.dp)).padding(17.dp),verticalArrangement=Arrangement.spacedBy(11.dp),content=content)
+    Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF12366F),Color(0xFF204D91))),RoundedCornerShape(21.dp)).padding(17.dp),verticalArrangement=Arrangement.spacedBy(11.dp),content=content)
 }
 @Composable private fun LabEditor(
     original: LabItem?, existingCodes:List<String>, onBack:()->Unit, onSave:(LabItem)->Unit
