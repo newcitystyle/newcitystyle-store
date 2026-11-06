@@ -99,6 +99,7 @@ private fun UniversalApp() {
                         "Product Studio" -> ProductLabV6()
                         "Profit Studio" -> ProfitCalculatorScreen(onBack = { openedModule = null })
                         "Sync Center" -> SyncCenterScreen(onBack = { openedModule = null })
+                        "Live Business Cloud" -> LiveBusinessCloudScreen(onBack = { openedModule = null })
                         else -> OperationalStudioScreen(openedModule!!, onBack = { openedModule = null })
                     }
                 } else {
