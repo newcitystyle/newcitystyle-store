@@ -56,7 +56,7 @@ private fun UniversalApp() {
         Scaffold(
             containerColor = Paper,
             bottomBar = {
-                NavigationBar(containerColor = Color.White) {
+                NavigationBar(containerColor = Color(0xFF0D1B3F), tonalElevation = 8.dp) {
                     tabs.forEach { tab ->
                         NavigationBarItem(
                             selected = selected == tab,
@@ -73,7 +73,20 @@ private fun UniversalApp() {
                                     contentDescription = tab
                                 )
                             },
-                            label = { Text(tab, fontSize = 10.sp) }
+                            label = { Text(tab, fontSize = 10.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF0D1B3F),
+                                selectedTextColor = Color(0xFFF0C86B),
+                                unselectedIconColor = Color.White.copy(alpha = .68f),
+                                unselectedTextColor = Color.White.copy(alpha = .68f),
+                                indicatorColor = when (tab) {
+                                    "Home" -> Color(0xFFEAC267)
+                                    "Billing" -> Color(0xFF6BD5C6)
+                                    "Products" -> Color(0xFFAE93F4)
+                                    "Insights" -> Color(0xFFFF9A83)
+                                    else -> Color(0xFF80B5FF)
+                                }
+                            )
                         )
                     }
                 }
@@ -85,6 +98,7 @@ private fun UniversalApp() {
                         "Advanced POS" -> DemoPosScreen()
                         "Product Studio" -> ProductStudioScreen()
                         "Profit Studio" -> ProfitCalculatorScreen(onBack = { openedModule = null })
+                        "Sync Center" -> SyncCenterScreen(onBack = { openedModule = null })
                         else -> OperationalStudioScreen(openedModule!!, onBack = { openedModule = null })
                     }
                 } else {
