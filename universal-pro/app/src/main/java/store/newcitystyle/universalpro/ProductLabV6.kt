@@ -74,6 +74,7 @@ fun ProductLabV6() {
     var editing by remember { mutableStateOf<String?>(null) }
     var creating by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
+    var photoMode by remember { mutableStateOf(false) }
     val record=catalogue.firstOrNull {it.sku==selected}
     val low=catalogue.count{it.stock in 1..5}
     val out=catalogue.count{it.stock==0}
@@ -96,7 +97,9 @@ fun ProductLabV6() {
                 Icon(Icons.Default.AddCircle,null,tint=Color.White,modifier=Modifier.size(28.dp))
             }
         }
-        if(creating||editing!=null){
+        if(photoMode){
+            PhotoProductIntakeV6(onBack={photoMode=false},onManualDraft={photoMode=false;creating=true;editing=null})
+        } else if(creating||editing!=null){
             val old=catalogue.firstOrNull{it.sku==editing}
             LabEditor(
                 original=old,
@@ -155,6 +158,19 @@ fun ProductLabV6() {
             }
         } else {
             LazyColumn(contentPadding=PaddingValues(15.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+                item {
+                    Card(colors=CardDefaults.cardColors(containerColor=Color(0xFF134C4C)),shape=RoundedCornerShape(18.dp),modifier=Modifier.fillMaxWidth().clickable{photoMode=true}) {
+                        Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically){
+                            Icon(Icons.Default.AddAPhoto,null,tint=labGold,modifier=Modifier.size(28.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)){
+                                Text("AI PHOTO PRODUCT STUDIO",color=Color.White,fontWeight=FontWeight.Black,fontSize=14.sp)
+                                Text("Photo-first entry and product approval workflow",color=labTeal,fontSize=10.sp)
+                            }
+                            Icon(Icons.Default.ArrowForward,null,tint=labGold)
+                        }
+                    }
+                }
                 item {
                     LabSurface {
                         Text("PRODUCT INTELLIGENCE  •  LOCAL",color=labTeal,fontSize=11.sp,fontWeight=FontWeight.Black)
