@@ -29,7 +29,9 @@ private val tools = listOf(
     var query by remember { mutableStateOf("") }
     val navy = Color(0xFF0A2E73)
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (selected != null) {
+        if (selected == "Profit Studio") {
+            ProfitCalculatorScreen(onBack = { selected = null })
+        } else if (selected != null) {
             TextButton(onClick = { selected = null }) { Text("← Finance Studio") }
             Text(selected!!, fontSize = 25.sp, color = navy, fontWeight = FontWeight.Bold)
             Text("Native feature design. No live records or financial writes.", fontSize = 13.sp)
