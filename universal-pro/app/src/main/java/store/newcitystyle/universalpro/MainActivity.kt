@@ -97,7 +97,7 @@ private fun UniversalApp() {
                         "Home" -> HomeScreen(onOpen = { openedModule = it })
                         "Billing" -> DemoPosScreen()
                         "Products" -> ProductStudioScreen()
-                        "Insights" -> FeatureScreen("Business Intelligence", "Read-only insights first; no financial figures are fabricated.", listOf("Today vs yesterday", "Monthly sales", "Profit engine", "Customer dues", "Supplier dues"), onOpen = { openedModule = "Sales Intelligence" })
+                        "Insights" -> FinanceStudioScreen()
                         else -> ModulesScreen(onOpen = { openedModule = it })
                     }
                 }
