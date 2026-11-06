@@ -95,7 +95,7 @@ private fun UniversalApp() {
                 } else {
                     when (selected) {
                         "Home" -> HomeScreen(onOpen = { openedModule = it })
-                        "Billing" -> FeatureScreen("Advanced POS", "A dedicated native billing experience will be integrated after testing.", listOf("Barcode scan", "Add product", "Quick item", "Returns & exchange", "Offline receipt"), onOpen = { openedModule = "Advanced POS" })
+                        "Billing" -> DemoPosScreen()
                         "Products" -> FeatureScreen("Product Studio", "Native product workspace with variant-ready layout.", listOf("Products", "Size & color variants", "Brands", "Purchase price / MRP", "Stock radar"), onOpen = { openedModule = "Product Studio" })
                         "Insights" -> FeatureScreen("Business Intelligence", "Read-only insights first; no financial figures are fabricated.", listOf("Today vs yesterday", "Monthly sales", "Profit engine", "Customer dues", "Supplier dues"), onOpen = { openedModule = "Sales Intelligence" })
                         else -> ModulesScreen(onOpen = { openedModule = it })
