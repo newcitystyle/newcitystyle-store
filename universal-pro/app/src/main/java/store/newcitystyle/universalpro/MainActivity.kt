@@ -80,7 +80,6 @@ private fun UniversalApp() {
             }
         ) { pad ->
             Column(modifier = Modifier.padding(pad).fillMaxSize()) {
-                if (selected == "More" && openedModule == null) Header()
                 if (openedModule != null) {
                     when (openedModule) {
                         "Advanced POS" -> DemoPosScreen()
@@ -101,7 +100,7 @@ private fun UniversalApp() {
                         "Billing" -> DemoPosScreen()
                         "Products" -> ProductStudioScreen()
                         "Insights" -> FinanceStudioScreen()
-                        else -> ModulesScreen(onOpen = { openedModule = it })
+                        else -> PremiumToolsScreen(onOpen = { openedModule = it })
                     }
                 }
             }
