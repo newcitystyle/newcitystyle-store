@@ -80,17 +80,13 @@ private fun UniversalApp() {
             }
         ) { pad ->
             Column(modifier = Modifier.padding(pad).fillMaxSize()) {
-                if (selected != "Home") Header()
+                if (selected == "More" && openedModule == null) Header()
                 if (openedModule != null) {
-                    Column(Modifier.fillMaxSize().padding(20.dp)) {
-                        TextButton(onClick = { openedModule = null }) { Text("← All modules") }
-                        Text(openedModule!!, color = Ink, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(12.dp))
-                        Text("Native module shell ready for the audited business features.", color = Ink)
-                        Spacer(Modifier.height(12.dp))
-                        DemoTag()
-                        Spacer(Modifier.height(16.dp))
-                        Text("Real customer, stock, sales and payment data are deliberately not connected in this prototype.")
+                    when (openedModule) {
+                        "Advanced POS" -> DemoPosScreen()
+                        "Product Studio" -> ProductStudioScreen()
+                        "Profit Studio" -> ProfitCalculatorScreen(onBack = { openedModule = null })
+                        else -> OperationalStudioScreen(openedModule!!, onBack = { openedModule = null })
                     }
                 } else {
                     when (selected) {
