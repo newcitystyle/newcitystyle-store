@@ -140,6 +140,7 @@ fun LiveBusinessHub(onNavigate:(String)->Unit) {
                 PulseMetric("TODAY EXPENSE",summary?.rupees("today_expenses")?:"—",Icons.Default.Payments,coral,Modifier.weight(1f))
             }
         }
+        item { LiveSalesTrendCard() }
         item {
             Text("INVENTORY INTELLIGENCE",Modifier.padding(horizontal=17.dp),color=royal,fontWeight=FontWeight.Black,fontSize=17.sp)
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),horizontalArrangement=Arrangement.spacedBy(9.dp)){
