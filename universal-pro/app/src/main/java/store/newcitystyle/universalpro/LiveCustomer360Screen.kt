@@ -62,11 +62,14 @@ fun LiveCustomer360Screen(onBack:()->Unit) {
         val auth=session?:return
         customer=entry;profile=null;error="";sendStatus=""
         val id=if(mode=="Customers")entry.optLong("id") else entry.optLong("customer_id")
-        if(id<=0)return
+        val creditId=if(mode=="Due Accounts")entry.optLong("id") else 0L
+        if(id<=0 && creditId<=0)return
         loading=true
         scope.launch {
-            try{profile=NcsCloud.customerProfile(auth,id)}
-            catch(e:Exception){error=e.message?:"Could not load customer profile"}
+            try{
+                profile=if(creditId>0)NcsCloud.creditProfile(auth,creditId)
+                    else NcsCloud.customerProfile(auth,id)
+            }catch(e:Exception){error=e.message?:"Could not load customer profile"}
             finally{loading=false}
         }
     }
@@ -273,8 +276,6 @@ fun LiveCustomer360Screen(onBack:()->Unit) {
                             }
                         }
                     }
-                }else if(entry.optLong("customer_id")<=0){
-                    item{Text("This due account is not yet linked to a customer profile. Its existing balance remains visible in the list; use the Website ledger to verify history.",fontSize=12.sp,color=Color.Gray)}
                 }
             }
         }
