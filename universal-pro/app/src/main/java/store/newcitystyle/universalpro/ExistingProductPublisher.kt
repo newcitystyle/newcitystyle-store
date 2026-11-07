@@ -7,6 +7,8 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -31,6 +33,8 @@ private val publishGreen=Color(0xFF167A64)
 fun ExistingProductPublisher(
     session:NcsCloud.Session,
     product:JSONObject,
+    variants:List<JSONObject>,
+    designLinks:List<JSONObject>,
     onPublished:(JSONObject)->Unit
 ) {
     val ctx=LocalContext.current
@@ -43,8 +47,22 @@ fun ExistingProductPublisher(
     var message by remember{mutableStateOf("")}
     var failed by remember{mutableStateOf(false)}
     var approved by remember{mutableStateOf(false)}
+    var price by remember(product.optLong("id")){ mutableStateOf(product.optString("price","")) }
+    val selectedVariants=remember(product.optLong("id")){mutableStateListOf<Long>()}
+    val validPrice=price.toIntOrNull()?.takeIf{it>0}
+    val minRemaining=selectedVariants.map { variantId ->
+        val v=variants.firstOrNull{it.optLong("id")==variantId}
+        val allocated=designLinks.count{it.optLong("variant_id")==variantId && it.optString("status")=="available" && it.optInt("online_quantity")>0}
+        (v?.optInt("stock")?:0)-allocated
+    }.minOrNull()?:0
+    val enoughStock=selectedVariants.isNotEmpty() && selectedPhotos.size<=minRemaining && selectedPhotos.isNotEmpty()
+    val validMrp=selectedVariants.all {id ->
+        val v=variants.firstOrNull{it.optLong("id")==id}
+        val mrp=v?.optDouble("mrp",0.0)?:0.0
+        validPrice!=null && mrp>0 && validPrice<=mrp
+    }
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()){photos->
-        selectedPhotos=photos.take(12);uploaded=emptyList();generated=null;approved=false;message=""
+        selectedPhotos=photos.take(10);uploaded=emptyList();generated=null;approved=false;message=""
     }
     fun startAI() {
         if(selectedPhotos.isEmpty() || busy)return
@@ -69,14 +87,14 @@ fun ExistingProductPublisher(
     }
     fun publish() {
         val details=generated?:return
-        if(!approved||uploaded.isEmpty()||busy)return
+        if(!approved||uploaded.isEmpty()||busy||!enoughStock||!validMrp)return
         busy=true;message="Publishing to existing Web product...";failed=false
         scope.launch {
             try {
-                val updated=ProductStudioWeb.publishExisting(session,product,uploaded,details)
-                message="Published successfully to Web product #"+product.optLong("id")
+                val result=ProductStudioWeb.publishOwnerGuarded(session,product,uploaded,details,validPrice?:0,selectedVariants.toList())
+                message="Published "+result.optInt("designs_created")+" real design photos to Product #"+product.optLong("id")
                 approved=false
-                onPublished(updated)
+                onPublished(product)
             }catch(e:Exception){
                 failed=true;message=e.message?:"Could not publish. Nothing else was changed."
             }finally{busy=false}
@@ -111,6 +129,26 @@ fun ExistingProductPublisher(
                     }
                 }
             }
+            Text("ONLINE PRICE & SIZES",color=publishNavy,fontSize=12.sp,fontWeight=FontWeight.Black)
+            OutlinedTextField(value=price,onValueChange={price=it.filter(Char::isDigit).take(8);approved=false},label={Text("Website Selling Price ₹")},singleLine=true,modifier=Modifier.fillMaxWidth(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number))
+            Text("Select sizes for these new photos (physical stock stays unchanged)",color=Color.Gray,fontSize=11.sp)
+            if(variants.isEmpty())Text("No physical variants loaded. Refresh this product.",color=Color(0xFFB84040),fontSize=11.sp)
+            Column(verticalArrangement=Arrangement.spacedBy(4.dp)){
+                variants.forEach {v ->
+                    val id=v.optLong("id")
+                    val stock=v.optInt("stock")
+                    val allocated=designLinks.count{it.optLong("variant_id")==id && it.optString("status")=="available" && it.optInt("online_quantity")>0}
+                    val remaining=(stock-allocated).coerceAtLeast(0)
+                    val label=listOf(v.optString("size"),v.optString("color")).filter{it.isNotBlank()&&it!="null"}.joinToString(" / ")
+                    FilterChip(selected=id in selectedVariants,enabled=remaining>0&&!busy,onClick={if(id in selectedVariants)selectedVariants.remove(id) else selectedVariants.add(id);approved=false},label={Text(label+" • Available "+remaining,fontSize=11.sp)})
+                }
+            }
+            if(selectedVariants.isNotEmpty() && selectedPhotos.isNotEmpty() && !enoughStock){
+                Text("Not enough unassigned stock for all selected photos. Reduce photo count or choose another size.",color=Color(0xFFB84040),fontSize=11.sp)
+            }
+            if(validPrice!=null && selectedVariants.isNotEmpty() && !validMrp){
+                Text("Website price must not exceed the physical MRP of any selected size.",color=Color(0xFFB84040),fontSize=11.sp)
+            }
             Button(
                 enabled=selectedPhotos.isNotEmpty()&&!busy,
                 onClick={startAI},modifier=Modifier.fillMaxWidth(),
@@ -136,7 +174,7 @@ fun ExistingProductPublisher(
                     Text(x.optString("question")+"\n"+x.optString("answer"),color=Color(0xFF405068),fontSize=11.sp)
                 }
                 Surface(color=Color(0xFFFFF8E4),shape=RoundedCornerShape(12.dp)){
-                    Text("Online description, images, SEO and FAQ will update this existing product. Price, barcode, physical stock, variants and purchase values are preserved.",
+                    Text("Selected sizes will receive new design links and the website price ₹"+price+". Existing physical barcode, MRP, stock and purchase values are protected.",
                         Modifier.padding(11.dp),color=publishNavy,fontSize=11.sp)
                 }
                 Row(verticalAlignment=Alignment.CenterVertically){
@@ -144,7 +182,7 @@ fun ExistingProductPublisher(
                     Text("I reviewed these AI details and approve publication",fontSize=11.sp,color=publishNavy)
                 }
                 Button(
-                    enabled=approved&&!busy,modifier=Modifier.fillMaxWidth(),onClick={publish},
+                    enabled=approved&&!busy&&enoughStock&&validMrp,modifier=Modifier.fillMaxWidth(),onClick={publish},
                     colors=ButtonDefaults.buttonColors(containerColor=publishGreen)
                 ){
                     Icon(Icons.Default.Publish,null)
