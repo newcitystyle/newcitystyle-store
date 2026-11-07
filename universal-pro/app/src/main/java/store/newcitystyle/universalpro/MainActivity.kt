@@ -100,7 +100,8 @@ private fun UniversalApp() {
             Column(modifier = Modifier.padding(pad).fillMaxSize()) {
                 if (openedModule != null) {
                     when (openedModule) {
-                        "Product Studio" -> LiveProductStudioScreen()
+                        "Product Studio" -> LiveWebWorkspace(startPath="/admin/products",onBack={openedModule=null})
+                        "Native Catalogue" -> LiveProductStudioScreen()
                         "Full Web Admin" -> LiveWebWorkspace(startPath="/admin/dashboard",onBack={openedModule=null})
                         "Web Product Studio" -> LiveWebWorkspace(startPath="/admin/products",onBack={openedModule=null})
                         "Customer Due Ledger" -> LiveWebWorkspace(startPath="/admin/customer-dues",onBack={openedModule=null})
@@ -121,12 +122,12 @@ private fun UniversalApp() {
                     }
                 } else {
                     when (selected) {
-                        "Home" -> LiveBusinessHub(onNavigate = { target ->
+                        "Home" -> OrbitBusinessHubV16(onNavigate = { target ->
                             if (target == "Product Studio") { selected = "Products"; openedModule = null }
                             else openedModule = target
                         })
                         "Billing" -> LiveBusinessCloudScreen(onBack = { selected = "Home" }, initialTable = "pos_sales")
-                        "Products" -> LiveProductStudioScreen()
+                        "Products" -> LiveWebWorkspace(startPath="/admin/products",onBack={selected="Home"})
                         "Insights" -> LiveBusinessCloudScreen(onBack = { selected = "Home" }, initialTable = "cash_bank_transactions")
                         else -> PremiumToolsScreen(onOpen = { openedModule = it })
                     }
