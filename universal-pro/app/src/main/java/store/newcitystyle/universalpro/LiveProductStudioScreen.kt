@@ -206,19 +206,9 @@ fun LiveProductStudioScreen() {
                 }
                 if(loading)item{LinearProgressIndicator(modifier=Modifier.fillMaxWidth())}
                 if(error.isNotBlank())item{Text(error,color=Color(0xFFB13B35),fontSize=12.sp)}
-                item {StudioStep(1,"PHOTOS","Upload one photo or several, then review before publishing.")}
-                item {
-                    Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(17.dp)){
-                        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
-                            Button(onClick={photoPicker.launch("image/*")},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=studioRoyal)){
-                                Icon(Icons.Default.CloudUpload,null);Spacer(Modifier.width(8.dp));Text("SELECT PRODUCT PHOTOS")
-                            }
-                            Text(pendingPhotos.size.toString()+" photos selected locally",color=studioMuted,fontSize=12.sp)
-                            Text("Live upload requires the same verified web product-studio endpoint; no sample images are published.",color=studioMuted,fontSize=10.sp)
-                        }
-                    }
-                }
-                item {StudioStep(2,"AI DETAILS","Name, SEO, tags, product description, specs and FAQ from the existing Web AI.")}
+                item {StudioStep(1,"PHOTOS + REAL AI","Upload photos, generate details with existing Web AI and publish to this product.")}
+                item {ExistingProductPublisher(session=auth!!,product=p,onPublished={ updated->selected=updated;loadProducts(page) })}
+                item {StudioStep(2,"CURRENT PRODUCT DETAILS","Name, SEO, tags, product description, specs and FAQ from the existing Web AI.")}
                 item {
                     Card(colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF9E8)),shape=RoundedCornerShape(17.dp)){
                         Column(Modifier.padding(15.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
