@@ -13,6 +13,7 @@ internal object NcsCloud {
     private const val root = "https://uskpoaszucenqxlzgmcy.supabase.co"
     private const val publicKey = "sb_publishable_t2qY6zyXSPrtao7ox5eC2A_kBsTNuy3"
     private const val timeout = 14000
+    internal fun keyForInternalUse():String = publicKey
     data class Session(val accessToken:String, val email:String)
     @Volatile var activeSession:Session? = null
     data class Page(val items:List<JSONObject>,val count:Int?,val start:Int)
