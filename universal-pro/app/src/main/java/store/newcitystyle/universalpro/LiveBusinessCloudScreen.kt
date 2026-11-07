@@ -55,6 +55,7 @@ fun LiveBusinessCloudScreen(onBack:()->Unit, initialTable:String="products") {
     var count by remember {mutableStateOf<Int?>(null)}
     var offset by remember {mutableIntStateOf(0)}
     var openBillId by remember {mutableStateOf<String?>(null)}
+    var webPath by remember {mutableStateOf<String?>(null)}
     var keyword by remember {mutableStateOf("")}
     var loadedAt by remember {mutableStateOf("")}
     fun reload(table:String,start:Int) {
@@ -76,6 +77,10 @@ fun LiveBusinessCloudScreen(onBack:()->Unit, initialTable:String="products") {
             catch(e:Exception){error=e.message?:"Cloud data request failed";records=emptyList()}
             finally{busy=false}
         }
+    }
+    if(webPath!=null){
+        LiveWebWorkspace(startPath=webPath!!,onBack={webPath=null})
+        return
     }
     if(openBillId!=null && session!=null){
         LiveBillDetailPanel(session!!,openBillId!!,onClose={openBillId=null})
@@ -168,6 +173,30 @@ fun LiveBusinessCloudScreen(onBack:()->Unit, initialTable:String="products") {
                         }
                         IconButton(onClick={reload(selected,offset)}){Icon(Icons.Default.Refresh,null,tint=cloudBlue)}
                     }
+                }
+                item {
+                    val fullPath=when(selected){
+                        "products","product_variants","product_design_units","product_design_unit_variants"->"/admin/products"
+                        "pos_sales","pos_payments","pos_sale_items"->"/admin/sales-history"
+                        "purchases","purchase_items"->"/admin/purchases"
+                        "customers"->"/admin/customers"
+                        "customer_credit_accounts","customer_credit_transactions"->"/admin/customer-dues"
+                        "suppliers","supplier_payments"->"/admin/suppliers"
+                        "cash_bank_transactions"->"/admin/cash-bank-book"
+                        "expenses"->"/admin/expenses"
+                        else->"/admin/dashboard"
+                    }
+                    Button(
+                        onClick={webPath=fullPath},
+                        modifier=Modifier.fillMaxWidth(),
+                        colors=ButtonDefaults.buttonColors(containerColor=cloudBlue)
+                    ){
+                        Icon(Icons.Default.OpenInBrowser,null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("OPEN FULL EDIT / ADD / MANAGE OPTIONS")
+                    }
+                    Text("Open the original website admin page in this app to use complete write-enabled business workflows.",
+                        color=Color(0xFF667389),fontSize=10.sp)
                 }
                 item {
                     OutlinedTextField(keyword,{keyword=it},label={Text("Filter these 40 records")},singleLine=true,modifier=Modifier.fillMaxWidth(),
