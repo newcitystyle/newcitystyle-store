@@ -207,13 +207,13 @@ fun LiveProductStudioScreen() {
                 if(loading)item{LinearProgressIndicator(modifier=Modifier.fillMaxWidth())}
                 if(error.isNotBlank())item{Text(error,color=Color(0xFFB13B35),fontSize=12.sp)}
                 item {StudioStep(1,"PHOTOS + REAL AI","Upload photos, generate details with existing Web AI and publish to this product.")}
-                item {ExistingProductPublisher(session=auth!!,product=p,onPublished={ updated->selected=updated;loadProducts(page) })}
+                item {ExistingProductPublisher(session=auth!!,product=p,variants=variants,designLinks=designLinks,onPublished={ _ -> selected=null;loadProducts(page) })}
                 item {StudioStep(2,"CURRENT PRODUCT DETAILS","Name, SEO, tags, product description, specs and FAQ from the existing Web AI.")}
                 item {
                     Card(colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF9E8)),shape=RoundedCornerShape(17.dp)){
                         Column(Modifier.padding(15.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                             Text("AI Complete Product",fontWeight=FontWeight.Black,color=studioRoyal,fontSize=17.sp)
-                            Text("Primary AI + backup engine: original Web API verification required.",color=studioMuted,fontSize=11.sp)
+                            Text("Original Web Gemini AI with fallback engines is available in the upload section above.",color=studioMuted,fontSize=11.sp)
                             OutlinedButton(onClick={showPhoto=!showPhoto},modifier=Modifier.fillMaxWidth()){
                                 Text(if(showPhoto)"Hide Current Website Details" else "Preview Current Website Details",color=studioRoyal)
                             }
@@ -229,7 +229,7 @@ fun LiveProductStudioScreen() {
                     Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(17.dp)){
                         Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(9.dp)){
                             Text("Real variants: "+variants.size+"  •  Existing designs: "+designs.size,fontWeight=FontWeight.Bold,color=studioRoyal)
-                            Text("Publishing is unavailable until authenticated Web AI/upload APIs are verified. No duplicate products will be created.",color=studioMuted,fontSize=11.sp)
+                            Text("Publishing uses the owner-only atomic online design function. Physical stock and barcodes are protected.",color=studioMuted,fontSize=11.sp)
                         }
                     }
                 }
