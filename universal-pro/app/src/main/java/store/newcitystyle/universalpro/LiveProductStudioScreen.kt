@@ -91,6 +91,8 @@ fun LiveProductStudioScreen() {
     var products by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var search by remember { mutableStateOf("") }
     var serverSearch by remember { mutableStateOf(false) }
+    var filterMode by remember { mutableStateOf("All") }
+    var intelligence by remember { mutableStateOf<JSONObject?>(null) }
     var selected by remember { mutableStateOf<JSONObject?>(null) }
     var variants by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var designs by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
@@ -103,6 +105,7 @@ fun LiveProductStudioScreen() {
             try {
                 val result=NcsCloud.load(session,"products",next*40,40)
                 products=result.items;total=result.count;serverSearch=false
+                intelligence=runCatching{NcsCloud.dashboard(session)}.getOrNull()
             } catch(e:Exception){error=e.message?:"Could not load products"}
             finally {loading=false}
         }
@@ -185,10 +188,34 @@ fun LiveProductStudioScreen() {
                     }
                 }
                 item {
-                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                    Row(horizontalArrangement=Arrangement.spacedBy(9.dp)){
                         LiveCounter("PRODUCTS",(total?:products.size).toString(),studioRoyal,Modifier.weight(1f))
-                        LiveCounter("THIS PAGE",products.size.toString(),Color(0xFF896512),Modifier.weight(1f))
+                        LiveCounter("LOW STOCK",intelligence?.optString("low_stock_variants")?:"—",Color(0xFFB17C25),Modifier.weight(1f))
+                        LiveCounter("OUT STOCK",intelligence?.optString("out_stock_variants")?:"—",Color(0xFFC24D55),Modifier.weight(1f))
                     }
+                }
+                item {
+                    Card(colors=CardDefaults.cardColors(containerColor=Color(0xFF123E84)),shape=RoundedCornerShape(18.dp)){
+                        Row(Modifier.padding(15.dp),verticalAlignment=Alignment.CenterVertically){
+                            Icon(Icons.Default.AutoAwesome,null,tint=studioGold,modifier=Modifier.size(28.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)){
+                                Text("AI PRODUCT STUDIO",color=Color.White,fontWeight=FontWeight.Black,fontSize=15.sp)
+                                Text("Choose a real product → photos → AI names → details → publish",color=Color.White.copy(alpha=.8f),fontSize=10.sp)
+                            }
+                            Icon(Icons.Default.ChevronRight,null,tint=studioGold)
+                        }
+                    }
+                }
+                item {
+                    Text("FILTER LIVE CATALOGUE",color=studioRoyal,fontWeight=FontWeight.Black,fontSize=10.sp)
+                    Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                        listOf("All","Active","Online","Low stock","Out of stock").forEach {mode->
+                            FilterChip(selected=filterMode==mode,onClick={filterMode=mode},label={Text(mode,fontSize=11.sp)},
+                                colors=FilterChipDefaults.filterChipColors(selectedContainerColor=studioGold))
+                        }
+                    }
+                    Text("Stock filters apply to the displayed page. Search finds products across the store.",fontSize=10.sp,color=studioMuted)
                 }
                 item {
                     OutlinedTextField(search,{search=it},modifier=Modifier.fillMaxWidth(),singleLine=true,
@@ -205,7 +232,16 @@ fun LiveProductStudioScreen() {
                 }
                 if(loading)item{LinearProgressIndicator(modifier=Modifier.fillMaxWidth())}
                 if(error.isNotBlank())item{Text(error,color=Color(0xFFAE3A37))}
-                items(products.filter{search.isBlank()||listOf(it.str("name"),it.str("barcode"),it.str("brand")).any{x->x.contains(search,true)}},key={it.optLong("id")}){p->
+                items(products.filter{p->
+                    (search.isBlank()||listOf(p.str("name"),p.str("barcode"),p.str("brand")).any{x->x.contains(search,true)})
+                    && when(filterMode){
+                        "Active" -> p.optBoolean("is_active",true)
+                        "Online" -> p.optBoolean("sell_online",false)
+                        "Low stock" -> p.optInt("stock") in 1..5
+                        "Out of stock" -> p.optInt("stock")<=0
+                        else -> true
+                    }
+                },key={it.optLong("id")}){p->
                     Card(
                         modifier=Modifier.fillMaxWidth().clickable{openProduct(p)},
                         colors=CardDefaults.cardColors(containerColor=Color.White),
@@ -221,7 +257,8 @@ fun LiveProductStudioScreen() {
                                 Text(p.str("name"),fontWeight=FontWeight.Black,color=studioRoyal,fontSize=14.sp,maxLines=2)
                                 Text(p.str("brand")+" • "+p.str("category"),fontSize=11.sp,color=studioMuted)
                                 Text(p.money("price")+"  •  MRP "+p.money("mrp"),fontWeight=FontWeight.Bold,color=studioRoyal,fontSize=12.sp)
-                                Text("Stock "+p.str("stock")+"  |  "+p.str("barcode"),color=studioGreen,fontSize=11.sp)
+                                Text("Stock "+p.str("stock")+"  |  "+p.str("barcode"),color=if(p.optInt("stock")<=5)Color(0xFFC45D56) else studioGreen,fontSize=11.sp)
+                                Text(if(p.optBoolean("sell_online",false))"● PUBLISHED ONLINE" else "○ NOT ONLINE",color=if(p.optBoolean("sell_online",false))studioGreen else studioMuted,fontWeight=FontWeight.Bold,fontSize=10.sp)
                             }
                             Icon(Icons.Default.ChevronRight,null,tint=studioGold)
                         }
