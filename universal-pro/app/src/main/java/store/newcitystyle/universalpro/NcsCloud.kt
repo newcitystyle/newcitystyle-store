@@ -77,7 +77,8 @@ internal object NcsCloud {
             "pos_sale_items"->"id,sale_id,product_id,quantity"
             else->"id,sale_id,amount,payment_method"
         }
-        val conn=open(root+"/rest/v1/"+table+"?select="+columns,token=session.accessToken)
+        val sort=if(table=="products")"&order=id.desc" else "&order=id.desc"
+        val conn=open(root+"/rest/v1/"+table+"?select="+columns+sort,token=session.accessToken)
         conn.setRequestProperty("Prefer","count=exact")
         conn.setRequestProperty("Range",start.toString()+"-"+(start+limit-1))
         val raw=consumeWithHeader(conn)
