@@ -14,6 +14,7 @@ internal object NcsCloud {
     private const val publicKey = "sb_publishable_t2qY6zyXSPrtao7ox5eC2A_kBsTNuy3"
     private const val timeout = 14000
     data class Session(val accessToken:String, val email:String)
+    @Volatile var activeSession:Session? = null
     data class Page(val items:List<JSONObject>,val count:Int?,val start:Int)
 
     private fun open(url:String,token:String?=null,method:String="GET"):HttpURLConnection {
@@ -50,11 +51,11 @@ internal object NcsCloud {
         val j=JSONObject(consume(conn))
         val token=j.optString("access_token")
         if(token.isBlank()) throw IOException("Sign-in did not return a session token")
-        Session(token,email.trim())
+        Session(token,email.trim()).also { activeSession = it }
     }
     suspend fun load(session:Session,table:String,start:Int=0,limit:Int=40):Page=withContext(Dispatchers.IO) {
         val allowed=setOf(
-            "products","product_variants","pos_sales","purchases","purchase_items",
+            "products","product_variants","product_design_units","product_design_unit_variants","pos_sales","purchases","purchase_items",
             "customers","suppliers","supplier_payments","expenses",
             "cash_bank_transactions","pos_sale_items","pos_payments"
         )
@@ -62,6 +63,8 @@ internal object NcsCloud {
         val columns=when(table){
             "products"->"id,name,brand,category,price,mrp,stock,barcode,image,is_active,sell_online"
             "product_variants"->"id,product_id,size,color,barcode,stock,mrp,selling_price,purchase_price,is_active"
+            "product_design_units"->"id,product_id,design_name,image_url,status,unit_quantity,parent_barcode"
+            "product_design_unit_variants"->"id,product_id,design_unit_id,variant_id,status,mrp,online_price,online_quantity,online_mrp"
             "pos_sales"->"id,invoice_number,customer_name,total_amount,paid_amount,due_amount,created_at"
             "purchases"->"id,purchase_number,supplier_name,total_amount,paid_amount,due_amount,purchase_date"
             "purchase_items"->"id,purchase_id,product_id,quantity"
@@ -79,6 +82,17 @@ internal object NcsCloud {
         val raw=consumeWithHeader(conn)
         val data=JSONArray(raw.first)
         Page((0 until data.length()).map{data.getJSONObject(it)},raw.second,start)
+    }
+    suspend fun forProduct(session:Session,table:String,productId:Long):List<JSONObject>=withContext(Dispatchers.IO) {
+        require(table in setOf("product_variants","product_design_units","product_design_unit_variants"))
+        val cols=when(table) {
+            "product_variants"->"id,product_id,size,color,stock,mrp,selling_price,purchase_price,barcode,sell_online,online_price,online_stock_limit"
+            "product_design_units"->"id,product_id,design_name,image_url,unit_quantity,status,parent_barcode"
+            else->"id,product_id,design_unit_id,variant_id,status,mrp,online_price,online_quantity"
+        }
+        val conn=open(root+"/rest/v1/"+table+"?select="+cols+"&product_id=eq."+productId+"&limit=200",token=session.accessToken)
+        val arr=JSONArray(consume(conn))
+        (0 until arr.length()).map{arr.getJSONObject(it)}
     }
     private fun consumeWithHeader(conn:HttpURLConnection):Pair<String,Int?> {
         return try {
