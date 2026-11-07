@@ -1,0 +1,56 @@
+name: NCS Universal Pro - Build Native APK
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'universal-pro/**'
+      - '.github/workflows/ncs-universal-pro-apk.yml'
+  push:
+    branches: [ncs-universal-pro-v1]
+    paths:
+      - 'universal-pro/**'
+      - '.github/workflows/ncs-universal-pro-apk.yml'
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: universal-pro
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Install Android SDK 35
+        run: |
+          SDKMANAGER="$(find /usr/local/lib/android/sdk/cmdline-tools -type f -name sdkmanager | head -n 1)"
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+      - name: Restore persistent APK signing certificate when configured
+        env:
+          NCS_ANDROID_DEBUG_KEYSTORE_B64: ${{ secrets.NCS_ANDROID_DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$NCS_ANDROID_DEBUG_KEYSTORE_B64" ]; then
+            mkdir -p "$HOME/.android"
+            printf '%s' "$NCS_ANDROID_DEBUG_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+            chmod 600 "$HOME/.android/debug.keystore"
+            echo "Persistent signing certificate restored."
+          else
+            echo "No stable signing certificate configured: default runner debug signing may require uninstall."
+          fi
+      - name: Compile NEW CITY STYLE Universal APK
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NCS-Universal-Pro-Real-Live-APK
+          path: universal-pro/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
