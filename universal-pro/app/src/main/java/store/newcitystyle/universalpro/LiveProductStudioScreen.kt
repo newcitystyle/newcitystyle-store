@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import coil.compose.AsyncImage
 
 private val studioRoyal = Color(0xFF0A2E73)
 private val studioIvory = Color(0xFFF8F4EC)
@@ -153,7 +154,9 @@ fun LiveProductStudioScreen() {
                     ){
                         Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){
                             Box(Modifier.size(50.dp).background(studioIvory,RoundedCornerShape(12.dp)),contentAlignment=Alignment.Center){
-                                Icon(Icons.Default.Inventory2,null,tint=studioRoyal)
+                                if(p.str("image").startsWith("https://") || p.str("image").startsWith("http://")) {
+                                    AsyncImage(model=p.str("image"), contentDescription=p.str("name"), contentScale=ContentScale.Crop, modifier=Modifier.fillMaxSize())
+                                } else Icon(Icons.Default.Inventory2,null,tint=studioRoyal)
                             }
                             Spacer(Modifier.width(11.dp))
                             Column(Modifier.weight(1f)){
@@ -245,6 +248,9 @@ fun LiveProductStudioScreen() {
                 items(designs,key={it.optLong("id")}){d->
                     Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(13.dp)){
                         Column(Modifier.padding(13.dp),verticalArrangement=Arrangement.spacedBy(5.dp)){
+                            if(d.str("image_url").startsWith("https://")||d.str("image_url").startsWith("http://")){
+                                AsyncImage(model=d.str("image_url"),contentDescription=d.str("design_name"),modifier=Modifier.fillMaxWidth().height(150.dp),contentScale=ContentScale.Fit)
+                            }
                             Text(d.str("design_name").ifBlank{"Design #"+d.str("id")},fontWeight=FontWeight.Bold,color=studioRoyal)
                             Text("Quantity "+d.str("unit_quantity")+"  •  "+d.str("status"),color=studioGreen,fontSize=12.sp)
                             Text("Barcode "+d.str("parent_barcode"),fontSize=11.sp,color=studioMuted)
