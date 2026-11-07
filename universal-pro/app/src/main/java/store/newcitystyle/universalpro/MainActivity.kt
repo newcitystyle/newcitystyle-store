@@ -1,7 +1,9 @@
 package store.newcitystyle.universalpro
 
 import android.os.Bundle
-import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
@@ -31,7 +33,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = android.graphics.Color.rgb(10, 46, 115)
         NcsCloud.initialize(applicationContext)
-        androidx.lifecycle.lifecycleScope.launchWhenStarted { NcsCloud.restoreActiveSession() }
+        CoroutineScope(Dispatchers.Main).launch { NcsCloud.restoreActiveSession() }
         setContent { UniversalApp() }
     }
 }
