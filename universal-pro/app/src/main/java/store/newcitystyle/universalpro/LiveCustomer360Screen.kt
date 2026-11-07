@@ -30,12 +30,12 @@ private fun JSONObject.ct(k:String)=optString(k).takeUnless{it=="null"}?:""
 private fun JSONObject.cr(k:String)=moneyCustomer.format(optDouble(k,0.0))
 
 @Composable
-fun LiveCustomer360Screen(onBack:()->Unit) {
+fun LiveCustomer360Screen(onBack:()->Unit, startMode:String="Customers") {
     val scope=rememberCoroutineScope()
     val session=NcsCloud.activeSession
     var loading by remember{mutableStateOf(false)}
     var error by remember{mutableStateOf("")}
-    var mode by remember{mutableStateOf("Customers")}
+    var mode by remember(startMode){mutableStateOf(startMode)}
     var list by remember{mutableStateOf<List<JSONObject>>(emptyList())}
     var offset by remember{mutableIntStateOf(0)}
     var count by remember{mutableStateOf<Int?>(null)}
@@ -43,6 +43,7 @@ fun LiveCustomer360Screen(onBack:()->Unit) {
     var customer by remember{mutableStateOf<JSONObject?>(null)}
     var profile by remember{mutableStateOf<JSONObject?>(null)}
     var currentBill by remember{mutableStateOf<String?>(null)}
+    var receivePayment by remember{mutableStateOf(false)}
     var confirmAccount by remember{mutableStateOf<JSONObject?>(null)}
     var sending by remember{mutableStateOf(false)}
     var sendStatus by remember{mutableStateOf("")}
@@ -73,7 +74,11 @@ fun LiveCustomer360Screen(onBack:()->Unit) {
             finally{loading=false}
         }
     }
-    LaunchedEffect(session){if(session!=null)reload()}
+    LaunchedEffect(session, startMode){if(session!=null)reload(0,startMode)}
+    if(receivePayment){
+        LiveWebWorkspace(startPath="/admin/customer-dues",onBack={receivePayment=false;customer?.let{open(it)}})
+        return
+    }
     if(currentBill!=null && session!=null){
         LiveBillDetailPanel(session,currentBill!!,onClose={currentBill=null})
         return
@@ -145,6 +150,7 @@ fun LiveCustomer360Screen(onBack:()->Unit) {
                                 Text(name.ifBlank{"Customer"},fontSize=15.sp,fontWeight=FontWeight.Black,color=customerBlue)
                                 Text(phone,color=Color.Gray,fontSize=11.sp)
                                 if(isDue)Text("Outstanding "+entry.cr("current_balance"),color=if(due>0)Color(0xFFBC4D42) else customerTeal,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                                if(isDue)Text("Open → Receive • Reminder • Credit History",color=customerBlue,fontSize=10.sp)
                                 else Text("Store profile • Tap for full history",fontSize=10.sp,color=customerTeal)
                             }
                             Icon(Icons.Default.ChevronRight,null,tint=customerGold)
@@ -202,6 +208,25 @@ fun LiveCustomer360Screen(onBack:()->Unit) {
                                         Text(ac.cr("current_balance"),color=if(ac.optDouble("current_balance")>0)Color(0xFFB95146) else customerTeal,fontWeight=FontWeight.Black,fontSize=24.sp)
                                         Text("Total credit "+ac.cr("total_credit_given")+" • Paid "+ac.cr("total_credit_paid"),color=Color.Gray,fontSize=11.sp)
                                         Text("Due date: "+ac.ct("next_due_date"),color=Color.Gray,fontSize=11.sp)
+                                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                            OutlinedButton(
+                                                enabled=ac.optDouble("current_balance")>0.009&&!sending,
+                                                onClick={receivePayment=true},
+                                                modifier=Modifier.weight(1f)
+                                            ){
+                                                Icon(Icons.Default.Payments,null,modifier=Modifier.size(18.dp))
+                                                Spacer(Modifier.width(5.dp))
+                                                Text("RECEIVE",fontSize=11.sp)
+                                            }
+                                            OutlinedButton(
+                                                onClick={receivePayment=true},
+                                                modifier=Modifier.weight(1f)
+                                            ){
+                                                Icon(Icons.Default.History,null,modifier=Modifier.size(18.dp))
+                                                Spacer(Modifier.width(5.dp))
+                                                Text("LEDGER",fontSize=11.sp)
+                                            }
+                                        }
                                         Button(
                                             enabled=ac.optDouble("current_balance")>0.009&&!sending,
                                             onClick={confirmAccount=ac},
