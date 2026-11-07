@@ -59,6 +59,16 @@ internal object ProductStudioWeb {
         val result=JSONObject(read(c))
         result.optString("url").takeIf{it.startsWith("https://")}?:throw IOException("Image upload returned no valid URL")
     }
+    suspend fun generateDesignName(imageUrl:String):String=withContext(Dispatchers.IO) {
+        require(imageUrl.startsWith("https://"))
+        val req=JSONObject().put("imageUrl",imageUrl).put("mode","design-name")
+        val c=URL(origin+"/api/generate-product-details").openConnection() as HttpURLConnection
+        c.requestMethod="POST";c.doOutput=true;c.connectTimeout=20000;c.readTimeout=65000
+        c.setRequestProperty("Content-Type","application/json")
+        c.outputStream.use{it.write(req.toString().toByteArray(Charsets.UTF_8))}
+        JSONObject(read(c)).optString("productName").trim()
+            .takeIf{it.isNotBlank()}?:throw IOException("AI could not name this photo")
+    }
     suspend fun generate(imageUrl:String,product:JSONObject):JSONObject=withContext(Dispatchers.IO) {
         val payload=JSONObject()
             .put("imageUrl",imageUrl)
