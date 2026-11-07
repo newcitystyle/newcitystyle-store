@@ -98,6 +98,7 @@ fun LiveProductStudioScreen() {
     var designs by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var designLinks by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var showPhoto by remember { mutableStateOf(false) }
+    var fullWeb by remember { mutableStateOf(false) }
     fun loadProducts(next:Int) {
         val session=auth?:return
         loading=true;error="";page=next
@@ -136,6 +137,11 @@ fun LiveProductStudioScreen() {
             }catch(e:Exception){error=e.message?:"Could not load product designs"}
             finally{loading=false}
         }
+    }
+    if(fullWeb){
+        val path=selected?.let{"/admin/products/edit/"+it.optLong("id")} ?: "/admin/products"
+        LiveWebWorkspace(startPath=path,onBack={fullWeb=false})
+        return
     }
     Column(Modifier.fillMaxSize().background(studioIvory)) {
         Row(
@@ -181,6 +187,7 @@ fun LiveProductStudioScreen() {
             }
         } else if(selected==null) {
             LazyColumn(contentPadding=PaddingValues(15.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                item { OutlinedButton(onClick={fullWeb=true},modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.Language,null);Spacer(Modifier.width(8.dp));Text("FULL ADVANCED WEB PRODUCT STUDIO")} }
                 item {
                     Row(verticalAlignment=Alignment.CenterVertically){
                         Text("LIVE PRODUCT INTELLIGENCE",color=studioRoyal,fontWeight=FontWeight.Black,fontSize=14.sp,modifier=Modifier.weight(1f))
@@ -307,6 +314,13 @@ fun LiveProductStudioScreen() {
                 }
                 if(loading)item{LinearProgressIndicator(modifier=Modifier.fillMaxWidth())}
                 if(error.isNotBlank())item{Text(error,color=Color(0xFFB13B35),fontSize=12.sp)}
+                item {
+                    Button(onClick={fullWeb=true},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=studioRoyal)){
+                        Icon(Icons.Default.Language,null)
+                        Spacer(Modifier.width(9.dp))
+                        Text("OPEN ORIGINAL FULL WEB PRODUCT EDITOR")
+                    }
+                }
                 item {StudioStep(1,"PHOTOS + REAL AI","Upload photos, generate details with existing Web AI and publish to this product.")}
                 item {ExistingProductPublisher(session=auth!!,product=p,variants=variants,designLinks=designLinks,onPublished={ _ -> selected=null;loadProducts(page) })}
                 item {StudioStep(2,"CURRENT PRODUCT DETAILS","Name, SEO, tags, product description, specs and FAQ from the existing Web AI.")}
