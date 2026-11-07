@@ -124,23 +124,17 @@ fun LiveProductStudioScreen() {
         }
     }
     fun openProduct(product:JSONObject) {
-        selected=product;variants=emptyList();designs=emptyList();designLinks=emptyList()
-        val session=auth?:return
         val id=product.optLong("id",0)
-        if(id<=0)return
-        loading=true;error=""
-        scope.launch {
-            try {
-                variants=NcsCloud.forProduct(session,"product_variants",id)
-                designs=NcsCloud.forProduct(session,"product_design_units",id)
-                designLinks=NcsCloud.forProduct(session,"product_design_unit_variants",id)
-            }catch(e:Exception){error=e.message?:"Could not load product designs"}
-            finally{loading=false}
-        }
+        if(id<=0){error="Product ID unavailable";return}
+        selected=product
+        // The ORIGINAL full Web Studio has live design variants, photo upload,
+        // AI design names, AI details, price editor and publish in one screen.
+        // Do not replace it with the previous incomplete mobile form.
+        fullWeb=true
     }
     if(fullWeb){
         val path=selected?.let{"/admin/products/edit/"+it.optLong("id")} ?: "/admin/products"
-        LiveWebWorkspace(startPath=path,onBack={fullWeb=false})
+        LiveWebWorkspace(startPath=path,onBack={fullWeb=false;selected=null;loadProducts(0)})
         return
     }
     Column(Modifier.fillMaxSize().background(studioIvory)) {
@@ -150,8 +144,8 @@ fun LiveProductStudioScreen() {
         ) {
             Column(Modifier.weight(1f)){
                 Text("NEW CITY STYLE • PRODUCT STUDIO",color=studioGold,fontSize=9.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp)
-                Text(if(selected==null)"Real Product Catalogue" else "Product #"+selected!!.str("id"),color=Color.White,fontWeight=FontWeight.Black,fontSize=22.sp)
-                Text("Website catalogue • Sizes • Designs",color=Color.White.copy(alpha=.74f),fontSize=11.sp)
+                Text("ADVANCED AI PRODUCT STUDIO",color=Color.White,fontWeight=FontWeight.Black,fontSize=21.sp)
+                Text("Live inventory → Original Web editor → AI publish",color=Color.White.copy(alpha=.85f),fontSize=11.sp)
             }
             IconButton(onClick={if(selected==null)loadProducts(page) else selected?.let{openProduct(it)}}){
                 Icon(Icons.Default.Refresh,null,tint=Color.White)
@@ -207,8 +201,8 @@ fun LiveProductStudioScreen() {
                             Icon(Icons.Default.AutoAwesome,null,tint=studioGold,modifier=Modifier.size(28.dp))
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)){
-                                Text("AI PRODUCT STUDIO",color=Color.White,fontWeight=FontWeight.Black,fontSize=15.sp)
-                                Text("Choose a real product → photos → AI names → details → publish",color=Color.White.copy(alpha=.8f),fontSize=10.sp)
+                                Text("ORIGINAL COMPLETE AI STUDIO",color=Color.White,fontWeight=FontWeight.Black,fontSize=15.sp)
+                                Text("Photo • Sizes • MRP • Online Price • AI Name • AI Details • Publish",color=Color.White.copy(alpha=.8f),fontSize=10.sp)
                             }
                             Icon(Icons.Default.ChevronRight,null,tint=studioGold)
                         }
