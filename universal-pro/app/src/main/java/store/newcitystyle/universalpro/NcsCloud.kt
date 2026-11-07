@@ -128,14 +128,20 @@ internal object NcsCloud {
     }
     suspend fun dueReminder(session:Session,account:JSONObject):JSONObject=withContext(Dispatchers.IO) {
         require(activeSession?.accessToken==session.accessToken){"Owner session expired"}
-        val due=account.optDouble("current_balance",0.0)
-        val phone=account.optString("customer_phone").filter(Char::isDigit)
-        require(due>0.009){"No outstanding due; message not sent"}
+        val accountId=account.optLong("id")
+        require(accountId>0){"Choose a real credit account"}
+        val fresh=creditProfile(session,accountId).optJSONArray("credit_accounts")?.optJSONObject(0)
+            ?:throw IOException("Could not verify current outstanding balance")
+        require(fresh.optLong("id")==accountId){"Credit account changed"}
+        val due=fresh.optDouble("current_balance",0.0)
+        val phone=fresh.optString("customer_phone").filter(Char::isDigit)
+        require(due>0.009){"This customer's due has been settled; reminder not sent"}
         require(phone.length==10 || (phone.length==12 && phone.startsWith("91"))){"Invalid customer phone"}
+        require(phone==account.optString("customer_phone").filter(Char::isDigit)){"Phone changed. Refresh before sending"}
         val payload=JSONObject()
             .put("type","DUE_REMINDER")
             .put("to",phone)
-            .put("customerName",account.optString("customer_name"))
+            .put("customerName",fresh.optString("customer_name"))
             .put("currentDue",due)
         val c=URL("https://newcitystyle.store/api/whatsapp/customer-message").openConnection() as HttpURLConnection
         c.requestMethod="POST";c.doOutput=true;c.connectTimeout=20000;c.readTimeout=45000
