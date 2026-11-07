@@ -95,26 +95,28 @@ private fun UniversalApp() {
             Column(modifier = Modifier.padding(pad).fillMaxSize()) {
                 if (openedModule != null) {
                     when (openedModule) {
-                        "Advanced POS" -> DemoPosScreen()
                         "Product Studio" -> LiveProductStudioScreen()
                         "Profit Studio" -> ProfitCalculatorScreen(onBack = { openedModule = null })
                         "Sync Center" -> SyncCenterScreen(onBack = { openedModule = null })
                         "Live Business Cloud" -> LiveBusinessCloudScreen(onBack = { openedModule = null })
-                        else -> OperationalStudioScreen(openedModule!!, onBack = { openedModule = null })
+                        "Sales Intelligence", "Advanced POS" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "pos_sales")
+                        "Purchase Center" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "purchases")
+                        "Customers" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "customers")
+                        "Supplier Ledger" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "suppliers")
+                        "Cash & Bank" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "cash_bank_transactions")
+                        "Expenses" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "expenses")
+                        "Inventory Radar" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "product_variants")
+                        else -> LiveBusinessCloudScreen(onBack = { openedModule = null })
                     }
                 } else {
                     when (selected) {
-                        "Home" -> PremiumDashboard(onNavigate = { target ->
-                            when (target) {
-                                "Advanced POS" -> selected = "Billing"
-                                "Product Studio" -> selected = "Products"
-                                "Profit Studio" -> { selected = "Insights"; openedModule = null }
-                                else -> openedModule = target
-                            }
+                        "Home" -> LiveBusinessHub(onNavigate = { target ->
+                            if (target == "Product Studio") { selected = "Products"; openedModule = null }
+                            else openedModule = target
                         })
-                        "Billing" -> DemoPosScreen()
+                        "Billing" -> LiveBusinessCloudScreen(onBack = { selected = "Home" }, initialTable = "pos_sales")
                         "Products" -> LiveProductStudioScreen()
-                        "Insights" -> FinanceStudioScreen()
+                        "Insights" -> LiveBusinessCloudScreen(onBack = { selected = "Home" }, initialTable = "cash_bank_transactions")
                         else -> PremiumToolsScreen(onOpen = { openedModule = it })
                     }
                 }
