@@ -25,6 +25,9 @@ internal object NcsCloud {
         conn.readTimeout=timeout
         conn.setRequestProperty("apikey",publicKey)
         conn.setRequestProperty("Accept","application/json")
+        conn.setRequestProperty("Cache-Control","no-cache, no-store, max-age=0")
+        conn.setRequestProperty("Pragma","no-cache")
+        conn.useCaches=false
         if(token!=null)conn.setRequestProperty("Authorization","Bearer "+token)
         return conn
     }
@@ -77,13 +80,28 @@ internal object NcsCloud {
             "pos_sale_items"->"id,sale_id,product_id,quantity"
             else->"id,sale_id,amount,payment_method"
         }
-        val sort=if(table=="products")"&order=id.desc" else "&order=id.desc"
+        val sort=when(table){
+            "products","product_variants","product_design_units","product_design_unit_variants","customers","suppliers" -> "&order=id.desc"
+            "supplier_payments" -> "&order=payment_date.desc,id.desc"
+            "cash_bank_transactions" -> "&order=transaction_date.desc,created_at.desc"
+            "expenses" -> "&order=expense_date.desc,created_at.desc"
+            "purchases" -> "&order=purchase_date.desc,created_at.desc"
+            "pos_sales","pos_payments","pos_sale_items","purchase_items" -> "&order=created_at.desc"
+            else -> "&order=id.desc"
+        }
         val conn=open(root+"/rest/v1/"+table+"?select="+columns+sort,token=session.accessToken)
         conn.setRequestProperty("Prefer","count=exact")
         conn.setRequestProperty("Range",start.toString()+"-"+(start+limit-1))
         val raw=consumeWithHeader(conn)
         val data=JSONArray(raw.first)
         Page((0 until data.length()).map{data.getJSONObject(it)},raw.second,start)
+    }
+    suspend fun dashboard(session:Session):JSONObject = withContext(Dispatchers.IO) {
+        val conn=open(root+"/rest/v1/rpc/ncs_universal_dashboard_v13",token=session.accessToken,method="POST")
+        conn.doOutput=true
+        conn.setRequestProperty("Content-Type","application/json")
+        conn.outputStream.use{it.write("{}".toByteArray(Charsets.UTF_8))}
+        JSONObject(consume(conn))
     }
     suspend fun searchProducts(session:Session,term:String):List<JSONObject> = withContext(Dispatchers.IO) {
         val clean=term.trim().take(70).filter { it.isLetterOrDigit() || it==' ' || it=='-' || it=='_' }
