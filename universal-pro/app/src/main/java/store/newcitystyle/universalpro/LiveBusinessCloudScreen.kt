@@ -54,6 +54,7 @@ fun LiveBusinessCloudScreen(onBack:()->Unit, initialTable:String="products") {
     var records by remember {mutableStateOf<List<JSONObject>>(emptyList())}
     var count by remember {mutableStateOf<Int?>(null)}
     var offset by remember {mutableIntStateOf(0)}
+    var openBillId by remember {mutableStateOf<String?>(null)}
     var keyword by remember {mutableStateOf("")}
     var loadedAt by remember {mutableStateOf("")}
     fun reload(table:String,start:Int) {
@@ -75,6 +76,10 @@ fun LiveBusinessCloudScreen(onBack:()->Unit, initialTable:String="products") {
             catch(e:Exception){error=e.message?:"Cloud data request failed";records=emptyList()}
             finally{busy=false}
         }
+    }
+    if(openBillId!=null && session!=null){
+        LiveBillDetailPanel(session!!,openBillId!!,onClose={openBillId=null})
+        return
     }
     Column(Modifier.fillMaxSize().background(cloudPaper)) {
         Row(
@@ -182,13 +187,13 @@ fun LiveBusinessCloudScreen(onBack:()->Unit, initialTable:String="products") {
                     }
                     val show=when(selected){
                         "products"->"₹"+entry.optString("price")+"  | MRP ₹"+entry.optString("mrp")+"  | Stock "+entry.optString("stock")
-                        "pos_sales"->"Total ₹"+entry.optString("total_amount")+"  | Due ₹"+entry.optString("due_amount")
+                        "pos_sales"->"Total ₹"+entry.optString("total_amount")+"  | Paid ₹"+entry.optString("paid_amount")+"  | Due ₹"+entry.optString("due_amount")+"  | "+entry.optString("created_at").take(10)
                         "purchases"->"Supplier "+entry.optString("supplier_name")+"  | ₹"+entry.optString("total_amount")
                         "customers"->"Orders "+entry.optString("total_orders")+"  | Total spent ₹"+entry.optString("total_spent")
                         "product_variants"->"Stock "+entry.optString("stock")+"  | "+entry.optString("size")+"  | "+entry.optString("color")
                         else->entry.optString("amount",entry.optString("phone",entry.optString("quantity","ID: "+entry.optString("id"))))
                     }
-                    Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(15.dp)){
+                    Card(modifier=Modifier.fillMaxWidth().clickable(enabled=selected=="pos_sales"){openBillId=entry.optString("id")},colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(15.dp)){
                         Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){
                             if(selected=="products" && entry.optString("image").startsWith("https://")) {
                                 AsyncImage(model=entry.optString("image"),contentDescription=main,modifier=Modifier.size(64.dp).background(cloudPaper,RoundedCornerShape(10.dp)),contentScale=ContentScale.Crop)
