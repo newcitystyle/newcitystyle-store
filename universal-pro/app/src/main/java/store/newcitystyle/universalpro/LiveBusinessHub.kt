@@ -42,6 +42,7 @@ private val actions=listOf(
     Action("Purchase Center","Supplier stock • Invoices",Icons.Default.LocalShipping,emerald,"Purchase Center"),
     Action("Inventory Radar","Barcode • Variants • Stock",Icons.Default.Inventory2,Color(0xFFB47427),"Inventory Radar"),
     Action("Customer Accounts","Customer records • Dues",Icons.Default.Groups,coral,"Customers"),
+    Action("CUSTOMER DUES","Reminder • Receive • Ledger",Icons.Default.AccountBalanceWallet,Color(0xFFB65D46),"Customer Dues"),
     Action("Supplier Ledger","Payments • Account history",Icons.Default.AccountBalanceWallet,purple,"Supplier Ledger"),
     Action("Cash & UPI","Actual cash & bank entries",Icons.Default.AccountBalance,blue,"Cash & Bank"),
     Action("Expenses","Real business expenses",Icons.Default.Receipt,emerald,"Expenses")
