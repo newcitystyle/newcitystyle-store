@@ -62,7 +62,7 @@ internal object NcsCloud {
         )
         require(table in allowed){"Unsupported table"}
         val columns=when(table){
-            "products"->"id,name,brand,category,price,mrp,stock,barcode,image,is_active,sell_online,updated_at"
+            "products"->"id,name,brand,category,price,mrp,stock,barcode,image,image_url,images,is_active,sell_online,updated_at"
             "product_variants"->"id,product_id,size,color,barcode,stock,mrp,selling_price,purchase_price,is_active"
             "product_design_units"->"id,product_id,design_name,image_url,status,unit_quantity,parent_barcode"
             "product_design_unit_variants"->"id,product_id,design_unit_id,variant_id,status,mrp,online_price,online_quantity,online_mrp"
@@ -90,7 +90,7 @@ internal object NcsCloud {
         require(clean.length>=2){"Enter at least 2 characters or a product barcode"}
         val filter="(name.ilike.*"+clean+"*,barcode.ilike.*"+clean+"*)"
         val encoded=java.net.URLEncoder.encode(filter,"UTF-8")
-        val cols="id,name,brand,category,price,mrp,stock,barcode,image,is_active,sell_online,updated_at"
+        val cols="id,name,brand,category,price,mrp,stock,barcode,image,image_url,images,is_active,sell_online,updated_at"
         val conn=open(root+"/rest/v1/products?select="+cols+"&or="+encoded+"&limit=75",token=session.accessToken)
         val arr=JSONArray(consume(conn))
         (0 until arr.length()).map{arr.getJSONObject(it)}
