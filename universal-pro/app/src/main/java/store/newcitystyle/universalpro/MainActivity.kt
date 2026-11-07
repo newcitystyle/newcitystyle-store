@@ -96,7 +96,7 @@ private fun UniversalApp() {
                 if (openedModule != null) {
                     when (openedModule) {
                         "Advanced POS" -> DemoPosScreen()
-                        "Product Studio" -> ProductLabV6()
+                        "Product Studio" -> LiveProductStudioScreen()
                         "Profit Studio" -> ProfitCalculatorScreen(onBack = { openedModule = null })
                         "Sync Center" -> SyncCenterScreen(onBack = { openedModule = null })
                         "Live Business Cloud" -> LiveBusinessCloudScreen(onBack = { openedModule = null })
@@ -113,7 +113,7 @@ private fun UniversalApp() {
                             }
                         })
                         "Billing" -> DemoPosScreen()
-                        "Products" -> ProductLabV6()
+                        "Products" -> LiveProductStudioScreen()
                         "Insights" -> FinanceStudioScreen()
                         else -> PremiumToolsScreen(onOpen = { openedModule = it })
                     }
