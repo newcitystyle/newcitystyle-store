@@ -30,7 +30,11 @@ private val allActions=listOf(
     ToolAction("LIVA AI","Assistant concept",Icons.Default.AutoAwesome,ProCoral),
     ToolAction("Profit Studio","Live margin calculator",Icons.Default.Calculate,ProOrange),
     ToolAction("Sync Center","Desktop / Android integration status",Icons.Default.CloudSync,ProTeal),
-    ToolAction("Live Business Cloud","Actual Products, Sales, Purchases and Balances",Icons.Default.CloudDone,ProBlue)
+    ToolAction("Live Business Cloud","Actual Products, Sales, Purchases and Balances",Icons.Default.CloudDone,ProBlue),
+    ToolAction("Full Web Admin","Every original web admin feature",Icons.Default.Public,ProBlue),
+    ToolAction("Web Product Studio","Original full AI photo studio",Icons.Default.AutoAwesome,ProPurple),
+    ToolAction("Customer Due Ledger","Existing website dues and reminders",Icons.Default.Message,ProTeal),
+    ToolAction("Advanced Web POS","Full website billing terminal",Icons.Default.ReceiptLong,ProOrange)
 )
 @Composable fun PremiumToolsScreen(onOpen:(String)->Unit) {
     var search by remember { mutableStateOf("") }
