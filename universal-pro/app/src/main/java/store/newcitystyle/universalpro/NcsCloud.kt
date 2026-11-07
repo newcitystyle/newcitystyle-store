@@ -59,7 +59,7 @@ internal object NcsCloud {
     }
     suspend fun load(session:Session,table:String,start:Int=0,limit:Int=40):Page=withContext(Dispatchers.IO) {
         val allowed=setOf(
-            "products","product_variants","product_design_units","product_design_unit_variants","pos_sales","purchases","purchase_items",
+            "products","product_variants","product_design_units","product_design_unit_variants","customer_credit_accounts","customer_credit_transactions","billing_customers","pos_sales","purchases","purchase_items",
             "customers","suppliers","supplier_payments","expenses",
             "cash_bank_transactions","pos_sale_items","pos_payments"
         )
@@ -72,7 +72,10 @@ internal object NcsCloud {
             "pos_sales"->"id,invoice_number,customer_name,total_amount,paid_amount,due_amount,created_at"
             "purchases"->"id,purchase_number,supplier_name,total_amount,paid_amount,due_amount,purchase_date"
             "purchase_items"->"id,purchase_id,product_id,quantity"
-            "customers"->"id,full_name,phone,total_orders,total_spent"
+            "customers"->"id,full_name,phone,total_orders,total_spent,created_at"
+            "customer_credit_accounts"->"id,customer_id,customer_name,customer_phone,current_balance,total_credit_given,total_credit_paid,last_payment_date,updated_at"
+            "customer_credit_transactions"->"id,credit_account_id,customer_id,amount_change,transaction_type,balance_after,created_at"
+            "billing_customers"->"id,customer_name,phone,current_due,total_credit,total_paid,updated_at"
             "suppliers"->"id,supplier_name,phone"
             "supplier_payments"->"id,supplier_id,amount,payment_date"
             "expenses"->"id,expense_number,category_name,amount,expense_date"
@@ -81,8 +84,10 @@ internal object NcsCloud {
             else->"id,sale_id,amount,payment_method"
         }
         val sort=when(table){
-            "products","product_variants","product_design_units","product_design_unit_variants","customers","suppliers" -> "&order=id.desc"
+            "products","product_variants","product_design_units","product_design_unit_variants","customers","suppliers","billing_customers" -> "&order=id.desc"
             "supplier_payments" -> "&order=payment_date.desc,id.desc"
+            "customer_credit_accounts" -> "&order=current_balance.desc"
+            "customer_credit_transactions" -> "&order=created_at.desc"
             "cash_bank_transactions" -> "&order=transaction_date.desc,created_at.desc"
             "expenses" -> "&order=expense_date.desc,created_at.desc"
             "purchases" -> "&order=purchase_date.desc,created_at.desc"
@@ -95,6 +100,47 @@ internal object NcsCloud {
         val raw=consumeWithHeader(conn)
         val data=JSONArray(raw.first)
         Page((0 until data.length()).map{data.getJSONObject(it)},raw.second,start)
+    }
+    private suspend fun rpc(session:Session,function:String,body:JSONObject=JSONObject()):String=withContext(Dispatchers.IO) {
+        require(function in setOf(
+            "ncs_universal_customer_profile_v14","ncs_universal_bill_detail_v14",
+            "ncs_universal_sales_trend_v14"
+        ))
+        val c=open(root+"/rest/v1/rpc/"+function,token=session.accessToken,method="POST")
+        c.doOutput=true;c.setRequestProperty("Content-Type","application/json")
+        c.outputStream.use{it.write(body.toString().toByteArray(Charsets.UTF_8))}
+        consume(c)
+    }
+    suspend fun customerProfile(session:Session,id:Long):JSONObject {
+        require(id>0)
+        return JSONObject(rpc(session,"ncs_universal_customer_profile_v14",JSONObject().put("p_customer_id",id)))
+    }
+    suspend fun billDetails(session:Session,id:String):JSONObject {
+        require(id.matches(Regex("[0-9a-fA-F-]{36}")))
+        return JSONObject(rpc(session,"ncs_universal_bill_detail_v14",JSONObject().put("p_sale_id",id)))
+    }
+    suspend fun salesTrend(session:Session):JSONArray {
+        return JSONArray(rpc(session,"ncs_universal_sales_trend_v14"))
+    }
+    suspend fun dueReminder(session:Session,account:JSONObject):JSONObject=withContext(Dispatchers.IO) {
+        require(activeSession?.accessToken==session.accessToken){"Owner session expired"}
+        val due=account.optDouble("current_balance",0.0)
+        val phone=account.optString("customer_phone").filter(Char::isDigit)
+        require(due>0.009){"No outstanding due; message not sent"}
+        require(phone.length==10 || (phone.length==12 && phone.startsWith("91"))){"Invalid customer phone"}
+        val payload=JSONObject()
+            .put("type","DUE_REMINDER")
+            .put("to",phone)
+            .put("customerName",account.optString("customer_name"))
+            .put("currentDue",due)
+        val c=URL("https://newcitystyle.store/api/whatsapp/customer-message").openConnection() as HttpURLConnection
+        c.requestMethod="POST";c.doOutput=true;c.connectTimeout=20000;c.readTimeout=45000
+        c.setRequestProperty("Content-Type","application/json")
+        c.outputStream.use{it.write(payload.toString().toByteArray(Charsets.UTF_8))}
+        val body=consume(c)
+        val result=JSONObject(body)
+        if(!result.optBoolean("success",false) || !result.optBoolean("directWhatsAppSent",false)) throw IOException(result.optString("error","WhatsApp service did not confirm sending"))
+        result
     }
     suspend fun dashboard(session:Session):JSONObject = withContext(Dispatchers.IO) {
         val conn=open(root+"/rest/v1/rpc/ncs_universal_dashboard_v13",token=session.accessToken,method="POST")
