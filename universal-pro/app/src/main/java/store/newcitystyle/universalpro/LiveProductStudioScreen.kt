@@ -28,7 +28,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import org.json.JSONObject
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
+import coil.compose.AsyncImagePainter
 
 private val studioRoyal = Color(0xFF0A2E73)
 private val studioIvory = Color(0xFFF8F4EC)
@@ -37,6 +39,44 @@ private val studioMuted = Color(0xFF566780)
 private val studioGreen = Color(0xFF15795D)
 private fun JSONObject.str(k:String) = optString(k,"").takeIf{it!="null"}?:""
 private fun JSONObject.money(k:String)="₹"+str(k).ifBlank{"—"}
+private fun JSONObject.bestPhoto():String {
+    for(field in listOf("image","image_url")){
+        val url=str(field).trim()
+        if(url.startsWith("https://") || url.startsWith("http://")) return url
+    }
+    val gallery=optJSONArray("images")
+    if(gallery!=null){
+        for(i in 0 until gallery.length()){
+            val url=gallery.optString(i).trim()
+            if(url.startsWith("https://")||url.startsWith("http://"))return url
+        }
+    }
+    return ""
+}
+@Composable private fun ProductPhoto(url:String,description:String,modifier:Modifier=Modifier) {
+    if(url.isBlank()){
+        Box(modifier.background(studioIvory,RoundedCornerShape(10.dp)),contentAlignment=Alignment.Center){
+            Icon(Icons.Default.Inventory2,null,tint=studioRoyal)
+        }
+    }else {
+        SubcomposeAsyncImage(
+            model=url,
+            contentDescription=description,
+            modifier=modifier.background(studioIvory,RoundedCornerShape(10.dp)),
+            contentScale=ContentScale.Crop
+        ){
+            when(painter.state){
+                is AsyncImagePainter.State.Success -> SubcomposeAsyncImageContent()
+                is AsyncImagePainter.State.Error -> Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
+                    Icon(Icons.Default.BrokenImage,null,tint=studioRoyal)
+                }
+                else -> Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
+                    CircularProgressIndicator(modifier=Modifier.size(20.dp),strokeWidth=2.dp,color=studioGold)
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun LiveProductStudioScreen() {
@@ -172,11 +212,10 @@ fun LiveProductStudioScreen() {
                         shape=RoundedCornerShape(17.dp)
                     ){
                         Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){
-                            Box(Modifier.size(50.dp).background(studioIvory,RoundedCornerShape(12.dp)),contentAlignment=Alignment.Center){
-                                if(p.str("image").startsWith("https://") || p.str("image").startsWith("http://")) {
-                                    AsyncImage(model=p.str("image"), contentDescription=p.str("name"), contentScale=ContentScale.Crop, modifier=Modifier.fillMaxSize())
-                                } else Icon(Icons.Default.Inventory2,null,tint=studioRoyal)
-                            }
+                            ProductPhoto(
+                                url=p.bestPhoto(),description=p.str("name"),
+                                modifier=Modifier.size(77.dp)
+                            )
                             Spacer(Modifier.width(11.dp))
                             Column(Modifier.weight(1f)){
                                 Text(p.str("name"),fontWeight=FontWeight.Black,color=studioRoyal,fontSize=14.sp,maxLines=2)
@@ -213,6 +252,12 @@ fun LiveProductStudioScreen() {
                 item {
                     Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(19.dp)) {
                         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(9.dp)){
+                            if(p.bestPhoto().isNotBlank()){
+                                ProductPhoto(
+                                    url=p.bestPhoto(),description=p.str("name"),
+                                    modifier=Modifier.fillMaxWidth().height(215.dp)
+                                )
+                            }
                             Text(p.str("name"),fontWeight=FontWeight.Black,fontSize=21.sp,color=studioRoyal)
                             Text("Product #"+p.str("id")+"  |  "+p.str("barcode"),color=studioMuted,fontSize=12.sp)
                             Text(p.money("price")+"  •  MRP "+p.money("mrp"),color=studioRoyal,fontWeight=FontWeight.Bold,fontSize=17.sp)
@@ -258,7 +303,7 @@ fun LiveProductStudioScreen() {
                     Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(13.dp)){
                         Column(Modifier.padding(13.dp),verticalArrangement=Arrangement.spacedBy(5.dp)){
                             if(d.str("image_url").startsWith("https://")||d.str("image_url").startsWith("http://")){
-                                AsyncImage(model=d.str("image_url"),contentDescription=d.str("design_name"),modifier=Modifier.fillMaxWidth().height(150.dp),contentScale=ContentScale.Fit)
+                                ProductPhoto(url=d.str("image_url"),description=d.str("design_name"),modifier=Modifier.fillMaxWidth().height(150.dp))
                             }
                             Text(d.str("design_name").ifBlank{"Design #"+d.str("id")},fontWeight=FontWeight.Bold,color=studioRoyal)
                             Text("Quantity "+d.str("unit_quantity")+"  •  "+d.str("status"),color=studioGreen,fontSize=12.sp)
