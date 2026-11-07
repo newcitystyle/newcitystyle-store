@@ -141,7 +141,7 @@ fun LiveBusinessCloudScreen(onBack:()->Unit, initialTable:String="products") {
                             Text("Connected account",color=Color.Gray,fontSize=11.sp)
                             Text(session!!.email,color=cloudInk,fontWeight=FontWeight.Bold,fontSize=12.sp)
                         }
-                        OutlinedButton(onClick={session=null;NcsCloud.activeSession=null;records=emptyList();password="";error=null}){Text("Sign out")}
+                        OutlinedButton(onClick={session=null;NcsCloud.signOut();records=emptyList();password="";error=null}){Text("Sign out")}
                     }
                 }
                 item {
