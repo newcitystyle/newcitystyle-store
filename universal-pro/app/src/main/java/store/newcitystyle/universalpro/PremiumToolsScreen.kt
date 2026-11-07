@@ -40,13 +40,13 @@ private val allActions=listOf(
          (selectedGroup=="Operations" && a.title !in listOf("Sales Intelligence","Supplier Ledger","Cash & Bank","Profit Studio"))) &&
          (search.isBlank() || a.title.contains(search,true) || a.subtitle.contains(search,true))
     }
-    Column(Modifier.fillMaxSize().background(ProBg)) {
-        ProHero("Business Galaxy","Your entire business in one control panel",Icons.Default.Apps,ProGold)
+    Column(Modifier.fillMaxSize().background(Color(0xFFF8F4EC))) {
+        ProHero("UNIVERSAL WORKSPACES","Your entire business, from one premium control center",Icons.Default.Diamond,Color(0xFFD4AF37))
         LazyColumn(contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
             item {
                 Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                    ProStat("Modules",allActions.size.toString(),"Native entry points",Icons.Default.Dashboard,ProPurple,Modifier.weight(1f))
-                    ProStat("Connected","0","Safe preview mode",Icons.Default.Security,ProTeal,Modifier.weight(1f))
+                    ProStat("Modules",allActions.size.toString(),"Integrated workspaces",Icons.Default.Dashboard,Color(0xFF0A2E73),Modifier.weight(1f))
+                    ProStat("Cloud",if(NcsCloud.activeSession!=null)"LIVE" else "LOGIN","Owner authenticated data",Icons.Default.CloudDone,Color(0xFF14846B),Modifier.weight(1f))
                 }
             }
             item {
@@ -59,7 +59,7 @@ private val allActions=listOf(
                     }
                 }
             }
-            item {Text("Explore Workspaces",fontSize=21.sp,fontWeight=FontWeight.Black,color=ProInk)}
+            item {Text("EXPLORE BUSINESS MODULES",fontSize=20.sp,fontWeight=FontWeight.Black,color=Color(0xFF0A2E73))}
             visible.chunked(2).forEach{pair->
                 item {
                     Row(horizontalArrangement=Arrangement.spacedBy(11.dp)){
@@ -76,7 +76,7 @@ private val allActions=listOf(
                                         }
                                     }
                                     Spacer(Modifier.height(12.dp))
-                                    Text(action.title,fontSize=14.sp,color=ProInk,fontWeight=FontWeight.ExtraBold)
+                                    Text(action.title,fontSize=14.sp,color=Color(0xFF0A2E73),fontWeight=FontWeight.ExtraBold)
                                     Text(action.subtitle,fontSize=10.sp,color=Color.Gray,maxLines=2)
                                     Spacer(Modifier.height(9.dp))
                                     Icon(Icons.Default.ArrowForward,null,tint=action.tone,modifier=Modifier.size(18.dp))
@@ -87,7 +87,7 @@ private val allActions=listOf(
                     }
                 }
             }
-            item {ProPill("PREVIEW MODE • ORIGINAL APPS ARE UNCHANGED",ProOrange)}
+            item {Text("Live cloud records are available after owner login. Offline Desktop two-way financial writes are not yet enabled.",color=Color(0xFF65738B),fontSize=11.sp)}
         }
     }
 }
