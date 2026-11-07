@@ -164,9 +164,18 @@ fun ExistingProductPublisher(
                 val g=generated!!
                 Divider()
                 Text("AI ENGINE: "+aiProvider.uppercase(),color=publishGreen,fontSize=10.sp,fontWeight=FontWeight.Bold)
-                Text(g.optString("productName"),color=publishNavy,fontWeight=FontWeight.Black,fontSize=19.sp)
-                Text(g.optString("description"),color=Color(0xFF405068),fontSize=12.sp,maxLines=8)
-                Text("SEO: "+g.optString("seoTitle"),color=publishNavy,fontSize=11.sp,fontWeight=FontWeight.Bold)
+                OutlinedTextField(
+                    value=g.optString("productName"),onValueChange={ generated=JSONObject(g.toString()).put("productName",it);approved=false },
+                    label={Text("AI Product Name — review / edit")},modifier=Modifier.fillMaxWidth(),singleLine=true
+                )
+                OutlinedTextField(
+                    value=g.optString("description"),onValueChange={ generated=JSONObject(g.toString()).put("description",it);approved=false },
+                    label={Text("AI Product Description — review / edit")},modifier=Modifier.fillMaxWidth(),minLines=3,maxLines=7
+                )
+                OutlinedTextField(
+                    value=g.optString("seoTitle"),onValueChange={ generated=JSONObject(g.toString()).put("seoTitle",it);approved=false },
+                    label={Text("SEO Title — review / edit")},modifier=Modifier.fillMaxWidth(),singleLine=true
+                )
                 Text("FAQ",color=publishNavy,fontWeight=FontWeight.Black,fontSize=12.sp)
                 val faqs=g.optJSONArray("faqs")
                 if(faqs!=null) for(i in 0 until faqs.length()){
@@ -182,7 +191,7 @@ fun ExistingProductPublisher(
                     Text("I reviewed these AI details and approve publication",fontSize=11.sp,color=publishNavy)
                 }
                 Button(
-                    enabled=approved&&!busy&&enoughStock&&validMrp,modifier=Modifier.fillMaxWidth(),onClick={publish},
+                    enabled=approved&&!busy&&enoughStock&&validMrp&&g.optString("productName").isNotBlank()&&g.optString("description").isNotBlank(),modifier=Modifier.fillMaxWidth(),onClick={publish},
                     colors=ButtonDefaults.buttonColors(containerColor=publishGreen)
                 ){
                     Icon(Icons.Default.Publish,null)
