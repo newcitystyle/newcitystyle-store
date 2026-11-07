@@ -48,6 +48,8 @@ fun LiveWebWorkspace(
     var error by remember {mutableStateOf("")}
     var currentUrl by remember {mutableStateOf(NCS_WEB_ORIGIN+startPath)}
     var chooser by remember { mutableStateOf(false) }
+    val productEditMode=startPath.startsWith("/admin/products/edit/")
+    val productCatalogueMode=startPath=="/admin/products"
     val uploadPicker=rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()){res:ActivityResult->
         val cb=uploading
         uploading=null;chooser=false
@@ -70,22 +72,25 @@ fun LiveWebWorkspace(
                 Icon(Icons.Default.ArrowBack,null,tint=Color.White)
             }
             Column(Modifier.weight(1f)){
-                Text("NEW CITY STYLE",color=Color(0xFFD4AF37),fontSize=11.sp,fontWeight=androidx.compose.ui.text.font.FontWeight.Bold)
-                Text("FULL LIVE WEB WORKSPACE",color=Color.White,fontSize=16.sp,fontWeight=androidx.compose.ui.text.font.FontWeight.Black)
+                Text("NEW CITY STYLE  •  WEB LIVE",color=Color(0xFFD4AF37),fontSize=9.sp,fontWeight=androidx.compose.ui.text.font.FontWeight.Bold)
+                Text(if(productEditMode)"FULL AI PRODUCT EDITOR" else if(productCatalogueMode)"ADVANCED PRODUCT STUDIO" else "BUSINESS WEB WORKSPACE",
+                    color=Color.White,fontSize=15.sp,fontWeight=androidx.compose.ui.text.font.FontWeight.Black)
             }
             IconButton(onClick={browser?.reload()}){Icon(Icons.Default.Refresh,null,tint=Color.White)}
             IconButton(onClick={
                 runCatching{context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(currentUrl)))}
             }){Icon(Icons.Default.OpenInBrowser,null,tint=Color(0xFFD4AF37))}
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=9.dp,vertical=6.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
-            webPaths.forEach{(label,path)->
-                FilterChip(
-                    selected=Uri.parse(currentUrl).path==path,
-                    onClick={browser?.loadUrl(NCS_WEB_ORIGIN+path)},
-                    label={Text(label,fontSize=10.sp)},
-                    colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Color(0xFFD4AF37))
-                )
+        if(!productEditMode && !productCatalogueMode) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=9.dp,vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                webPaths.forEach{(label,path)->
+                    FilterChip(
+                        selected=Uri.parse(currentUrl).path==path,
+                        onClick={browser?.loadUrl(NCS_WEB_ORIGIN+path)},
+                        label={Text(label,fontSize=10.sp)},
+                        colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Color(0xFFD4AF37))
+                    )
+                }
             }
         }
         if(loading)LinearProgressIndicator(Modifier.fillMaxWidth(),color=Color(0xFFD4AF37))
