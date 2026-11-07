@@ -52,6 +52,7 @@ fun LiveBusinessHub(onNavigate:(String)->Unit) {
     val scope=rememberCoroutineScope()
     var session by remember { mutableStateOf(NcsCloud.activeSession) }
     var summary by remember { mutableStateOf<JSONObject?>(null) }
+    var totals by remember { mutableStateOf<JSONObject?>(null) }
     var error by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var refreshedAt by remember { mutableStateOf("") }
@@ -63,6 +64,7 @@ fun LiveBusinessHub(onNavigate:(String)->Unit) {
         scope.launch {
             try {
                 summary=NcsCloud.dashboard(auth)
+                totals=NcsCloud.businessTotals(auth)
                 refreshedAt=summary?.optString("generated_at")?.replace("T"," ")?.take(19)?:""
             }catch(e:Exception){error=e.message?:"Unable to load live dashboard";summary=null}
             finally{busy=false}
@@ -75,6 +77,7 @@ fun LiveBusinessHub(onNavigate:(String)->Unit) {
                 busy=true
                 try {
                     summary=NcsCloud.dashboard(current)
+                    totals=NcsCloud.businessTotals(current)
                     refreshedAt=summary?.optString("generated_at")?.replace("T"," ")?.take(19)?:""
                     error=""
                 }catch(e:Exception){error=e.message?:"Live dashboard unavailable"}
@@ -164,6 +167,22 @@ fun LiveBusinessHub(onNavigate:(String)->Unit) {
                         }
                     }
                 }
+            }
+        }
+        item {
+            Text("ALL-TIME CLOUD BUSINESS TOTALS",Modifier.padding(horizontal=17.dp),color=royal,fontWeight=FontWeight.Black,fontSize=17.sp)
+            Text("Data received by Cloud only • Desktop local bills may not be synchronized",Modifier.padding(horizontal=17.dp),color=secondary,fontSize=10.sp)
+        }
+        item {
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),horizontalArrangement=Arrangement.spacedBy(9.dp)){
+                PulseMetric("TOTAL CLOUD BILLS",totals?.optString("all_time_cloud_bills")?:"—",Icons.Default.ReceiptLong,blue,Modifier.weight(1f))
+                PulseMetric("CLOUD SALES",totals?.rupees("all_time_cloud_sales")?:"—",Icons.Default.TrendingUp,emerald,Modifier.weight(1f))
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),horizontalArrangement=Arrangement.spacedBy(9.dp)){
+                PulseMetric("WEB CUSTOMER DUES",totals?.rupees("website_customer_dues")?:"—",Icons.Default.Groups,coral,Modifier.weight(1f))
+                PulseMetric("SUPPLIER DUES",totals?.rupees("supplier_balance")?:"—",Icons.Default.AccountBalanceWallet,purple,Modifier.weight(1f))
             }
         }
         item { LiveSalesTrendCard() }
