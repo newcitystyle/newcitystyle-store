@@ -36,6 +36,8 @@ private fun JSONObject.rupees(field:String) = amt.format(optDouble(field,0.0))
 private data class Action(val label:String,val desc:String,val icon:ImageVector,val shade:Color,val route:String)
 private val actions=listOf(
     Action("AI Product Studio","Photo → Design Names → Publish",Icons.Default.AutoAwesome,purple,"Product Studio"),
+    Action("FULL WEB STUDIO","All original AI + photo tools",Icons.Default.Language,Color(0xFF005A90),"Web Product Studio"),
+    Action("FULL WEB ADMIN","All existing website modules",Icons.Default.Public,Color(0xFF557DAA),"Full Web Admin"),
     Action("Sales History","All bills • Payments • Returns",Icons.Default.ReceiptLong,blue,"Sales Intelligence"),
     Action("Purchase Center","Supplier stock • Invoices",Icons.Default.LocalShipping,emerald,"Purchase Center"),
     Action("Inventory Radar","Barcode • Variants • Stock",Icons.Default.Inventory2,Color(0xFFB47427),"Inventory Radar"),
@@ -152,7 +154,7 @@ fun LiveBusinessHub(onNavigate:(String)->Unit) {
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
                 Text("QUICK LAUNCH",color=royal,fontWeight=FontWeight.Black,fontSize=20.sp,modifier=Modifier.weight(1f))
-                Text("8 WORKSPACES",color=secondary,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                Text(actions.size.toString()+" WORKSPACES",color=secondary,fontSize=10.sp,fontWeight=FontWeight.Bold)
             }
         }
         actions.chunked(2).forEach {pair->
