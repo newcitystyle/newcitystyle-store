@@ -1,5 +1,9 @@
 package store.newcitystyle.universalpro
 
+import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -14,8 +18,44 @@ internal object NcsCloud {
     private const val publicKey = "sb_publishable_t2qY6zyXSPrtao7ox5eC2A_kBsTNuy3"
     private const val timeout = 14000
     internal fun keyForInternalUse():String = publicKey
-    data class Session(val accessToken:String, val email:String)
-    @Volatile var activeSession:Session? = null
+    data class Session(val accessToken:String, val email:String,val refreshToken:String="",val expiresAt:Long=0)
+    var activeSession:Session? by mutableStateOf(null)
+        private set
+    private var appContext:Context?=null
+    fun initialize(context:Context) {
+        appContext=context.applicationContext
+        activeSession=NcsSecureSession.restore(context.applicationContext)
+    }
+    fun signOut(){
+        activeSession=null
+        appContext?.let{NcsSecureSession.clear(it)}
+    }
+    private fun rememberSession(session:Session):Session {
+        activeSession=session
+        appContext?.let { NcsSecureSession.save(it,session) }
+        return session
+    }
+    suspend fun restoreActiveSession():Session? {
+        val old=activeSession?:return null
+        return if(old.expiresAt>0 && System.currentTimeMillis()/1000>=old.expiresAt-120) {
+            try{renew(old)}catch(_:Exception){signOut();null}
+        } else old
+    }
+    suspend fun renew(old:Session):Session=withContext(Dispatchers.IO){
+        if(old.refreshToken.isBlank())throw IOException("Please sign in again")
+        val conn=open(root+"/auth/v1/token?grant_type=refresh_token",method="POST")
+        conn.doOutput=true
+        conn.setRequestProperty("Content-Type","application/json")
+        val payload=JSONObject().put("refresh_token",old.refreshToken)
+        conn.outputStream.use{it.write(payload.toString().toByteArray(Charsets.UTF_8))}
+        val response=JSONObject(consume(conn))
+        val token=response.optString("access_token")
+        if(token.isBlank())throw IOException("Refresh session unavailable")
+        rememberSession(Session(
+            token,old.email,response.optString("refresh_token",old.refreshToken),
+            System.currentTimeMillis()/1000+response.optLong("expires_in",3600)
+        ))
+    }
     data class Page(val items:List<JSONObject>,val count:Int?,val start:Int)
 
     private fun open(url:String,token:String?=null,method:String="GET"):HttpURLConnection {
@@ -55,7 +95,9 @@ internal object NcsCloud {
         val j=JSONObject(consume(conn))
         val token=j.optString("access_token")
         if(token.isBlank()) throw IOException("Sign-in did not return a session token")
-        Session(token,email.trim()).also { activeSession = it }
+        rememberSession(Session(token,email.trim(),
+            j.optString("refresh_token"),
+            System.currentTimeMillis()/1000+j.optLong("expires_in",3600)))
     }
     suspend fun load(session:Session,table:String,start:Int=0,limit:Int=40):Page=withContext(Dispatchers.IO) {
         val allowed=setOf(
