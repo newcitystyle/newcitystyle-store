@@ -128,7 +128,7 @@ fun OrbitBusinessHubV16(onNavigate:(String)->Unit) {
         item{
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)){
                 OrbitTextMetric("BILLS TODAY",metrics?.optString("today_bills")?:"—",Color(0xFF96C2FF),Modifier.weight(1f))
-                OrbitTextMetric("MONTH EXPENSE",metrics?.let{orbitMoney.format(it.optDouble("today_expenses",0.0))}?:"—",Color(0xFFFFB68B),Modifier.weight(1f))
+                OrbitTextMetric("TODAY EXPENSE",metrics?.let{orbitMoney.format(it.optDouble("today_expenses",0.0))}?:"—",Color(0xFFFFB68B),Modifier.weight(1f))
             }
         }
         if(syncStale) item{
