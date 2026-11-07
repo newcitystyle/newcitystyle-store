@@ -205,7 +205,7 @@ fun LiveCustomer360Screen(onBack:()->Unit) {
                                             modifier=Modifier.fillMaxWidth(),
                                             colors=ButtonDefaults.buttonColors(containerColor=customerTeal)
                                         ){
-                                            Icon(Icons.Default.MessageCircle,null)
+                                            Icon(Icons.Default.Message,null)
                                             Spacer(Modifier.width(7.dp))
                                             Text("SEND WHATSAPP DUE REMINDER")
                                         }
