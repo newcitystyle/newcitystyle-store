@@ -29,7 +29,7 @@ private fun JSONObject.bv(k:String)=optString(k).takeUnless{it=="null"}?:""
 private fun JSONObject.ba(k:String)=moneyBill.format(optDouble(k,0.0))
 
 @Composable
-fun LiveBillDetailPanel(session:NcsCloud.Session,billId:String,onClose:()->Unit) {
+internal fun LiveBillDetailPanel(session:NcsCloud.Session,billId:String,onClose:()->Unit) {
     val scope=rememberCoroutineScope()
     var loading by remember(billId){mutableStateOf(true)}
     var details by remember(billId){mutableStateOf<JSONObject?>(null)}
