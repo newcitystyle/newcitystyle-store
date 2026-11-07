@@ -103,7 +103,7 @@ internal object NcsCloud {
     }
     private suspend fun rpc(session:Session,function:String,body:JSONObject=JSONObject()):String=withContext(Dispatchers.IO) {
         require(function in setOf(
-            "ncs_universal_customer_profile_v14","ncs_universal_bill_detail_v14",
+            "ncs_universal_customer_profile_v14","ncs_universal_credit_profile_v14","ncs_universal_bill_detail_v14",
             "ncs_universal_sales_trend_v14"
         ))
         val c=open(root+"/rest/v1/rpc/"+function,token=session.accessToken,method="POST")
@@ -114,6 +114,10 @@ internal object NcsCloud {
     suspend fun customerProfile(session:Session,id:Long):JSONObject {
         require(id>0)
         return JSONObject(rpc(session,"ncs_universal_customer_profile_v14",JSONObject().put("p_customer_id",id)))
+    }
+    suspend fun creditProfile(session:Session,id:Long):JSONObject {
+        require(id>0)
+        return JSONObject(rpc(session,"ncs_universal_credit_profile_v14",JSONObject().put("p_account_id",id)))
     }
     suspend fun billDetails(session:Session,id:String):JSONObject {
         require(id.matches(Regex("[0-9a-fA-F-]{36}")))
