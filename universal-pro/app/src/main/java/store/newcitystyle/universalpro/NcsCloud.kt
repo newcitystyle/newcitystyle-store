@@ -62,7 +62,7 @@ internal object NcsCloud {
         )
         require(table in allowed){"Unsupported table"}
         val columns=when(table){
-            "products"->"id,name,brand,category,price,mrp,stock,barcode,image,is_active,sell_online"
+            "products"->"id,name,brand,category,price,mrp,stock,barcode,image,is_active,sell_online,updated_at"
             "product_variants"->"id,product_id,size,color,barcode,stock,mrp,selling_price,purchase_price,is_active"
             "product_design_units"->"id,product_id,design_name,image_url,status,unit_quantity,parent_barcode"
             "product_design_unit_variants"->"id,product_id,design_unit_id,variant_id,status,mrp,online_price,online_quantity,online_mrp"
