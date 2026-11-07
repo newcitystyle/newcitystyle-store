@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 
 private val cloudBlue=Color(0xFF0A2E73)
 private val cloudGold=Color(0xFFD4AF37)
@@ -53,13 +55,14 @@ fun LiveBusinessCloudScreen(onBack:()->Unit, initialTable:String="products") {
     var count by remember {mutableStateOf<Int?>(null)}
     var offset by remember {mutableIntStateOf(0)}
     var keyword by remember {mutableStateOf("")}
+    var loadedAt by remember {mutableStateOf("")}
     fun reload(table:String,start:Int) {
         val auth=session?:return
         selected=table;offset=start;busy=true;error=null
         scope.launch {
             try {
                 val page=NcsCloud.load(auth,table,start,40)
-                records=page.items;count=page.count
+                records=page.items;count=page.count;loadedAt=java.text.SimpleDateFormat("dd MMM, hh:mm a",java.util.Locale.ENGLISH).format(java.util.Date())
             }catch(e:Exception){error=e.message?:"Cloud request failed";records=emptyList()}
             finally{busy=false}
         }
@@ -132,14 +135,23 @@ fun LiveBusinessCloudScreen(onBack:()->Unit, initialTable:String="products") {
                     }
                 }
                 item {
-                    Surface(color=Color(0xFFE4EDF9),shape=RoundedCornerShape(13.dp)){
-                        Text("LIVE CLOUD RECORDS • NO FINANCIAL WRITES",Modifier.padding(12.dp),color=cloudBlue,fontWeight=FontWeight.Bold,fontSize=10.sp)
+                    Card(colors=CardDefaults.cardColors(containerColor=cloudBlue),shape=RoundedCornerShape(17.dp)){
+                        Column(Modifier.padding(15.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+                            Row(verticalAlignment=Alignment.CenterVertically){
+                                Icon(Icons.Default.Bolt,null,tint=cloudGold,modifier=Modifier.size(21.dp))
+                                Spacer(Modifier.width(7.dp))
+                                Text("LIVE BUSINESS DATA",color=Color.White,fontWeight=FontWeight.Black,fontSize=14.sp)
+                            }
+                            Text("Real cloud records • newest first • pull on demand",color=Color.White.copy(alpha=.75f),fontSize=11.sp)
+                            Text("Updated "+loadedAt.ifBlank{"—"}+"  •  Finance writes: disabled",color=cloudGold,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                        }
                     }
                 }
                 item {
+                    Text("EXPLORE ALL MODULES",color=cloudBlue,fontSize=10.sp,fontWeight=FontWeight.Black)
                     Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)){
                         cloudLabels.forEach { (label,table)->
-                            FilterChip(selected=selected==table,onClick={keyword="";reload(table,0)},label={Text(label,fontSize=11.sp)})
+                            FilterChip(selected=selected==table,onClick={keyword="";reload(table,0)},label={Text(label,fontSize=11.sp)},colors=FilterChipDefaults.filterChipColors(selectedContainerColor=cloudGold,selectedLabelColor=cloudBlue))
                         }
                     }
                 }
@@ -147,7 +159,7 @@ fun LiveBusinessCloudScreen(onBack:()->Unit, initialTable:String="products") {
                     Row(verticalAlignment=Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)){
                             Text(cloudLabels.firstOrNull{it.second==selected}?.first?:"Cloud Data",color=cloudBlue,fontWeight=FontWeight.Black,fontSize=22.sp)
-                            Text((count?.toString()?:"—")+" records • page "+(offset/40+1),color=Color.Gray,fontSize=11.sp)
+                            Text((count?.toString()?:"—")+" records • page "+(offset/40+1)+" • newest first",color=Color.Gray,fontSize=11.sp)
                         }
                         IconButton(onClick={reload(selected,offset)}){Icon(Icons.Default.Refresh,null,tint=cloudBlue)}
                     }
@@ -178,7 +190,13 @@ fun LiveBusinessCloudScreen(onBack:()->Unit, initialTable:String="products") {
                     }
                     Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(15.dp)){
                         Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){
-                            Icon(Icons.Default.Inventory2,null,tint=cloudGold)
+                            if(selected=="products" && entry.optString("image").startsWith("https://")) {
+                                AsyncImage(model=entry.optString("image"),contentDescription=main,modifier=Modifier.size(64.dp).background(cloudPaper,RoundedCornerShape(10.dp)),contentScale=ContentScale.Crop)
+                            }else{
+                                Box(Modifier.size(43.dp).background(cloudPaper,RoundedCornerShape(12.dp)),contentAlignment=Alignment.Center){
+                                    Icon(Icons.Default.Inventory2,null,tint=cloudBlue)
+                                }
+                            }
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)){
                                 Text(main,color=cloudInk,fontWeight=FontWeight.Bold,fontSize=13.sp,maxLines=2)
