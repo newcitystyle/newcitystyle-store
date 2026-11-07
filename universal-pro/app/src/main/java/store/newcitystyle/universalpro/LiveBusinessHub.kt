@@ -143,6 +143,29 @@ fun LiveBusinessHub(onNavigate:(String)->Unit) {
                 PulseMetric("TODAY EXPENSE",summary?.rupees("today_expenses")?:"—",Icons.Default.Payments,coral,Modifier.weight(1f))
             }
         }
+        item {
+            val last=summary?.optString("last_sale_at","")?:""
+            val day=last.take(10)
+            val lastDay=runCatching{java.time.LocalDate.parse(day)}.getOrNull()
+            val now=java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"))
+            val stale=lastDay==null||lastDay.isBefore(now.minusDays(1))
+            if(stale && summary!=null){
+                Card(
+                    modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp),
+                    colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF1E4)),
+                    shape=RoundedCornerShape(14.dp)
+                ){
+                    Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically){
+                        Icon(Icons.Default.CloudOff,null,tint=coral)
+                        Spacer(Modifier.width(11.dp))
+                        Column {
+                            Text("DESKTOP → CLOUD SYNC IS BEHIND",color=Color(0xFF9E462F),fontWeight=FontWeight.Black,fontSize=12.sp)
+                            Text("Last synced cloud bill: "+day.ifBlank{"unknown"}+". New Desktop bills are not in Cloud yet.",color=Color(0xFF79574A),fontSize=11.sp)
+                        }
+                    }
+                }
+            }
+        }
         item { LiveSalesTrendCard() }
         item {
             Text("INVENTORY INTELLIGENCE",Modifier.padding(horizontal=17.dp),color=royal,fontWeight=FontWeight.Black,fontSize=17.sp)
