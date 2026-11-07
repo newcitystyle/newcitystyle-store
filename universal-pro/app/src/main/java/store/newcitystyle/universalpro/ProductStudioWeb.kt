@@ -80,7 +80,9 @@ internal object ProductStudioWeb {
     }
     // Restrict updates to the selected existing row and ONLINE CONTENT columns only.
     // Never edit physical barcode, SKU, stock, purchase cost, or POS variant quantities.
-    suspend fun publishExisting(session:NcsCloud.Session,product:JSONObject,imageUrl:String,details:JSONObject):JSONObject=withContext(Dispatchers.IO) {
+    suspend fun publishExisting(session:NcsCloud.Session,product:JSONObject,imageUrls:List<String>,details:JSONObject):JSONObject=withContext(Dispatchers.IO) {
+        require(imageUrls.isNotEmpty()&&imageUrls.all{it.startsWith("https://")}){"Valid uploaded photos required"}
+        val imageUrl=imageUrls.first()
         val id=product.optLong("id")
         require(id>0){"Existing product required"}
         val productName=details.optString("productName",product.optString("name")).trim()
@@ -96,6 +98,8 @@ internal object ProductStudioWeb {
             .put("subcategory",details.optString("subcategory",product.optString("subcategory")))
             .put("image",imageUrl)
             .put("image_url",imageUrl)
+            .put("gallery_images",org.json.JSONArray(imageUrls.drop(1)))
+            .put("images",org.json.JSONArray(imageUrls))
             .put("seo_title",details.optString("seoTitle",productName+" | NEW CITY STYLE"))
             .put("meta_description",details.optString("metaDescription"))
             .put("seo_keywords",details.optJSONArray("seoKeywords")?.join(", ") ?: "")
@@ -106,7 +110,10 @@ internal object ProductStudioWeb {
             .put("material",details.optString("material",product.optString("material")))
             .put("pattern",details.optString("pattern",product.optString("pattern")))
             .put("sell_online",true)
-        val c=URL(supabase+"/rest/v1/products?id=eq."+id).openConnection() as HttpURLConnection
+        val currentStamp=product.optString("updated_at","")
+        val versionCheck=if(currentStamp.isNotBlank()&&currentStamp!="null")
+            "&updated_at=eq."+java.net.URLEncoder.encode(currentStamp,"UTF-8") else ""
+        val c=URL(supabase+"/rest/v1/products?id=eq."+id+versionCheck).openConnection() as HttpURLConnection
         c.requestMethod="PATCH";c.doOutput=true;c.connectTimeout=18000;c.readTimeout=22000
         c.setRequestProperty("apikey",NcsCloud.keyForInternalUse())
         c.setRequestProperty("Authorization","Bearer "+session.accessToken)
