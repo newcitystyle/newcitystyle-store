@@ -194,6 +194,12 @@ internal object NcsCloud {
         if(!result.optBoolean("success",false) || !result.optBoolean("directWhatsAppSent",false)) throw IOException(result.optString("error","WhatsApp service did not confirm sending"))
         result
     }
+    suspend fun businessTotals(session:Session):JSONObject=withContext(Dispatchers.IO) {
+        val conn=open(root+"/rest/v1/rpc/ncs_universal_business_totals_v15",token=session.accessToken,method="POST")
+        conn.doOutput=true;conn.setRequestProperty("Content-Type","application/json")
+        conn.outputStream.use{it.write("{}".toByteArray(Charsets.UTF_8))}
+        JSONObject(consume(conn))
+    }
     suspend fun dashboard(session:Session):JSONObject = withContext(Dispatchers.IO) {
         val conn=open(root+"/rest/v1/rpc/ncs_universal_dashboard_v13",token=session.accessToken,method="POST")
         conn.doOutput=true
