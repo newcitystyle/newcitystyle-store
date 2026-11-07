@@ -279,7 +279,7 @@ fun LiveProductStudioScreen() {
                     }
                 }
                 item {
-                    TextButton(onClick={auth=null;NcsCloud.activeSession=null;products=emptyList();selected=null}){
+                    TextButton(onClick={auth=null;NcsCloud.signOut();products=emptyList();selected=null}){
                         Text("Sign out",color=studioMuted)
                     }
                 }
