@@ -1,6 +1,7 @@
 package store.newcitystyle.universalpro
 
 import android.os.Bundle
+import androidx.lifecycle.lifecycleScope
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
@@ -29,6 +30,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = android.graphics.Color.rgb(10, 46, 115)
+        NcsCloud.initialize(applicationContext)
+        androidx.lifecycle.lifecycleScope.launchWhenStarted { NcsCloud.restoreActiveSession() }
         setContent { UniversalApp() }
     }
 }
