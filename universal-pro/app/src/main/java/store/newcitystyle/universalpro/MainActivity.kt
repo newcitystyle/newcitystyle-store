@@ -96,6 +96,10 @@ private fun UniversalApp() {
                 if (openedModule != null) {
                     when (openedModule) {
                         "Product Studio" -> LiveProductStudioScreen()
+                        "Full Web Admin" -> LiveWebWorkspace(startPath="/admin/dashboard",onBack={openedModule=null})
+                        "Web Product Studio" -> LiveWebWorkspace(startPath="/admin/products",onBack={openedModule=null})
+                        "Customer Due Ledger" -> LiveWebWorkspace(startPath="/admin/customer-dues",onBack={openedModule=null})
+                        "Advanced Web POS" -> LiveWebWorkspace(startPath="/admin/pos",onBack={openedModule=null})
                         "Profit Studio" -> ProfitCalculatorScreen(onBack = { openedModule = null })
                         "Sync Center" -> SyncCenterScreen(onBack = { openedModule = null })
                         "Live Business Cloud" -> LiveBusinessCloudScreen(onBack = { openedModule = null })
