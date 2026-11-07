@@ -109,6 +109,7 @@ private fun UniversalApp() {
                         "Sales Intelligence", "Advanced POS" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "pos_sales")
                         "Purchase Center" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "purchases")
                         "Customers" -> LiveCustomer360Screen(onBack = { openedModule = null })
+                        "Customer Dues" -> LiveCustomer360Screen(onBack = { openedModule = null },startMode = "Due Accounts")
                         "Supplier Ledger" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "suppliers")
                         "Cash & Bank" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "cash_bank_transactions")
                         "Expenses" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "expenses")
