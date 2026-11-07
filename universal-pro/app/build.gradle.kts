@@ -10,8 +10,8 @@ android {
         applicationId = "store.newcitystyle.universalpro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.3.0-live-business"
+        versionCode = 14
+        versionName = "1.4.0-customer360"
     }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
