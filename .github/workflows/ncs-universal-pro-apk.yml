@@ -34,6 +34,18 @@ jobs:
           test -n "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+      - name: Restore persistent APK signing certificate when configured
+        env:
+          NCS_ANDROID_DEBUG_KEYSTORE_B64: ${{ secrets.NCS_ANDROID_DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$NCS_ANDROID_DEBUG_KEYSTORE_B64" ]; then
+            mkdir -p "$HOME/.android"
+            printf '%s' "$NCS_ANDROID_DEBUG_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+            chmod 600 "$HOME/.android/debug.keystore"
+            echo "Persistent signing certificate restored."
+          else
+            echo "No stable signing certificate configured: default runner debug signing may require uninstall."
+          fi
       - name: Compile isolated demo APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload Android APK
