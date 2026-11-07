@@ -84,7 +84,7 @@ internal object NcsCloud {
         val data=JSONArray(raw.first)
         Page((0 until data.length()).map{data.getJSONObject(it)},raw.second,start)
     }
-    suspend fun searchProducts(session:Session,term:String):List<JSONObject>=withContext(Dispatchers.IO) {
+    suspend fun searchProducts(session:Session,term:String):List<JSONObject> = withContext(Dispatchers.IO) {
         val clean=term.trim().take(70).filter { it.isLetterOrDigit() || it==' ' || it=='-' || it=='_' }
         require(clean.length>=2){"Enter at least 2 characters or a product barcode"}
         val filter="(name.ilike.*"+clean+"*,barcode.ilike.*"+clean+"*)"
@@ -94,7 +94,7 @@ internal object NcsCloud {
         val arr=JSONArray(consume(conn))
         (0 until arr.length()).map{arr.getJSONObject(it)}
     }
-    suspend fun forProduct(session:Session,table:String,productId:Long):List<JSONObject>=withContext(Dispatchers.IO) {
+    suspend fun forProduct(session:Session,table:String,productId:Long):List<JSONObject> = withContext(Dispatchers.IO) {
         require(table in setOf("product_variants","product_design_units","product_design_unit_variants"))
         val cols=when(table) {
             "product_variants"->"id,product_id,size,color,stock,mrp,selling_price,purchase_price,barcode,sell_online,online_price,online_stock_limit"
