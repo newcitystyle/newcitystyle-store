@@ -156,7 +156,7 @@ fun LiveProductStudioScreen() {
                 }
                 item {
                     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        Button(onClick={searchAll},modifier=Modifier.weight(1f),enabled=search.trim().length>=2&&!loading,colors=ButtonDefaults.buttonColors(containerColor=studioRoyal)){
+                        Button(onClick={searchAll()},modifier=Modifier.weight(1f),enabled=search.trim().length>=2&&!loading,colors=ButtonDefaults.buttonColors(containerColor=studioRoyal)){
                             Icon(Icons.Default.Search,null);Spacer(Modifier.width(7.dp));Text("SEARCH ALL PRODUCTS")
                         }
                         OutlinedButton(onClick={search="";loadProducts(0)},enabled=!loading){Text("Clear")}
