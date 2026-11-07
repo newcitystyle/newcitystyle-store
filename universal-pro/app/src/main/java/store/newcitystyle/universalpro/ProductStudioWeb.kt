@@ -78,50 +78,37 @@ internal object ProductStudioWeb {
         if(result.optJSONObject("details")==null)throw IOException("AI generated no product details")
         result
     }
-    // Restrict updates to the selected existing row and ONLINE CONTENT columns only.
-    // Never edit physical barcode, SKU, stock, purchase cost, or POS variant quantities.
-    suspend fun publishExisting(session:NcsCloud.Session,product:JSONObject,imageUrls:List<String>,details:JSONObject):JSONObject=withContext(Dispatchers.IO) {
-        require(imageUrls.isNotEmpty()&&imageUrls.all{it.startsWith("https://")}){"Valid uploaded photos required"}
-        val imageUrl=imageUrls.first()
+    // One atomic, owner-authenticated database function updates existing product,
+    // design photos and selected size mappings without modifying physical stock.
+    suspend fun publishOwnerGuarded(
+        session:NcsCloud.Session,
+        product:JSONObject,
+        imageUrls:List<String>,
+        details:JSONObject,
+        price:Int,
+        variantIds:List<Long>
+    ):JSONObject=withContext(Dispatchers.IO) {
         val id=product.optLong("id")
-        require(id>0){"Existing product required"}
-        val productName=details.optString("productName",product.optString("name")).trim()
-        val description=details.optString("description").trim()
-        if(productName.isBlank() || description.isBlank())throw IOException("AI content incomplete; review required")
-        val price=product.optDouble("price",0.0)
-        if(price<=0)throw IOException("Product needs a valid existing online price before publishing")
-        val payload=JSONObject()
-            .put("name",productName)
-            .put("description",description)
-            .put("tagline",details.optString("tagline"))
-            .put("category",details.optString("category",product.optString("category")))
-            .put("subcategory",details.optString("subcategory",product.optString("subcategory")))
-            .put("image",imageUrl)
-            .put("image_url",imageUrl)
-            .put("gallery_images",org.json.JSONArray(imageUrls.drop(1)))
-            .put("images",org.json.JSONArray(imageUrls))
-            .put("seo_title",details.optString("seoTitle",productName+" | NEW CITY STYLE"))
-            .put("meta_description",details.optString("metaDescription"))
-            .put("seo_keywords",details.optJSONArray("seoKeywords")?.join(", ") ?: "")
-            .put("key_features",details.optJSONArray("keyFeatures")?:org.json.JSONArray())
-            .put("technical_specifications",details.optJSONArray("technicalSpecifications")?:org.json.JSONArray())
-            .put("faqs",details.optJSONArray("faqs")?:org.json.JSONArray())
-            .put("tags",details.optJSONArray("productTags")?:org.json.JSONArray())
-            .put("material",details.optString("material",product.optString("material")))
-            .put("pattern",details.optString("pattern",product.optString("pattern")))
-            .put("sell_online",true)
-        val currentStamp=product.optString("updated_at","")
-        val versionCheck=if(currentStamp.isNotBlank()&&currentStamp!="null")
-            "&updated_at=eq."+java.net.URLEncoder.encode(currentStamp,"UTF-8") else ""
-        val c=URL(supabase+"/rest/v1/products?id=eq."+id+versionCheck).openConnection() as HttpURLConnection
-        c.requestMethod="PATCH";c.doOutput=true;c.connectTimeout=18000;c.readTimeout=22000
+        require(id>0){"Choose an existing product"}
+        require(price>0){"Enter a valid online price"}
+        require(imageUrls.isNotEmpty() && imageUrls.size<=10 && imageUrls.all{it.startsWith("https://")})
+        require(variantIds.isNotEmpty() && variantIds.size<=20)
+        val request=JSONObject()
+            .put("p_product_id",id)
+            .put("p_expected_updated_at",
+                product.optString("updated_at","").takeIf{it.isNotBlank()&&it!="null"})
+            .put("p_online_price",price)
+            .put("p_variant_ids",org.json.JSONArray(variantIds))
+            .put("p_photos",org.json.JSONArray(imageUrls))
+            .put("p_ai",details)
+        val c=URL(supabase+"/rest/v1/rpc/ncs_universal_product_publish_v1").openConnection() as HttpURLConnection
+        c.requestMethod="POST";c.doOutput=true;c.connectTimeout=18000;c.readTimeout=30000
         c.setRequestProperty("apikey",NcsCloud.keyForInternalUse())
         c.setRequestProperty("Authorization","Bearer "+session.accessToken)
         c.setRequestProperty("Content-Type","application/json")
-        c.setRequestProperty("Prefer","return=representation")
-        c.outputStream.use{it.write(payload.toString().toByteArray(Charsets.UTF_8))}
-        val arr=org.json.JSONArray(read(c))
-        if(arr.length()!=1)throw IOException("Publish was not confirmed for exactly one product")
-        arr.getJSONObject(0)
+        c.outputStream.use{it.write(request.toString().toByteArray(Charsets.UTF_8))}
+        val result=JSONObject(read(c))
+        if(!result.optBoolean("ok",false))throw IOException("Website did not confirm publication")
+        result
     }
 }
