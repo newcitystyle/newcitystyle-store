@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.text.NumberFormat
 import java.util.Locale
@@ -65,13 +66,18 @@ fun LiveBusinessHub(onNavigate:(String)->Unit) {
         }
     }
     LaunchedEffect(session) {
-        if(session!=null) {
-            busy=true
-            try {
-                summary=NcsCloud.dashboard(session!!)
-                refreshedAt=summary?.optString("generated_at")?.replace("T"," ")?.take(19)?:""
-            }catch(e:Exception){error=e.message?:"Live dashboard unavailable";summary=null}
-            finally{busy=false}
+        val current=session
+        if(current!=null) {
+            while(true) {
+                busy=true
+                try {
+                    summary=NcsCloud.dashboard(current)
+                    refreshedAt=summary?.optString("generated_at")?.replace("T"," ")?.take(19)?:""
+                    error=""
+                }catch(e:Exception){error=e.message?:"Live dashboard unavailable"}
+                finally{busy=false}
+                delay(90000)
+            }
         }
     }
     LazyColumn(
@@ -115,7 +121,7 @@ fun LiveBusinessHub(onNavigate:(String)->Unit) {
             ) {
                 Column(Modifier.weight(1f)){
                     Text("BUSINESS PULSE",color=royal,fontWeight=FontWeight.Black,fontSize=20.sp)
-                    Text(if(summary!=null)"Live figures • India time" else "Connect the owner account in Products",color=secondary,fontSize=11.sp)
+                    Text(if(summary!=null)"Auto refresh every 90 sec • India time" else "Connect the owner account in Products",color=secondary,fontSize=11.sp)
                 }
                 Surface(color=Color(0xFFE5F2E9),shape=RoundedCornerShape(9.dp)){
                     Text(if(summary!=null)"LIVE" else "LOGIN",Modifier.padding(horizontal=12.dp,vertical=7.dp),color=emerald,fontSize=10.sp,fontWeight=FontWeight.Black)
