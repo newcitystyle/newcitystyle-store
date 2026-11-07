@@ -41,14 +41,14 @@ private val cloudLabels=listOf(
     "Cash / UPI" to "cash_bank_transactions"
 )
 @Composable
-fun LiveBusinessCloudScreen(onBack:()->Unit) {
+fun LiveBusinessCloudScreen(onBack:()->Unit, initialTable:String="products") {
     val scope=rememberCoroutineScope()
     var email by remember {mutableStateOf("")}
     var password by remember {mutableStateOf("")}
-    var session by remember {mutableStateOf<NcsCloud.Session?>(null)}
+    var session by remember {mutableStateOf(NcsCloud.activeSession)}
     var busy by remember {mutableStateOf(false)}
     var error by remember {mutableStateOf<String?>(null)}
-    var selected by remember {mutableStateOf("products")}
+    var selected by remember(initialTable) {mutableStateOf(initialTable)}
     var records by remember {mutableStateOf<List<JSONObject>>(emptyList())}
     var count by remember {mutableStateOf<Int?>(null)}
     var offset by remember {mutableIntStateOf(0)}
@@ -61,6 +61,15 @@ fun LiveBusinessCloudScreen(onBack:()->Unit) {
                 val page=NcsCloud.load(auth,table,start,40)
                 records=page.items;count=page.count
             }catch(e:Exception){error=e.message?:"Cloud request failed";records=emptyList()}
+            finally{busy=false}
+        }
+    }
+    LaunchedEffect(initialTable, session) {
+        val current=session
+        if(current!=null){
+            selected=initialTable;offset=0;busy=true;error=null
+            try { val page=NcsCloud.load(current,initialTable,0,40);records=page.items;count=page.count }
+            catch(e:Exception){error=e.message?:"Cloud data request failed";records=emptyList()}
             finally{busy=false}
         }
     }
@@ -100,14 +109,14 @@ fun LiveBusinessCloudScreen(onBack:()->Unit) {
                                 try {
                                     session=NcsCloud.signIn(email.trim(),password)
                                     password=""
-                                    reload("products",0)
+                                    selected=initialTable
                                 }catch(e:Exception){error=e.message?:"Login failed"}
                                 finally{busy=false}
                             }
                         }
                     ) { Icon(Icons.Default.Login,null);Spacer(Modifier.width(8.dp));Text("SIGN IN & LOAD LIVE DATA") }
                 }
-                item { Text("This connection displays live cloud records only. Billing, purchases and payment writes are not enabled in V8.",color=Color.Gray,fontSize=12.sp) }
+                item { Text("This connection displays live cloud records only. Billing, purchases and payment writes are not enabled in this version.",color=Color.Gray,fontSize=12.sp) }
                 if(error!=null)item { Text(error!!,color=Color(0xFFB8323D)) }
                 if(busy)item { LinearProgressIndicator(modifier=Modifier.fillMaxWidth()) }
             }
@@ -119,7 +128,7 @@ fun LiveBusinessCloudScreen(onBack:()->Unit) {
                             Text("Connected account",color=Color.Gray,fontSize=11.sp)
                             Text(session!!.email,color=cloudInk,fontWeight=FontWeight.Bold,fontSize=12.sp)
                         }
-                        OutlinedButton(onClick={session=null;records=emptyList();password="";error=null}){Text("Sign out")}
+                        OutlinedButton(onClick={session=null;NcsCloud.activeSession=null;records=emptyList();password="";error=null}){Text("Sign out")}
                     }
                 }
                 item {
