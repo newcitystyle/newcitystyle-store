@@ -46,11 +46,11 @@ jobs:
           else
             echo "No stable signing certificate configured: default runner debug signing may require uninstall."
           fi
-      - name: Compile isolated demo APK
+      - name: Compile NEW CITY STYLE Universal APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: NCS-Universal-Pro-V1-Demo-APK
+          name: NCS-Universal-Pro-Real-Live-APK
           path: universal-pro/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
