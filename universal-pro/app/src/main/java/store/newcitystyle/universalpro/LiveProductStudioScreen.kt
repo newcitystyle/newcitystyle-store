@@ -50,6 +50,7 @@ fun LiveProductStudioScreen() {
     var total by remember { mutableStateOf<Int?>(null) }
     var products by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var search by remember { mutableStateOf("") }
+    var serverSearch by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<JSONObject?>(null) }
     var variants by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var designs by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
@@ -61,9 +62,21 @@ fun LiveProductStudioScreen() {
         scope.launch {
             try {
                 val result=NcsCloud.load(session,"products",next*40,40)
-                products=result.items;total=result.count
+                products=result.items;total=result.count;serverSearch=false
             } catch(e:Exception){error=e.message?:"Could not load products"}
             finally {loading=false}
+        }
+    }
+    fun searchAll() {
+        val session=auth?:return
+        if(search.trim().length<2){error="Enter at least two characters";return}
+        loading=true;error=""
+        scope.launch {
+            try {
+                products=NcsCloud.searchProducts(session,search)
+                total=products.size;page=0;serverSearch=true
+            }catch(e:Exception){error=e.message?:"Search failed"}
+            finally{loading=false}
         }
     }
     fun openProduct(product:JSONObject) {
@@ -142,7 +155,13 @@ fun LiveProductStudioScreen() {
                         leadingIcon={Icon(Icons.Default.Search,null)},placeholder={Text("Search displayed products or barcode")})
                 }
                 item {
-                    Text("Tap a product to see its actual variants and existing designs.",color=studioMuted,fontSize=11.sp)
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        Button(onClick={searchAll},modifier=Modifier.weight(1f),enabled=search.trim().length>=2&&!loading,colors=ButtonDefaults.buttonColors(containerColor=studioRoyal)){
+                            Icon(Icons.Default.Search,null);Spacer(Modifier.width(7.dp));Text("SEARCH ALL PRODUCTS")
+                        }
+                        OutlinedButton(onClick={search="";loadProducts(0)},enabled=!loading){Text("Clear")}
+                    }
+                    Text(if(serverSearch)"Search results across all products" else "Tap a product to edit photos, AI details and existing designs.",color=studioMuted,fontSize=11.sp)
                 }
                 if(loading)item{LinearProgressIndicator(modifier=Modifier.fillMaxWidth())}
                 if(error.isNotBlank())item{Text(error,color=Color(0xFFAE3A37))}
@@ -171,8 +190,8 @@ fun LiveProductStudioScreen() {
                 }
                 item {
                     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                        OutlinedButton(enabled=page>0&&!loading,onClick={loadProducts(page-1)},modifier=Modifier.weight(1f)){Text("Previous")}
-                        Button(enabled=!loading&&products.size==40&&(total==null||(page+1)*40<total!!),onClick={loadProducts(page+1)},modifier=Modifier.weight(1f),
+                        OutlinedButton(enabled=!serverSearch&&page>0&&!loading,onClick={loadProducts(page-1)},modifier=Modifier.weight(1f)){Text("Previous")}
+                        Button(enabled=!serverSearch&&!loading&&products.size==40&&(total==null||(page+1)*40<total!!),onClick={loadProducts(page+1)},modifier=Modifier.weight(1f),
                             colors=ButtonDefaults.buttonColors(containerColor=studioRoyal)){Text("Next")}
                     }
                 }
