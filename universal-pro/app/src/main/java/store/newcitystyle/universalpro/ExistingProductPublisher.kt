@@ -30,7 +30,7 @@ private val publishGold=Color(0xFFD4AF37)
 private val publishGreen=Color(0xFF167A64)
 
 @Composable
-fun ExistingProductPublisher(
+internal fun ExistingProductPublisher(
     session:NcsCloud.Session,
     product:JSONObject,
     variants:List<JSONObject>,
@@ -151,7 +151,7 @@ fun ExistingProductPublisher(
             }
             Button(
                 enabled=selectedPhotos.isNotEmpty()&&!busy,
-                onClick={startAI},modifier=Modifier.fillMaxWidth(),
+                onClick={startAI()},modifier=Modifier.fillMaxWidth(),
                 colors=ButtonDefaults.buttonColors(containerColor=Color(0xFF204F9A))
             ){
                 Icon(Icons.Default.AutoAwesome,null)
@@ -191,7 +191,7 @@ fun ExistingProductPublisher(
                     Text("I reviewed these AI details and approve publication",fontSize=11.sp,color=publishNavy)
                 }
                 Button(
-                    enabled=approved&&!busy&&enoughStock&&validMrp&&g.optString("productName").isNotBlank()&&g.optString("description").isNotBlank(),modifier=Modifier.fillMaxWidth(),onClick={publish},
+                    enabled=approved&&!busy&&enoughStock&&validMrp&&g.optString("productName").isNotBlank()&&g.optString("description").isNotBlank(),modifier=Modifier.fillMaxWidth(),onClick={publish()},
                     colors=ButtonDefaults.buttonColors(containerColor=publishGreen)
                 ){
                     Icon(Icons.Default.Publish,null)
