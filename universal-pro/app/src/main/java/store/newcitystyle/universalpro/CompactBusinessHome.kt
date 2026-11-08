@@ -45,6 +45,7 @@ private val workGroups=linkedMapOf(
  "MANAGEMENT" to listOf(
    WorkAction("Purchases","Purchase Center","Cloud records; new purchase pending",false),
    WorkAction("Sync Center","Sync Center","Offline bills vs cloud inbox",false),
+   WorkAction("Online Orders","Online Orders","Real website orders and payment status",false),
    WorkAction("Customers","Customers","Live customer due accounts",false),
    WorkAction("Cloud Data","Live Business Cloud","Read-only cloud record browser",false)
  )
