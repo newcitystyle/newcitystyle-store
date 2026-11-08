@@ -1,0 +1,46 @@
+name: NCS Universal Pro - Android Studio Source ZIP
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/universal-pro-offline-inbox-validation-20261108
+    paths:
+      - '.github/workflows/ncs-universal-android-studio-source-zip.yml'
+permissions:
+  contents: read
+jobs:
+  package-android-studio-project:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Create Gradle wrapper for Android Studio
+        working-directory: universal-pro
+        run: |
+          gradle wrapper --gradle-version 8.10.2 --distribution-type bin
+          chmod +x gradlew
+      - name: Prepare standalone project ZIP
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ncs-package/NEW_CITY_STYLE_UNIVERSAL_PRO
+          rsync -a --exclude='.gradle/' --exclude='build/' --exclude='.idea/' --exclude='*.apk' --exclude='*.jks' --exclude='*.keystore' universal-pro/ /tmp/ncs-package/NEW_CITY_STYLE_UNIVERSAL_PRO/
+          test -f /tmp/ncs-package/NEW_CITY_STYLE_UNIVERSAL_PRO/gradlew
+          test -f /tmp/ncs-package/NEW_CITY_STYLE_UNIVERSAL_PRO/gradle/wrapper/gradle-wrapper.jar
+          test -f /tmp/ncs-package/NEW_CITY_STYLE_UNIVERSAL_PRO/settings.gradle.kts
+          cd /tmp/ncs-package
+          zip -qr "$GITHUB_WORKSPACE/NEW_CITY_STYLE_UNIVERSAL_PRO_ANDROID_STUDIO_SOURCE.zip" NEW_CITY_STYLE_UNIVERSAL_PRO
+          unzip -t "$GITHUB_WORKSPACE/NEW_CITY_STYLE_UNIVERSAL_PRO_ANDROID_STUDIO_SOURCE.zip" | tail -1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NEW_CITY_STYLE_UNIVERSAL_PRO_ANDROID_STUDIO_SOURCE
+          path: NEW_CITY_STYLE_UNIVERSAL_PRO_ANDROID_STUDIO_SOURCE.zip
+          if-no-files-found: error
+          retention-days: 30
