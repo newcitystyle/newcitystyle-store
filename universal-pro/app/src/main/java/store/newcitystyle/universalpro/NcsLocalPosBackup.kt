@@ -10,7 +10,6 @@ import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import java.util.zip.ZipInputStream
-import java.security.DigestInputStream
 import org.json.JSONObject
 
 /**
@@ -131,12 +130,13 @@ internal object NcsLocalPosBackup {
         require(info.optString("source_db")==DB_NAME){"Wrong source database"}
         require(info.optBoolean("restorable",true)==false){"Unexpected restore state"}
         require(dbSize>0 && dbSize==info.optLong("sqlite_bytes")){"SQLite size mismatch"}
-        require(dbHash!=null&&dbHash==info.optString("sqlite_sha256")){"Backup checksum mismatch"}
+        val verifiedHash=dbHash?:error("Missing SQLite snapshot")
+        require(verifiedHash==info.optString("sqlite_sha256")){"Backup checksum mismatch"}
         val counts=info.optJSONObject("tables")?:error("Missing table counts")
         for(key in listOf("bills","bill_items","catalog","sync_queue"))
             require(counts.has(key) && counts.optLong(key,-1)>=0){"Missing or invalid table count: "+key}
         return "Backup ZIP verified • "+counts.optLong("bills")+" local bills • SHA256 "+
-            dbHash.take(12)+"… • Export only, no restore performed."
+            verifiedHash.take(12)+"… • Export only, no restore performed."
     }
 
     private fun sha256(file:File):String{
