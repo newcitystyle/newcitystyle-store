@@ -9,6 +9,8 @@ import java.time.Instant
 import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import java.util.zip.ZipInputStream
+import java.security.DigestInputStream
 import org.json.JSONObject
 
 /**
@@ -77,10 +79,64 @@ internal object NcsLocalPosBackup {
                     zip.finish()
                 }
             }
-            return "Backup exported • "+counts.getValue("bills")+" local bills • "+
-                counts.getValue("sync_queue")+" sync records • SHA256 "+fingerprint.take(12)+
-                "… • Keep ZIP private. Restore not yet supported."
+            val confirmed=verifyArchive(app,destination)
+            return "Export complete. "+confirmed+" Keep ZIP private and encrypted in storage."
         } finally {snapshot.delete()}
+    }
+
+    /**
+     * Independently read the completed ZIP from Android's document provider.
+     * Streaming verification never writes to the live SQLite database.
+     */
+    fun verifyArchive(context:Context,uri:Uri):String {
+        val stream=context.applicationContext.contentResolver.openInputStream(uri)
+            ?:error("Cannot reopen backup for verification")
+        var manifest:JSONObject?=null
+        var dbHash:String?=null
+        var dbSize=0L
+        val seen=mutableSetOf<String>()
+        ZipInputStream(stream.buffered()).use { zip ->
+            while(true){
+                val entry=zip.nextEntry?:break
+                require(!entry.isDirectory){"Unexpected backup directory"}
+                require(entry.name==ZIP_DB||entry.name==ZIP_MANIFEST){"Unexpected backup entry"}
+                require(seen.add(entry.name)){"Duplicate ZIP entry"}
+                if(entry.name==ZIP_DB){
+                    val digest=MessageDigest.getInstance("SHA-256")
+                    val bytes=ByteArray(65536)
+                    while(true){
+                        val count=zip.read(bytes)
+                        if(count<0)break
+                        dbSize+=count
+                        require(dbSize<=256L*1024*1024){"Backup exceeds verification size limit"}
+                        if(count>0)digest.update(bytes,0,count)
+                    }
+                    dbHash=digest.digest().joinToString(""){"%02x".format(it)}
+                }else{
+                    val buffer=java.io.ByteArrayOutputStream()
+                    val bytes=ByteArray(8192)
+                    while(true){
+                        val count=zip.read(bytes)
+                        if(count<0)break
+                        buffer.write(bytes,0,count)
+                        require(buffer.size()<=65536){"Backup manifest too large"}
+                    }
+                    manifest=JSONObject(buffer.toString(Charsets.UTF_8.name()))
+                }
+                zip.closeEntry()
+            }
+        }
+        val info=manifest?:error("Missing backup manifest")
+        require(info.optString("format")=="NCS_LOCAL_POS_BACKUP_V1"){"Wrong backup format"}
+        require(info.optString("source_db")==DB_NAME){"Wrong source database"}
+        require(info.optBoolean("restorable",true)==false){"Unexpected restore state"}
+        require(dbSize>0 && dbSize==info.optLong("sqlite_bytes")){"SQLite size mismatch"}
+        require(dbHash!=null&&dbHash==info.optString("sqlite_sha256")){"Backup checksum mismatch"}
+        val counts=info.optJSONObject("tables")?:error("Missing table counts")
+        for(key in listOf("bills","bill_items","catalog","sync_queue"))
+            require(counts.has(key) && counts.optLong(key,-1)>=0){"Missing or invalid table count: "+key}
+        return "Backup ZIP verified • "+counts.optLong("bills")+" local bills • SHA256 "+
+            dbHash.take(12)+"… • Export only, no restore performed."
     }
 
     private fun sha256(file:File):String{
