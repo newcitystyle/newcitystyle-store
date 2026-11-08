@@ -22,7 +22,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-@OptIn(ExperimentalMaterial3Api::class)
 private fun nativeProductPhoto(p:JSONObject):String {
     val direct=listOf("image_url","image")
         .map{p.optString(it,"")}
@@ -35,6 +34,7 @@ private fun nativeProductPhoto(p:JSONObject):String {
     }
     return ""
 }
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun NativeProductsScreen(onBack:()->Unit){
     val context=LocalContext.current
