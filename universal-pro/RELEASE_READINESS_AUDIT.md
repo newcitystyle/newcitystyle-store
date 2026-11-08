@@ -34,11 +34,11 @@
 | Recovery | `AndroidManifest.xml` declares `allowBackup=false`; local SQLite exists. | Tested export/restore on new device not implemented. Local data cannot be assumed recoverable after phone loss. |
 | Testing | GitHub Actions can compile + sign release APK. | Build success alone doesn't prove functional, offline, backup, integration, security, UI, or device tests. |
 
-## Critical cloud security discovery
+## Cloud access-control release gate
 
-**Observed via read-only schema/privilege queries:** `public.orders` reports `rowsecurity=false`; `anon` and `authenticated` have broad table privileges, including SELECT/UPDATE/DELETE. This is a production security exposure to investigate urgently.** The owner-only orders read RPC does not remove pre-existing direct-table permissions.
+Read-only database review identified an access-control issue in a production commerce-data surface. Details are intentionally not published in this public source repository. Treat permission hardening as a release-blocking task requiring isolated checkout regression tests and careful coordination with the website team.
 
-**Change policy:** First identify every website order creation/tracking path and run regression tests in an isolated environment, then replace unsafe table access with tightly scoped policies/server operations. Do not simply toggle RLS in production without proving checkout won't break. No database changes were applied as part of this audit.
+**Change policy:** Audit routes and dependencies first. Do not blindly turn on restrictions on production tables before testing checkout and tracking. No production database changes were made during this audit.
 
 ## Release gates — must all pass
 
