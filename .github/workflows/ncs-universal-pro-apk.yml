@@ -34,8 +34,8 @@ jobs:
           if command -v gradle >/dev/null 2>&1; then
             CURRENT="$(gradle --version | grep -m1 '^Gradle ' || true)"
             echo "Preinstalled: $CURRENT"
-            if echo "$CURRENT" | grep -Eq '^Gradle 8[.](9|10|11|12|13|14|15|16)([.]|$)'; then
-              echo "Using GitHub runner preinstalled Gradle"
+            if echo "$CURRENT" | grep -Eq '^Gradle (8[.](9|10|11|12|13|14|15|16)|9[.](8|9))([.]|$)'; then
+              echo "Using GitHub runner preinstalled Gradle; compatibility checked by compile step"
               exit 0
             fi
           fi
