@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/ncs-universal-single-app-native-foundation
+      - fix/universal-pro-offline-inbox-validation-20261108
     paths:
       - 'universal-pro/**'
       - '.github/workflows/ncs-universal-pro-build-check.yml'
