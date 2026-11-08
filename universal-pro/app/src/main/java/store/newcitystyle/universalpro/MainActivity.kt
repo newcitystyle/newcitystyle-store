@@ -132,7 +132,7 @@ private fun UniversalApp() {
                     }
                 } else {
                     when (selected) {
-                        "Home" -> NativeCommandCenter(onNavigate = { target ->
+                        "Home" -> CompactBusinessHome(onNavigate = { target ->
                             if (target == "Product Studio") { selected = "Products"; openedModule = null }
                             else openedModule = target
                         })
