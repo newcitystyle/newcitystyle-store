@@ -118,6 +118,7 @@ private fun UniversalApp() {
                         "Online Orders" -> NativeOnlineOrdersScreen(onBack={openedModule=null})
                         "Profit Studio" -> ProfitCalculatorScreen(onBack = { openedModule = null })
                         "Sync Center" -> CloudBridgeV17Screen(onBack = { openedModule = null })
+                        "Local Backup" -> NativeLocalBackupScreen(onBack={openedModule=null})
                         "Live Business Cloud" -> LiveBusinessCloudScreen(onBack = { openedModule = null })
 
 
