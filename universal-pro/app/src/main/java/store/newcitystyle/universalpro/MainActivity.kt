@@ -108,8 +108,8 @@ private fun UniversalApp() {
                         "Customer Due Ledger" -> NativeCustomerDuesScreen(onBack={openedModule=null})
                         "Advanced Web POS" -> LiveWebWorkspace(startPath="/admin/pos",onBack={openedModule=null})
                         "Purchase Center" -> LiveBusinessCloudScreen(onBack={openedModule=null},initialTable="purchases")
-                        "Sales Intelligence" -> LiveBusinessCloudScreen(onBack={openedModule=null},initialTable="pos_sales")
-                        "Sales History" -> LiveBusinessCloudScreen(onBack={openedModule=null},initialTable="pos_sales")
+                        "Sales Intelligence" -> NativeSalesHistoryScreen(onBack={openedModule=null})
+                        "Sales History" -> NativeSalesHistoryScreen(onBack={openedModule=null})
                         "Customers", "Customer Dues" -> NativeCustomerDuesScreen(onBack={openedModule=null})
                         "Supplier Ledger" -> LiveBusinessCloudScreen(onBack={openedModule=null},initialTable="suppliers")
                         "Cash & Bank" -> LiveBusinessCloudScreen(onBack={openedModule=null},initialTable="cash_bank_transactions")
@@ -138,7 +138,7 @@ private fun UniversalApp() {
                         })
                         "Billing" -> NativePosV21(onBack={selected="Home"})
                         "Products" -> NativeProductsScreen(onBack={selected="Home"})
-                        "Insights" -> LiveBusinessCloudScreen(onBack={selected="Home"},initialTable="pos_sales")
+                        "Insights" -> NativeSalesHistoryScreen(onBack={selected="Home"})
                         else -> PremiumToolsScreen(onOpen = { openedModule = it })
                     }
                 }
