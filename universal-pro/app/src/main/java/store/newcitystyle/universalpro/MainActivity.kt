@@ -101,8 +101,8 @@ private fun UniversalApp() {
                 if (openedModule != null) {
                     when (openedModule) {
                         "Advanced POS" -> NativePosV21(onBack={openedModule=null})
-                        "Product Studio" -> LiveWebWorkspace(startPath="/admin/products",onBack={openedModule=null})
-                        "Native Catalogue" -> LiveProductStudioScreen()
+                        "Product Studio" -> NativeProductsScreen(onBack={openedModule=null})
+                        "Native Catalogue" -> NativeProductsScreen(onBack={openedModule=null})
                         "Full Web Admin" -> LiveWebWorkspace(startPath="/admin/dashboard",onBack={openedModule=null})
                         "Web Product Studio" -> LiveWebWorkspace(startPath="/admin/products",onBack={openedModule=null})
                         "Customer Due Ledger" -> LiveWebWorkspace(startPath="/admin/customer-dues",onBack={openedModule=null})
@@ -137,7 +137,7 @@ private fun UniversalApp() {
                             else openedModule = target
                         })
                         "Billing" -> NativePosV21(onBack={selected="Home"})
-                        "Products" -> LiveWebWorkspace(startPath="/admin/products",onBack={selected="Home"})
+                        "Products" -> NativeProductsScreen(onBack={selected="Home"})
                         "Insights" -> LiveWebWorkspace(startPath="/admin/sales-history",onBack={selected="Home"})
                         else -> PremiumToolsScreen(onOpen = { openedModule = it })
                     }
