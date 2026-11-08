@@ -1,0 +1,45 @@
+name: NCS Universal Pro - Safe Android Build Check
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/ncs-universal-single-app-native-foundation
+    paths:
+      - 'universal-pro/**'
+      - '.github/workflows/ncs-universal-pro-build-check.yml'
+permissions:
+  contents: read
+jobs:
+  verify-android-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: universal-pro
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android API 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Set up Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Source safety invariants (not device testing)
+        run: python3 scripts/source_quality_gate.py
+      - name: Compile isolated debug APK
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
+      - name: Upload isolated preview APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NCS-Universal-Pro-Isolated-Debug-Preview-NOT-RELEASE
+          path: universal-pro/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
