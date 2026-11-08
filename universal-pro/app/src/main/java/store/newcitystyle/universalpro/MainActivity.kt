@@ -132,7 +132,7 @@ private fun UniversalApp() {
                     }
                 } else {
                     when (selected) {
-                        "Home" -> OrbitBusinessHubV16(onNavigate = { target ->
+                        "Home" -> NativeCommandCenter(onNavigate = { target ->
                             if (target == "Product Studio") { selected = "Products"; openedModule = null }
                             else openedModule = target
                         })
