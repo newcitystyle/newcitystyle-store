@@ -10,8 +10,8 @@ android {
         applicationId = "store.newcitystyle.universalpro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 27
-        versionName = "2.7.0-native-invoice-controls"
+        versionCode = 28
+        versionName = "2.8.0-safe-native-invoices"
     }
     // Signing material is supplied only through encrypted GitHub Actions secrets.
     // No private keys, signing passwords or release certificates enter Git history.
