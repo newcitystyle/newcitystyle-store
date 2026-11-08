@@ -1,6 +1,10 @@
 package store.newcitystyle.universalpro
 
 import android.content.Context
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,6 +23,18 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
+private fun nativeProductPhoto(p:JSONObject):String {
+    val direct=listOf("image_url","image")
+        .map{p.optString(it,"")}
+        .firstOrNull{it.startsWith("https://") || it.startsWith("http://")}
+    if(!direct.isNullOrBlank())return direct
+    val photos=p.optJSONArray("images")
+    for(i in 0 until (photos?.length()?:0)){
+        val entry=photos?.optString(i,"")?:""
+        if(entry.startsWith("https://")||entry.startsWith("http://"))return entry
+    }
+    return ""
+}
 @Composable
 internal fun NativeProductsScreen(onBack:()->Unit){
     val context=LocalContext.current
@@ -145,6 +161,12 @@ internal fun NativeProductsScreen(onBack:()->Unit){
                     "DETAILS" -> Column(Modifier.verticalScroll(rememberScrollState()),
                         verticalArrangement=Arrangement.spacedBy(9.dp)){
                         Text("Brand: "+product.optString("brand","—"))
+                        val photo=nativeProductPhoto(product)
+                        if(photo.isNotBlank()){
+                            AsyncImage(model=photo,contentDescription=product.optString("name"),
+                                modifier=Modifier.fillMaxWidth().height(180.dp),
+                                contentScale=ContentScale.Fit)
+                        }
                         Text("Barcode: "+product.optString("barcode","—"))
                         Text("Price: ₹"+product.optString("price","—"))
                         Text("MRP: ₹"+product.optString("mrp","—"))
@@ -227,10 +249,20 @@ internal fun NativeProductsScreen(onBack:()->Unit){
                     name=p.optString("name","")
                     brand=p.optString("brand","").takeUnless{it=="null"}?:""
                 }){
-                    Column(Modifier.fillMaxWidth().padding(13.dp)){
-                        Text(p.optString("name","Product"),fontWeight=FontWeight.Bold)
-                        Text("Brand: "+p.optString("brand","—")+" • #"+p.optLong("id"))
-                        Text("Tap to edit Name / Brand",color=Color(0xFF0A2E73))
+                    Row(Modifier.fillMaxWidth().padding(11.dp),verticalAlignment=Alignment.CenterVertically){
+                        val photo=nativeProductPhoto(p)
+                        if(photo.isNotBlank()){
+                            AsyncImage(model=photo,contentDescription=p.optString("name"),
+                                modifier=Modifier.size(63.dp).background(Color(0xFFF2F4F8),RoundedCornerShape(10.dp)),
+                                contentScale=ContentScale.Crop)
+                            Spacer(Modifier.width(12.dp))
+                        }
+                        Column(Modifier.weight(1f)){
+                            Text(p.optString("name","Product"),fontWeight=FontWeight.Bold)
+                            Text("Brand: "+p.optString("brand","—")+" • #"+p.optLong("id"),
+                                color=Color.DarkGray)
+                            Text("DETAILS • VARIANTS • EDIT",color=Color(0xFF0A2E73))
+                        }
                     }
                 }
             }
