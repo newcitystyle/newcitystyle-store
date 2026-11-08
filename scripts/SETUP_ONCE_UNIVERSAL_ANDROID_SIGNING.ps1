@@ -20,7 +20,8 @@ if ((Test-Path $key) -xor (Test-Path $passwordStore)) {
 }
 if(!(Test-Path $key)) {
  $bytes = New-Object byte[] 32
- [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+ $rng=[Security.Cryptography.RandomNumberGenerator]::Create()
+ try{$rng.GetBytes($bytes)}finally{$rng.Dispose()}
  $pass=[Convert]::ToBase64String($bytes).Replace('+','A').Replace('/','B').TrimEnd('=')
  & keytool -genkeypair -keystore $key -storetype PKCS12 -alias $alias -keyalg RSA -keysize 3072 -validity 12000 -storepass $pass -keypass $pass -dname 'CN=NEW CITY STYLE Universal, OU=Business Applications, O=NEW CITY STYLE, C=IN' -noprompt
  if($LASTEXITCODE -ne 0 -or !(Test-Path $key)){throw 'KEY_GENERATION_FAILED'}
