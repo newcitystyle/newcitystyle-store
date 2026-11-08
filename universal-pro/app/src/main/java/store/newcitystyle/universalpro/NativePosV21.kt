@@ -22,21 +22,23 @@ import java.time.Instant
 import java.util.UUID
 import java.util.Locale
 
-internal data class NProduct(val id:Long,val variant:Long,val name:String,val size:String,val color:String,val price:Double,val stock:Int)
+internal data class NProduct(val id:Long,val variant:Long,val name:String,val size:String,val color:String,val price:Double,val stock:Int,val barcode:String="")
 internal data class NCart(val product:NProduct,val qty:Int,val quick:Boolean=false)
 internal data class NBill(val id:String,val invoice:String,val amount:Double,val method:String,val created:String)
-internal class NPosStore(ctx:Context):SQLiteOpenHelper(ctx,"ncs_native_pos_v21.sqlite",null,1){
+internal class NPosStore(ctx:Context):SQLiteOpenHelper(ctx,"ncs_native_pos_v21.sqlite",null,2){
  override fun onCreate(db:SQLiteDatabase){
-  db.execSQL("CREATE TABLE catalog(variant INTEGER PRIMARY KEY,product INTEGER NOT NULL,name TEXT,size TEXT,color TEXT,price REAL,stock INTEGER)")
+  db.execSQL("CREATE TABLE catalog(variant INTEGER PRIMARY KEY,product INTEGER NOT NULL,name TEXT,size TEXT,color TEXT,price REAL,stock INTEGER,barcode TEXT)")
   db.execSQL("CREATE TABLE bills(id TEXT PRIMARY KEY,invoice TEXT,amount REAL,method TEXT,customer TEXT,phone TEXT,created TEXT,status TEXT)")
   db.execSQL("CREATE TABLE bill_items(id INTEGER PRIMARY KEY AUTOINCREMENT,bill_id TEXT,product INTEGER,variant INTEGER,name TEXT,qty INTEGER,price REAL,quick INTEGER)")
   db.execSQL("CREATE TABLE sync_queue(id TEXT PRIMARY KEY,status TEXT,created TEXT)")
  }
- override fun onUpgrade(db:SQLiteDatabase,oldVersion:Int,newVersion:Int){}
+ override fun onUpgrade(db:SQLiteDatabase,oldVersion:Int,newVersion:Int){
+  if(oldVersion<2)db.execSQL("ALTER TABLE catalog ADD COLUMN barcode TEXT")
+ }
  fun catalog():List<NProduct>{
   val a=mutableListOf<NProduct>()
-  readableDatabase.rawQuery("SELECT product,variant,name,size,color,price,stock FROM catalog ORDER BY name",null).use { c ->
-   while(c.moveToNext())a.add(NProduct(c.getLong(0),c.getLong(1),c.getString(2)?:"",c.getString(3)?:"",c.getString(4)?:"",c.getDouble(5),c.getInt(6)))
+  readableDatabase.rawQuery("SELECT product,variant,name,size,color,price,stock,barcode FROM catalog ORDER BY name",null).use { c ->
+   while(c.moveToNext())a.add(NProduct(c.getLong(0),c.getLong(1),c.getString(2)?:"",c.getString(3)?:"",c.getString(4)?:"",c.getDouble(5),c.getInt(6),c.getString(7)?:""))
   }
   return a
  }
@@ -44,8 +46,8 @@ internal class NPosStore(ctx:Context):SQLiteOpenHelper(ctx,"ncs_native_pos_v21.s
   val db=writableDatabase
   db.beginTransaction()
   try{
-   for(p in rows)db.execSQL("INSERT INTO catalog(variant,product,name,size,color,price,stock) VALUES(?,?,?,?,?,?,?) ON CONFLICT(variant) DO UPDATE SET name=excluded.name,size=excluded.size,color=excluded.color,price=excluded.price,stock=excluded.stock",
-     arrayOf(p.variant,p.id,p.name,p.size,p.color,p.price,p.stock))
+   for(p in rows)db.execSQL("INSERT INTO catalog(variant,product,name,size,color,price,stock,barcode) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(variant) DO UPDATE SET name=excluded.name,size=excluded.size,color=excluded.color,price=excluded.price,stock=excluded.stock,barcode=excluded.barcode",
+     arrayOf(p.variant,p.id,p.name,p.size,p.color,p.price,p.stock,p.barcode))
    db.setTransactionSuccessful()
   }finally{db.endTransaction()}
  }
@@ -201,7 +203,7 @@ internal fun NativePosV21(onBack:()->Unit){
      val id=v.optLong("id")
      val price=v.optDouble("selling_price",0.0)
      if(id>0&&productNames.containsKey(productId)&&price>0&&v.optBoolean("is_active",true)){
-      variants.add(NProduct(productId,id,productNames[productId]?:"Product",v.optString("size",""),v.optString("color",""),price,v.optInt("stock",0)))
+      variants.add(NProduct(productId,id,productNames[productId]?:"Product",v.optString("size",""),v.optString("color",""),price,v.optInt("stock",0),v.optString("barcode","")))
      }
     }
     start+=page.items.size
@@ -228,9 +230,9 @@ internal fun NativePosV21(onBack:()->Unit){
   }
   when(tab){
    "CATALOG"->{
-    OutlinedTextField(query,{query=it},label={Text("Search product, size or colour")},modifier=Modifier.fillMaxWidth().padding(horizontal=10.dp))
+    OutlinedTextField(query,{query=it},label={Text("Barcode / product / size / colour")},modifier=Modifier.fillMaxWidth().padding(horizontal=10.dp))
     LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(10.dp),verticalArrangement=Arrangement.spacedBy(7.dp)){
-     items(catalogue.filter{query.isBlank()||it.name.contains(query,true)||it.size.contains(query,true)||it.color.contains(query,true)}.take(150),key={it.variant}){p->
+     items(catalogue.filter{query.isBlank()||it.name.contains(query,true)||it.size.contains(query,true)||it.color.contains(query,true)||it.barcode.contains(query,true)}.take(150),key={it.variant}){p->
       val key=p.variant.toString()
       val q=cart[key]?.qty?:0
       val available=store.available(p)
