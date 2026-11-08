@@ -107,7 +107,7 @@ private fun UniversalApp() {
                         "Customer Due Ledger" -> LiveWebWorkspace(startPath="/admin/customer-dues",onBack={openedModule=null})
                         "Advanced Web POS" -> LiveWebWorkspace(startPath="/admin/pos",onBack={openedModule=null})
                         "Profit Studio" -> ProfitCalculatorScreen(onBack = { openedModule = null })
-                        "Sync Center" -> SyncCenterScreen(onBack = { openedModule = null })
+                        "Sync Center" -> CloudBridgeV17Screen(onBack = { openedModule = null })
                         "Live Business Cloud" -> LiveBusinessCloudScreen(onBack = { openedModule = null })
                         "Sales Intelligence", "Advanced POS" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "pos_sales")
                         "Purchase Center" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "purchases")
