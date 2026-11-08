@@ -6,13 +6,54 @@ $dir = 'D:\NCS_BACKUP\ANDROID_UNIVERSAL_SIGNING'
 $key = Join-Path $dir 'NEW_CITY_STYLE_UNIVERSAL_RELEASE.p12'
 $passwordStore = Join-Path $dir 'signing_password_windows_dpapi.txt'
 $alias = 'ncsuniversal'
-if (!(Get-Command gh -ErrorAction SilentlyContinue)) {
- throw 'GITHUB_CLI_REQUIRED: Install GitHub CLI via winget install GitHub.cli, then run gh auth login.'
+# V304: Bootstrap missing developer tools. No financial data is touched.
+$ghCmd = Get-Command gh -ErrorAction SilentlyContinue
+if (-not $ghCmd) {
+  $ghGuess = Join-Path $env:ProgramFiles 'GitHub CLI\gh.exe'
+  if (Test-Path -LiteralPath $ghGuess) {
+    $env:PATH = (Split-Path -Parent $ghGuess) + ';' + $env:PATH
+  } else {
+    if (!(Get-Command winget -ErrorAction SilentlyContinue)) {
+      throw 'GITHUB_CLI_INSTALLER_MISSING: Windows App Installer (winget) is required.'
+    }
+    Write-Host 'INSTALLING_GITHUB_CLI' -ForegroundColor Cyan
+    & winget install --id GitHub.cli --exact --accept-package-agreements --accept-source-agreements --silent
+    if ($LASTEXITCODE -ne 0) {throw 'GITHUB_CLI_INSTALL_FAILED'}
+    if (Test-Path -LiteralPath $ghGuess) {
+      $env:PATH = (Split-Path -Parent $ghGuess) + ';' + $env:PATH
+    }
+  }
 }
+if (!(Get-Command gh -ErrorAction SilentlyContinue)) {
+  throw 'GITHUB_CLI_INSTALLED_BUT_PATH_NOT_READY: Open a new PowerShell window and retry.'
+}
+Write-Host 'CHECKING_GITHUB_LOGIN' -ForegroundColor Cyan
 & gh auth status 2>$null
-if ($LASTEXITCODE -ne 0) { throw 'GITHUB_LOGIN_REQUIRED: Run gh auth login.' }
+if ($LASTEXITCODE -ne 0) {
+  Write-Host 'GitHub account authorization is needed once. Follow the browser instructions.' -ForegroundColor Yellow
+  & gh auth login --hostname github.com --git-protocol https --web
+  if ($LASTEXITCODE -ne 0) {throw 'GITHUB_LOGIN_NOT_COMPLETED'}
+}
+$keytoolCmd = Get-Command keytool -ErrorAction SilentlyContinue
+if (-not $keytoolCmd) {
+  $possible = @(
+    (Join-Path $env:ProgramFiles 'Microsoft\jdk-17*\bin\keytool.exe'),
+    (Join-Path $env:ProgramFiles 'Java\jdk-17*\bin\keytool.exe')
+  )
+  $found = @($possible | ForEach-Object { Get-Item -Path $_ -ErrorAction SilentlyContinue } | Select-Object -First 1)
+  if ($found.Count -gt 0) {
+    $env:PATH = (Split-Path -Parent $found[0].FullName) + ';' + $env:PATH
+  } else {
+    if (!(Get-Command winget -ErrorAction SilentlyContinue)) {throw 'JAVA_KEYTOOL_NOT_INSTALLED'}
+    Write-Host 'INSTALLING_JAVA_JDK17' -ForegroundColor Cyan
+    & winget install --id Microsoft.OpenJDK.17 --exact --accept-package-agreements --accept-source-agreements --silent
+    if ($LASTEXITCODE -ne 0) {throw 'JAVA_JDK_INSTALL_FAILED'}
+    $jdk = @(Get-Item -Path (Join-Path $env:ProgramFiles 'Microsoft\jdk-17*\bin\keytool.exe') -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if ($jdk.Count -gt 0) { $env:PATH = (Split-Path -Parent $jdk[0].FullName) + ';' + $env:PATH }
+  }
+}
 if (!(Get-Command keytool -ErrorAction SilentlyContinue)) {
- throw 'JAVA_JDK_REQUIRED: Install JDK17 and ensure keytool is on PATH.'
+ throw 'JAVA_KEYTOOL_PATH_NOT_READY: Open a new PowerShell window and retry.'
 }
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 if ((Test-Path $key) -xor (Test-Path $passwordStore)) {
