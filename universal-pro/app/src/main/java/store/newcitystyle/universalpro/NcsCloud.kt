@@ -148,12 +148,31 @@ internal object NcsCloud {
     private suspend fun rpc(session:Session,function:String,body:JSONObject=JSONObject()):String=withContext(Dispatchers.IO) {
         require(function in setOf(
             "ncs_universal_customer_profile_v14","ncs_universal_credit_profile_v14","ncs_universal_bill_detail_v14",
-            "ncs_universal_sales_trend_v14"
+            "ncs_universal_sales_trend_v14", "ncs_universal_owner_product_metadata_v1"
         ))
         val c=open(root+"/rest/v1/rpc/"+function,token=session.accessToken,method="POST")
         c.doOutput=true;c.setRequestProperty("Content-Type","application/json")
         c.outputStream.use{it.write(body.toString().toByteArray(Charsets.UTF_8))}
         consume(c)
+    }
+    suspend fun updateProductMetadata(
+        session:Session,
+        productId:Long,
+        expectedName:String,
+        expectedBrand:String?,
+        newName:String,
+        newBrand:String?
+    ):JSONObject {
+        require(productId>0 && newName.trim().length in 2..150 &&
+            (newBrand?.length ?: 0)<=80){"Invalid product details"}
+        require(activeSession?.email?.equals(session.email,ignoreCase=true)==true){"Owner login required"}
+        val payload=JSONObject()
+            .put("p_product_id",productId)
+            .put("p_expected_name",expectedName)
+            .put("p_expected_brand",expectedBrand ?: JSONObject.NULL)
+            .put("p_new_name",newName.trim())
+            .put("p_new_brand",newBrand?.trim() ?: JSONObject.NULL)
+        return JSONObject(rpc(session,"ncs_universal_owner_product_metadata_v1",payload))
     }
     suspend fun customerProfile(session:Session,id:Long):JSONObject {
         require(id>0)
