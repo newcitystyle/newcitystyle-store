@@ -229,6 +229,10 @@ async function createRpcItems(
     product_id: number;
     variant_id: number | null;
     quantity: number;
+    unit_price: number;
+    mrp: number;
+    tax_percent: number;
+    is_quick_item: boolean;
   }> = [];
 
   for (const item of sale.items) {
@@ -245,6 +249,10 @@ async function createRpcItems(
         product_id: quickProduct.productId,
         variant_id: quickProduct.variantId,
         quantity,
+        unit_price: toNumber(item.price),
+        mrp: toNumber(item.mrp),
+        tax_percent: toNumber(item.taxPercent),
+        is_quick_item: true,
       });
 
       continue;
@@ -264,6 +272,10 @@ async function createRpcItems(
           ? item.variantId
           : null,
       quantity,
+      unit_price: toNumber(item.price),
+      mrp: toNumber(item.mrp),
+      tax_percent: toNumber(item.taxPercent),
+      is_quick_item: false,
     });
   }
 
@@ -408,9 +420,80 @@ async function sendOfflineInvoiceWhatsApp(
 async function syncOneOfflineSale(
   sale: OfflinePendingSale,
 ): Promise<OfflineSaleSyncItemResult> {
+  // V389: never create Quick Item catalogue rows before a transaction
+  // idempotency check. The legacy helper creates those rows OUTSIDE
+  // complete_pos_sale, so a retry/crash could leave extra products.
+  if (sale.items.some(item => item.isQuickItem === true)) {
+    return {
+      localSaleId: sale.id,
+      clientTransactionId: sale.clientTransactionId,
+      offlineInvoiceNumber: sale.offlineInvoiceNumber,
+      cloudSaleId: null,
+      cloudInvoiceNumber: null,
+      success: false,
+      duplicate: false,
+      whatsappSent: false,
+      error: "V389_SAFETY_HOLD_QUICK_ITEM: atomic quick-item migration required; no cloud writes attempted.",
+    };
+  }
+  if (!sale.clientTransactionId.trim()) {
+    return {
+      localSaleId: sale.id,
+      clientTransactionId: sale.clientTransactionId,
+      offlineInvoiceNumber: sale.offlineInvoiceNumber,
+      cloudSaleId: null,
+      cloudInvoiceNumber: null,
+      success: false,
+      duplicate: false,
+      whatsappSent: false,
+      error: "V389_SAFETY_HOLD_TX_ID: missing transaction ID.",
+    };
+  }
+
   await markOfflineSaleSyncing(sale.id);
 
   try {
+    // Live cloud, not a stale mirror: recover a prior committed sale
+    // before making any new financial write or stock deduction.
+    const { data: alreadySaved, error: lookupError } = await supabase
+      .from("pos_sales")
+      .select("id,invoice_number")
+      .eq("client_transaction_id", sale.clientTransactionId)
+      .limit(1);
+    if (lookupError) throw lookupError;
+    const duplicate = alreadySaved?.[0];
+    if (duplicate) {
+      await markOfflineSaleSynced(
+        sale.id,
+        String(duplicate.id),
+        String(duplicate.invoice_number || sale.offlineInvoiceNumber),
+      );
+      return {
+        localSaleId: sale.id,
+        clientTransactionId: sale.clientTransactionId,
+        offlineInvoiceNumber: sale.offlineInvoiceNumber,
+        cloudSaleId: String(duplicate.id),
+        cloudInvoiceNumber: String(duplicate.invoice_number || sale.offlineInvoiceNumber),
+        success: true,
+        duplicate: true,
+        whatsappSent: false,
+        error: null,
+      };
+    }
+
+    // The existing complete_pos_sale RPC recomputes the bill total.
+    // Prevent automatic writes where reconciliation may differ.
+    const calculated = sale.items.reduce(
+      (sum, item) => sum + Number(item.price) * Number(item.quantity), 0
+    ) - Math.max(0, sale.billDiscountAmount)
+      - Math.max(0, sale.rewardDiscountAmount)
+      - Math.max(0, sale.roundOffAmount);
+    if (!Number.isFinite(calculated) ||
+        Math.abs(calculated - sale.finalPayable) > 0.02 ||
+        Math.abs(sale.paidAmount + sale.dueAmount - sale.finalPayable) > 0.02) {
+      throw new Error("V389_TOTAL_MISMATCH: sale requires manual reconciliation.");
+    }
+
     const rpcItems =
       await createRpcItems(sale);
 
