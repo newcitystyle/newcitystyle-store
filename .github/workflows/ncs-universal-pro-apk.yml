@@ -25,31 +25,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install Gradle 8.10.2 from official distribution (retry transient 504)
-        run: |
-          set -euo pipefail
-          if command -v gradle >/dev/null 2>&1; then
-            AVAILABLE="$(gradle --version | grep -m1 '^Gradle ' || true)"
-            if echo "$AVAILABLE" | grep -Eq '^Gradle 8\\.'; then
-              echo "Using preinstalled $AVAILABLE (official runner image)."
-              exit 0
-            fi
-          fi
-          URL="https://downloads.gradle.org/distributions/gradle-8.10.2-bin.zip"
-          FALLBACK_URL="https://services.gradle.org/distributions/gradle-8.10.2-bin.zip"
-          SHA_URL="https://downloads.gradle.org/distributions/gradle-8.10.2-bin.zip.sha256"
-          if ! curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 "$URL" -o "$RUNNER_TEMP/gradle.zip"; then
-            echo "Primary Gradle host unavailable; trying verified official fallback."
-            curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 "$FALLBACK_URL" -o "$RUNNER_TEMP/gradle.zip"
-          fi
-          if ! curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 "$SHA_URL" -o "$RUNNER_TEMP/gradle.sha256"; then
-            echo "Checksum endpoint unavailable; not using unverified Gradle distribution."
-            exit 1
-          fi
-          EXPECTED="$(tr -d '\r\n ' < "$RUNNER_TEMP/gradle.sha256")"
-          echo "$EXPECTED  $RUNNER_TEMP/gradle.zip" | sha256sum --check -
-          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/gradle-8.10.2/bin" >> "$GITHUB_PATH"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
       - name: Install Android SDK 35
         run: |
           SDKMANAGER="$(find /usr/local/lib/android/sdk/cmdline-tools -type f -name sdkmanager | head -n 1)"
