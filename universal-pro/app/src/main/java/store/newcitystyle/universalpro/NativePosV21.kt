@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
@@ -135,6 +136,9 @@ internal class NPosStore(ctx:Context):SQLiteOpenHelper(ctx,"ncs_native_pos_v21.s
   val db=writableDatabase
   db.execSQL("UPDATE sync_queue SET status='INBOX_UPLOADED' WHERE id=? AND status='PENDING'",arrayOf(tx))
  }
+ fun canVoidLocal(tx:String):Boolean=readableDatabase.rawQuery(
+  "SELECT count(*) FROM bills b JOIN sync_queue q ON q.id=b.id WHERE b.id=? AND b.status='PENDING' AND q.status='PENDING'",
+  arrayOf(tx)).use{c->c.moveToFirst();c.getInt(0)==1}
  fun billLines(tx:String):List<NativeBillItem>{
   val result=mutableListOf<NativeBillItem>()
   readableDatabase.rawQuery(
@@ -273,7 +277,7 @@ internal fun NativePosV21(onBack:()->Unit){
     }
    },
    confirmButton={
-    if(bill.status=="PENDING" && pendingInbox>0){
+    if(store.canVoidLocal(bill.id)){
      TextButton(onClick={
       if(!showVoidConfirm)showVoidConfirm=true
       else{
