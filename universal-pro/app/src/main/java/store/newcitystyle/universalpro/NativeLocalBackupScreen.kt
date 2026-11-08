@@ -38,6 +38,22 @@ internal fun NativeLocalBackupScreen(onBack:()->Unit) {
             }
         }
     }
+    val verify=rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ){uri->
+        if(uri!=null){
+            busy=true
+            scope.launch{
+                try{
+                    status=withContext(Dispatchers.IO){
+                        NcsLocalPosBackup.verifyArchive(context,uri)
+                    }
+                }catch(e:Exception){
+                    status="Archive validation failed: "+(e.message?:"Unknown error")
+                }finally{busy=false}
+            }
+        }
+    }
     Column(
         modifier=Modifier.fillMaxSize().background(Color(0xFFF7F8FC)).padding(18.dp),
         verticalArrangement=Arrangement.spacedBy(15.dp)
@@ -71,6 +87,15 @@ internal fun NativeLocalBackupScreen(onBack:()->Unit) {
             Icon(Icons.Default.SaveAlt,null)
             Spacer(Modifier.width(8.dp))
             Text(if(busy)"EXPORTING..." else "SAVE POS BACKUP ZIP")
+        }
+        OutlinedButton(
+            modifier=Modifier.fillMaxWidth(),
+            enabled=!busy,
+            onClick={verify.launch(arrayOf("application/zip","application/octet-stream"))}
+        ){
+            Icon(Icons.Default.VerifiedUser,null)
+            Spacer(Modifier.width(8.dp))
+            Text("VERIFY SAVED BACKUP ZIP")
         }
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         Text(status,color=Color(0xFF0A2E73),fontWeight=FontWeight.Medium)
