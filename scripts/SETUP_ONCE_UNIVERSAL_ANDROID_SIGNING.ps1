@@ -49,3 +49,9 @@ Write-Host "PRIVATE_KEY_LOCAL_BACKUP=$key"
 Write-Host "DPAPI_PASSWORD_LOCAL_BACKUP=$passwordStore"
 Write-Host 'Store an additional secure copy of both backups outside this computer.'
 Write-Host 'Old preview apps use a different app ID; they can coexist. Once new permanent app installed, future builds update it without uninstall.'
+& gh workflow run ncs-universal-pro-apk.yml --ref feature/ncs-universal-single-app-native-foundation --repo $repo
+if ($LASTEXITCODE -eq 0) {
+ Write-Host 'PERMANENT_APP_BUILD_REQUESTED' -ForegroundColor Green
+} else {
+ Write-Host 'Signing key is configured; workflow dispatch not available. A new code push will trigger build.' -ForegroundColor Yellow
+}
