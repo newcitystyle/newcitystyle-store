@@ -23,8 +23,8 @@ import java.util.UUID
 import java.util.Locale
 
 internal data class NProduct(val id:Long,val variant:Long,val name:String,val size:String,val color:String,val price:Double,val stock:Int)
-private data class NCart(val product:NProduct,val qty:Int,val quick:Boolean=false)
-private data class NBill(val id:String,val invoice:String,val amount:Double,val method:String,val created:String)
+internal data class NCart(val product:NProduct,val qty:Int,val quick:Boolean=false)
+internal data class NBill(val id:String,val invoice:String,val amount:Double,val method:String,val created:String)
 internal class NPosStore(ctx:Context):SQLiteOpenHelper(ctx,"ncs_native_pos_v21.sqlite",null,1){
  override fun onCreate(db:SQLiteDatabase){
   db.execSQL("CREATE TABLE catalog(variant INTEGER PRIMARY KEY,product INTEGER NOT NULL,name TEXT,size TEXT,color TEXT,price REAL,stock INTEGER)")
