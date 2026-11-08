@@ -38,6 +38,14 @@ checks = {
         for x in ("ActivityResultContracts.CreateDocument", "application/zip")
     ),
     "backup explicitly export-only": '"restorable",false' in (src/"NcsLocalPosBackup.kt").read_text(encoding="utf-8"),
+    "backup independently reread after export": all(
+        marker in (src/"NcsLocalPosBackup.kt").read_text(encoding="utf-8")
+        for marker in ("verifyArchive(app,destination)", "ZipInputStream", "Backup checksum mismatch", "Missing or invalid table count")
+    ),
+    "native existing archive verification flow": all(
+        marker in (src/"NativeLocalBackupScreen.kt").read_text(encoding="utf-8")
+        for marker in ("ActivityResultContracts.OpenDocument", "VERIFY SAVED BACKUP ZIP")
+    ),
 
 }
 for name, passed in checks.items():
