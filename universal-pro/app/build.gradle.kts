@@ -10,8 +10,8 @@ android {
         applicationId = "store.newcitystyle.universalpro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 26
-        versionName = "2.6.0-native-barcode-pos"
+        versionCode = 27
+        versionName = "2.7.0-native-invoice-controls"
     }
     // Signing material is supplied only through encrypted GitHub Actions secrets.
     // No private keys, signing passwords or release certificates enter Git history.
