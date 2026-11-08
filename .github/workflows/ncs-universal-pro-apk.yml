@@ -21,6 +21,9 @@ jobs:
         working-directory: universal-pro
     steps:
       - uses: actions/checkout@v4
+      - name: Verify native architecture source invariants
+        run: python3 universal-pro/scripts/source_quality_gate.py
+        working-directory: .
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
