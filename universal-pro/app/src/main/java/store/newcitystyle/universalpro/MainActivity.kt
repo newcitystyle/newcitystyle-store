@@ -100,6 +100,7 @@ private fun UniversalApp() {
             Column(modifier = Modifier.padding(pad).fillMaxSize()) {
                 if (openedModule != null) {
                     when (openedModule) {
+                        "Advanced POS" -> NativePosV21(onBack={openedModule=null})
                         "Product Studio" -> LiveWebWorkspace(startPath="/admin/products",onBack={openedModule=null})
                         "Native Catalogue" -> LiveProductStudioScreen()
                         "Full Web Admin" -> LiveWebWorkspace(startPath="/admin/dashboard",onBack={openedModule=null})
@@ -107,7 +108,7 @@ private fun UniversalApp() {
                         "Customer Due Ledger" -> LiveWebWorkspace(startPath="/admin/customer-dues",onBack={openedModule=null})
                         "Advanced Web POS" -> LiveWebWorkspace(startPath="/admin/pos",onBack={openedModule=null})
                         "Purchase Center" -> LiveWebWorkspace(startPath="/admin/purchases",onBack={openedModule=null})
-                        "Advanced POS", "Sales Intelligence" -> LiveWebWorkspace(startPath="/admin/pos",onBack={openedModule=null})
+                        "Sales Intelligence" -> LiveBusinessCloudScreen(onBack={openedModule=null},initialTable="pos_sales")
                         "Sales History" -> LiveWebWorkspace(startPath="/admin/sales-history",onBack={openedModule=null})
                         "Customers", "Customer Dues" -> LiveWebWorkspace(startPath="/admin/customer-dues",onBack={openedModule=null})
                         "Supplier Ledger" -> LiveWebWorkspace(startPath="/admin/suppliers",onBack={openedModule=null})
@@ -135,7 +136,7 @@ private fun UniversalApp() {
                             if (target == "Product Studio") { selected = "Products"; openedModule = null }
                             else openedModule = target
                         })
-                        "Billing" -> LiveWebWorkspace(startPath="/admin/pos",onBack={selected="Home"})
+                        "Billing" -> NativePosV21(onBack={selected="Home"})
                         "Products" -> LiveWebWorkspace(startPath="/admin/products",onBack={selected="Home"})
                         "Insights" -> LiveWebWorkspace(startPath="/admin/sales-history",onBack={selected="Home"})
                         else -> PremiumToolsScreen(onOpen = { openedModule = it })
