@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.time.Instant
 import java.util.UUID
+import java.util.Locale
 
 private data class NProduct(val id:Long,val variant:Long,val name:String,val size:String,val color:String,val price:Double,val stock:Int)
 private data class NCart(val product:NProduct,val qty:Int,val quick:Boolean=false)
