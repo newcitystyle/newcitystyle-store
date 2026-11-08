@@ -31,7 +31,7 @@
 | Cash/UPI & expenses | Generic cloud record browser, no complete native posting workflow. | Must align with Desktop cash/bank ledger, proper financial reconciliation. |
 | Orders | `NativeOnlineOrdersScreen`: owner-only RPC list and detail status. | Order workflow status edits, fulfillment, cancellation, audit/permissions unimplemented. |
 | Inventory | `NativeInventoryScreen` present. | Stock movement ledger source of truth and cross-device mutation not proven. |
-| Recovery | `AndroidManifest.xml` declares `allowBackup=false`; local SQLite exists. | Tested export/restore on new device not implemented. Local data cannot be assumed recoverable after phone loss. |
+| Recovery | Manual native POS backup export code added: `NativeLocalBackupScreen`, SQLite `VACUUM INTO`, `PRAGMA integrity_check`, SHA-256 and ZIP. System folder picker avoids broad storage permissions. | Not device-tested, unencrypted private ZIP, *export only*: no restore or independent import validation; full phone migration remains blocked. |
 | Testing | GitHub Actions can compile + sign release APK. | Build success alone doesn't prove functional, offline, backup, integration, security, UI, or device tests. |
 
 ## Cloud access-control release gate
