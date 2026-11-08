@@ -28,6 +28,13 @@ jobs:
       - name: Install Gradle 8.10.2 from official distribution (retry transient 504)
         run: |
           set -euo pipefail
+          if command -v gradle >/dev/null 2>&1; then
+            AVAILABLE="$(gradle --version | grep -m1 '^Gradle ' || true)"
+            if echo "$AVAILABLE" | grep -Eq '^Gradle 8\\.'; then
+              echo "Using preinstalled $AVAILABLE (official runner image)."
+              exit 0
+            fi
+          fi
           URL="https://downloads.gradle.org/distributions/gradle-8.10.2-bin.zip"
           SHA_URL="https://downloads.gradle.org/distributions/gradle-8.10.2-bin.zip.sha256"
           curl --fail --location --retry 6 --retry-all-errors --retry-delay 5 "$URL" -o "$RUNNER_TEMP/gradle.zip"
