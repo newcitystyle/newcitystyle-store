@@ -113,9 +113,16 @@ internal class NPosStore(ctx:Context):SQLiteOpenHelper(ctx,"ncs_native_pos_v21.s
        .put("offlinePhysicalPiece",false))
      }
     }
-    if(items.length()==0)continue
+    // Fail closed instead of silently skipping a queued invoice. A skipped bill
+    // looks like a successful batch while it remains unsynchronised forever.
+    require(items.length()>0){"Offline invoice "+bills.getString(1)+" has no line items; cloud upload stopped"}
+    require(total.isFinite() && total>0 && original.isFinite() && original>0){
+      "Offline invoice "+bills.getString(1)+" has invalid amounts; cloud upload stopped"
+    }
     val discount=kotlin.math.round((original-total)*100.0)/100.0
-    if(discount < -0.02)continue
+    require(discount>=-0.02){
+      "Offline invoice "+bills.getString(1)+" exceeds its item subtotal; cloud upload stopped"
+    }
     out+=JSONObject().put("client_transaction_id",tx)
      .put("offline_invoice_number",bills.getString(1))
      .put("original_created_at",bills.getString(4))
