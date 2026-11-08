@@ -28,6 +28,17 @@ checks = {
         "// publishable client key only: never embed service_role or secret keys in android.", ""),
     "native offline data not silently wiped": "DROP TABLE" not in pos.upper(),
     "native product photographs": "AsyncImage(" in (src/"NativeProductsScreen.kt").read_text(encoding="utf-8"),
+    "owner-initiated local POS backup route": '"Local Backup" -> NativeLocalBackupScreen(' in main,
+    "consistent SQLite backup snapshot and integrity check": all(
+        x in (src/"NcsLocalPosBackup.kt").read_text(encoding="utf-8")
+        for x in ("VACUUM INTO", "PRAGMA integrity_check", "SHA-256", "sync_queue", "bill_items")
+    ),
+    "system storage picker rather than dangerous full storage permission": all(
+        x in (src/"NativeLocalBackupScreen.kt").read_text(encoding="utf-8")
+        for x in ("ActivityResultContracts.CreateDocument", "application/zip")
+    ),
+    "backup explicitly export-only": '"restorable",false' in (src/"NcsLocalPosBackup.kt").read_text(encoding="utf-8"),
+
 }
 for name, passed in checks.items():
     print(("PASS " if passed else "FAIL ") + name)
@@ -35,4 +46,4 @@ if not all(checks.values()):
     print("SOURCE_INVARIANTS_FAILED — no release")
     sys.exit(1)
 print(f"SOURCE_INVARIANTS_PASSED ({sum(checks.values())} checks)")
-print("NOTE: This does NOT certify finance sync, photo upload, backup, UI or device tests.")
+print("NOTE: This does NOT certify actual restore, backup export on device, finance sync, UI or device tests.")
