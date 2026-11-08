@@ -71,7 +71,7 @@ internal fun NativeLocalBackupScreen(onBack:()->Unit) {
                 Text("1. Choose a private folder on your phone or your Drive.")
                 Text("2. The snapshot is checked for SQLite integrity.")
                 Text("3. Keep the ZIP safely. It contains private business data and is NOT encrypted.")
-                Text("4. Restore is not enabled until independent recovery tests pass.")
+                Text("4. Test Restore checks a separate copy of the database. It never overwrites live bills. Actual restore is still disabled.")
             }
         }
         Button(
@@ -95,7 +95,7 @@ internal fun NativeLocalBackupScreen(onBack:()->Unit) {
         ){
             Icon(Icons.Default.VerifiedUser,null)
             Spacer(Modifier.width(8.dp))
-            Text("VERIFY SAVED BACKUP ZIP")
+            Text("TEST BACKUP RESTORE SAFELY")
         }
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         Text(status,color=Color(0xFF0A2E73),fontWeight=FontWeight.Medium)
