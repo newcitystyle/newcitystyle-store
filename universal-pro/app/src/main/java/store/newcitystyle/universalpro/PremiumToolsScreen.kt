@@ -18,23 +18,18 @@ import androidx.compose.ui.unit.sp
 
 private data class ToolAction(val title:String,val subtitle:String,val icon:ImageVector,val tone:Color)
 private val allActions=listOf(
-    ToolAction("Advanced POS","Billing terminal",Icons.Default.QrCodeScanner,ProBlue),
-    ToolAction("Product Studio","Sizes, variants & margin",Icons.Default.Style,ProPurple),
-    ToolAction("Purchase Center","Stock inward studio",Icons.Default.LocalShipping,ProTeal),
+    ToolAction("Advanced POS","Native offline billing",Icons.Default.QrCodeScanner,ProBlue),
+    ToolAction("Product Studio","Native catalogue and metadata edit",Icons.Default.Style,ProPurple),
+    ToolAction("Purchase Center","Purchase records • entries pending",Icons.Default.LocalShipping,ProTeal),
     ToolAction("Sales Intelligence","Sales & bill records",Icons.Default.AutoGraph,ProSky),
-    ToolAction("Customers","CRM & customer dues",Icons.Default.Groups,ProCoral),
-    ToolAction("Supplier Ledger","Supplier accounts",Icons.Default.AccountBalance,ProOrange),
-    ToolAction("Inventory Radar","Stock health & alerts",Icons.Default.Inventory2,ProTeal),
-    ToolAction("Cash & Bank","UPI, cash & expenses",Icons.Default.AccountBalanceWallet,ProSky),
-    ToolAction("Online Orders","E-commerce command",Icons.Default.ShoppingBag,ProPurple),
-    ToolAction("LIVA AI","Assistant concept",Icons.Default.AutoAwesome,ProCoral),
+    ToolAction("Customers","Customer dues and real reminders",Icons.Default.Groups,ProCoral),
+    ToolAction("Supplier Ledger","Supplier records • payment entry pending",Icons.Default.AccountBalance,ProOrange),
+    ToolAction("Inventory Radar","Native low stock and offline cache",Icons.Default.Inventory2,ProTeal),
+    ToolAction("Cash & Bank","Cash and UPI records • edit pending",Icons.Default.AccountBalanceWallet,ProSky),
     ToolAction("Profit Studio","Live margin calculator",Icons.Default.Calculate,ProOrange),
-    ToolAction("Sync Center","Desktop / Android integration status",Icons.Default.CloudSync,ProTeal),
+    ToolAction("Sync Center","Cloud inbox reconciliation status",Icons.Default.CloudSync,ProTeal),
     ToolAction("Live Business Cloud","Actual Products, Sales, Purchases and Balances",Icons.Default.CloudDone,ProBlue),
-    ToolAction("Full Web Admin","Every original web admin feature",Icons.Default.Public,ProBlue),
-    ToolAction("Web Product Studio","Original full AI photo studio",Icons.Default.AutoAwesome,ProPurple),
     ToolAction("Customer Due Ledger","Existing website dues and reminders",Icons.Default.Message,ProTeal),
-    ToolAction("Advanced Web POS","Full website billing terminal",Icons.Default.ReceiptLong,ProOrange)
 )
 @Composable fun PremiumToolsScreen(onOpen:(String)->Unit) {
     var search by remember { mutableStateOf("") }
@@ -91,7 +86,7 @@ private val allActions=listOf(
                     }
                 }
             }
-            item {Text("Live cloud records are available after owner login. Offline Desktop two-way financial writes are not yet enabled.",color=Color(0xFF65738B),fontSize=11.sp)}
+            item {Text("Native operations marked pending are not ready for financial writes. No website shortcuts are presented as completed modules.",color=Color(0xFF65738B),fontSize=11.sp)}
         }
     }
 }
