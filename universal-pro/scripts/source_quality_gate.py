@@ -37,6 +37,10 @@ checks = {
         x in (src/"NativeLocalBackupScreen.kt").read_text(encoding="utf-8")
         for x in ("ActivityResultContracts.CreateDocument", "application/zip")
     ),
+    "restore rehearsal is isolated and read-only": all(
+        marker in (src/"NcsLocalPosBackup.kt").read_text(encoding="utf-8")
+        for marker in ("ncs-restore-dry-run-", "SQLiteDatabase.OPEN_READONLY", "Orphan bill items in backup", "Orphan sync queue records")
+    ),
     "backup explicitly export-only": '"restorable",false' in (src/"NcsLocalPosBackup.kt").read_text(encoding="utf-8"),
     "backup independently reread after export": all(
         marker in (src/"NcsLocalPosBackup.kt").read_text(encoding="utf-8")
@@ -44,7 +48,7 @@ checks = {
     ),
     "native existing archive verification flow": all(
         marker in (src/"NativeLocalBackupScreen.kt").read_text(encoding="utf-8")
-        for marker in ("ActivityResultContracts.OpenDocument", "VERIFY SAVED BACKUP ZIP")
+        for marker in ("ActivityResultContracts.OpenDocument", "TEST BACKUP RESTORE SAFELY")
     ),
 
 }
