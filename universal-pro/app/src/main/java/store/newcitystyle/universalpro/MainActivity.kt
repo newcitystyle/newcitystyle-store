@@ -115,7 +115,7 @@ private fun UniversalApp() {
                         "Cash & Bank" -> LiveBusinessCloudScreen(onBack={openedModule=null},initialTable="cash_bank_transactions")
                         "Expenses" -> LiveBusinessCloudScreen(onBack={openedModule=null},initialTable="expenses")
                         "Inventory Radar" -> NativeInventoryScreen(onBack={openedModule=null})
-                        "Online Orders" -> LiveBusinessCloudScreen(onBack={openedModule=null},initialTable="pos_sales")
+                        "Online Orders" -> NativeOnlineOrdersScreen(onBack={openedModule=null})
                         "Profit Studio" -> ProfitCalculatorScreen(onBack = { openedModule = null })
                         "Sync Center" -> CloudBridgeV17Screen(onBack = { openedModule = null })
                         "Live Business Cloud" -> LiveBusinessCloudScreen(onBack = { openedModule = null })
