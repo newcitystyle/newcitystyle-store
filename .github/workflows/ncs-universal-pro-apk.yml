@@ -2,12 +2,12 @@ name: NCS Universal Pro - Build Native APK
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
+    branches: [main, ncs-universal-pro-v1]
     paths:
       - 'universal-pro/**'
       - '.github/workflows/ncs-universal-pro-apk.yml'
   push:
-    branches: [ncs-universal-pro-v1]
+    branches: [ncs-universal-pro-v1, feature/universal-v17-cloud-bridge, feature/ncs-universal-single-app-native-foundation]
     paths:
       - 'universal-pro/**'
       - '.github/workflows/ncs-universal-pro-apk.yml'
@@ -21,36 +21,76 @@ jobs:
         working-directory: universal-pro
     steps:
       - uses: actions/checkout@v4
+      - name: Verify native architecture source invariants
+        run: python3 universal-pro/scripts/source_quality_gate.py
+        working-directory: .
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
+      - name: Use available Gradle or install from official distribution
+        run: |
+          set -euo pipefail
+          if command -v gradle >/dev/null 2>&1; then
+            CURRENT="$(gradle --version | grep -m1 '^Gradle ' || true)"
+            echo "Preinstalled: $CURRENT"
+            if echo "$CURRENT" | grep -Eq '^Gradle (8[.](9|10|11|12|13|14|15|16)|9[.](8|9))([.]|$)'; then
+              echo "Using GitHub runner preinstalled Gradle; compatibility checked by compile step"
+              exit 0
+            fi
+          fi
+          for URL in \
+            "https://downloads.gradle.org/distributions/gradle-8.10.2-bin.zip" \
+            "https://services.gradle.org/distributions/gradle-8.10.2-bin.zip"; do
+            if curl --fail --location --retry 2 --connect-timeout 15 --max-time 180 "$URL" -o "$RUNNER_TEMP/gradle.zip"; then
+              break
+            fi
+          done
+          test -s "$RUNNER_TEMP/gradle.zip"
+          curl --fail --location --retry 2 --connect-timeout 15 \
+            "https://downloads.gradle.org/distributions/gradle-8.10.2-bin.zip.sha256" \
+            -o "$RUNNER_TEMP/gradle.sha256"
+          EXPECTED="$(head -c 64 "$RUNNER_TEMP/gradle.sha256")"
+          echo "$EXPECTED  $RUNNER_TEMP/gradle.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-8.10.2/bin" >> "$GITHUB_PATH"
       - name: Install Android SDK 35
         run: |
           SDKMANAGER="$(find /usr/local/lib/android/sdk/cmdline-tools -type f -name sdkmanager | head -n 1)"
           test -n "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
-      - name: Restore persistent APK signing certificate when configured
+      - name: Restore permanent release signing certificate
         env:
-          NCS_ANDROID_DEBUG_KEYSTORE_B64: ${{ secrets.NCS_ANDROID_DEBUG_KEYSTORE_B64 }}
+          RELEASE_KEYSTORE_B64: ${{ secrets.NCS_ANDROID_RELEASE_KEYSTORE_B64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.NCS_ANDROID_RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.NCS_ANDROID_RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.NCS_ANDROID_RELEASE_KEY_PASSWORD }}
         run: |
-          if [ -n "$NCS_ANDROID_DEBUG_KEYSTORE_B64" ]; then
-            mkdir -p "$HOME/.android"
-            printf '%s' "$NCS_ANDROID_DEBUG_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
-            chmod 600 "$HOME/.android/debug.keystore"
-            echo "Persistent signing certificate restored."
+          if [ -n "$RELEASE_KEYSTORE_B64" ] && [ -n "$RELEASE_STORE_PASSWORD" ] && [ -n "$RELEASE_KEY_ALIAS" ] && [ -n "$RELEASE_KEY_PASSWORD" ]; then
+            printf '%s' "$RELEASE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/ncs-universal-release.jks"
+            chmod 600 "$RUNNER_TEMP/ncs-universal-release.jks"
+            echo "NCS_ANDROID_RELEASE_KEYSTORE=$RUNNER_TEMP/ncs-universal-release.jks" >> "$GITHUB_ENV"
+            echo "NCS_ANDROID_RELEASE_STORE_PASSWORD=$RELEASE_STORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "NCS_ANDROID_RELEASE_KEY_ALIAS=$RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "NCS_ANDROID_RELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "NCS_STABLE_SIGNING=1" >> "$GITHUB_ENV"
+            echo "Permanent release signing configured. Same identity on all future builds."
           else
-            echo "No stable signing certificate configured: default runner debug signing may require uninstall."
+            echo "NCS_STABLE_SIGNING=0" >> "$GITHUB_ENV"
+            echo "No permanent release key. Compile-only validation; APK distribution disabled."
           fi
       - name: Compile NEW CITY STYLE Universal APK
-        run: gradle --no-daemon :app:assembleDebug
-      - name: Upload Android APK
+        run: |
+          if [ "$NCS_STABLE_SIGNING" = "1" ]; then
+            gradle --no-daemon :app:assembleRelease
+          else
+            gradle --no-daemon :app:assembleDebug
+          fi
+      - name: Upload stable signed Universal APK
+        if: env.NCS_STABLE_SIGNING == '1'
         uses: actions/upload-artifact@v4
         with:
-          name: NCS-Universal-Pro-Real-Live-APK
-          path: universal-pro/app/build/outputs/apk/debug/*.apk
+          name: NCS-Universal-Permanent-App-APK
+          path: universal-pro/app/build/outputs/apk/release/*.apk
           if-no-files-found: error

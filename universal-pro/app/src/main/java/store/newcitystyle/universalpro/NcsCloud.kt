@@ -103,7 +103,7 @@ internal object NcsCloud {
         val allowed=setOf(
             "products","product_variants","product_design_units","product_design_unit_variants","customer_credit_accounts","customer_credit_transactions","billing_customers","pos_sales","purchases","purchase_items",
             "customers","suppliers","supplier_payments","expenses",
-            "cash_bank_transactions","pos_sale_items","pos_payments"
+            "cash_bank_transactions","pos_sale_items","pos_payments","ncs_desktop_sync_inbox_v1"
         )
         require(table in allowed){"Unsupported table"}
         val columns=when(table){
@@ -112,6 +112,7 @@ internal object NcsCloud {
             "product_design_units"->"id,product_id,design_name,image_url,status,unit_quantity,parent_barcode"
             "product_design_unit_variants"->"id,product_id,design_unit_id,variant_id,status,mrp,online_price,online_quantity,online_mrp"
             "pos_sales"->"id,invoice_number,customer_name,total_amount,paid_amount,due_amount,created_at"
+            "ncs_desktop_sync_inbox_v1"->"client_transaction_id,offline_invoice_number,total_amount,paid_amount,due_amount,payment_method,original_created_at,requires_quick_item_handling,ledger_sync_state"
             "purchases"->"id,purchase_number,supplier_name,total_amount,paid_amount,due_amount,purchase_date"
             "purchase_items"->"id,purchase_id,product_id,quantity"
             "customers"->"id,full_name,phone,total_orders,total_spent,created_at"
@@ -133,6 +134,7 @@ internal object NcsCloud {
             "cash_bank_transactions" -> "&order=transaction_date.desc,created_at.desc"
             "expenses" -> "&order=expense_date.desc,created_at.desc"
             "purchases" -> "&order=purchase_date.desc,created_at.desc"
+            "ncs_desktop_sync_inbox_v1" -> "&order=original_created_at.desc"
             "pos_sales","pos_payments","pos_sale_items","purchase_items" -> "&order=created_at.desc"
             else -> "&order=id.desc"
         }
@@ -146,12 +148,67 @@ internal object NcsCloud {
     private suspend fun rpc(session:Session,function:String,body:JSONObject=JSONObject()):String=withContext(Dispatchers.IO) {
         require(function in setOf(
             "ncs_universal_customer_profile_v14","ncs_universal_credit_profile_v14","ncs_universal_bill_detail_v14",
-            "ncs_universal_sales_trend_v14"
+            "ncs_universal_sales_trend_v14", "ncs_universal_owner_product_metadata_v1", "ncs_universal_owner_orders_read_v1"
         ))
         val c=open(root+"/rest/v1/rpc/"+function,token=session.accessToken,method="POST")
         c.doOutput=true;c.setRequestProperty("Content-Type","application/json")
         c.outputStream.use{it.write(body.toString().toByteArray(Charsets.UTF_8))}
         consume(c)
+    }
+    suspend fun updateProductMetadata(
+        session:Session,
+        productId:Long,
+        expectedName:String,
+        expectedBrand:String?,
+        newName:String,
+        newBrand:String?
+    ):JSONObject {
+        require(productId>0 && newName.trim().length in 2..150 &&
+            (newBrand?.length ?: 0)<=80){"Invalid product details"}
+        require(activeSession?.email?.equals(session.email,ignoreCase=true)==true){"Owner login required"}
+        val payload=JSONObject()
+            .put("p_product_id",productId)
+            .put("p_expected_name",expectedName)
+            .put("p_expected_brand",expectedBrand ?: JSONObject.NULL)
+            .put("p_new_name",newName.trim())
+            .put("p_new_brand",newBrand?.trim() ?: JSONObject.NULL)
+        return JSONObject(rpc(session,"ncs_universal_owner_product_metadata_v1",payload))
+    }
+    // Uploads only to owner-private reconciliation inbox; never touches pos_sales or stock.
+    suspend fun postNativeOfflineBillToInbox(session:Session,bill:JSONObject):Boolean =
+        withContext(Dispatchers.IO) {
+            require(activeSession?.email?.equals(session.email,ignoreCase=true)==true){"Owner login required"}
+            val tx=bill.optString("client_transaction_id")
+            require(tx.startsWith("NCS-ANDROID-") && tx.length<=100){"Invalid Android transaction ID"}
+            val path="/rest/v1/ncs_desktop_sync_inbox_v1?on_conflict=client_transaction_id"
+            val c=open(root+path,token=session.accessToken,method="POST")
+            c.doOutput=true
+            c.setRequestProperty("Content-Type","application/json")
+            c.setRequestProperty("Prefer","resolution=ignore-duplicates,return=representation")
+            c.outputStream.use { it.write(bill.toString().toByteArray(Charsets.UTF_8)) }
+            consume(c)
+            // Verify the canonical inbox record matches this invoice and amount,
+            // including retry after a timeout. An ID collision is not silently accepted.
+            val encoded=java.net.URLEncoder.encode(tx,"UTF-8")
+            val q=open(root+"/rest/v1/ncs_desktop_sync_inbox_v1?select=offline_invoice_number,total_amount,paid_amount,due_amount&client_transaction_id=eq."+encoded,
+                token=session.accessToken)
+            val arr=JSONArray(consume(q))
+            if(arr.length()!=1)throw IOException("Cloud inbox confirmation missing")
+            val found=arr.getJSONObject(0)
+            val matches=found.optString("offline_invoice_number")==bill.optString("offline_invoice_number") &&
+                kotlin.math.abs(found.optDouble("total_amount")-bill.optDouble("total_amount"))<0.01 &&
+                kotlin.math.abs(found.optDouble("paid_amount")-bill.optDouble("paid_amount"))<0.01 &&
+                kotlin.math.abs(found.optDouble("due_amount")-bill.optDouble("due_amount"))<0.01
+            if(!matches)throw IOException("Cloud ID already exists with different amounts")
+            true
+        }
+
+    suspend fun onlineOrders(session:Session,start:Int=0,limit:Int=40):List<JSONObject> {
+        require(start>=0&&limit in 1..100)
+        val result=rpc(session,"ncs_universal_owner_orders_read_v1",
+            JSONObject().put("p_offset",start).put("p_limit",limit))
+        val arr=JSONArray(result)
+        return (0 until arr.length()).map{arr.getJSONObject(it)}
     }
     suspend fun customerProfile(session:Session,id:Long):JSONObject {
         require(id>0)

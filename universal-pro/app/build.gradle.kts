@@ -10,10 +10,31 @@ android {
         applicationId = "store.newcitystyle.universalpro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "1.6.0-original-web-studio"
+        versionCode = 33
+        versionName = "3.3.0-isolated-restore-rehearsal"
     }
-    buildTypes { release { isMinifyEnabled = false } }
+    // Signing material is supplied only through encrypted GitHub Actions secrets.
+    // No private keys, signing passwords or release certificates enter Git history.
+    signingConfigs {
+        create("ncsRelease") {
+            val signingPath = System.getenv("NCS_ANDROID_RELEASE_KEYSTORE")
+            if (!signingPath.isNullOrBlank()) {
+                storeFile = file(signingPath)
+                storePassword = System.getenv("NCS_ANDROID_RELEASE_STORE_PASSWORD")
+                keyAlias = System.getenv("NCS_ANDROID_RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("NCS_ANDROID_RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        debug { applicationIdSuffix = ".syncpreview" }
+        release {
+            isMinifyEnabled = false
+            if (!System.getenv("NCS_ANDROID_RELEASE_KEYSTORE").isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("ncsRelease")
+            }
+        }
+    }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }

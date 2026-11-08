@@ -32,13 +32,12 @@ private val orbitMoney=NumberFormat.getCurrencyInstance(Locale.forLanguageTag("e
 
 private data class OrbitModule(val title:String,val desc:String,val icon:ImageVector,val route:String,val color:Color)
 private val orbitModules=listOf(
-    OrbitModule("AI PRODUCT STUDIO","Real photos & AI publish",Icons.Default.AutoAwesome,"Product Studio",Color(0xFFD4AF37)),
-    OrbitModule("LIVE POS & BILLS","Sales and invoices",Icons.Default.ReceiptLong,"Sales Intelligence",Color(0xFF5FE6D5)),
+    OrbitModule("PRODUCT STUDIO","Native product edit",Icons.Default.AutoAwesome,"Product Studio",Color(0xFFD4AF37)),
+    OrbitModule("NATIVE POS & BILLS","Offline local billing",Icons.Default.ReceiptLong,"Advanced POS",Color(0xFF5FE6D5)),
     OrbitModule("CUSTOMER DUES","Receive • Reminder • Ledger",Icons.Default.Groups,"Customer Dues",Color(0xFFFFBC70)),
-    OrbitModule("PURCHASES","Supplier incoming stock",Icons.Default.LocalShipping,"Purchase Center",Color(0xFF9CADFF)),
+    OrbitModule("PURCHASES","Records • entry pending",Icons.Default.LocalShipping,"Purchase Center",Color(0xFF9CADFF)),
     OrbitModule("STOCK RADAR","Sizes • Colors • Low Stock",Icons.Default.Inventory2,"Inventory Radar",Color(0xFFBB98F4)),
-    OrbitModule("FINANCE CENTER","Cash • UPI • Accounts",Icons.Default.AccountBalance,"Cash & Bank",Color(0xFF76D5E7)),
-    OrbitModule("FULL WEB ADMIN","All existing edit & save tools",Icons.Default.Language,"Full Web Admin",Color(0xFFF0CB82)),
+    OrbitModule("FINANCE CENTER","Cash and UPI records",Icons.Default.AccountBalance,"Cash & Bank",Color(0xFF76D5E7)),
     OrbitModule("ALL CLOUD RECORDS","Detailed business listings",Icons.Default.CloudDone,"Live Business Cloud",Color(0xFF80E5B7))
 )
 
@@ -50,6 +49,19 @@ fun OrbitBusinessHubV16(onNavigate:(String)->Unit) {
     var totals by remember(session){mutableStateOf<JSONObject?>(null)}
     var busy by remember(session){mutableStateOf(false)}
     var error by remember(session){mutableStateOf("")}
+    var desktopInboxCount by remember(session){mutableStateOf<Int?>(null)}
+    var desktopInboxTotal by remember(session){mutableStateOf<Double?>(null)}
+    var desktopInboxError by remember(session){mutableStateOf("")}
+    suspend fun refreshInbox(user:NcsCloud.Session){
+        try {
+            val page=NcsCloud.load(user,"ncs_desktop_sync_inbox_v1",0,100)
+            desktopInboxCount=page.count ?: page.items.size
+            desktopInboxTotal=page.items.sumOf{it.optDouble("total_amount",0.0)}
+            desktopInboxError=""
+        } catch(e:Exception){
+            desktopInboxError="Desktop inbox unavailable: "+(e.message?:"Unknown error")
+        }
+    }
     fun refresh(){
         val user=session?:return
         busy=true;error=""
@@ -57,6 +69,7 @@ fun OrbitBusinessHubV16(onNavigate:(String)->Unit) {
             try{
                 metrics=NcsCloud.dashboard(user)
                 totals=NcsCloud.businessTotals(user)
+                refreshInbox(user)
             }catch(e:Exception){error=e.message?:"Cloud data not accessible"}
             finally{busy=false}
         }
@@ -67,6 +80,7 @@ fun OrbitBusinessHubV16(onNavigate:(String)->Unit) {
                 try {
                     metrics=NcsCloud.dashboard(session)
                     totals=NcsCloud.businessTotals(session)
+                    refreshInbox(session)
                     error=""
                 } catch(e:Exception) { error=e.message?:"Cloud data not accessible" }
                 delay(90000)
@@ -131,7 +145,36 @@ fun OrbitBusinessHubV16(onNavigate:(String)->Unit) {
                 OrbitTextMetric("TODAY EXPENSE",metrics?.let{orbitMoney.format(it.optDouble("today_expenses",0.0))}?:"—",Color(0xFFFFB68B),Modifier.weight(1f))
             }
         }
-        if(syncStale) item{
+        if(desktopInboxCount!=null) item {
+            Card(
+                modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)
+                    .clickable{ onNavigate("Sync Center") },
+                colors=CardDefaults.cardColors(containerColor=Color(0xFF123C51)),
+                shape=RoundedCornerShape(15.dp)
+            ){
+                Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Icon(Icons.Default.CloudDone,null,tint=orbitMint)
+                        Spacer(Modifier.width(9.dp))
+                        Text("DESKTOP BILLS IN CLOUD INBOX",color=Color.White,
+                            fontWeight=FontWeight.Black,fontSize=12.sp)
+                    }
+                    Text("${desktopInboxCount ?: 0} bills • "+
+                        orbitMoney.format(desktopInboxTotal ?: 0.0),
+                        color=orbitMint,fontWeight=FontWeight.Bold,fontSize=20.sp)
+                    Text("Awaiting accounting reconciliation. NOT included in Today's Sales, Stock or Dues.",
+                        color=Color(0xFFD4E7F1),fontSize=11.sp)
+                    Text("VIEW DESKTOP BILLS",color=orbitGold,
+                        fontSize=11.sp,fontWeight=FontWeight.Bold)
+                }
+            }
+        }
+        if(desktopInboxError.isNotBlank()) item {
+            Text(desktopInboxError,
+                modifier=Modifier.padding(horizontal=18.dp),
+                color=Color(0xFFFFC9A6),fontSize=11.sp)
+        }
+        if(syncStale && (desktopInboxCount ?: 0)==0) item{
             Card(
                 modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp),
                 colors=CardDefaults.cardColors(containerColor=Color(0xFF563527)),
