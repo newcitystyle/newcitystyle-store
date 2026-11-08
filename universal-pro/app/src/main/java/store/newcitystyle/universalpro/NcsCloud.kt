@@ -103,7 +103,7 @@ internal object NcsCloud {
         val allowed=setOf(
             "products","product_variants","product_design_units","product_design_unit_variants","customer_credit_accounts","customer_credit_transactions","billing_customers","pos_sales","purchases","purchase_items",
             "customers","suppliers","supplier_payments","expenses",
-            "cash_bank_transactions","pos_sale_items","pos_payments"
+            "cash_bank_transactions","pos_sale_items","pos_payments","ncs_desktop_sync_inbox_v1"
         )
         require(table in allowed){"Unsupported table"}
         val columns=when(table){
@@ -112,6 +112,7 @@ internal object NcsCloud {
             "product_design_units"->"id,product_id,design_name,image_url,status,unit_quantity,parent_barcode"
             "product_design_unit_variants"->"id,product_id,design_unit_id,variant_id,status,mrp,online_price,online_quantity,online_mrp"
             "pos_sales"->"id,invoice_number,customer_name,total_amount,paid_amount,due_amount,created_at"
+            "ncs_desktop_sync_inbox_v1"->"client_transaction_id,offline_invoice_number,total_amount,paid_amount,due_amount,payment_method,original_created_at,requires_quick_item_handling,ledger_sync_state"
             "purchases"->"id,purchase_number,supplier_name,total_amount,paid_amount,due_amount,purchase_date"
             "purchase_items"->"id,purchase_id,product_id,quantity"
             "customers"->"id,full_name,phone,total_orders,total_spent,created_at"
@@ -133,6 +134,7 @@ internal object NcsCloud {
             "cash_bank_transactions" -> "&order=transaction_date.desc,created_at.desc"
             "expenses" -> "&order=expense_date.desc,created_at.desc"
             "purchases" -> "&order=purchase_date.desc,created_at.desc"
+            "ncs_desktop_sync_inbox_v1" -> "&order=original_created_at.desc"
             "pos_sales","pos_payments","pos_sale_items","purchase_items" -> "&order=created_at.desc"
             else -> "&order=id.desc"
         }

@@ -100,23 +100,33 @@ private fun UniversalApp() {
             Column(modifier = Modifier.padding(pad).fillMaxSize()) {
                 if (openedModule != null) {
                     when (openedModule) {
+                        "Advanced POS" -> NativePosV21(onBack={openedModule=null})
                         "Product Studio" -> LiveWebWorkspace(startPath="/admin/products",onBack={openedModule=null})
                         "Native Catalogue" -> LiveProductStudioScreen()
                         "Full Web Admin" -> LiveWebWorkspace(startPath="/admin/dashboard",onBack={openedModule=null})
                         "Web Product Studio" -> LiveWebWorkspace(startPath="/admin/products",onBack={openedModule=null})
                         "Customer Due Ledger" -> LiveWebWorkspace(startPath="/admin/customer-dues",onBack={openedModule=null})
                         "Advanced Web POS" -> LiveWebWorkspace(startPath="/admin/pos",onBack={openedModule=null})
+                        "Purchase Center" -> LiveWebWorkspace(startPath="/admin/purchases",onBack={openedModule=null})
+                        "Sales Intelligence" -> LiveBusinessCloudScreen(onBack={openedModule=null},initialTable="pos_sales")
+                        "Sales History" -> LiveWebWorkspace(startPath="/admin/sales-history",onBack={openedModule=null})
+                        "Customers", "Customer Dues" -> LiveWebWorkspace(startPath="/admin/customer-dues",onBack={openedModule=null})
+                        "Supplier Ledger" -> LiveWebWorkspace(startPath="/admin/suppliers",onBack={openedModule=null})
+                        "Cash & Bank" -> LiveWebWorkspace(startPath="/admin/cash-bank-book",onBack={openedModule=null})
+                        "Expenses" -> LiveWebWorkspace(startPath="/admin/expenses",onBack={openedModule=null})
+                        "Inventory Radar" -> LiveWebWorkspace(startPath="/admin/products",onBack={openedModule=null})
+                        "Online Orders" -> LiveWebWorkspace(startPath="/admin/orders",onBack={openedModule=null})
                         "Profit Studio" -> ProfitCalculatorScreen(onBack = { openedModule = null })
-                        "Sync Center" -> SyncCenterScreen(onBack = { openedModule = null })
+                        "Sync Center" -> CloudBridgeV17Screen(onBack = { openedModule = null })
                         "Live Business Cloud" -> LiveBusinessCloudScreen(onBack = { openedModule = null })
-                        "Sales Intelligence", "Advanced POS" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "pos_sales")
-                        "Purchase Center" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "purchases")
-                        "Customers" -> LiveCustomer360Screen(onBack = { openedModule = null })
-                        "Customer Dues" -> LiveCustomer360Screen(onBack = { openedModule = null },startMode = "Due Accounts")
-                        "Supplier Ledger" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "suppliers")
-                        "Cash & Bank" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "cash_bank_transactions")
-                        "Expenses" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "expenses")
-                        "Inventory Radar" -> LiveBusinessCloudScreen(onBack = { openedModule = null }, initialTable = "product_variants")
+
+
+
+
+
+
+
+
                         "Customer 360" -> LiveCustomer360Screen(onBack = { openedModule = null })
                         else -> LiveBusinessCloudScreen(onBack = { openedModule = null })
                     }
@@ -126,9 +136,9 @@ private fun UniversalApp() {
                             if (target == "Product Studio") { selected = "Products"; openedModule = null }
                             else openedModule = target
                         })
-                        "Billing" -> LiveBusinessCloudScreen(onBack = { selected = "Home" }, initialTable = "pos_sales")
+                        "Billing" -> NativePosV21(onBack={selected="Home"})
                         "Products" -> LiveWebWorkspace(startPath="/admin/products",onBack={selected="Home"})
-                        "Insights" -> LiveBusinessCloudScreen(onBack = { selected = "Home" }, initialTable = "cash_bank_transactions")
+                        "Insights" -> LiveWebWorkspace(startPath="/admin/sales-history",onBack={selected="Home"})
                         else -> PremiumToolsScreen(onOpen = { openedModule = it })
                     }
                 }

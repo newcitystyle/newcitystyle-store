@@ -10,10 +10,13 @@ android {
         applicationId = "store.newcitystyle.universalpro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "1.6.0-original-web-studio"
+        versionCode = 21
+        versionName = "2.1.0-native-offline-pos"
     }
-    buildTypes { release { isMinifyEnabled = false } }
+    buildTypes {
+        debug { applicationIdSuffix = ".syncpreview" }
+        release { isMinifyEnabled = false }
+    }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
