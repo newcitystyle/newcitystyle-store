@@ -10,8 +10,8 @@ android {
         applicationId = "store.newcitystyle.universalpro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 19
-        versionName = "1.9.0-desktop-inbox-dashboard"
+        versionCode = 20
+        versionName = "2.0.0-live-admin-workspaces"
     }
     buildTypes {
         debug { applicationIdSuffix = ".syncpreview" }
