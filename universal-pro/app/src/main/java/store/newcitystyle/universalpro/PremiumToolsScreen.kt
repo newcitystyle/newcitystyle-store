@@ -29,6 +29,7 @@ private val allActions=listOf(
     ToolAction("Cash & Bank","Cash and UPI records • edit pending",Icons.Default.AccountBalanceWallet,ProSky),
     ToolAction("Profit Studio","Live margin calculator",Icons.Default.Calculate,ProOrange),
     ToolAction("Sync Center","Cloud inbox reconciliation status",Icons.Default.CloudSync,ProTeal),
+    ToolAction("Local Backup","Export checked SQLite POS backup ZIP",Icons.Default.SaveAlt,ProBlue),
     ToolAction("Live Business Cloud","Actual Products, Sales, Purchases and Balances",Icons.Default.CloudDone,ProBlue),
     ToolAction("Customer Due Ledger","Existing website dues and reminders",Icons.Default.Message,ProTeal),
 )
