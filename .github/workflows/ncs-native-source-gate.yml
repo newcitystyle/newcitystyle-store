@@ -1,0 +1,17 @@
+name: NCS Universal — Source Safety Gate
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/ncs-universal-single-app-native-foundation]
+    paths:
+      - 'universal-pro/**'
+      - '.github/workflows/ncs-native-source-gate.yml'
+jobs:
+  source-safety:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert native release safety invariants
+        run: python3 universal-pro/scripts/source_quality_gate.py
