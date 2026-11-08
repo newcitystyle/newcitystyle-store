@@ -86,7 +86,7 @@ internal fun NativeProductsScreen(onBack:()->Unit){
                             val before=product.optString("brand").takeUnless{it=="null"||it.isBlank()}
                             val result=NcsCloud.updateProductMetadata(
                                 user,product.optLong("id"),product.optString("name"),
-                                before,name,brand.ifBlank{null}
+                                before,name,brand.takeIf{it.isNotBlank()}
                             )
                             if(!result.optBoolean("ok"))error("Cloud did not confirm save")
                             status="Product #"+product.optLong("id")+" saved on Cloud"
