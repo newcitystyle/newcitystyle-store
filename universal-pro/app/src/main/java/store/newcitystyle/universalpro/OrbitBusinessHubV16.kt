@@ -32,13 +32,12 @@ private val orbitMoney=NumberFormat.getCurrencyInstance(Locale.forLanguageTag("e
 
 private data class OrbitModule(val title:String,val desc:String,val icon:ImageVector,val route:String,val color:Color)
 private val orbitModules=listOf(
-    OrbitModule("AI PRODUCT STUDIO","Real photos & AI publish",Icons.Default.AutoAwesome,"Product Studio",Color(0xFFD4AF37)),
-    OrbitModule("LIVE POS & BILLS","Sales and invoices",Icons.Default.ReceiptLong,"Sales Intelligence",Color(0xFF5FE6D5)),
+    OrbitModule("PRODUCT STUDIO","Native product edit",Icons.Default.AutoAwesome,"Product Studio",Color(0xFFD4AF37)),
+    OrbitModule("NATIVE POS & BILLS","Offline local billing",Icons.Default.ReceiptLong,"Advanced POS",Color(0xFF5FE6D5)),
     OrbitModule("CUSTOMER DUES","Receive • Reminder • Ledger",Icons.Default.Groups,"Customer Dues",Color(0xFFFFBC70)),
-    OrbitModule("PURCHASES","Supplier incoming stock",Icons.Default.LocalShipping,"Purchase Center",Color(0xFF9CADFF)),
+    OrbitModule("PURCHASES","Records • entry pending",Icons.Default.LocalShipping,"Purchase Center",Color(0xFF9CADFF)),
     OrbitModule("STOCK RADAR","Sizes • Colors • Low Stock",Icons.Default.Inventory2,"Inventory Radar",Color(0xFFBB98F4)),
-    OrbitModule("FINANCE CENTER","Cash • UPI • Accounts",Icons.Default.AccountBalance,"Cash & Bank",Color(0xFF76D5E7)),
-    OrbitModule("FULL WEB ADMIN","All existing edit & save tools",Icons.Default.Language,"Full Web Admin",Color(0xFFF0CB82)),
+    OrbitModule("FINANCE CENTER","Cash and UPI records",Icons.Default.AccountBalance,"Cash & Bank",Color(0xFF76D5E7)),
     OrbitModule("ALL CLOUD RECORDS","Detailed business listings",Icons.Default.CloudDone,"Live Business Cloud",Color(0xFF80E5B7))
 )
 
