@@ -21,6 +21,7 @@ private val allActions=listOf(
     ToolAction("Advanced POS","Native offline billing",Icons.Default.QrCodeScanner,ProBlue),
     ToolAction("Product Studio","Native catalogue and metadata edit",Icons.Default.Style,ProPurple),
     ToolAction("Purchase Center","Purchase records • entries pending",Icons.Default.LocalShipping,ProTeal),
+    ToolAction("Online Orders","Real website orders • native",Icons.Default.ShoppingBag,ProSky),
     ToolAction("Sales Intelligence","Sales & bill records",Icons.Default.AutoGraph,ProSky),
     ToolAction("Customers","Customer dues and real reminders",Icons.Default.Groups,ProCoral),
     ToolAction("Supplier Ledger","Supplier records • payment entry pending",Icons.Default.AccountBalance,ProOrange),
