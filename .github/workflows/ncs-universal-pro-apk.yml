@@ -28,10 +28,32 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
-          cache-disabled: true
+      - name: Use available Gradle or install from official distribution
+        run: |
+          set -euo pipefail
+          if command -v gradle >/dev/null 2>&1; then
+            CURRENT="$(gradle --version | grep -m1 '^Gradle ' || true)"
+            echo "Preinstalled: $CURRENT"
+            if echo "$CURRENT" | grep -Eq '^Gradle 8\\.(9|10|11|12|13|14|15|16)(\\.|$)'; then
+              echo "Using GitHub runner preinstalled Gradle"
+              exit 0
+            fi
+          fi
+          for URL in \
+            "https://downloads.gradle.org/distributions/gradle-8.10.2-bin.zip" \
+            "https://services.gradle.org/distributions/gradle-8.10.2-bin.zip"; do
+            if curl --fail --location --retry 2 --connect-timeout 15 --max-time 180 "$URL" -o "$RUNNER_TEMP/gradle.zip"; then
+              break
+            fi
+          done
+          test -s "$RUNNER_TEMP/gradle.zip"
+          curl --fail --location --retry 2 --connect-timeout 15 \
+            "https://downloads.gradle.org/distributions/gradle-8.10.2-bin.zip.sha256" \
+            -o "$RUNNER_TEMP/gradle.sha256"
+          EXPECTED="$(tr -d '\\r\\n ' < "$RUNNER_TEMP/gradle.sha256")"
+          echo "$EXPECTED  $RUNNER_TEMP/gradle.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-8.10.2/bin" >> "$GITHUB_PATH"
       - name: Install Android SDK 35
         run: |
           SDKMANAGER="$(find /usr/local/lib/android/sdk/cmdline-tools -type f -name sdkmanager | head -n 1)"
