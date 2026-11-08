@@ -12,6 +12,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
@@ -230,7 +233,24 @@ internal fun NativePosV21(onBack:()->Unit){
   }
   when(tab){
    "CATALOG"->{
-    OutlinedTextField(query,{query=it},label={Text("Barcode / product / size / colour")},modifier=Modifier.fillMaxWidth().padding(horizontal=10.dp))
+    OutlinedTextField(query,{query=it},label={Text("Scan barcode or search products")},
+     modifier=Modifier.fillMaxWidth().padding(horizontal=10.dp),singleLine=true,
+     keyboardOptions=KeyboardOptions(imeAction=ImeAction.Done),
+     keyboardActions=KeyboardActions(onDone={
+      val matches=catalogue.filter{it.barcode.isNotBlank()&&it.barcode.trim().equals(query.trim(),ignoreCase=true)}
+      if(matches.size==1){
+       val p=matches[0]
+       val key=p.variant.toString()
+       val old=cart[key]?.qty?:0
+       if(old<store.available(p)){
+        cart[key]=NCart(p,old+1)
+        notice="Added "+p.name+" • "+p.size+"/"+p.color
+        query=""
+       }else notice="Out of available local stock: "+p.name
+      }else if(matches.size>1){
+       notice="Barcode matches multiple variants. Choose the correct size / colour."
+      }
+     }))
     LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(10.dp),verticalArrangement=Arrangement.spacedBy(7.dp)){
      items(catalogue.filter{query.isBlank()||it.name.contains(query,true)||it.size.contains(query,true)||it.color.contains(query,true)||it.barcode.contains(query,true)}.take(150),key={it.variant}){p->
       val key=p.variant.toString()
@@ -240,6 +260,7 @@ internal fun NativePosV21(onBack:()->Unit){
        Column(Modifier.weight(1f)){
         Text(p.name,fontWeight=FontWeight.Bold)
         Text(p.size+" / "+p.color+" • ₹"+p.price+" • Available "+available)
+        if(p.barcode.isNotBlank())Text("Barcode: "+p.barcode,color=Color.Gray)
        }
        TextButton(onClick={if(q<=1)cart.remove(key) else cart[key]=NCart(p,q-1)},enabled=q>0){Text("−")}
        Text(q.toString(),Modifier.padding(top=13.dp))
