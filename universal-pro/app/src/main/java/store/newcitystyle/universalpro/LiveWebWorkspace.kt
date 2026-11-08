@@ -34,7 +34,11 @@ private val webPaths=mapOf(
     "Suppliers" to "/admin/suppliers",
     "Stock & Catalogue" to "/admin/products",
     "Web Orders" to "/admin/orders",
-    "Web Expense Book" to "/admin/expenses"
+    "Web Expense Book" to "/admin/expenses",
+    "Cash & UPI" to "/admin/cash-bank-book",
+    "Store Settings" to "/admin/store-settings",
+    "Collections" to "/admin/collections",
+    "Returns" to "/admin/pos-exchange-pro"
 )
 @Composable
 fun LiveWebWorkspace(
