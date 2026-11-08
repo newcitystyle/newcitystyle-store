@@ -10,8 +10,8 @@ android {
         applicationId = "store.newcitystyle.universalpro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "2.2.0-native-foundation"
+        versionCode = 23
+        versionName = "2.3.0-native-command-center"
     }
     // Signing material is supplied only through encrypted GitHub Actions secrets.
     // No private keys, signing passwords or release certificates enter Git history.
