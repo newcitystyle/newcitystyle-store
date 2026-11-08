@@ -174,6 +174,35 @@ internal object NcsCloud {
             .put("p_new_brand",newBrand?.trim() ?: JSONObject.NULL)
         return JSONObject(rpc(session,"ncs_universal_owner_product_metadata_v1",payload))
     }
+    // Uploads only to owner-private reconciliation inbox; never touches pos_sales or stock.
+    suspend fun postNativeOfflineBillToInbox(session:Session,bill:JSONObject):Boolean =
+        withContext(Dispatchers.IO) {
+            require(activeSession?.email?.equals(session.email,ignoreCase=true)==true){"Owner login required"}
+            val tx=bill.optString("client_transaction_id")
+            require(tx.startsWith("NCS-ANDROID-") && tx.length<=100){"Invalid Android transaction ID"}
+            val path="/rest/v1/ncs_desktop_sync_inbox_v1?on_conflict=client_transaction_id"
+            val c=open(root+path,token=session.accessToken,method="POST")
+            c.doOutput=true
+            c.setRequestProperty("Content-Type","application/json")
+            c.setRequestProperty("Prefer","resolution=ignore-duplicates,return=representation")
+            c.outputStream.use { it.write(bill.toString().toByteArray(Charsets.UTF_8)) }
+            consume(c)
+            // Verify the canonical inbox record matches this invoice and amount,
+            // including retry after a timeout. An ID collision is not silently accepted.
+            val encoded=java.net.URLEncoder.encode(tx,"UTF-8")
+            val q=open(root+"/rest/v1/ncs_desktop_sync_inbox_v1?select=offline_invoice_number,total_amount,paid_amount,due_amount&client_transaction_id=eq."+encoded,
+                token=session.accessToken)
+            val arr=JSONArray(consume(q))
+            if(arr.length()!=1)throw IOException("Cloud inbox confirmation missing")
+            val found=arr.getJSONObject(0)
+            val matches=found.optString("offline_invoice_number")==bill.optString("offline_invoice_number") &&
+                kotlin.math.abs(found.optDouble("total_amount")-bill.optDouble("total_amount"))<0.01 &&
+                kotlin.math.abs(found.optDouble("paid_amount")-bill.optDouble("paid_amount"))<0.01 &&
+                kotlin.math.abs(found.optDouble("due_amount")-bill.optDouble("due_amount"))<0.01
+            if(!matches)throw IOException("Cloud ID already exists with different amounts")
+            true
+        }
+
     suspend fun customerProfile(session:Session,id:Long):JSONObject {
         require(id>0)
         return JSONObject(rpc(session,"ncs_universal_customer_profile_v14",JSONObject().put("p_customer_id",id)))
