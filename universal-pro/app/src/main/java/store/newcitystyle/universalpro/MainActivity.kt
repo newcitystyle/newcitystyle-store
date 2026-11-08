@@ -114,7 +114,7 @@ private fun UniversalApp() {
                         "Supplier Ledger" -> LiveWebWorkspace(startPath="/admin/suppliers",onBack={openedModule=null})
                         "Cash & Bank" -> LiveWebWorkspace(startPath="/admin/cash-bank-book",onBack={openedModule=null})
                         "Expenses" -> LiveWebWorkspace(startPath="/admin/expenses",onBack={openedModule=null})
-                        "Inventory Radar" -> LiveWebWorkspace(startPath="/admin/products",onBack={openedModule=null})
+                        "Inventory Radar" -> NativeInventoryScreen(onBack={openedModule=null})
                         "Online Orders" -> LiveWebWorkspace(startPath="/admin/orders",onBack={openedModule=null})
                         "Profit Studio" -> ProfitCalculatorScreen(onBack = { openedModule = null })
                         "Sync Center" -> CloudBridgeV17Screen(onBack = { openedModule = null })
