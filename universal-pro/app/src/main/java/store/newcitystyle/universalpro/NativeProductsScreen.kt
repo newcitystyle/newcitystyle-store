@@ -31,6 +31,9 @@ internal fun NativeProductsScreen(onBack:()->Unit){
     var name by remember { mutableStateOf("") }
     var brand by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
+    var productTab by remember { mutableStateOf("DETAILS") }
+    var variants by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var variantStatus by remember { mutableStateOf("Select a product to load variants") }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Native catalogue • Offline cache available • Owner login required for saves") }
     val scope=rememberCoroutineScope()
@@ -61,45 +64,101 @@ internal fun NativeProductsScreen(onBack:()->Unit){
         }
     }
     LaunchedEffect(Unit){if(NcsCloud.activeSession!=null)refresh()}
+    LaunchedEffect(selected?.optLong("id")){
+        val productId=selected?.optLong("id")?:0
+        if(productId<=0){variants=emptyList();return@LaunchedEffect}
+        productTab="DETAILS"
+        variantStatus="Loading sizes and colours..."
+        try{
+            val owner=NcsCloud.restoreActiveSession() ?: error("Owner login required")
+            variants=NcsCloud.forProduct(owner,"product_variants",productId)
+            variantStatus="Live variants: "+variants.size
+        }catch(e:Exception){
+            variants=emptyList()
+            variantStatus="Variants unavailable: "+(e.message?:"Unknown")
+        }
+    }
     if(selected!=null) {
         val product=selected!!
-        AlertDialog(
-            onDismissRequest={if(!busy)selected=null},
-            title={Text("EDIT PRODUCT • Native")},
-            text={
-                Column(verticalArrangement=Arrangement.spacedBy(9.dp)){
-                    Text("Product #"+product.optLong("id"))
-                    OutlinedTextField(value=name,onValueChange={name=it.take(150)},
-                        label={Text("Product name")},singleLine=true)
-                    OutlinedTextField(value=brand,onValueChange={brand=it.take(80)},
-                        label={Text("Brand")},singleLine=true)
-                    Text("Only Name and Brand are edited. Prices, Stock, Sales and Dues remain unchanged.",
-                        color=Color.Gray)
-                }
-            },
-            confirmButton={
-                TextButton(enabled=!busy&&name.trim().length>=2,onClick={
-                    busy=true
-                    scope.launch {
-                        try {
-                            val user=NcsCloud.restoreActiveSession()?:error("Owner session expired")
-                            val before=product.optString("brand").takeUnless{it=="null"||it.isBlank()}
-                            val result=NcsCloud.updateProductMetadata(
-                                user,product.optLong("id"),product.optString("name"),
-                                before,name,brand.takeIf{it.isNotBlank()}
-                            )
-                            if(!result.optBoolean("ok"))error("Cloud did not confirm save")
-                            status="Product #"+product.optLong("id")+" saved on Cloud"
-                            selected=null
-                            refresh()
-                        }catch(e:Exception){
-                            status="Save not completed: "+(e.message?:"Unknown")
-                        }finally{busy=false}
+        ModalBottomSheet(onDismissRequest={if(!busy)selected=null}) {
+            Column(Modifier.fillMaxWidth().padding(horizontal=17.dp).heightIn(max=660.dp)){
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,
+                    verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){
+                    Column(Modifier.weight(1f)){
+                        Text(product.optString("name","Product"),
+                            fontWeight=FontWeight.Black,color=Color(0xFF0A2E73))
+                        Text("Product #"+product.optLong("id")+" • "+product.optString("category",""),
+                            color=Color.Gray)
                     }
-                }){Text(if(busy)"Saving..." else "SAVE TO CLOUD")}
-            },
-            dismissButton={TextButton(onClick={selected=null},enabled=!busy){Text("Cancel")}}
-        )
+                    TextButton(enabled=!busy,onClick={selected=null}){Text("CLOSE")}
+                }
+                Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                    listOf("DETAILS","VARIANTS","EDIT").forEach{t->
+                        FilterChip(selected=productTab==t,onClick={productTab=t},label={Text(t)})
+                    }
+                }
+                when(productTab){
+                    "DETAILS" -> Column(Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement=Arrangement.spacedBy(9.dp)){
+                        Text("Brand: "+product.optString("brand","—"))
+                        Text("Barcode: "+product.optString("barcode","—"))
+                        Text("Price: ₹"+product.optString("price","—"))
+                        Text("MRP: ₹"+product.optString("mrp","—"))
+                        Text("Cloud stock (summary): "+product.optString("stock","—"))
+                        Text("For size/colour stock, open VARIANTS. No stock changed here.",
+                            color=Color.Gray)
+                        Spacer(Modifier.height(30.dp))
+                    }
+                    "VARIANTS" -> Column {
+                        Text(variantStatus,color=Color(0xFF0A2E73))
+                        LazyColumn(Modifier.heightIn(max=460.dp),
+                            verticalArrangement=Arrangement.spacedBy(7.dp)){
+                            items(variants,key={it.optLong("id")}){v->
+                                Card {Column(Modifier.fillMaxWidth().padding(12.dp)){
+                                    Text(v.optString("size","Free")+" / "+v.optString("color",""),
+                                        fontWeight=FontWeight.Bold)
+                                    Text("Stock: "+v.optString("stock","—")+" • Sale ₹"+
+                                        v.optString("selling_price","—")+" • MRP ₹"+
+                                        v.optString("mrp","—"))
+                                }}
+                            }
+                        }
+                        Spacer(Modifier.height(16.dp))
+                    }
+                    else -> Column(Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement=Arrangement.spacedBy(10.dp)){
+                        OutlinedTextField(value=name,onValueChange={name=it.take(150)},
+                            label={Text("Product name")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+                        OutlinedTextField(value=brand,onValueChange={brand=it.take(80)},
+                            label={Text("Brand")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+                        Text("Save changes to Cloud (owner only). No prices, stock, sales or dues affected.",
+                            color=Color.Gray)
+                        Button(enabled=!busy&&name.trim().length>=2,
+                            onClick={
+                                busy=true
+                                scope.launch{
+                                    try{
+                                        val owner=NcsCloud.restoreActiveSession() ?: error("Owner session expired")
+                                        val before=product.optString("brand").takeUnless{it=="null"||it.isBlank()}
+                                        val result=NcsCloud.updateProductMetadata(
+                                            owner,product.optLong("id"),product.optString("name"),
+                                            before,name,brand.takeIf{it.isNotBlank()})
+                                        if(!result.optBoolean("ok"))error("Cloud did not confirm save")
+                                        status="Product saved. Refreshing catalogue."
+                                        selected=null
+                                        refresh()
+                                    }catch(e:Exception){
+                                        status="Save failed: "+(e.message?:"Unknown")
+                                    }finally{busy=false}
+                                }
+                            },modifier=Modifier.fillMaxWidth()){
+                            Text(if(busy)"SAVING..." else "SAVE TO CLOUD")
+                        }
+                        Spacer(Modifier.height(20.dp))
+                    }
+                }
+            }
+        }
     }
     Column(Modifier.fillMaxSize().background(Color(0xFFF6F7FB))){
         Row(Modifier.fillMaxWidth().background(Color(0xFF0A2E73)).padding(8.dp)){
