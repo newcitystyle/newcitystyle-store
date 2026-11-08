@@ -10,8 +10,8 @@ android {
         applicationId = "store.newcitystyle.universalpro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.7.0-cloud-bridge-preview"
+        versionCode = 18
+        versionName = "1.8.0-desktop-cloud-inbox"
     }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
