@@ -148,7 +148,7 @@ internal object NcsCloud {
     private suspend fun rpc(session:Session,function:String,body:JSONObject=JSONObject()):String=withContext(Dispatchers.IO) {
         require(function in setOf(
             "ncs_universal_customer_profile_v14","ncs_universal_credit_profile_v14","ncs_universal_bill_detail_v14",
-            "ncs_universal_sales_trend_v14", "ncs_universal_owner_product_metadata_v1"
+            "ncs_universal_sales_trend_v14", "ncs_universal_owner_product_metadata_v1", "ncs_universal_owner_orders_read_v1"
         ))
         val c=open(root+"/rest/v1/rpc/"+function,token=session.accessToken,method="POST")
         c.doOutput=true;c.setRequestProperty("Content-Type","application/json")
@@ -203,6 +203,13 @@ internal object NcsCloud {
             true
         }
 
+    suspend fun onlineOrders(session:Session,start:Int=0,limit:Int=40):List<JSONObject> {
+        require(start>=0&&limit in 1..100)
+        val result=rpc(session,"ncs_universal_owner_orders_read_v1",
+            JSONObject().put("p_offset",start).put("p_limit",limit))
+        val arr=JSONArray(result)
+        return (0 until arr.length()).map{arr.getJSONObject(it)}
+    }
     suspend fun customerProfile(session:Session,id:Long):JSONObject {
         require(id>0)
         return JSONObject(rpc(session,"ncs_universal_customer_profile_v14",JSONObject().put("p_customer_id",id)))
