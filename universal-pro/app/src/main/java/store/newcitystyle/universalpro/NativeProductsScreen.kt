@@ -36,6 +36,10 @@ internal fun NativeProductsScreen(onBack:()->Unit){
     var variants by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var variantStatus by remember { mutableStateOf("Select a product to load variants") }
     var busy by remember { mutableStateOf(false) }
+    var loginEmail by remember { mutableStateOf("") }
+    var loginPassword by remember { mutableStateOf("") }
+    var loginError by remember { mutableStateOf("") }
+    var loginBusy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Native catalogue • Offline cache available • Owner login required for saves") }
     val scope=rememberCoroutineScope()
     fun refresh(){
@@ -65,6 +69,45 @@ internal fun NativeProductsScreen(onBack:()->Unit){
         }
     }
     LaunchedEffect(Unit){if(NcsCloud.activeSession!=null)refresh()}
+    // Native sign-in: offline inventory remains visible from last cache.
+    // This is deliberately a Compose screen, never a WebView.
+    if(NcsCloud.activeSession==null) {
+        Column(Modifier.fillMaxSize().background(Color(0xFFF6F7FB))
+            .verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement=Arrangement.spacedBy(13.dp)){
+            Text("NEW CITY STYLE",color=Color(0xFF0A2E73),fontWeight=FontWeight.Black)
+            Text("OWNER BUSINESS LOGIN",fontWeight=FontWeight.Black,color=Color(0xFF0A2E73))
+            Text("Sign in once to edit products and refresh real cloud records. Existing offline data is not deleted.",
+                color=Color.Gray)
+            OutlinedTextField(loginEmail,{loginEmail=it.trim()},label={Text("Owner email")},
+                modifier=Modifier.fillMaxWidth(),singleLine=true)
+            OutlinedTextField(loginPassword,{loginPassword=it},label={Text("Password")},
+                modifier=Modifier.fillMaxWidth(),singleLine=true,
+                visualTransformation=androidx.compose.ui.text.input.PasswordVisualTransformation())
+            if(loginError.isNotBlank())Text(loginError,color=Color(0xFFAD3434))
+            Button(onClick={
+                loginBusy=true;loginError=""
+                scope.launch {
+                    try{
+                        NcsCloud.signIn(loginEmail,loginPassword)
+                        loginPassword=""
+                        refresh()
+                    }catch(e:Exception){loginError=e.message?:"Login failed"}
+                    finally{loginBusy=false}
+                }
+            },enabled=loginEmail.isNotBlank()&&loginPassword.isNotBlank()&&!loginBusy,
+                modifier=Modifier.fillMaxWidth()){
+                Text(if(loginBusy)"VERIFYING..." else "SIGN IN SECURELY")
+            }
+            OutlinedButton(onClick=onBack,modifier=Modifier.fillMaxWidth()){Text("BACK TO WORKSPACE")}
+            if(products.isNotEmpty()){
+                Text("OFFLINE PRODUCT CACHE • "+products.size+" products",fontWeight=FontWeight.Bold)
+                products.take(12).forEach{p->Text("• "+p.optString("name","Item"))}
+            }
+        }
+        return
+    }
+
     LaunchedEffect(selected?.optLong("id")){
         val productId=selected?.optLong("id")?:0
         if(productId<=0){variants=emptyList();return@LaunchedEffect}
