@@ -10,8 +10,8 @@ android {
         applicationId = "store.newcitystyle.universalpro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 32
-        versionName = "3.2.0-verified-local-pos-backup"
+        versionCode = 33
+        versionName = "3.3.0-isolated-restore-rehearsal"
     }
     // Signing material is supplied only through encrypted GitHub Actions secrets.
     // No private keys, signing passwords or release certificates enter Git history.
