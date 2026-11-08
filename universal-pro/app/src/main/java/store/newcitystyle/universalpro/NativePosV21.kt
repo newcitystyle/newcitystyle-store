@@ -78,6 +78,57 @@ internal class NPosStore(ctx:Context):SQLiteOpenHelper(ctx,"ncs_native_pos_v21.s
   }finally{db.endTransaction()}
   return NBill(tx,invoice,total,payment,now)
  }
+ fun pendingInboxPayloads():List<JSONObject>{
+  val db=readableDatabase
+  val out=mutableListOf<JSONObject>()
+  db.rawQuery("SELECT b.id,b.invoice,b.amount,b.method,b.created FROM bills b JOIN sync_queue q ON q.id=b.id WHERE q.status='PENDING' ORDER BY b.created LIMIT 100",null).use{bills->
+   while(bills.moveToNext()){
+    val tx=bills.getString(0)
+    val total=bills.getDouble(2)
+    val method=bills.getString(3).lowercase(Locale.ROOT)
+    val paid=if(method=="credit")0.0 else total
+    val due=total-paid
+    val items=org.json.JSONArray()
+    var quick=false
+    var original=0.0
+    db.rawQuery("SELECT product,variant,name,qty,price,quick FROM bill_items WHERE bill_id=?",arrayOf(tx)).use{c->
+     while(c.moveToNext()){
+      val isQuick=c.getInt(5)==1
+      quick=quick||isQuick
+      val unit=c.getDouble(4)
+      val qty=c.getInt(3)
+      original+=unit*qty
+      items.put(JSONObject()
+       .put("productId",if(c.isNull(0))0 else c.getLong(0))
+       .put("variantId",if(c.isNull(1))JSONObject.NULL else c.getLong(1))
+       .put("quantity",qty).put("unitPrice",unit).put("mrp",unit)
+       .put("taxPercent",0).put("quickItem",isQuick)
+       .put("offlinePhysicalPiece",false))
+     }
+    }
+    if(items.length()==0)continue
+    val discount=kotlin.math.round((original-total)*100.0)/100.0
+    if(discount < -0.02)continue
+    out+=JSONObject().put("client_transaction_id",tx)
+     .put("offline_invoice_number",bills.getString(1))
+     .put("original_created_at",bills.getString(4))
+     .put("payment_method",method)
+     .put("total_amount",total).put("paid_amount",paid).put("due_amount",due)
+     .put("bill_discount",discount.coerceAtLeast(0.0))
+     .put("reward_discount",0).put("round_off",0)
+     .put("items",items).put("requires_quick_item_handling",quick)
+     .put("source","ANDROID_NATIVE_POS")
+   }
+  }
+  return out
+ }
+ fun inboxPendingCount():Int=readableDatabase.rawQuery(
+  "SELECT count(*) FROM sync_queue WHERE status='PENDING'",null
+ ).use{c->c.moveToFirst();c.getInt(0)}
+ fun markInboxConfirmed(tx:String){
+  val db=writableDatabase
+  db.execSQL("UPDATE sync_queue SET status='INBOX_UPLOADED' WHERE id=? AND status='PENDING'",arrayOf(tx))
+ }
  fun history():List<NBill>{
   val out=mutableListOf<NBill>()
   readableDatabase.rawQuery("SELECT id,invoice,amount,method,created FROM bills ORDER BY created DESC LIMIT 100",null).use{c->
@@ -95,6 +146,31 @@ internal fun NativePosV21(onBack:()->Unit){
  var history by remember{mutableStateOf(store.history())}
  var notice by remember{mutableStateOf("Native Android POS. Offline bills save to phone. Cloud accounting sync pending.")}
  var loading by remember{mutableStateOf(false)}
+ var sendingInbox by remember { mutableStateOf(false) }
+ var pendingInbox by remember { mutableIntStateOf(store.inboxPendingCount()) }
+ fun uploadPendingInbox(){
+  if(sendingInbox)return
+  sendingInbox=true
+  scope.launch{
+   var success=0
+   try{
+    val session=NcsCloud.restoreActiveSession()?:error("Owner login required")
+    val pending=withContext(Dispatchers.IO){store.pendingInboxPayloads()}
+    for(bill in pending){
+     NcsCloud.postNativeOfflineBillToInbox(session,bill)
+     withContext(Dispatchers.IO){store.markInboxConfirmed(bill.getString("client_transaction_id"))}
+     success++
+    }
+    notice="Uploaded and verified "+success+" bills to CLOUD INBOX only. Financial accounting still pending."
+   }catch(e:Exception){
+    notice="Cloud inbox upload stopped after "+success+" confirmed: "+(e.message?:"Unknown")
+   }finally{
+    pendingInbox=store.inboxPendingCount()
+    sendingInbox=false
+   }
+  }
+ }
+
  var tab by remember{mutableStateOf("CATALOG")}
  var query by remember{mutableStateOf("")}
  var customer by remember{mutableStateOf("Walk-in Customer")}
@@ -198,7 +274,7 @@ internal fun NativePosV21(onBack:()->Unit){
       Button(onClick={
        try{
         val bill=store.save(cart.values.toList(),customer,phone,payment,discount.toDoubleOrNull()?:0.0)
-        cart.clear();history=store.history();tab="HISTORY"
+        cart.clear();history=store.history();pendingInbox=store.inboxPendingCount();tab="HISTORY"
         notice="Saved LOCAL bill "+bill.invoice+"; financial cloud sync not yet enabled"
        }catch(e:Exception){notice="Bill save error: "+(e.message?:"unknown")}
       },enabled=cart.isNotEmpty()&&total>0,modifier=Modifier.fillMaxWidth()){Text("SAVE OFFLINE BILL")}
@@ -208,6 +284,18 @@ internal fun NativePosV21(onBack:()->Unit){
    else->{
     LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
      item{Text("Saved local bills — never mock records",fontWeight=FontWeight.Bold)}
+     item{
+      Card {
+       Column(Modifier.fillMaxWidth().padding(12.dp)){
+        Text("Unuploaded local bills: "+pendingInbox,fontWeight=FontWeight.Bold)
+        Text("Cloud INBOX backup only; not posted to accounting, dues or stock.",
+         color=Color.Gray)
+        Button(enabled=!sendingInbox && pendingInbox>0,onClick={uploadPendingInbox()}){
+         Text(if(sendingInbox)"UPLOADING..." else "UPLOAD TO CLOUD INBOX")
+        }
+       }
+      }
+     }
      items(history,key={it.id}){b->Card{Column(Modifier.fillMaxWidth().padding(12.dp)){
       Text(b.invoice,fontWeight=FontWeight.Bold);Text("₹"+b.amount+" • "+b.method+" • CLOUD PENDING")
       Text(b.created)
