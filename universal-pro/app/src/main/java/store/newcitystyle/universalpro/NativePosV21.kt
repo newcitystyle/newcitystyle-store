@@ -27,7 +27,8 @@ import java.util.Locale
 
 internal data class NProduct(val id:Long,val variant:Long,val name:String,val size:String,val color:String,val price:Double,val stock:Int,val barcode:String="")
 internal data class NCart(val product:NProduct,val qty:Int,val quick:Boolean=false)
-internal data class NBill(val id:String,val invoice:String,val amount:Double,val method:String,val created:String)
+internal data class NBill(val id:String,val invoice:String,val amount:Double,val method:String,val created:String,val status:String="PENDING")
+internal data class NativeBillItem(val name:String,val quantity:Int,val unitPrice:Double,val quick:Boolean)
 internal class NPosStore(ctx:Context):SQLiteOpenHelper(ctx,"ncs_native_pos_v21.sqlite",null,2){
  override fun onCreate(db:SQLiteDatabase){
   db.execSQL("CREATE TABLE catalog(variant INTEGER PRIMARY KEY,product INTEGER NOT NULL,name TEXT,size TEXT,color TEXT,price REAL,stock INTEGER,barcode TEXT)")
@@ -134,10 +135,35 @@ internal class NPosStore(ctx:Context):SQLiteOpenHelper(ctx,"ncs_native_pos_v21.s
   val db=writableDatabase
   db.execSQL("UPDATE sync_queue SET status='INBOX_UPLOADED' WHERE id=? AND status='PENDING'",arrayOf(tx))
  }
+ fun billLines(tx:String):List<NativeBillItem>{
+  val result=mutableListOf<NativeBillItem>()
+  readableDatabase.rawQuery(
+   "SELECT name,qty,price,quick FROM bill_items WHERE bill_id=? ORDER BY id",
+   arrayOf(tx)).use { c ->
+    while(c.moveToNext())result+=NativeBillItem(c.getString(0),c.getInt(1),c.getDouble(2),c.getInt(3)==1)
+   }
+  return result
+ }
+ // Audit-safe void: preserve invoice and items, release only local pending stock reservation.
+ // Uploaded invoices cannot be voided here because reconciliation may be in progress.
+ fun voidLocalUnuploaded(tx:String):Boolean{
+  val db=writableDatabase
+  db.beginTransaction()
+  try{
+   val state=db.rawQuery(
+    "SELECT b.status,q.status FROM bills b JOIN sync_queue q ON q.id=b.id WHERE b.id=?",
+    arrayOf(tx)).use{c->if(c.moveToFirst())c.getString(0) to c.getString(1) else null}
+   if(state!=("PENDING" to "PENDING"))return false
+   db.execSQL("UPDATE bills SET status='VOIDED_LOCAL' WHERE id=? AND status='PENDING'",arrayOf(tx))
+   db.execSQL("UPDATE sync_queue SET status='VOIDED_LOCAL' WHERE id=? AND status='PENDING'",arrayOf(tx))
+   db.setTransactionSuccessful()
+   return true
+  }finally{db.endTransaction()}
+ }
  fun history():List<NBill>{
   val out=mutableListOf<NBill>()
-  readableDatabase.rawQuery("SELECT id,invoice,amount,method,created FROM bills ORDER BY created DESC LIMIT 100",null).use{c->
-   while(c.moveToNext())out.add(NBill(c.getString(0),c.getString(1),c.getDouble(2),c.getString(3),c.getString(4)))
+  readableDatabase.rawQuery("SELECT id,invoice,amount,method,created,status FROM bills ORDER BY created DESC LIMIT 100",null).use{c->
+   while(c.moveToNext())out.add(NBill(c.getString(0),c.getString(1),c.getDouble(2),c.getString(3),c.getString(4),c.getString(5)))
   }
   return out
  }
@@ -149,6 +175,9 @@ internal fun NativePosV21(onBack:()->Unit){
  val scope=rememberCoroutineScope()
  var catalogue by remember{mutableStateOf(store.catalog())}
  var history by remember{mutableStateOf(store.history())}
+ var selectedInvoice by remember { mutableStateOf<NBill?>(null) }
+ var showVoidConfirm by remember { mutableStateOf(false) }
+
  var notice by remember{mutableStateOf("Native Android POS. Offline bills save to phone. Cloud accounting sync pending.")}
  var loading by remember{mutableStateOf(false)}
  var sendingInbox by remember { mutableStateOf(false) }
@@ -219,6 +248,50 @@ internal fun NativePosV21(onBack:()->Unit){
   finally{loading=false}
  }
  LaunchedEffect(Unit){if(catalogue.isEmpty()&&NcsCloud.activeSession!=null)refresh()}
+
+ if(selectedInvoice!=null){
+  val bill=selectedInvoice!!
+  val billItems=remember(bill.id){store.billLines(bill.id)}
+  AlertDialog(
+   onDismissRequest={selectedInvoice=null;showVoidConfirm=false},
+   title={Text(bill.invoice)},
+   text={
+    Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+     Text("SAVED ON THIS PHONE • "+bill.status,fontWeight=FontWeight.Bold)
+     Text("Payment: "+bill.method+" • "+bill.created)
+     HorizontalDivider()
+     for(line in billItems){
+      Text(line.name+"  ×"+line.quantity+"  ₹"+
+       String.format(Locale.US,"%.2f",line.quantity*line.unitPrice))
+     }
+     HorizontalDivider()
+     Text("TOTAL ₹"+String.format(Locale.US,"%.2f",bill.amount),fontWeight=FontWeight.Bold)
+     Text("Cloud ledger, stock and dues are NOT changed by local void.",
+      fontSize=11.sp,color=Color.Gray)
+     if(showVoidConfirm)Text("Confirm VOID LOCAL invoice? It will be retained in history for audit.",
+      color=Color(0xFFA64332),fontWeight=FontWeight.Bold)
+    }
+   },
+   confirmButton={
+    if(bill.status=="PENDING" && pendingInbox>0){
+     TextButton(onClick={
+      if(!showVoidConfirm)showVoidConfirm=true
+      else{
+       val changed=store.voidLocalUnuploaded(bill.id)
+       if(changed){
+        notice="Local bill voided, preserved in audit history. No cloud financial change."
+        history=store.history()
+        pendingInbox=store.inboxPendingCount()
+        selectedInvoice=null
+       }else notice="Void rejected: invoice already uploaded or not pending"
+       showVoidConfirm=false
+      }
+     }){Text(if(showVoidConfirm)"CONFIRM LOCAL VOID" else "VOID LOCAL ONLY")}
+    }
+   },
+   dismissButton={TextButton(onClick={selectedInvoice=null;showVoidConfirm=false}){Text("CLOSE")}}
+  )
+ }
  val total=cart.values.sumOf{it.qty*it.product.price}-(discount.toDoubleOrNull()?:0.0)
  Column(Modifier.fillMaxSize().background(Color(0xFFF6F7FB))){
   Row(Modifier.fillMaxWidth().background(Color(0xFF0A2E73)).padding(8.dp)){
@@ -319,10 +392,18 @@ internal fun NativePosV21(onBack:()->Unit){
        }
       }
      }
-     items(history,key={it.id}){b->Card{Column(Modifier.fillMaxWidth().padding(12.dp)){
-      Text(b.invoice,fontWeight=FontWeight.Bold);Text("₹"+b.amount+" • "+b.method+" • CLOUD PENDING")
-      Text(b.created)
-     }}}
+     items(history,key={it.id}){b->
+      Card(onClick={selectedInvoice=b}){
+       Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){
+        Column(Modifier.weight(1f)){
+         Text(b.invoice,fontWeight=FontWeight.Bold)
+         Text("₹"+b.amount+" • "+b.method+" • "+b.status)
+         Text(b.created,fontSize=11.sp)
+        }
+        Text("VIEW ›",color=Color(0xFF0A2E73),fontWeight=FontWeight.Bold)
+       }
+      }
+     }
     }
    }
   }
