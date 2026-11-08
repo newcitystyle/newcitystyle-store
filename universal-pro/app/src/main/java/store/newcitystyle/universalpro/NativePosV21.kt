@@ -88,7 +88,7 @@ internal class NPosStore(ctx:Context):SQLiteOpenHelper(ctx,"ncs_native_pos_v21.s
  fun pendingInboxPayloads():List<JSONObject>{
   val db=readableDatabase
   val out=mutableListOf<JSONObject>()
-  db.rawQuery("SELECT b.id,b.invoice,b.amount,b.method,b.created FROM bills b JOIN sync_queue q ON q.id=b.id WHERE q.status='PENDING' ORDER BY b.created LIMIT 100",null).use{bills->
+  db.rawQuery("SELECT b.id,b.invoice,b.amount,b.method,b.created FROM bills b JOIN sync_queue q ON q.id=b.id WHERE q.status IN ('PENDING','UPLOAD_ATTEMPTED') ORDER BY b.created LIMIT 100",null).use{bills->
    while(bills.moveToNext()){
     val tx=bills.getString(0)
     val total=bills.getDouble(2)
@@ -130,11 +130,16 @@ internal class NPosStore(ctx:Context):SQLiteOpenHelper(ctx,"ncs_native_pos_v21.s
   return out
  }
  fun inboxPendingCount():Int=readableDatabase.rawQuery(
-  "SELECT count(*) FROM sync_queue WHERE status='PENDING'",null
+  "SELECT count(*) FROM sync_queue WHERE status IN ('PENDING','UPLOAD_ATTEMPTED')",null
  ).use{c->c.moveToFirst();c.getInt(0)}
+ // Mark BEFORE network I/O. Even an HTTP timeout must prevent accidental local void.
+ fun markUploadAttempt(tx:String){
+  val db=writableDatabase
+  db.execSQL("UPDATE sync_queue SET status='UPLOAD_ATTEMPTED' WHERE id=? AND status='PENDING'",arrayOf(tx))
+ }
  fun markInboxConfirmed(tx:String){
   val db=writableDatabase
-  db.execSQL("UPDATE sync_queue SET status='INBOX_UPLOADED' WHERE id=? AND status='PENDING'",arrayOf(tx))
+  db.execSQL("UPDATE sync_queue SET status='INBOX_UPLOADED' WHERE id=? AND status='UPLOAD_ATTEMPTED'",arrayOf(tx))
  }
  fun canVoidLocal(tx:String):Boolean=readableDatabase.rawQuery(
   "SELECT count(*) FROM bills b JOIN sync_queue q ON q.id=b.id WHERE b.id=? AND b.status='PENDING' AND q.status='PENDING'",
@@ -195,6 +200,7 @@ internal fun NativePosV21(onBack:()->Unit){
     val session=NcsCloud.restoreActiveSession()?:error("Owner login required")
     val pending=withContext(Dispatchers.IO){store.pendingInboxPayloads()}
     for(bill in pending){
+     withContext(Dispatchers.IO){store.markUploadAttempt(bill.getString("client_transaction_id"))}
      NcsCloud.postNativeOfflineBillToInbox(session,bill)
      withContext(Dispatchers.IO){store.markInboxConfirmed(bill.getString("client_transaction_id"))}
      success++
