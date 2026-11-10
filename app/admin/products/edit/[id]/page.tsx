@@ -10,7 +10,8 @@ import {
   useState,
 } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/ncs-admin-business-client";
+import { resolveProductImageV39 } from "@/lib/ncs-product-image-v39";
 
 type CollectionOption = {
   id: number;
@@ -835,9 +836,11 @@ export default function EditProductPage() {
 
     const response =
       await fetch(
-        sourceUrl,
+        `/api/ncs-core-cloud/v1/admin/catalog/image-source-v41?src=${encodeURIComponent(sourceUrl)}`,
         {
           cache: "no-store",
+          credentials: "same-origin",
+          signal: AbortSignal.timeout(20_000),
         }
       );
 
@@ -2218,7 +2221,7 @@ export default function EditProductPage() {
   }
 
   async function generateProductDetailsWithAi() {
-    if (!form.mainImage) {
+    if (!effectiveMainImage) {
       setAiStatus({
         type: "error",
         message: "Please upload the main product image first.",
@@ -2239,7 +2242,7 @@ export default function EditProductPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          imageUrl: form.mainImage,
+          imageUrl: effectiveMainImage,
         }),
       });
 
@@ -2555,6 +2558,8 @@ export default function EditProductPage() {
       )
     : Math.max(0, Number(form.stock || 0));
 
+  const effectiveMainImage = resolveProductImageV39(form.mainImage, designUnits, designVariantLinks);
+
   const availableDesignUnits = designUnits.filter((unit) => unit.status === "available");
   const availableDesignVariantLinks = designVariantLinks.filter((link) => link.status === "available");
   const designModeOnlineQuantity = designVariantLinks.length > 0 ? availableDesignVariantLinks.length : availableDesignUnits.length;
@@ -2606,7 +2611,7 @@ export default function EditProductPage() {
         return false;
       }
 
-      if (!form.mainImage) {
+      if (!effectiveMainImage) {
         alert("Please upload the main product image before selling online.");
         return false;
       }
@@ -2632,13 +2637,13 @@ export default function EditProductPage() {
 
     setSaving(true);
 
-    let whatsappPreviewUrl =
-      form.socialPreviewUrl.trim();
+    let whatsappPreviewUrl = form.socialPreviewUrl.trim();
+    let previewWarning = "";
 
     try {
       whatsappPreviewUrl =
         await ensureWhatsAppPreviewUrl(
-          form.mainImage,
+          effectiveMainImage,
           whatsappPreviewUrl,
           `whatsapp-previews/${productId}`
         );
@@ -2648,14 +2653,10 @@ export default function EditProductPage() {
         error
       );
 
-      alert(
-        error instanceof Error
-          ? `WhatsApp product photo preparation failed: ${error.message}`
-          : "WhatsApp product photo preparation failed."
-      );
-
-      setSaving(false);
-      return;
+      // An auxiliary share-preview failure must not discard a valid product save.
+      previewWarning = " Product saved, but WhatsApp JPEG preview is pending. Save again to retry preview preparation.";
+      whatsappPreviewUrl = isWhatsAppSafePreviewUrl(form.socialPreviewUrl)
+        ? form.socialPreviewUrl.trim() : "";
     }
 
     const productData = {
@@ -2676,9 +2677,7 @@ export default function EditProductPage() {
       discount_percent: form.sellOnline ? Number(form.discountPercent || 0) : 0,
       tax_percent: getOptionalNumber(form.taxPercent, 0),
       low_stock_limit: getOptionalNumber(form.lowStockLimit, 5),
-      stock: totalVariantStock,
       sell_online: form.sellOnline,
-      available_in_pos: true,
       online_stock_limit: form.sellOnline
         ? designUnits.length > 0
           ? Math.min(designModeOnlineQuantity, totalVariantStock)
@@ -2687,10 +2686,10 @@ export default function EditProductPage() {
               totalVariantStock
             )
         : 0,
-      image: form.mainImage || null,
-      image_url: form.mainImage || null,
+      image: effectiveMainImage || null,
+      image_url: effectiveMainImage || null,
       gallery_images: form.galleryImages,
-      images: [form.mainImage, ...form.galleryImages].filter(Boolean),
+      images: [effectiveMainImage, ...form.galleryImages].filter(Boolean),
       lifestyle_images: form.lifestyleImages,
       tags: Array.from(new Set([...form.tags, form.occasion.trim()].filter(Boolean))),
       sizes: form.sizes,
@@ -2717,10 +2716,8 @@ export default function EditProductPage() {
       seo_title: form.seoTitle.trim() || `${form.name.trim()} | NEW CITY STYLE`,
       meta_description: form.metaDescription.trim() || form.shortDescription.trim() || form.description.trim().slice(0, 155) || null,
       seo_keywords: form.seoKeywords.trim() || null,
-      social_preview_url:
-        whatsappPreviewUrl ||
-        form.mainImage ||
-        null,
+      social_preview_url: isWhatsAppSafePreviewUrl(whatsappPreviewUrl)
+        ? whatsappPreviewUrl : null,
       is_featured: form.isFeatured,
       is_new_arrival: form.isNewArrival,
       is_on_sale: form.isOnSale,
@@ -2731,154 +2728,42 @@ export default function EditProductPage() {
     };
 
     try {
-      const normalizedNewBrand =
-        normalizeBrandName(form.brand);
-      const normalizedOldBrand =
-        normalizeBrandName(originalBrand);
-
-      if (
-        normalizedOldBrand &&
-        normalizedNewBrand &&
-        normalizedOldBrand !== normalizedNewBrand
-      ) {
-        const { error: brandRenameError } =
-          await supabase.rpc("ncs_rename_brand_v1", {
-            p_old_brand: normalizedOldBrand,
-            p_new_brand: normalizedNewBrand,
-          });
-
-        if (brandRenameError) {
-          throw new Error(
-            `Brand rename failed: ${brandRenameError.message}`,
-          );
+      const variantPatches = variantBarcodes.map((variant) => {
+        const count = getAvailableDesignCountForVariant(variant.id);
+        const sellOnline = form.sellOnline && (count > 0 || variant.sellOnline);
+        const mrp = getOptionalNumber(variant.onlineMrp, Number(form.onlineMrp || 0));
+        const price = getOptionalNumber(variant.onlinePrice, Number(form.price || 0));
+        if (sellOnline && price > 0 && mrp > 0 && price > mrp) {
+          throw new Error(`${variant.size}: online price exceeds Online MRP.`);
         }
-      }
-
-      const { error } = await supabase
-        .from("products")
-        .update(productData)
-        .eq("id", productId);
-
-      if (error) throw error;
-
-      if (variantBarcodes.length > 0) {
-        for (const variant of variantBarcodes) {
-          const linkedDesignCount = getAvailableDesignCountForVariant(variant.id);
-
-          const effectiveVariantSellOnline =
-            form.sellOnline &&
-            (linkedDesignCount > 0 || variant.sellOnline);
-
-          // Physical/barcode MRP is read-only here and remains owned by Purchase Stock / POS.
-          const variantOnlineMrp = getOptionalNumber(
-            variant.onlineMrp,
-            Number(form.onlineMrp || 0)
-          );
-
-          const variantOnlinePrice = getOptionalNumber(
-            variant.onlinePrice,
-            Number(form.price || 0)
-          );
-
-          const safeOnlineQuantity = effectiveVariantSellOnline
-            ? linkedDesignCount > 0
-              ? Math.min(linkedDesignCount, Math.max(0, variant.stock))
-              : Math.min(
-                  Math.max(0, Number(variant.onlineStockLimit || 0)),
-                  Math.max(0, variant.stock)
-                )
-            : 0;
-
-          if (
-            effectiveVariantSellOnline &&
-            variantOnlinePrice > 0 &&
-            variantOnlineMrp > 0 &&
-            variantOnlinePrice > variantOnlineMrp
-          ) {
-            throw new Error(
-              `${variant.variantName || variant.size || "Variant"}: online price cannot be greater than Online MRP.`
-            );
-          }
-
-          const safeVariantOnlinePrice =
-            effectiveVariantSellOnline && variantOnlinePrice > 0
-              ? variantOnlinePrice
-              : null;
-
-          const { error: variantUpdateError } = await supabase
-            .from("product_variants")
-            .update({
-              variant_name: variant.variantName.trim() || null,
-              // Never update `mrp` here: POS/barcode must keep the physical tag MRP.
-              online_mrp:
-                effectiveVariantSellOnline && variantOnlineMrp > 0
-                  ? variantOnlineMrp
-                  : null,
-              online_price: safeVariantOnlinePrice,
-              main_image: variant.mainImage || null,
-              gallery_images: variant.galleryImages,
-              low_stock_limit: getOptionalNumber(form.lowStockLimit, 5),
-              online_stock_limit: safeOnlineQuantity,
-              sell_online: effectiveVariantSellOnline,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", variant.id);
-
-          if (variantUpdateError) throw variantUpdateError;
-        }
-      } else {
-        const { error: onlineStockError } = await supabase.rpc(
-          "set_product_online_stock",
-          {
-            p_product_id: Number(productId),
-            p_variant_id: null,
-            p_online_quantity: form.sellOnline
-              ? Math.min(
-                  Number(form.onlineStockLimit || 0),
-                  Number(form.stock || 0)
-                )
-              : 0,
-            p_sell_online: form.sellOnline,
-          }
-        );
-
-        if (onlineStockError) {
-          console.error(onlineStockError);
-          alert(
-            `Product details were updated, but online stock sync failed: ${onlineStockError.message}`
-          );
-          return;
-        }
-      }
-
-      if (form.sellOnline && designUnits.length > 0) {
-        const { error: designStockSyncError } = await supabase
-          .from("products")
-          .update({
-            online_stock_limit: Math.min(
-              designModeOnlineQuantity,
-              totalVariantStock
-            ),
-            sell_online: designModeOnlineQuantity > 0,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", productId);
-
-        if (designStockSyncError) {
-          throw new Error(
-            `Design stock sync failed: ${designStockSyncError.message}`
-          );
-        }
-      }
+        return {
+          id: variant.id,
+          variant_name: variant.variantName.trim() || null,
+          online_mrp: sellOnline && mrp > 0 ? mrp : null,
+          online_price: sellOnline && price > 0 ? price : null,
+          main_image: variant.mainImage || null,
+          gallery_images: variant.galleryImages,
+          low_stock_limit: getOptionalNumber(form.lowStockLimit,5),
+          online_stock_limit: sellOnline ? Math.min(count > 0 ? count :
+            Math.max(0,Number(variant.onlineStockLimit||0)),Math.max(0,variant.stock)) : 0,
+          sell_online: sellOnline,
+        };
+      });
+      const response = await fetch("/api/ncs-core-cloud/v1/admin/catalog/web-editor-v39",{
+        method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({productId:Number(productId),productPatch:productData,variantPatches}),
+      });
+      const result = await response.json().catch(()=>null) as {ok?:boolean;error?:string}|null;
+      if(!response.ok || result?.ok!==true) throw new Error(result?.error||`Product save failed (HTTP ${response.status})`);
 
       setOriginalBrand(
         normalizeBrandName(form.brand),
       );
 
       alert(
-        form.sellOnline
+        (form.sellOnline
           ? "Product updated and published online successfully. Existing barcode and physical stock were preserved."
-          : "Product updated successfully. It remains available only in Purchase Stock and POS."
+          : "Product updated successfully. It remains available only in Purchase Stock and POS.") + previewWarning
       );
 
       router.push("/admin/products");
@@ -4070,9 +3955,9 @@ export default function EditProductPage() {
                   onChange={uploadMainImage}
                 />
 
-                {form.mainImage && (
+                {effectiveMainImage && (
                   <ImagePreview
-                    image={form.mainImage}
+                    image={effectiveMainImage}
                     onRemove={() =>
                       setField("mainImage", "")
                     }
@@ -4100,15 +3985,15 @@ export default function EditProductPage() {
                   <button
                     type="button"
                     onClick={generateProductDetailsWithAi}
-                    disabled={generatingAi || uploadingMain || !form.mainImage}
+                    disabled={generatingAi || uploadingMain || !effectiveMainImage}
                     style={{
                       ...aiGenerateButtonStyle,
                       opacity:
-                        generatingAi || uploadingMain || !form.mainImage
+                        generatingAi || uploadingMain || !effectiveMainImage
                           ? 0.65
                           : 1,
                       cursor:
-                        generatingAi || uploadingMain || !form.mainImage
+                        generatingAi || uploadingMain || !effectiveMainImage
                           ? "not-allowed"
                           : "pointer",
                     }}
@@ -4742,9 +4627,9 @@ export default function EditProductPage() {
                 </p>
 
                 <div style={previewImageBoxStyle}>
-                  {form.mainImage ? (
+                  {effectiveMainImage ? (
                     <img
-                      src={form.mainImage}
+                      src={effectiveMainImage}
                       alt={form.name || "Product preview"}
                       style={previewImageStyle}
                     />
@@ -4864,7 +4749,7 @@ export default function EditProductPage() {
 
                 <CompletionRow
                   label="Main Image"
-                  complete={Boolean(form.mainImage)}
+                  complete={Boolean(effectiveMainImage)}
                 />
 
                 <CompletionRow

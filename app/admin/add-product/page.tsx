@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/ncs-admin-business-client";
 
 type CollectionOption = {
   id: number;
@@ -1252,27 +1252,53 @@ export default function AddProductPage() {
       .toString(36)
       .slice(2, 7)}.${extension}`;
 
-    const { error } = await supabase.storage
-      .from("store-assets")
-      .upload(filePath, file, {
-        contentType: file.type,
-        cacheControl: "3600",
-        upsert: false,
-      });
+    try {
+      const { error } = await supabase.storage
+        .from("store-assets")
+        .upload(filePath, file, {
+          contentType: file.type,
+          cacheControl: "3600",
+          upsert: false,
+        });
 
-    if (error) {
-      throw error;
+      if (error) {
+        throw error;
+      }
+
+      const { data } = supabase.storage
+        .from("store-assets")
+        .getPublicUrl(filePath);
+
+      if (data.publicUrl) {
+        return data.publicUrl;
+      }
+    } catch (storageError) {
+      console.info(
+        "Supabase product-image storage unavailable; using NEW CITY STYLE image storage.",
+        storageError,
+      );
     }
 
-    const { data } = supabase.storage
-      .from("store-assets")
-      .getPublicUrl(filePath);
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folder", `products/${folder}`);
 
-    if (!data.publicUrl) {
-      throw new Error("Unable to generate image URL.");
+    const response = await fetch("/api/r2/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    const result = (await response.json().catch(() => null)) as
+      | { url?: string; error?: string }
+      | null;
+
+    if (!response.ok || !result?.url) {
+      throw new Error(
+        result?.error || "Unable to upload the product image.",
+      );
     }
 
-    return data.publicUrl;
+    return result.url;
   }
 
   async function uploadMainImage(
@@ -2209,6 +2235,34 @@ export default function AddProductPage() {
     return true;
   }
 
+  async function saveRecoveryProduct(
+    productData: Record<string, unknown>,
+  ) {
+    const response = await fetch("/api/recovery/products", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ product: productData }),
+    });
+
+    const result = (await response.json().catch(() => null)) as
+      | {
+          ok?: boolean;
+          product?: { id?: string | number };
+          error?: string;
+        }
+      | null;
+
+    if (!response.ok || result?.ok !== true || !result.product) {
+      throw new Error(
+        result?.error || "Unable to save the product right now.",
+      );
+    }
+
+    return result.product;
+  }
+
   async function saveProduct(
     event: FormEvent<HTMLFormElement>
   ) {
@@ -2376,7 +2430,10 @@ export default function AddProductPage() {
         "Existing stock product updated successfully. Barcode and physical stock were preserved."
       );
     } else {
-      const { data: createdProduct, error } = await supabase
+      let createdProduct: { id?: string | number } | null = null;
+      let savedToRecovery = false;
+
+      const { data: cloudCreatedProduct, error } = await supabase
         .from("products")
         .insert(productData)
         .select(
@@ -2385,10 +2442,28 @@ export default function AddProductPage() {
         .single();
 
       if (error) {
-        console.error(error);
-        alert(`Unable to save product: ${error.message}`);
-        setSaving(false);
-        return;
+        console.info(
+          "Supabase product save unavailable; using NEW CITY STYLE Recovery Bridge.",
+          error,
+        );
+
+        try {
+          createdProduct = await saveRecoveryProduct(
+            productData as Record<string, unknown>,
+          );
+          savedToRecovery = true;
+        } catch (recoveryError) {
+          console.error(recoveryError);
+          alert(
+            recoveryError instanceof Error
+              ? recoveryError.message
+              : "Unable to save product.",
+          );
+          setSaving(false);
+          return;
+        }
+      } else {
+        createdProduct = cloudCreatedProduct;
       }
 
       /*
@@ -2410,7 +2485,7 @@ export default function AddProductPage() {
         const accessToken =
           session?.access_token?.trim() || "";
 
-        if (accessToken && createdProduct?.id) {
+        if (!savedToRecovery && accessToken && createdProduct?.id) {
           const response = await fetch(
             "/api/push/new-product",
             {
