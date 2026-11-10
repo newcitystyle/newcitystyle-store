@@ -145,31 +145,9 @@ internal fun CompactBusinessHome(onNavigate:(String)->Unit){
        Icon(Icons.Default.Refresh,contentDescription="Refresh live figures",tint=Color(0xFF78F3D9))
       }
      }
-     Spacer(Modifier.height(18.dp))
-     Text("Your business, one powerful workspace",color=white.copy(alpha=.88f),fontSize=13.sp)
-     Spacer(Modifier.height(14.dp))
-     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
-      Button(
-       onClick={onNavigate("Advanced POS")},
-       modifier=Modifier.weight(1f).height(49.dp),
-       shape=RoundedCornerShape(16.dp),
-       colors=ButtonDefaults.buttonColors(containerColor=Color(0xFFF3CF79),contentColor=deepNavy)
-      ){
-       Icon(Icons.Default.ReceiptLong,null,Modifier.size(19.dp))
-       Spacer(Modifier.width(7.dp))
-       Text("NEW BILL",fontWeight=FontWeight.ExtraBold,fontSize=13.sp)
-      }
-      OutlinedButton(
-       onClick={onNavigate("Sync Center")},
-       modifier=Modifier.weight(1f).height(49.dp),
-       shape=RoundedCornerShape(16.dp),
-       border=BorderStroke(1.dp,white.copy(alpha=.48f))
-      ){
-       Icon(Icons.Default.Sync,null,tint=white,modifier=Modifier.size(18.dp))
-       Spacer(Modifier.width(7.dp))
-       Text("SYNC CENTER",color=white,fontSize=11.sp,fontWeight=FontWeight.Bold,maxLines=1)
-      }
-     }
+     // V18: operational actions stay in their regular tabs.
+     // Home header uses only the existing functional refresh control.
+     Spacer(Modifier.height(4.dp))
      if(loading){
       Spacer(Modifier.height(10.dp))
       LinearProgressIndicator(Modifier.fillMaxWidth(),color=gold)
@@ -278,11 +256,6 @@ internal fun CompactBusinessHome(onNavigate:(String)->Unit){
      Text("No matching action",modifier=Modifier.padding(24.dp),
       color=muted,fontSize=14.sp)
     }
-   }
-   item{
-    Text("Inbox upload is not final settlement. Verify financial sync before counting it as a sale.",
-     modifier=Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=8.dp),
-     color=muted,fontSize=10.sp,lineHeight=15.sp)
    }
   }
  }
