@@ -123,6 +123,22 @@ export async function POST(request: Request) {
     if(!/^91\\d{10}$/.test(normalized)) {
       return respond({ok:false,error:"INVALID_CUSTOMER_PHONE"},422);
     }
+    // Verify the live web account by phone and exact paise balance.
+    // V69-only or disagreed accounts must be reconciled before contacting customers.
+    const {data:webAccounts,error:webError}=await db
+      .from("customer_credit_accounts")
+      .select("customer_phone,current_balance,is_active")
+      .eq("is_active",true);
+    if(webError || !Array.isArray(webAccounts)) {
+      return respond({ok:false,error:"CROSS_LEDGER_CHECK_UNAVAILABLE"},503);
+    }
+    const matching=webAccounts.filter((w:{customer_phone?:unknown})=>{
+      const digits=String(w.customer_phone||"").replace(/\D/g,"");
+      return digits.length>=10 && digits.slice(-10)===normalized.slice(-10);
+    });
+    if(matching.length!==1 || cents(matching[0].current_balance)!==dueCents) {
+      return respond({ok:false,error:"CROSS_LEDGER_MISMATCH_RECONCILE_FIRST"},409);
+    }
     if(Array.isArray(data.reminder_logs) &&
       data.reminder_logs.some((log:{id?:unknown})=>String(log.id)===requestId)) {
       return respond({ok:true,duplicate:true,alreadySent:true,requestId});
