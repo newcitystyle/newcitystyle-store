@@ -28,20 +28,30 @@ export async function GET(request:Request){
   try{
     const db=connection();
     if(kind==="sales"){
-      const {data,error}=await db.from("pos_sales")
-        .select("id,invoice_number,customer_name,customer_phone,sale_status,payment_method,total_amount,paid_amount,due_amount,created_at,is_deleted")
-        .eq("is_deleted",false).order("created_at",{ascending:false}).limit(limit);
-      if(error)throw error;
+      // Read the canonical combined bill history, not legacy pos_sales
+      // (which stopped receiving new bills after Oct 24).
+      const offsetRaw=Number(params.get("offset")||0);
+      const offset=Number.isSafeInteger(offsetRaw)&&offsetRaw>=0
+        ?Math.min(offsetRaw,10000):0;
       const saleId=params.get("saleId");
-      let items:unknown[]=[];
-      if(saleId&&/^[0-9a-f-]{36}$/i.test(saleId)){
-        const detail=await db.from("pos_sale_items")
-          .select("id,sale_id,product_name,size,color,quantity,unit_price,line_total,returned_quantity")
-          .eq("sale_id",saleId).limit(100);
-        if(detail.error)throw detail.error;
-        items=pack(detail.data);
-      }
-      return json({ok:true,kind,records:pack(data),items});
+      const saleIdValid=!!saleId && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(saleId);
+      const [list,detail]=await Promise.all([
+        db.rpc("ncs_recovery_sales_history_v59",{
+          p_kind:"sales",p_sale_id:null,p_offset:offset,p_limit:limit
+        }),
+        saleIdValid ? db.rpc("ncs_recovery_sales_history_v59",{
+          p_kind:"items",p_sale_id:saleId,p_offset:0,p_limit:150
+        }):Promise.resolve({data:null,error:null})
+      ]);
+      if(list.error || !list.data || !Array.isArray(list.data.rows))
+        throw new Error("LIVE_SALES_HISTORY_UNAVAILABLE");
+      if(detail.error)throw detail.error;
+      const rows=pack(list.data.rows);
+      const items=pack(detail.data?.rows);
+      return json({ok:true,kind,records:rows,items,
+        total:Number(list.data.total||rows.length),
+        latestAvailableAt:list.data.latestAvailableAt||null,
+        source:"COMBINED_SALES_HISTORY_V60"});
     }
     if(kind==="suppliers"){
       // Supplier financial balances and payment history are owned by V69.
