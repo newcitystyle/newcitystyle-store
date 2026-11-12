@@ -221,7 +221,8 @@ export async function POST(request: Request) {
       }
       // Payment was confirmed by the atomic DB function. WhatsApp is a separate
       // notification result: never turn a committed payment into an API failure.
-      const notice=await notifyPaymentOnce(db,requestId);
+      const notice=await notifyPaymentOnce(db,requestId)
+        .catch(()=>({whatsappStatus:"pending_review"}));
       return respond({...data,...notice});
     } catch {
       return respond({ok:false,error:"PAYMENT_NOT_CONFIRMED_VERIFY_LEDGER"},503);
