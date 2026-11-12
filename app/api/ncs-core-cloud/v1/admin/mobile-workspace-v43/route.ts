@@ -44,15 +44,52 @@ export async function GET(request:Request){
       return json({ok:true,kind,records:pack(data),items});
     }
     if(kind==="suppliers"){
-      const [a,b,c]=await Promise.all([
-        db.from("suppliers").select("id,supplier_name,phone,current_balance,total_paid_amount,total_purchase_amount,is_active").eq("is_active",true).order("current_balance",{ascending:false}).limit(150),
-        db.from("supplier_payments").select("id,supplier_id,amount,payment_date,payment_method,payment_reference,notes,created_at,reversed_at")
-          .order("created_at",{ascending:false}).limit(150),
-        db.from("purchases").select("id,purchase_number,supplier_id,supplier_name,total_amount,paid_amount,due_amount,purchase_date")
-          .order("purchase_date",{ascending:false}).limit(100)
+      // Supplier financial balances and payment history are owned by V69.
+      // The website suppliers table contains stale legacy opening balances.
+      const [webSuppliers,ledger]=await Promise.all([
+        db.from("suppliers")
+          .select("id,supplier_name,phone,current_balance,total_paid_amount,total_purchase_amount,is_active")
+          .eq("is_active",true).limit(150),
+        db.rpc("ncs_account_read_v69",{p_kind:"suppliers"})
       ]);
-      if(a.error||b.error||c.error)throw a.error||b.error||c.error;
-      return json({ok:true,kind,records:pack(a.data),payments:pack(b.data),purchases:pack(c.data)});
+      if(webSuppliers.error || ledger.error || ledger.data?.ok!==true ||
+         !Array.isArray(ledger.data.suppliers) || !Array.isArray(ledger.data.payments) ||
+         !Array.isArray(ledger.data.purchases)) throw new Error("SUPPLIER_LEDGER_UNAVAILABLE");
+
+      const normalize=(name:unknown)=>String(name||"").trim().toLocaleUpperCase("en");
+      const actual=ledger.data.suppliers as Array<Record<string,unknown>>;
+      const web=pack(webSuppliers.data) as Array<Record<string,unknown>>;
+      const byName=new Map(web.map(row=>[normalize(row.supplier_name),row]));
+      const byV69Id=new Map<string,Record<string,unknown>>();
+      const records=actual.map(row=>{
+        const corresponding=byName.get(normalize(row.supplier_name));
+        if(!corresponding)throw new Error("SUPPLIER_LINK_MISSING");
+        byV69Id.set(String(row.id),corresponding);
+        return {...corresponding,
+          current_balance:row.current_balance,
+          total_paid_amount:row.total_paid_amount,
+          total_purchase_amount:row.total_purchase_amount,
+          v69_account_id:row.id};
+      }).sort((a,b)=>Number(b.current_balance)-Number(a.current_balance));
+      if(records.length!==web.length)throw new Error("SUPPLIER_MATCH_COUNT_MISMATCH");
+
+      // V69 carries both legacy and native payment events. Do not turn historical
+      // reconciliation postings into new cash receipts.
+      const payments=(ledger.data.payments as Array<Record<string,unknown>>).map(row=>{
+        const w=byV69Id.get(String(row.supplier_id));
+        if(!w)throw new Error("SUPPLIER_PAYMENT_OWNER_MISSING");
+        return {...row,supplier_id:w.id,supplier_name:w.supplier_name,
+          payment_date:String(row.payment_date||row.created_at||"").slice(0,10),
+          is_historical:String(row.id||"").startsWith("baseline:")};
+      }).sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
+      const purchases=(ledger.data.purchases as Array<Record<string,unknown>>).map(row=>{
+        const w=byV69Id.get(String(row.supplier_id));
+        if(!w)throw new Error("SUPPLIER_PURCHASE_OWNER_MISSING");
+        return {...row,supplier_id:w.id,
+          supplier_name:w.supplier_name};
+      });
+      return json({ok:true,kind,records,payments,purchases,
+        ledgerSource:"V69",historicalPaymentsIncluded:true});
     }
     if(kind==="cash_bank"){
       const [a,b]=await Promise.all([
