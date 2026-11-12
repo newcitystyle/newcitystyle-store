@@ -66,7 +66,7 @@ export async function GET(request: Request) {
  * A claimed requestId is never sent twice automatically.
  */
 async function notifyPaymentOnce(
-  db: ReturnType<typeof createClient>,
+  db: any,
   requestId: string,
 ): Promise<{whatsappStatus:string; whatsappMessageId?:string}> {
   const template=process.env.WHATSAPP_PAYMENT_RECEIVED_TEMPLATE_NAME?.trim();
