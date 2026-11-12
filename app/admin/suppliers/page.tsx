@@ -8,9 +8,13 @@ import {
   useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import { readNcsV49Ledger } from "@/lib/ncs-v49-canonical-ledger-client";
 
 type SupplierRow = {
   id: number;
+  __canonical_paid?: number;
+  __canonical_credit?: number;
+  __ncs_payment_locked?: boolean;
   supplier_name: string;
   phone?: string | null;
   gst_number?: string | null;
@@ -199,13 +203,23 @@ export default function SuppliersPage() {
 
       const safeSuppliers =
         (supplierResponse.data || []) as unknown as SupplierRow[];
+      const canonical=await readNcsV49Ledger();
+      const supplierMap=new Map(canonical.suppliers.map(row=>[row.public_supplier_id,row]));
+      if(supplierMap.size!==safeSuppliers.length||safeSuppliers.some(row=>!supplierMap.has(row.id)))
+        throw Error("V69 supplier identity mismatch: not displaying unverified supplier balances.");
+      const canonicallyVerified=safeSuppliers.map(row=>{
+        const c=supplierMap.get(row.id)!;
+        return {...row,current_balance:c.due,__canonical_paid:c.paid,
+          __canonical_credit:c.credit,
+          __ncs_payment_locked:Math.abs(toNumber(row.current_balance)-c.due)>0.005};
+      });
 
       const safePurchases = (
         (purchaseResponse.data || []) as unknown as PurchaseRow[]
       ).filter((purchase) => !purchase.deleted_at);
 
       setSuppliers(
-        safeSuppliers.filter(
+        canonicallyVerified.filter(
           (supplier) => supplier.is_active !== false,
         ),
       );
@@ -259,11 +273,8 @@ export default function SuppliersPage() {
           Number(payment.supplier_id) === Number(supplier.id),
       );
 
-      const totalPurchase = supplierPurchases.reduce(
-        (sum, purchase) =>
-          sum + toNumber(purchase.total_amount),
-        0,
-      );
+      const totalPurchase = supplier.__canonical_credit ??
+        supplierPurchases.reduce((sum,purchase)=>sum+toNumber(purchase.total_amount),0);
 
       const purchasePaid = supplierPurchases.reduce(
         (sum, purchase) =>
@@ -306,11 +317,8 @@ export default function SuppliersPage() {
         Math.min(totalPurchase, totalPurchase - currentBalance),
       );
 
-      const totalPaid = Math.max(
-        purchasePaid,
-        recordedPayments,
-        balanceDerivedPaid,
-      );
+      const totalPaid = supplier.__canonical_paid ??
+        Math.max(purchasePaid,recordedPayments,balanceDerivedPaid);
 
       const lastPurchaseAt =
         supplierPurchases[0]?.purchase_date ||
@@ -404,6 +412,10 @@ export default function SuppliersPage() {
   }
 
   function openPayment(summary: SupplierSummary) {
+    if(summary.supplier.__ncs_payment_locked){
+      showNotice("V69 supplier balance differs from the old table. Use verified Desktop V69 payment screen; unsafe legacy supplier write blocked.");
+      return;
+    }
     setSelectedSupplierId(summary.supplier.id);
     setPaymentAmount(summary.currentBalance);
     setPaymentMethod("cash");
@@ -417,7 +429,10 @@ export default function SuppliersPage() {
     summary: SupplierSummary,
   ) {
     if (whatsAppSendingSupplierId !== null) return;
-
+    if(summary.supplier.__ncs_payment_locked){
+      showNotice("Supplier statement is awaiting V69 payment-history reconciliation. No stale statement was sent.");
+      return;
+    }
     const supplier = summary.supplier;
     const digits = (supplier.phone || "").replace(/\D/g, "");
     const recipientPhone =
@@ -564,7 +579,10 @@ export default function SuppliersPage() {
     event.preventDefault();
 
     if (!selectedSummary || savingPayment) return;
-
+    if(selectedSummary.supplier.__ncs_payment_locked){
+      showNotice("This supplier payment must be recorded through the canonical V69 ledger.");
+      return;
+    }
     const due = selectedSummary.currentBalance;
     const amount = Math.max(
       0,
