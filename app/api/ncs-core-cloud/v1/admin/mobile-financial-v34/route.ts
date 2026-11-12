@@ -81,8 +81,47 @@ export async function POST(request: Request) {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
     input=parsed as Record<string,unknown>;
   } catch { return respond({ok:false,error:"INVALID_JSON"},400); }
+  if (input.operation === "payment") {
+    const accountId=Number(input.accountId);
+    const amount=String(input.amount??"");
+    const expectedDue=String(input.expectedDue??"");
+    const method=String(input.method??"").toLowerCase();
+    const reference=String(input.reference??"");
+    const requestId=String(input.requestId??"");
+    if (!Number.isSafeInteger(accountId) || accountId<=0 ||
+        !/^[0-9]{1,8}[.][0-9]{2}$/.test(amount) ||
+        !/^[0-9]{1,10}[.][0-9]{2}$/.test(expectedDue) ||
+        !["cash","upi","card"].includes(method) ||
+        reference.length>120 ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)) {
+      return respond({ok:false,error:"INVALID_PAYMENT_REQUEST"},400);
+    }
+    const url=process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ||
+      process.env.SUPABASE_URL?.trim();
+    const key=process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
+      process.env.SUPABASE_SERVICE_KEY?.trim();
+    if(!url || !key) return respond({ok:false,error:"PAYMENT_SERVER_CONFIG_MISSING"},503);
+    try {
+      const db=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
+      const {data,error}=await db.rpc("ncs_android_dual_receive_v41",{
+        p:{accountId,amount,expectedDue,method,reference,requestId}
+      });
+      if(error) {
+        console.error("V41_ATOMIC_RECEIVE_ERROR",error.code || "UNKNOWN");
+        return respond({ok:false,error:"PAYMENT_NOT_CONFIRMED_VERIFY_LEDGER"},503);
+      }
+      if(!data || data.ok!==true) {
+        const err=String(data?.error||"PAYMENT_NOT_CONFIRMED");
+        return respond({ok:false,error:err},
+          err==="CROSS_LEDGER_RECONCILIATION_REQUIRED"?409:400);
+      }
+      return respond(data);
+    } catch {
+      return respond({ok:false,error:"PAYMENT_NOT_CONFIRMED_VERIFY_LEDGER"},503);
+    }
+  }
   if (input.operation !== "reminder") {
-    return respond({ok:false,error:"V38_PAYMENT_POST_NOT_ENABLED"},405);
+    return respond({ok:false,error:"UNKNOWN_FINANCIAL_OPERATION"},400);
   }
 
   const accountId=Number(input.accountId);
