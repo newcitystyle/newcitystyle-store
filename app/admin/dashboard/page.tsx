@@ -575,6 +575,11 @@ export default function AdminDashboardPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [visitorError, setVisitorError] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
+  const [verifiedSales, setVerifiedSales] = useState<null | {
+    todaySales:number;todayBills:number;yesterdaySales:number;yesterdayBills:number;
+    monthSales:number;monthBills:number;date:string;
+  }>(null);
+  const [verifiedSalesError, setVerifiedSalesError] = useState("");
   const [salesRange, setSalesRange] = useState<7 | 14 | 30>(30);
   const [showDashboardDetails, setShowDashboardDetails] = useState(false);
   const [businessWatchTab, setBusinessWatchTab] = useState<
@@ -1015,6 +1020,28 @@ export default function AdminDashboardPage() {
     loadTodayOwnerProfit,
   ]);
 
+  const loadVerifiedSales = async () => {
+    try {
+      const {data} = await supabase.auth.getSession();
+      const token=data.session?.access_token;
+      const response=await fetch("/api/ncs-finance/v50/recovered-sales-summary",{
+        headers:token?{Authorization:"Bearer "+token}:{},
+        credentials:"same-origin",cache:"no-store"
+      });
+      if(!response.ok)throw new Error("HTTP "+response.status);
+      const v=await response.json();
+      if(v.ok!==true||v.source!=="NCS_V59_COMBINED_SALES"||v.readOnly!==true)
+        throw new Error("Unverified sales source");
+      setVerifiedSales({todaySales:Number(v.todaySales),todayBills:Number(v.todayBills),
+        yesterdaySales:Number(v.yesterdaySales),yesterdayBills:Number(v.yesterdayBills),
+        monthSales:Number(v.monthSales),monthBills:Number(v.monthBills),date:String(v.date)});
+      setVerifiedSalesError("");
+    }catch(e){
+      setVerifiedSales(null);
+      setVerifiedSalesError(e instanceof Error?e.message:"Sales verification unavailable");
+    }
+  };
+  useEffect(()=>{void loadVerifiedSales();},[]);
   const todayStart = startOfLocalDay();
   const monthStart = startOfMonth();
   const sevenDaysStart = new Date(todayStart);
@@ -2054,6 +2081,38 @@ export default function AdminDashboardPage() {
         showDashboardDetails ? "showAdvancedDetails" : ""
       }`}
     >
+      <section aria-label="Recovered sales overview" style={{
+        display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",
+        gap:12,padding:"14px 0 20px"
+      }}>
+        {[
+          {title:"TODAY SALES",amount:verifiedSales?.todaySales,count:verifiedSales?.todayBills},
+          {title:"THIS MONTH SALES",amount:verifiedSales?.monthSales,count:verifiedSales?.monthBills},
+          {title:"YESTERDAY SALES",amount:verifiedSales?.yesterdaySales,count:verifiedSales?.yesterdayBills}
+        ].map(item=><div key={item.title} style={{
+          padding:"20px",background:"linear-gradient(135deg,#071b4b,#123d78)",
+          color:"#fff",borderRadius:18,border:"1px solid #cfb357",boxShadow:"0 6px 15px rgba(0,0,0,0.08)"
+        }}>
+          <div style={{fontSize:12,fontWeight:800,letterSpacing:1,color:"#d4af37"}}>{item.title}</div>
+          <div style={{fontWeight:900,fontSize:30,marginTop:8}}>
+            {item.amount===undefined?"—":formatCurrency(item.amount)}
+          </div>
+          <div style={{fontSize:12,opacity:0.85}}>
+            {item.count===undefined?"Verified feed unavailable":`${item.count} recorded bills • Recovered V59`}
+          </div>
+        </div>)}
+        <div style={{gridColumn:"1/-1",fontSize:12,color:"#615b6d",display:"flex",
+          justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+          <span>IST day • Recovered bills before return/refund reconciliation.
+            {verifiedSalesError?" Live read unavailable: "+verifiedSalesError:""}
+          </span>
+          <button type="button" onClick={()=>{void loadVerifiedSales();}}
+            style={{border:"1px solid #d4af37",borderRadius:9,padding:"7px 13px",
+              background:"#fff",color:"#0a2e73",fontWeight:800,cursor:"pointer"}}>
+            Refresh Sales
+          </button>
+        </div>
+      </section>
       <section className="hero">
         <div className="heroMotion" aria-hidden="true">
           <span className="heroSweep" />
