@@ -5,6 +5,7 @@ import { installed, verifyOwnerPassword, createOwnerCookie, clearOwnerCookie, ow
 export const runtime="nodejs"; export const dynamic="force-dynamic";
 const headers={"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"};
 const respond=(data:Record<string,unknown>,status=200)=>NextResponse.json(data,{status,headers});
+const attempts=new Map<string,{count:number,until:number}>();
 export async function GET(req:NextRequest){
  const authenticated=ownerSessionValid(req);
  const res=respond({ok:true,configured:installed(),authenticated});
@@ -43,7 +44,14 @@ export async function POST(req:NextRequest){
  try{const raw=await req.text();if(Buffer.byteLength(raw)>4096)return respond({ok:false,code:"INVALID_REQUEST"},413);payload=JSON.parse(raw);}
  catch{return respond({ok:false,code:"INVALID_REQUEST"},400);}
  if(typeof payload.email!=="string"||typeof payload.password!=="string"||payload.email.length>254||payload.password.length>1024)return respond({ok:false,code:"INVALID_REQUEST"},400);
- if(!await verifyOwnerPassword(payload.email,payload.password))return respond({ok:false,code:"INVALID_OWNER_CREDENTIALS"},401);
+ const ip=(req.headers.get("x-forwarded-for")||"unknown").split(",")[0].trim().slice(0,128);
+ const now=Date.now();if(attempts.size>5000)attempts.clear();
+ const prev=attempts.get(ip);if(prev&&prev.until>now&&prev.count>=5)return respond({ok:false,code:"TOO_MANY_ATTEMPTS"},429);
+ if(!await verifyOwnerPassword(payload.email,payload.password)){
+  attempts.set(ip,{count:(prev&&prev.until>now?prev.count:0)+1,until:now+15*60*1000});
+  return respond({ok:false,code:"INVALID_OWNER_CREDENTIALS"},401);
+ }
+ attempts.delete(ip);
  const res=respond({ok:true});createOwnerCookie(res,req);return res;
 }
 export async function DELETE(req:NextRequest){const res=respond({ok:true});clearOwnerCookie(res,req);return res;}
