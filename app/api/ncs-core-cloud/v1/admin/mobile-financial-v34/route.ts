@@ -61,6 +61,107 @@ export async function GET(request: Request) {
   }
 }
 
+/** Send a payment confirmation only after a committed, matching V41 receipt.
+ * Outbox is inserted by a DB trigger in the same financial transaction.
+ * A claimed requestId is never sent twice automatically.
+ */
+async function notifyPaymentOnce(
+  db: ReturnType<typeof createClient>,
+  requestId: string,
+): Promise<{whatsappStatus:string; whatsappMessageId?:string}> {
+  const template=process.env.WHATSAPP_PAYMENT_RECEIVED_TEMPLATE_NAME?.trim();
+  const token=process.env.WHATSAPP_ACCESS_TOKEN?.trim();
+  const phoneId=process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
+  if(!template || !token || !phoneId) {
+    return {whatsappStatus:"not_configured"};
+  }
+
+  const {data:claimed,error:claimError}=await db
+    .from("ncs_android_payment_notice_v42")
+    .update({state:"sending",updated_at:new Date().toISOString()})
+    .eq("request_id",requestId)
+    .eq("state","pending")
+    .select("request_id,account_id,amount,remaining_due,payment_method")
+    .maybeSingle();
+  if(claimError) {
+    console.error("V42_NOTICE_CLAIM_FAILED",claimError.code||"UNKNOWN");
+    return {whatsappStatus:"queue_unavailable"};
+  }
+  if(!claimed) {
+    const {data:existing}=await db.from("ncs_android_payment_notice_v42")
+      .select("state,meta_message_id").eq("request_id",requestId).maybeSingle();
+    if(existing?.state==="accepted") return {
+      whatsappStatus:"accepted",
+      whatsappMessageId:String(existing.meta_message_id||"")
+    };
+    return {whatsappStatus:existing?.state==="failed"?"failed":"pending_review"};
+  }
+
+  const mark=async(state:"accepted"|"failed",messageId?:string,error?:string)=>{
+    const {error:updateError}=await db.from("ncs_android_payment_notice_v42")
+      .update({state,meta_message_id:messageId||null,last_error:error||null,
+        updated_at:new Date().toISOString()})
+      .eq("request_id",requestId).eq("state","sending");
+    if(updateError) console.error("V42_NOTICE_RESULT_LOG_FAILED",updateError.code||"UNKNOWN");
+  };
+
+  try {
+    const {data:ledger,error:ledgerError}=await db.rpc("ncs_account_read_v69",{p_kind:"dues"});
+    if(ledgerError || !ledger || !Array.isArray(ledger.accounts)) {
+      await mark("failed",undefined,"ACCOUNT_READ_FAILED");
+      return {whatsappStatus:"failed"};
+    }
+    const account=ledger.accounts.find((a:{id?:unknown})=>
+      Number(a.id)===Number(claimed.account_id));
+    const digits=String(account?.customer_phone||"").replace(/\D/g,"");
+    const phone=digits.length===10?"91"+digits:digits;
+    if(!account || !/^91\d{10}$/.test(phone)) {
+      await mark("failed",undefined,"CUSTOMER_PHONE_UNVERIFIED");
+      return {whatsappStatus:"failed"};
+    }
+    const payment=Number(claimed.amount);
+    const due=Number(claimed.remaining_due);
+    if(!Number.isFinite(payment) || !Number.isFinite(due) || payment<=0 || due<0) {
+      await mark("failed",undefined,"PAYMENT_AMOUNTS_INVALID");
+      return {whatsappStatus:"failed"};
+    }
+    const method=String(claimed.payment_method||"").toLowerCase();
+    const label=method==="upi"?"UPI":method==="card"?"Card":"Cash";
+    const payload={
+      messaging_product:"whatsapp",recipient_type:"individual",to:phone,
+      type:"template",
+      template:{
+        name:template,
+        language:{code:process.env.WHATSAPP_PAYMENT_RECEIVED_TEMPLATE_LANGUAGE?.trim()||"en"},
+        components:[{type:"body",parameters:[
+          {type:"text",text:String(account.customer_name||"Customer").slice(0,180)},
+          {type:"text",text:payment.toFixed(2)},
+          {type:"text",text:label},
+          {type:"text",text:due.toFixed(2)}
+        ]}]
+      }
+    };
+    const response=await fetch(
+      `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION||"v25.0"}/${phoneId}/messages`,
+      {method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+        body:JSON.stringify(payload),cache:"no-store"}
+    );
+    const body:unknown=await response.json().catch(()=>null);
+    const messageId=body && typeof body==="object" && "messages" in body?
+      (body as {messages?:Array<{id?:string}>}).messages?.[0]?.id:undefined;
+    if(!response.ok || !messageId) {
+      console.error("V42_META_PAYMENT_TEMPLATE_REJECTED",response.status);
+      await mark("failed",undefined,"META_TEMPLATE_REJECTED_"+response.status);
+      return {whatsappStatus:"failed"};
+    }
+    await mark("accepted",messageId);
+    return {whatsappStatus:"accepted",whatsappMessageId:messageId};
+  } catch {
+    await mark("failed",undefined,"NOTICE_DELIVERY_EXCEPTION");
+    return {whatsappStatus:"failed"};
+  }
+}
+
 // V38: owner-authorized reminder sending, existing approved Meta template only.
 // This endpoint never commits customer payments or updates outstanding balances.
 export async function POST(request: Request) {
@@ -115,7 +216,10 @@ export async function POST(request: Request) {
         return respond({ok:false,error:err},
           err==="CROSS_LEDGER_RECONCILIATION_REQUIRED"?409:400);
       }
-      return respond(data);
+      // Payment was confirmed by the atomic DB function. WhatsApp is a separate
+      // notification result: never turn a committed payment into an API failure.
+      const notice=await notifyPaymentOnce(db,requestId);
+      return respond({...data,...notice});
     } catch {
       return respond({ok:false,error:"PAYMENT_NOT_CONFIRMED_VERIFY_LEDGER"},503);
     }
