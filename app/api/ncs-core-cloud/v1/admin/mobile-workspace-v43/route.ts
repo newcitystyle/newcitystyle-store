@@ -82,13 +82,14 @@ export async function GET(request:Request){
           payment_date:String(row.payment_date||row.created_at||"").slice(0,10),
           is_historical:String(row.id||"").startsWith("baseline:")};
       }).sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
-      const purchases=(ledger.data.purchases as Array<Record<string,unknown>>).map(row=>{
-        const w=byV69Id.get(String(row.supplier_id));
-        if(!w)throw new Error("SUPPLIER_PURCHASE_OWNER_MISSING");
-        return {...row,supplier_id:w.id,
-          supplier_name:w.supplier_name};
-      });
-      return json({ok:true,kind,records,payments,purchases,
+      // V69 historic purchases do not have verified paid/due allocations.
+      // Preserve the existing website purchase-detail display rather than
+      // fabricating a zero due from a null field.
+      const purchaseRead=await db.from("purchases")
+        .select("id,purchase_number,supplier_id,supplier_name,total_amount,paid_amount,due_amount,purchase_date")
+        .order("purchase_date",{ascending:false}).limit(100);
+      if(purchaseRead.error)throw purchaseRead.error;
+      return json({ok:true,kind,records,payments,purchases:pack(purchaseRead.data),
         ledgerSource:"V69",historicalPaymentsIncluded:true});
     }
     if(kind==="cash_bank"){
