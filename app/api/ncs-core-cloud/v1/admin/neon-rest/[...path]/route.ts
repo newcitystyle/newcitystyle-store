@@ -16,7 +16,25 @@ export const dynamic = "force-dynamic";
 const CONFIG = new Set(["branding_settings","store_settings","site_content",
   "seo_settings","analytics_settings","shipping_settings","payment_settings"]);
 const CREDIT_READ_ONLY = new Set(["customer_credit_accounts","customer_credit_transactions"]);
-const ALLOWED = new Set([...CONFIG,...CREDIT_READ_ONLY]);
+// Installed 2026 Android Billing + Website Admin screens load customer and
+// catalogue collections before rendering Credit, Products and store settings.
+// These tables exist in the CURRENT Supabase database. Keep ledger/Sales writes
+// closed: their canonical RPCs must remain the sole financial writers.
+const BUSINESS_READ_ONLY = new Set([
+ "customers","categories","collections","coupons","reviews","billing_settings",
+ "expense_categories","products","product_variants","product_design_units",
+ "product_design_unit_variants","purchases","purchase_items","suppliers",
+ "supplier_payments","expenses","cash_bank_transactions","billing_cheques",
+ "credit_reminder_logs","customer_product_requests","orders","returns",
+ "pos_returns","pos_return_items","pos_refunds","pos_exchange_settlements",
+ "ncs_invoice_settings","owner_business_settings","owner_daily_cash_closings",
+ "owner_profit_alerts","ncs_purchase_list","ncs_club_members",
+ "ncs_whatsapp_leads","ncs_whatsapp_outbound_messages","ncs_whatsapp_payment_requests",
+ "ncs_whatsapp_automation_queue","ncs_whatsapp_automation_settings",
+ "website_visits","billing_customers","billing_suppliers",
+ "billing_purchases","billing_purchase_items","billing_supplier_payments"
+]);
+const ALLOWED = new Set([...CONFIG,...CREDIT_READ_ONLY,...BUSINESS_READ_ONLY]);
 const OUT = {"Cache-Control":"private, no-store",Vary:"Cookie, Authorization",
   "X-Content-Type-Options":"nosniff","X-NCS-Source":"SUPABASE_LIVE_COMPAT_V46"};
 const err = (code:string,status:number) => Response.json(
@@ -38,6 +56,7 @@ async function handle(r:Request,{params}:Ctx){
  const input=new URL(r.url);
  if(input.search.length>7000)return err("QUERY_TOO_LONG",413);
  const limit=input.searchParams.get("limit");
+ if(!limit && (method==="GET"||method==="HEAD"))input.searchParams.set("limit","1000");
  if(limit!==null && (!/^\d{1,4}$/.test(limit)||Number(limit)>2000))return err("INVALID_LIMIT",422);
  if(!read){
   const origin=r.headers.get("origin"),site=r.headers.get("sec-fetch-site");
