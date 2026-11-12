@@ -5,12 +5,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { supabase } from "@/lib/supabase";
+import { readNcsV49Ledger, type NcsV49CanonicalRow } from "@/lib/ncs-v49-canonical-ledger-client";
 
 
 
 type CreditAccount = {
-
   id: number;
+  __ncs_readOnly?: boolean;
+  __ncs_v69_id?: number;
 
   customer_id?: number | null;
 
@@ -223,6 +225,7 @@ function isOverdue(account: CreditAccount) {
 export default function CustomerDuesPage() {
 
   const [accounts, setAccounts] = useState<CreditAccount[]>([]);
+  const [canonicalCustomers, setCanonicalCustomers] = useState<NcsV49CanonicalRow[]>([]);
 
   const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
 
@@ -334,7 +337,22 @@ export default function CustomerDuesPage() {
 
 
 
-      setAccounts((accountData || []) as unknown as CreditAccount[]);
+      // V69 contains confirmed opening dues and subsequent payments.
+      const canonical = await readNcsV49Ledger();
+      const oldAccounts=(accountData || []) as unknown as CreditAccount[];
+      const byPhone=new Map<string,CreditAccount>();
+      for(const a of oldAccounts){const phone=(a.customer_phone||"").replace(/\D/g,"");if(phone)byPhone.set(phone,a);}
+      const canonicalDue:CreditAccount[]=canonical.customers.filter(x=>x.due>0.005).map(x=>{
+        const old=x.phone?byPhone.get(x.phone.replace(/\D/g,"")):undefined;
+        const mismatch=!old||Math.abs(toNumber(old.current_balance)-x.due)>0.005;
+        return {...(old||{}),id:old?.id??(-x.id),
+          customer_name:x.name,customer_phone:x.phone,
+          current_balance:x.due,total_credit_given:x.credit,
+          total_credit_paid:x.paid,__ncs_v69_id:x.id,
+          __ncs_readOnly:mismatch};
+      });
+      setCanonicalCustomers(canonical.customers);
+      setAccounts(canonicalDue);
 
       setTransactions(
 
@@ -442,33 +460,9 @@ export default function CustomerDuesPage() {
 
   const statistics = useMemo(() => {
 
-    const totalCreditGiven = accounts.reduce(
-
-      (sum, account) => sum + toNumber(account.total_credit_given),
-
-      0,
-
-    );
-
-
-
-    const totalCreditPaid = accounts.reduce(
-
-      (sum, account) => sum + toNumber(account.total_credit_paid),
-
-      0,
-
-    );
-
-
-
-    const totalBalance = accounts.reduce(
-
-      (sum, account) => sum + toNumber(account.current_balance),
-
-      0,
-
-    );
+    const totalCreditGiven = canonicalCustomers.reduce((sum,a)=>sum+a.credit,0);
+    const totalCreditPaid = canonicalCustomers.reduce((sum,a)=>sum+a.paid,0);
+    const totalBalance = canonicalCustomers.reduce((sum,a)=>sum+a.due,0);
 
 
 
@@ -488,10 +482,7 @@ export default function CustomerDuesPage() {
 
     };
 
-  }, [accounts]);
-
-
-
+  }, [accounts, canonicalCustomers]);
   const selectedTransactions = useMemo(() => {
 
     if (!selectedAccount) return [];
@@ -537,7 +528,7 @@ export default function CustomerDuesPage() {
 
 
   function openPaymentModal(account: CreditAccount) {
-
+    if(account.__ncs_readOnly){setNotice("V69 balance differs from old Credit record. Record payments in verified Desktop ledger until reconciled.");return;}
     setSelectedAccount(account);
 
     // Safety: never prefill the full due amount.
@@ -564,7 +555,7 @@ export default function CustomerDuesPage() {
 
 
     const paymentAccount = selectedAccount;
-
+    if(paymentAccount.__ncs_readOnly){setNotice("V69 reconciliation required: old payment path blocked for this account.");return;}
     const currentBalance = toNumber(paymentAccount.current_balance);
 
     const amount = Math.round(Math.max(0, paymentAmount) * 100) / 100;
@@ -906,7 +897,7 @@ export default function CustomerDuesPage() {
 
 
   async function toggleBlocked(account: CreditAccount) {
-
+    if(account.__ncs_readOnly){setNotice("Reconcile V69 before changing this credit account.");return;}
     try {
 
       const { error } = await supabase
