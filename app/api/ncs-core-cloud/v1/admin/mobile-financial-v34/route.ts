@@ -109,7 +109,7 @@ async function notifyPaymentOnce(
   };
 
   try {
-    const {data:ledger,error:ledgerError}=await db.rpc("ncs_account_read_v69",{p_kind:"dues"});
+    const {data:ledger,error:ledgerError}=await noticeDb.rpc("ncs_account_read_v69",{p_kind:"dues"});
     if(ledgerError || !ledger || !Array.isArray(ledger.accounts)) {
       await mark("failed",undefined,"ACCOUNT_READ_FAILED");
       return {whatsappStatus:"failed"};
