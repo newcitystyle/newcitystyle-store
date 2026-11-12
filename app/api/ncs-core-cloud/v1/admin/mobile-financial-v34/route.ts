@@ -76,7 +76,10 @@ async function notifyPaymentOnce(
     return {whatsappStatus:"not_configured"};
   }
 
-  const {data:claimed,error:claimError}=await db
+  // This new outbox table is deliberately server-only and is not yet in
+  // the repository's generated Supabase type map.
+  const noticeDb = db as any;
+  const {data:claimed,error:claimError}=await noticeDb
     .from("ncs_android_payment_notice_v42")
     .update({state:"sending",updated_at:new Date().toISOString()})
     .eq("request_id",requestId)
@@ -88,7 +91,7 @@ async function notifyPaymentOnce(
     return {whatsappStatus:"queue_unavailable"};
   }
   if(!claimed) {
-    const {data:existing}=await db.from("ncs_android_payment_notice_v42")
+    const {data:existing}=await noticeDb.from("ncs_android_payment_notice_v42")
       .select("state,meta_message_id").eq("request_id",requestId).maybeSingle();
     if(existing?.state==="accepted") return {
       whatsappStatus:"accepted",
@@ -98,7 +101,7 @@ async function notifyPaymentOnce(
   }
 
   const mark=async(state:"accepted"|"failed",messageId?:string,error?:string)=>{
-    const {error:updateError}=await db.from("ncs_android_payment_notice_v42")
+    const {error:updateError}=await noticeDb.from("ncs_android_payment_notice_v42")
       .update({state,meta_message_id:messageId||null,last_error:error||null,
         updated_at:new Date().toISOString()})
       .eq("request_id",requestId).eq("state","sending");
