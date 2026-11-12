@@ -81,7 +81,7 @@ export async function GET(request:Request){
         return {...row,supplier_id:w.id,supplier_name:w.supplier_name,
           payment_date:String(row.payment_date||row.created_at||"").slice(0,10),
           is_historical:String(row.id||"").startsWith("baseline:")};
-      }).sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
+      }).sort((a,b)=>String(b.payment_date||"").localeCompare(String(a.payment_date||"")));
       // V69 historic purchases do not have verified paid/due allocations.
       // Preserve the existing website purchase-detail display rather than
       // fabricating a zero due from a null field.
