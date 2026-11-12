@@ -65,7 +65,7 @@ export async function GET(request: Request) {
 // This endpoint never commits customer payments or updates outstanding balances.
 export async function POST(request: Request) {
   const bearer = request.headers.get("authorization") || "";
-  if (!/^Bearer\\s+\\S+$/i.test(bearer)) {
+  if (!/^Bearer\s+\S+$/i.test(bearer)) {
     return respond({ok:false,error:"V38_OWNER_TOKEN_REQUIRED"},401);
   }
   try {
@@ -89,7 +89,7 @@ export async function POST(request: Request) {
   const expected=String(input.expectedDue ?? "");
   const requestId=String(input.requestId ?? "");
   if (!Number.isSafeInteger(accountId) || accountId <= 0 ||
-      !/^\\d{1,10}\\.\\d{2}$/.test(expected) ||
+      !/^\d{1,10}\.\d{2}$/.test(expected) ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) {
     return respond({ok:false,error:"INVALID_REMINDER_REQUEST"},400);
   }
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
     if(!a) return respond({ok:false,error:"ACCOUNT_NOT_FOUND_REFRESH"},404);
     const cents=(value:unknown):number|null=>{
       const v=String(value ?? "");
-      const m=v.match(/^(\\d{1,10})(?:\\.(\\d{1,2}))?$/);
+      const m=v.match(/^(\d{1,10})(?:\.(\d{1,2}))?$/);
       if(!m) return null;
       return Number(m[1])*100+Number((m[2]||"").padEnd(2,"0"));
     };
@@ -118,9 +118,9 @@ export async function POST(request: Request) {
     if(dueCents===null || dueCents<=0 || dueCents!==cents(expected)) {
       return respond({ok:false,error:"DUE_CHANGED_REFRESH"},409);
     }
-    const phone=String(a.customer_phone || "").replace(/\\D/g,"");
+    const phone=String(a.customer_phone || "").replace(/\D/g,"");
     const normalized=phone.length===10 ? "91"+phone : phone;
-    if(!/^91\\d{10}$/.test(normalized)) {
+    if(!/^91\d{10}$/.test(normalized)) {
       return respond({ok:false,error:"INVALID_CUSTOMER_PHONE"},422);
     }
     // Verify the live web account by phone and exact paise balance.
