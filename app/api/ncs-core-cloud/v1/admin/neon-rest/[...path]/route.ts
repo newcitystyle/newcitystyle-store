@@ -95,6 +95,45 @@ async function handle(r:Request,{params}:Ctx){
     const v=response.headers.get(h);if(v)oh.set(h,v);
    }
    const text=method==="HEAD"||response.status===204?null:await response.text();
+   // Supplier list is the legacy Android/Desktop compatibility read. The public
+   // suppliers balance column contains old unmigrated amounts. V69 is the
+   // reconciled owner ledger and has a verified 1:1 link for all 12 suppliers.
+   // ONLY replace current_balance on read; never rewrite purchase/payment
+   // amounts or submit financial transactions from this adapter.
+   if(table==="suppliers" && method==="GET" && response.ok){
+    try {
+     const data:unknown=JSON.parse(text||"null");
+     if(!Array.isArray(data)||!data.every(x=>x&&typeof x==="object"&&!Array.isArray(x) &&
+         Number.isSafeInteger(Number((x as Record<string,unknown>).id))))
+       return err("SUPPLIER_CANONICAL_ID_REQUIRED",503);
+     const rpcHeaders:Record<string,string>={apikey:key,"Content-Type":"application/json"};
+     if(key.startsWith("eyJ"))rpcHeaders.Authorization="Bearer "+key;
+     const rpc=await fetch("https://uskpoaszucenqxlzgmcy.supabase.co/rest/v1/rpc/ncs_v48_supplier_canonical_read",{
+      method:"POST",headers:rpcHeaders,body:"{}",cache:"no-store",redirect:"error",
+      signal:AbortSignal.timeout(12000)
+     });
+     if(!rpc.ok)return err("SUPPLIER_CANONICAL_READ_UNAVAILABLE",503);
+     const canonical:unknown=await rpc.json();
+     if(!Array.isArray(canonical))return err("SUPPLIER_CANONICAL_CONTRACT_INVALID",503);
+     const map=new Map<number,{name:string;due:number}>();
+     for(const row of canonical){
+      if(!row||typeof row!=="object"||Array.isArray(row))return err("SUPPLIER_CANONICAL_INVALID",503);
+      const x=row as Record<string,unknown>;
+      const id=Number(x.supplier_id),due=Number(x.current_balance);
+      if(!Number.isSafeInteger(id)||!Number.isFinite(due)||due<0||typeof x.supplier_name!=="string"||map.has(id))
+       return err("SUPPLIER_CANONICAL_INVALID",503);
+      map.set(id,{name:x.supplier_name,due});
+     }
+     const merged=data.map(row=>{
+      const x=row as Record<string,unknown>,m=map.get(Number(x.id));
+      if(!m||String(x.supplier_name||"").trim().toLocaleLowerCase("en")!==m.name.trim().toLocaleLowerCase("en"))
+       throw Error("SUPPLIER_MAPPING_MISMATCH");
+      return {...x,current_balance:m.due};
+     });
+     oh.set("X-NCS-Source","V69_CANONICAL_SUPPLIER_READ_ONLY");
+     return new Response(JSON.stringify(merged),{status:response.status,headers:oh});
+    }catch{return err("SUPPLIER_CANONICAL_RECONCILIATION_REQUIRED",503);}
+   }
    return new Response(text,{status:response.status,headers:oh});
   }catch(e){
    if(i+1<keys.length)continue;
