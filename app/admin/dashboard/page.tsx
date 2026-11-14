@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { readNcsV49Ledger, type NcsV49Snapshot } from "@/lib/ncs-v49-canonical-ledger-client";
 
 type Product = {
   id: string | number;
@@ -580,6 +581,15 @@ export default function AdminDashboardPage() {
     monthSales:number;monthBills:number;date:string;
   }>(null);
   const [verifiedSalesError, setVerifiedSalesError] = useState("");
+  const [canonicalLedger, setCanonicalLedger] = useState<NcsV49Snapshot | null>(null);
+  useEffect(() => {
+    let active = true;
+    readNcsV49Ledger().then(value => { if (active) setCanonicalLedger(value); })
+      .catch(() => { if (active) setCanonicalLedger(null); });
+    return () => { active = false; };
+  }, []);
+  const customerDueVerified = canonicalLedger?.customers.reduce((sum, row) => sum + Math.max(0, row.due), 0);
+  const supplierDueVerified = canonicalLedger?.suppliers.reduce((sum, row) => sum + Math.max(0, row.due), 0);
   const [salesRange, setSalesRange] = useState<7 | 14 | 30>(30);
   const [showDashboardDetails, setShowDashboardDetails] = useState(false);
   const [businessWatchTab, setBusinessWatchTab] = useState<
@@ -2081,38 +2091,6 @@ export default function AdminDashboardPage() {
         showDashboardDetails ? "showAdvancedDetails" : ""
       }`}
     >
-      <section aria-label="Recovered sales overview" style={{
-        display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",
-        gap:12,padding:"14px 0 20px"
-      }}>
-        {[
-          {title:"TODAY SALES",amount:verifiedSales?.todaySales,count:verifiedSales?.todayBills},
-          {title:"THIS MONTH SALES",amount:verifiedSales?.monthSales,count:verifiedSales?.monthBills},
-          {title:"YESTERDAY SALES",amount:verifiedSales?.yesterdaySales,count:verifiedSales?.yesterdayBills}
-        ].map(item=><div key={item.title} style={{
-          padding:"20px",background:"linear-gradient(135deg,#071b4b,#123d78)",
-          color:"#fff",borderRadius:18,border:"1px solid #cfb357",boxShadow:"0 6px 15px rgba(0,0,0,0.08)"
-        }}>
-          <div style={{fontSize:12,fontWeight:800,letterSpacing:1,color:"#d4af37"}}>{item.title}</div>
-          <div style={{fontWeight:900,fontSize:30,marginTop:8}}>
-            {item.amount===undefined?"—":formatCurrency(item.amount)}
-          </div>
-          <div style={{fontSize:12,opacity:0.85}}>
-            {item.count===undefined?"Verified feed unavailable":`${item.count} recorded bills • Recovered V59`}
-          </div>
-        </div>)}
-        <div style={{gridColumn:"1/-1",fontSize:12,color:"#615b6d",display:"flex",
-          justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-          <span>IST day • Recovered bills before return/refund reconciliation.
-            {verifiedSalesError?" Live read unavailable: "+verifiedSalesError:""}
-          </span>
-          <button type="button" onClick={()=>{void loadVerifiedSales();}}
-            style={{border:"1px solid #d4af37",borderRadius:9,padding:"7px 13px",
-              background:"#fff",color:"#0a2e73",fontWeight:800,cursor:"pointer"}}>
-            Refresh Sales
-          </button>
-        </div>
-      </section>
       <section className="hero">
         <div className="heroMotion" aria-hidden="true">
           <span className="heroSweep" />
@@ -2742,8 +2720,8 @@ export default function AdminDashboardPage() {
 
         <div className="executivePulseMetric">
           <span>TODAY SALES</span>
-          <strong>{formatCurrency(business.todaySales)}</strong>
-          <small>{business.todayBills} transaction(s)</small>
+          <strong>{verifiedSales ? formatCurrency(verifiedSales.todaySales) : "—"}</strong>
+          <small>{verifiedSales ? `${verifiedSales.todayBills} recovered bills` : "Sales verification unavailable"}</small>
         </div>
 
         <div className="executivePulseMetric profit">
@@ -2764,7 +2742,7 @@ export default function AdminDashboardPage() {
 
         <div className="executivePulseMetric receivable">
           <span>CUSTOMER DUES</span>
-          <strong>{formatCurrency(business.totalReceivable)}</strong>
+          <strong>{customerDueVerified === undefined ? "—" : formatCurrency(customerDueVerified)}</strong>
           <small>
             {creditAccounts.filter((account) =>
               toNumber(account.current_balance) > 0,
@@ -2774,7 +2752,7 @@ export default function AdminDashboardPage() {
 
         <div className="executivePulseMetric payable">
           <span>SUPPLIER PAYABLE</span>
-          <strong>{formatCurrency(business.totalPayable)}</strong>
+          <strong>{supplierDueVerified === undefined ? "—" : formatCurrency(supplierDueVerified)}</strong>
           <small>
             {suppliers.filter((supplier) =>
               toNumber(supplier.current_balance) > 0,
@@ -2825,7 +2803,7 @@ export default function AdminDashboardPage() {
         <BusinessKpi
           icon="₹"
           label="Today Sales"
-          value={formatCurrency(business.todaySales)}
+          value={verifiedSales ? formatCurrency(verifiedSales.todaySales) : "—"}
           note={`${business.todayBills} transaction${
             business.todayBills === 1 ? "" : "s"
           } today${
@@ -2838,7 +2816,7 @@ export default function AdminDashboardPage() {
         <BusinessKpi
           icon="↗"
           label="This Month Sales"
-          value={formatCurrency(business.monthSales)}
+          value={verifiedSales ? formatCurrency(verifiedSales.monthSales) : "—"}
           note={`${business.monthBills} transactions${
             business.monthExchangeCount > 0
               ? ` • ${business.monthExchangeCount} exchange`
@@ -2849,7 +2827,7 @@ export default function AdminDashboardPage() {
         <BusinessKpi
           icon="↓"
           label="Total Receivable"
-          value={formatCurrency(business.totalReceivable)}
+          value={customerDueVerified === undefined ? "—" : formatCurrency(customerDueVerified)}
           note={`${
             creditAccounts.filter(
               (account) =>
@@ -2861,7 +2839,7 @@ export default function AdminDashboardPage() {
         <BusinessKpi
           icon="↑"
           label="Total Payable"
-          value={formatCurrency(business.totalPayable)}
+          value={supplierDueVerified === undefined ? "—" : formatCurrency(supplierDueVerified)}
           note={`${
             suppliers.filter(
               (supplier) =>
